@@ -63,3 +63,13 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      # NOT CHECKED HERE, deliberately stated rather than implied: the LAGDA
+      # frontend does not compile against @lagda/contracts. The strongest reason
+      # to share a contracts package is that changing a contract fails CI when
+      # the other consumer stops compiling — and with two repositories and no
+      # shared CI, that guardrail does not exist. Tracked as OD-005 / OD-011.
+      - name: Contract drift limitation
+        run: |
+          echo "Backend compiles against @lagda/contracts. The frontend does not."
+          echo "Cross-repository contract CI is NOT established. See OD-005, OD-011."

@@ -18,5 +18,8 @@
     {
       "path": "../application"
     }
+  ],
+  "exclude": [
+    "**/*.test.ts"
   ]
 }

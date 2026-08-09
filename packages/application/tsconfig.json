@@ -15,5 +15,8 @@
     {
       "path": "../core"
     }
+  ],
+  "exclude": [
+    "**/*.test.ts"
   ]
 }

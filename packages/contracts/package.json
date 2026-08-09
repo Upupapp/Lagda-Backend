@@ -7,6 +7,18 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./ids": {
+      "types": "./dist/ids/index.d.ts",
+      "default": "./dist/ids/index.js"
+    },
+    "./common": {
+      "types": "./dist/common/index.d.ts",
+      "default": "./dist/common/index.js"
+    },
+    "./verification": {
+      "types": "./dist/verification/index.d.ts",
+      "default": "./dist/verification/index.js"
     }
   },
   "main": "./dist/index.js",
@@ -17,5 +29,9 @@
   "scripts": {
     "build": "tsc --build",
     "clean": "tsc --build --clean"
-  }
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.52"
+  },
+  "sideEffects": false
 }

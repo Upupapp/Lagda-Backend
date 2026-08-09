@@ -10,5 +10,9 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["tests/**/*.ts", "*.config.ts"]
+  // Package test files are EXCLUDED from the package builds so test code never
+  // reaches `dist/` and never ships. They still have to belong to some project,
+  // or type-aware lint rules silently stop running on them — a parse error
+  // means a whole file's rules never ran, which reads as "clean" in the output.
+  "include": ["tests/**/*.ts", "*.config.ts", "packages/*/src/**/*.test.ts"]
 }
