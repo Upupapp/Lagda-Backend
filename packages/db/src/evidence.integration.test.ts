@@ -4,6 +4,7 @@
 // claim about the DATABASE, and only the database can be asked. A fake cannot
 // refuse an UPDATE it was never granted.
 
+import { toStorageObjectKey } from "@lagda/application";
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { sql } from "kysely";
 import type { WorkspaceId, DocumentId, TransactionId, VerificationId, Sha256Digest, UserId } from "@lagda/contracts";
@@ -30,7 +31,7 @@ const artifact = (over: Partial<ArtifactRecord> = {}): ArtifactRecord => ({
   workspaceId: WS_A,
   documentId: DOC,
   artifactType: "original",
-  storageReference: "lagda://foundation/art_original",
+  storageReference: toStorageObjectKey("workspaces/ws_a/documents/doc_1/artifacts/art_original.pdf"),
   mediaType: "application/pdf",
   sizeBytes: 12_345,
   digestAlgorithm: "sha-256",
@@ -672,7 +673,14 @@ describe.skipIf(!hasIntegrationDatabase())("evidence persistence on PostgreSQL",
         "LAGDA-WSA-20260809-7F3A2C" as VerificationId);
 
       const serialized = JSON.stringify(found);
-      for (const secret of [WS_A, DOC, REQ, "seal_1", "art_sealed", "lagda://"]) {
+      // The storage key is included deliberately: it is INTERNAL infrastructure
+      // identity and must never reach a public projection (INV-207). The old
+      // placeholder scheme this line used to guard no longer exists anywhere,
+      // which made the assertion trivially true.
+      for (const secret of [
+        WS_A, DOC, REQ, "seal_1", "art_sealed",
+        "workspaces/", "artifacts/", ".pdf",
+      ]) {
         expect(serialized).not.toContain(secret);
       }
     });

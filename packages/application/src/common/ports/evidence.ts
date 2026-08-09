@@ -9,6 +9,7 @@
 import type {
   WorkspaceId, DocumentId, TransactionId, VerificationId, Sha256Digest,
 } from "@lagda/contracts";
+import type { StorageObjectKey } from "./storage.js";
 
 // ── Identifiers ──────────────────────────────────────────────────────────────
 //
@@ -177,8 +178,21 @@ export interface ArtifactRecord {
   readonly workspaceId: WorkspaceId;
   readonly documentId: DocumentId;
   readonly artifactType: ArtifactType;
-  /** LAGDA-owned opaque reference. No S3 bucket or key semantics cross this port. */
-  readonly storageReference: string;
+  /**
+   * Where the bytes live, as a validated internal key (BACKEND-17).
+   *
+   * Branded rather than a bare `string`, so a value from a request body cannot
+   * become one by assignment - the entire tenancy argument for storage rests on
+   * keys being DERIVED from authorized identifiers (INV-205).
+   *
+   * The ZONE is not stored: an artifact row describes ACCEPTED bytes, and those
+   * are always in the `artifacts` zone. Quarantine objects have no artifact row,
+   * because an unvalidated upload is not yet an artifact. If a second accepted
+   * zone ever exists, a zone column is a purely additive migration.
+   *
+   * Never a presigned URL: those expire and are bearer credentials (INV-207).
+   */
+  readonly storageReference: StorageObjectKey;
   readonly mediaType: string;
   readonly sizeBytes: number;
   readonly digestAlgorithm: "sha-256";

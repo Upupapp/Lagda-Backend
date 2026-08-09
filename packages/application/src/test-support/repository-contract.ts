@@ -11,6 +11,7 @@
 // Lives in application because application owns the ports. `@lagda/db` imports
 // it to run the same suite against PostgreSQL.
 
+import { toStorageObjectKey } from "../common/ports/storage.js";
 import { toSha256Digest, type UserId, type WorkspaceId, type WorkspaceMemberId,
   type TransactionId, type DocumentId } from "@lagda/contracts";
 import type { TransactionManager, EvidenceEventId, ArtifactId } from "../common/ports/index.js";
@@ -319,7 +320,7 @@ export function runRepositoryContract(
           workspaceId: WS_A,
           documentId: DOC,
           artifactType: "original",
-          storageReference: "lagda://foundation/art_1",
+          storageReference: toStorageObjectKey("workspaces/ws_a/documents/doc_1/artifacts/art_1.pdf"),
           mediaType: "application/pdf",
           sizeBytes: 2048,
           digestAlgorithm: "sha-256",

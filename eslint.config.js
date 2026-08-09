@@ -37,6 +37,20 @@ const INFRA_NON_PDF = [
   "nodemailer",
 ];
 
+/**
+ * Object-storage SDKs. Legitimate ONLY inside `packages/storage`.
+ *
+ * Both names AND a wildcard: `@aws-sdk/*` catches the client packages that do
+ * not exist yet, and a bare name catches an import written without a subpath.
+ * A pattern alone would miss `aws-sdk`; names alone would miss the next client
+ * someone adds.
+ */
+const STORAGE_SDK_PACKAGES = [
+  "@aws-sdk/client-s3", "@aws-sdk/s3-request-presigner", "@aws-sdk/lib-storage",
+  "aws-sdk", "minio",
+];
+const STORAGE_SDK_PATTERNS = ["@aws-sdk/*", "aws-sdk/*", "minio/*"];
+
 /** Frontend-only packages. `@lagda/contracts` is shared and must not pull these in. */
 const FRONTEND_PACKAGES = ["react", "react-dom", "vite"];
 
@@ -98,6 +112,13 @@ const WORKER_SERVES_NO_HTTP =
   "The worker serves no HTTP and must not import a web framework or @lagda/api " +
   "(INV-190). Its liveness is proven by consuming jobs, not by answering a port. " +
   "See docs/backend/worker/WORKER_ARCHITECTURE.md.";
+
+const STORAGE_SDK_ONLY =
+  "Object-storage SDKs may only be imported inside packages/storage (INV-203). " +
+  "Everything above that package works with the ObjectStorage port, which is what " +
+  "lets the provider be replaced without touching business logic. A composition " +
+  "root wires `createS3ObjectStorage` from @lagda/storage - it does not reach for " +
+  "the SDK itself. See docs/backend/storage/STORAGE_ARCHITECTURE.md.";
 
 const CONTRACTS_PURE =
   "@lagda/contracts is consumed by both the frontend and the backend and must stay " +
@@ -165,6 +186,11 @@ export default tseslint.config(
           patterns: LAGDA_ADAPTER_PATTERNS,
           message: CONTRACTS_PURE,
         },
+        {
+          names: STORAGE_SDK_PACKAGES,
+          patterns: STORAGE_SDK_PATTERNS,
+          message: STORAGE_SDK_ONLY,
+        },
       ]),
     },
   },
@@ -180,6 +206,11 @@ export default tseslint.config(
           names: [...INFRA_NON_PDF, ...LAGDA_ADAPTERS],
           patterns: LAGDA_ADAPTER_PATTERNS,
           message: NO_INFRA,
+        },
+        {
+          names: STORAGE_SDK_PACKAGES,
+          patterns: STORAGE_SDK_PATTERNS,
+          message: STORAGE_SDK_ONLY,
         },
       ]),
     },
@@ -202,6 +233,11 @@ export default tseslint.config(
           patterns: [...LAGDA_ADAPTER_PATTERNS, "@lagda/api/*", "@lagda/worker/*"],
           message: NO_INFRA,
         },
+        {
+          names: STORAGE_SDK_PACKAGES,
+          patterns: STORAGE_SDK_PATTERNS,
+          message: STORAGE_SDK_ONLY,
+        },
       ]),
     },
   },
@@ -220,6 +256,11 @@ export default tseslint.config(
           names: [...INFRA_NON_PDF, "@lagda/db", "@lagda/storage", "@lagda/api", "@lagda/worker"],
           patterns: ["@lagda/db/*", "@lagda/storage/*", "@lagda/api/*", "@lagda/worker/*"],
           message: NO_INFRA,
+        },
+        {
+          names: STORAGE_SDK_PACKAGES,
+          patterns: STORAGE_SDK_PATTERNS,
+          message: STORAGE_SDK_ONLY,
         },
       ]),
     },
@@ -254,6 +295,11 @@ export default tseslint.config(
           patterns: ["@lagda/sealing/*", "@lagda/storage/*", "@lagda/api/*", "@lagda/worker/*"],
           message: NO_INFRA,
         },
+        {
+          names: STORAGE_SDK_PACKAGES,
+          patterns: STORAGE_SDK_PATTERNS,
+          message: STORAGE_SDK_ONLY,
+        },
       ]),
     },
   },
@@ -276,6 +322,11 @@ export default tseslint.config(
           patterns: ["pg-boss/*", "@lagda/worker/*"],
           message: QUEUE_IS_THE_WORKERS,
         },
+        {
+          names: STORAGE_SDK_PACKAGES,
+          patterns: STORAGE_SDK_PATTERNS,
+          message: STORAGE_SDK_ONLY,
+        },
       ]),
     },
   },
@@ -288,6 +339,11 @@ export default tseslint.config(
           names: ["fastify", "@fastify/cookie", "@fastify/csrf-protection", "@lagda/api"],
           patterns: ["@fastify/*", "@lagda/api/*"],
           message: WORKER_SERVES_NO_HTTP,
+        },
+        {
+          names: STORAGE_SDK_PACKAGES,
+          patterns: STORAGE_SDK_PATTERNS,
+          message: STORAGE_SDK_ONLY,
         },
       ]),
     },

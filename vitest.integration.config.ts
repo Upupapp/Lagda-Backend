@@ -27,7 +27,13 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["packages/*/src/**/*.integration.test.ts"],
+    include: [
+      "packages/*/src/**/*.integration.test.ts",
+      // Cross-adapter composition lives outside every package: a test that
+      // wires PostgreSQL and object storage together belongs to neither, and
+      // writing it inside one forces an import the architecture forbids.
+      "tests/integration/**/*.integration.test.ts",
+    ],
     // Migrations and pooled connections are slower than a unit test.
     testTimeout: 30_000,
     hookTimeout: 60_000,

@@ -17,6 +17,7 @@ import type {
   EvidenceEventId, ArtifactId, ArtifactRecord, ArtifactType, SealId, SealRecord,
   FinalizationInput, RecipientId,
 } from "@lagda/application";
+import { toStorageObjectKey } from "@lagda/application";
 import type { Database, DocumentArtifactsTable } from "../schema/index.js";
 import { translatePersistenceError, WorkspaceScopeMismatchError } from "../errors.js";
 
@@ -145,7 +146,7 @@ function toArtifact(row: Selectable<DocumentArtifactsTable>): ArtifactRecord {
     workspaceId: row.workspace_id as WorkspaceId,
     documentId: row.document_id as DocumentId,
     artifactType: row.artifact_type as ArtifactType,
-    storageReference: row.storage_reference,
+    storageReference: toStorageObjectKey(row.storage_reference),
     mediaType: row.media_type,
     sizeBytes: toNumber(row.size_bytes),
     digestAlgorithm: row.digest_algorithm as "sha-256",
