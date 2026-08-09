@@ -1,28 +1,32 @@
 // Persistence integration tests — REAL PostgreSQL.
 //
-// These are the tests that cannot be faked. A mock cannot tell you whether a
-// transaction actually rolls back, whether a CHECK constraint rejects a bad
-// role, or whether a `timestamptz` survives a round trip without shifting.
+// These are the tests that cannot be faked: whether a transaction actually
+// rolls back, whether a CHECK constraint rejects a bad role, whether a
+// `timestamptz` survives a round trip, whether SQLSTATE translation matches
+// what the database really raises.
+//
+// The behavioural CONTRACT suite runs separately, against the same adapter, so
+// the fake and PostgreSQL are held to one specification.
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { sql } from "kysely";
 import type { UserId, WorkspaceId, WorkspaceMemberId } from "@lagda/contracts";
 import { CreateWorkspace } from "@lagda/application";
 import type { LagdaDatabase } from "./client/index.js";
-import { migrationStatus } from "./migrations/runner.js";
+import { migrationStatus, migrateToLatest } from "./migrations/runner.js";
 import { createTransactionManager } from "./transactions/index.js";
 import {
-  createWorkspaceRepository, createWorkspaceMembershipRepository,
-} from "./repositories/workspaces.js";
-import { isUniqueViolation, isForeignKeyViolation, isCheckViolation } from "./errors.js";
-import { createTestDatabase, truncateAll, hasIntegrationDatabase } from "./testing/harness.js";
+  UniqueConstraintViolation, ForeignKeyConstraintViolation, CheckConstraintViolation,
+  WorkspaceScopeMismatchError, translatePersistenceError,
+} from "./errors.js";
+import {
+  createTestDatabase, truncateAll, hasIntegrationDatabase, withRawTenantTransaction,
+} from "./testing/harness.js";
 
 const CREATED_AT = Date.parse("2026-08-09T06:30:00.000Z");
 const OWNER = "usr_1" as UserId;
-// Most of these tests write to one workspace; the tenancy suite covers the rest.
-const WS_SCOPE = "ws_1" as WorkspaceId;
+const WS = "ws_1" as WorkspaceId;
 
-// Skips cleanly when no integration database is configured, so `npm test` stays
-// offline. CI sets DATABASE_TEST_URL and these run for real.
 const suite = hasIntegrationDatabase() ? describe : describe.skip;
 
 suite("persistence integration", () => {
@@ -41,6 +45,17 @@ suite("persistence integration", () => {
     await truncateAll(database);
   });
 
+  const seed = (workspaceId: WorkspaceId, memberId: string) =>
+    createTransactionManager(database.db).runForWorkspace(workspaceId, async uow => {
+      await uow.workspaces.insert({
+        workspaceId, name: `Workspace ${workspaceId}`, ownerUserId: OWNER, createdAt: CREATED_AT,
+      });
+      await uow.memberships.insert({
+        memberId: memberId as WorkspaceMemberId, workspaceId,
+        userId: OWNER, role: "owner", createdAt: CREATED_AT,
+      });
+    });
+
   // ── Migrations ─────────────────────────────────────────────────────────────
 
   describe("migrations", () => {
@@ -51,201 +66,174 @@ suite("persistence integration", () => {
     });
 
     it("is a no-op when already current", async () => {
-      // Re-running the deployment step must be safe.
-      const { migrateToLatest } = await import("./migrations/runner.js");
       const outcome = await migrateToLatest(database.db);
       expect(outcome.error).toBeUndefined();
       expect(outcome.applied).toEqual([]);
     });
   });
 
-  // ── Transactions ───────────────────────────────────────────────────────────
+  // ── Unit of work ───────────────────────────────────────────────────────────
 
-  describe("transactions", () => {
-    it("commits both writes together", async () => {
-      const transactions = createTransactionManager(database.db);
-      const workspaces = createWorkspaceRepository(database.db);
-      const memberships = createWorkspaceMembershipRepository(database.db);
+  describe("unit of work", () => {
+    it("commits every repository write together", async () => {
+      await seed(WS, "mem_1");
 
-      await transactions.runForWorkspace(WS_SCOPE, async tx => {
-        await workspaces.save({
-          workspaceId: "ws_1" as WorkspaceId, name: "Acme",
-          ownerUserId: OWNER, createdAt: CREATED_AT,
-        }, tx);
-        await memberships.save({
-          memberId: "mem_1" as WorkspaceMemberId, workspaceId: "ws_1" as WorkspaceId,
-          userId: OWNER, role: "owner", createdAt: CREATED_AT,
-        }, tx);
-      });
+      const loaded = await createTransactionManager(database.db)
+        .runForWorkspace(WS, async uow => ({
+          workspace: await uow.workspaces.find(),
+          members: await uow.memberships.list(),
+        }));
 
-      const tx2 = createTransactionManager(database.db);
-      await tx2.runForWorkspace("ws_1" as WorkspaceId, async t => {
-        expect(await workspaces.findById("ws_1" as WorkspaceId, t)).not.toBeNull();
-        expect(await memberships.listForWorkspace("ws_1" as WorkspaceId, t)).toHaveLength(1);
-      });
+      expect(loaded.workspace).not.toBeNull();
+      expect(loaded.members).toHaveLength(1);
     });
 
-    it("ROLLS BACK both writes when the second fails", async () => {
-      // The test a fake cannot perform. The workspace insert succeeds, the
-      // membership insert violates the role CHECK, and PostgreSQL must discard
-      // the workspace too — otherwise a workspace with no owner would exist,
-      // which is exactly the unrecoverable state the transaction prevents.
+    it("ROLLS BACK every repository write when one fails", async () => {
+      // The test a fake cannot perform. Both repositories come from one unit of
+      // work, so both writes share a transaction — the proof that "atomic" is
+      // real rather than apparent.
       const transactions = createTransactionManager(database.db);
-      const workspaces = createWorkspaceRepository(database.db);
 
       await expect(
-        transactions.runForWorkspace(WS_SCOPE, async tx => {
-          await workspaces.save({
-            workspaceId: "ws_rollback" as WorkspaceId, name: "Doomed",
-            ownerUserId: OWNER, createdAt: CREATED_AT,
-          }, tx);
-          // Fails after a successful write. If the rollback did not happen, the
-          // workspace would survive.
-          throw new Error("deliberate failure after the first write");
+        transactions.runForWorkspace(WS, async uow => {
+          await uow.workspaces.insert({
+            workspaceId: WS, name: "Doomed", ownerUserId: OWNER, createdAt: CREATED_AT,
+          });
+          await uow.memberships.insert({
+            memberId: "mem_doomed" as WorkspaceMemberId, workspaceId: WS,
+            userId: OWNER, role: "owner", createdAt: CREATED_AT,
+          });
+          throw new Error("deliberate failure after both writes");
         }),
       ).rejects.toThrow("deliberate failure");
 
-      await transactions.runForWorkspace("ws_rollback" as WorkspaceId, async t => {
-        expect(await workspaces.findById("ws_rollback" as WorkspaceId, t)).toBeNull();
-      });
+      const survivors = await transactions.runForWorkspace(WS, async uow => ({
+        workspace: await uow.workspaces.find(),
+        members: await uow.memberships.list(),
+      }));
+      expect(survivors.workspace).toBeNull();
+      expect(survivors.members).toHaveLength(0);
     });
 
     it("releases connections after repeated failures", async () => {
-      // A transaction that leaks its client on the error path exhausts the pool
+      // A transaction leaking its client on the error path exhausts the pool
       // after `poolMax` failures and then hangs forever.
       const transactions = createTransactionManager(database.db);
       for (let i = 0; i < 15; i++) {
         await expect(
-          transactions.runForWorkspace(WS_SCOPE, () => Promise.reject(new Error("boom"))),
+          transactions.runForWorkspace(WS, () => Promise.reject(new Error("boom"))),
         ).rejects.toThrow("boom");
       }
       expect(await database.ping()).toBe(true);
     });
 
-    it("refuses a transaction context it did not create", () => {
-      const workspaces = createWorkspaceRepository(database.db);
-      const foreign = { notATransaction: true } as never;
-      return expect(
-        workspaces.save({
-          workspaceId: "ws_x" as WorkspaceId, name: "X",
-          ownerUserId: OWNER, createdAt: CREATED_AT,
-        }, foreign),
-      ).rejects.toThrow(/not created by the PostgreSQL transaction manager/);
+    it("exposes no tenant repositories in global mode", async () => {
+      // Global mode is not a route to workspace data. Structural, not incidental.
+      const uow = await createTransactionManager(database.db)
+        .runGlobal(u => Promise.resolve(u));
+      expect(uow.scope).toBe("global");
+      expect(uow).not.toHaveProperty("memberships");
+      expect(uow).not.toHaveProperty("workspaces");
     });
   });
 
-  // ── Constraints ────────────────────────────────────────────────────────────
+  // ── Workspace scope enforcement ────────────────────────────────────────────
 
-  describe("constraints", () => {
-    const seedWorkspace = async (id: string) => {
-      const transactions = createTransactionManager(database.db);
-      const workspaces = createWorkspaceRepository(database.db);
-      await transactions.runForWorkspace(WS_SCOPE, tx => workspaces.save({
-        workspaceId: id as WorkspaceId, name: `Workspace ${id}`,
-        ownerUserId: OWNER, createdAt: CREATED_AT,
-      }, tx));
-    };
+  describe("workspace mismatch", () => {
+    it("REFUSES to persist a record belonging to another workspace", async () => {
+      // Raised before the write, so the problem is named rather than surfacing
+      // as an RLS policy violation from three layers down. The workspace is
+      // never rewritten to match the scope.
+      await expect(
+        createTransactionManager(database.db).runForWorkspace(WS, uow =>
+          uow.workspaces.insert({
+            workspaceId: "ws_other" as WorkspaceId, name: "Wrong",
+            ownerUserId: OWNER, createdAt: CREATED_AT,
+          })),
+      ).rejects.toBeInstanceOf(WorkspaceScopeMismatchError);
+    });
+  });
 
-    it("rejects a second membership for the same user in one workspace", async () => {
-      await seedWorkspace("ws_1");
-      const transactions = createTransactionManager(database.db);
-      const memberships = createWorkspaceMembershipRepository(database.db);
+  // ── Error translation ──────────────────────────────────────────────────────
 
-      await transactions.runForWorkspace(WS_SCOPE, tx => memberships.save({
-        memberId: "mem_1" as WorkspaceMemberId, workspaceId: "ws_1" as WorkspaceId,
-        userId: OWNER, role: "owner", createdAt: CREATED_AT,
-      }, tx));
+  describe("persistence error translation", () => {
+    it("translates a duplicate membership into UniqueConstraintViolation", async () => {
+      await seed(WS, "mem_1");
 
-      const duplicate = await transactions.runForWorkspace(WS_SCOPE, tx => memberships.save({
-        memberId: "mem_2" as WorkspaceMemberId, workspaceId: "ws_1" as WorkspaceId,
-        userId: OWNER, role: "sender", createdAt: CREATED_AT,
-      }, tx)).catch((e: unknown) => e);
+      const duplicate = await createTransactionManager(database.db)
+        .runForWorkspace(WS, uow =>
+          uow.memberships.insert({
+            memberId: "mem_2" as WorkspaceMemberId, workspaceId: WS,
+            userId: OWNER, role: "sender", createdAt: CREATED_AT,
+          }))
+        .catch((e: unknown) => e);
 
-      // The database is the authority here: an application pre-check cannot
-      // survive two concurrent requests.
-      expect(isUniqueViolation(duplicate, "uq_workspace_memberships_workspace_user")).toBe(true);
+      expect(duplicate).toBeInstanceOf(UniqueConstraintViolation);
+      // The constraint NAME identifies which business rule broke. The offending
+      // value is deliberately absent — it is user data.
+      expect((duplicate as UniqueConstraintViolation).constraint)
+        .toBe("uq_workspace_memberships_workspace_user");
     });
 
-    it("lets the same user belong to two DIFFERENT workspaces", async () => {
-      await seedWorkspace("ws_1");
-      await seedWorkspace("ws_2");
-      const transactions = createTransactionManager(database.db);
-      const memberships = createWorkspaceMembershipRepository(database.db);
+    it("translates a missing parent into ForeignKeyConstraintViolation", async () => {
+      const orphan = await createTransactionManager(database.db)
+        .runForWorkspace("ws_ghost" as WorkspaceId, uow =>
+          uow.memberships.insert({
+            memberId: "mem_x" as WorkspaceMemberId, workspaceId: "ws_ghost" as WorkspaceId,
+            userId: OWNER, role: "owner", createdAt: CREATED_AT,
+          }))
+        .catch((e: unknown) => e);
 
-      await transactions.runForWorkspace(WS_SCOPE, async tx => {
-        await memberships.save({
-          memberId: "mem_1" as WorkspaceMemberId, workspaceId: "ws_1" as WorkspaceId,
-          userId: OWNER, role: "owner", createdAt: CREATED_AT,
-        }, tx);
-        await memberships.save({
-          memberId: "mem_2" as WorkspaceMemberId, workspaceId: "ws_2" as WorkspaceId,
-          userId: OWNER, role: "sender", createdAt: CREATED_AT,
-        }, tx);
-      });
-
-      // Uniqueness is per workspace, not global — the distinction §25 warns about.
-      for (const id of ["ws_1", "ws_2"] as const) {
-        await transactions.runForWorkspace(id as WorkspaceId, async t => {
-          expect(await memberships.listForWorkspace(id as WorkspaceId, t)).toHaveLength(1);
-        });
-      }
+      expect(orphan).toBeInstanceOf(ForeignKeyConstraintViolation);
     });
 
-    it("rejects a membership in a workspace that does not exist", async () => {
-      const transactions = createTransactionManager(database.db);
-      const memberships = createWorkspaceMembershipRepository(database.db);
-
-      const orphan = await transactions.runForWorkspace(WS_SCOPE, tx => memberships.save({
-        memberId: "mem_x" as WorkspaceMemberId, workspaceId: "ws_missing" as WorkspaceId,
-        userId: OWNER, role: "owner", createdAt: CREATED_AT,
-      }, tx)).catch((e: unknown) => e);
-
-      expect(isForeignKeyViolation(orphan)).toBe(true);
-    });
-
-    it("rejects a role outside the canonical vocabulary", async () => {
-      await seedWorkspace("ws_1");
-      const failure = await database.db
-        .insertInto("workspace_memberships")
-        .values({
-          member_id: "mem_bad", workspace_id: "ws_1", user_id: OWNER,
+    it("translates a bad role into CheckConstraintViolation", async () => {
+      await seed(WS, "mem_1");
+      const failure = await withRawTenantTransaction(database, WS, trx =>
+        trx.insertInto("workspace_memberships").values({
+          member_id: "mem_bad", workspace_id: WS, user_id: OWNER,
           role: "superuser", created_at: new Date(CREATED_AT),
-        })
-        .execute()
-        .catch((e: unknown) => e);
+        }).execute(),
+      ).catch((e: unknown) => translatePersistenceError(e));
 
-      expect(isCheckViolation(failure, "chk_workspace_memberships_role")).toBe(true);
+      expect(failure).toBeInstanceOf(CheckConstraintViolation);
     });
 
-    it("rejects a blank workspace name", async () => {
-      const failure = await database.db
-        .insertInto("workspaces")
-        .values({
-          workspace_id: "ws_blank", name: "   ",
-          owner_user_id: OWNER, created_at: new Date(CREATED_AT),
-        })
-        .execute()
-        .catch((e: unknown) => e);
-
-      expect(isCheckViolation(failure, "chk_workspaces_name_not_blank")).toBe(true);
+    it("does NOT downgrade an unknown error into an expected conflict", () => {
+      // A connection failure or timeout must stay an infrastructure failure.
+      // Reporting it as "conflict" or "not found" would tell a caller the data
+      // is absent when the database is simply unreachable.
+      const network = new Error("ECONNREFUSED");
+      expect(translatePersistenceError(network)).toBe(network);
     });
+  });
 
-    it("refuses to delete a workspace that still has members", async () => {
-      // ON DELETE RESTRICT, not CASCADE. Deleting a workspace must not silently
-      // erase who belonged to it — deletion semantics are unresolved.
-      await seedWorkspace("ws_1");
+  // ── Concurrency ────────────────────────────────────────────────────────────
+
+  describe("conditional updates", () => {
+    it("applies once and refuses the stale second writer", async () => {
+      // Read-then-write would let both writers proceed, with the second
+      // silently overwriting the first. The conditional update matches zero
+      // rows instead.
+      await seed(WS, "mem_1");
       const transactions = createTransactionManager(database.db);
-      const memberships = createWorkspaceMembershipRepository(database.db);
-      await transactions.runForWorkspace(WS_SCOPE, tx => memberships.save({
-        memberId: "mem_1" as WorkspaceMemberId, workspaceId: "ws_1" as WorkspaceId,
-        userId: OWNER, role: "owner", createdAt: CREATED_AT,
-      }, tx));
+      const member = "mem_1" as WorkspaceMemberId;
 
-      const blocked = await database.db
-        .deleteFrom("workspaces").where("workspace_id", "=", "ws_1").execute()
-        .catch((e: unknown) => e);
+      const first = await transactions.runForWorkspace(WS, uow =>
+        uow.memberships.changeRoleIfUnchanged({
+          memberId: member, expectedRole: "owner", nextRole: "administrator",
+        }));
+      const second = await transactions.runForWorkspace(WS, uow =>
+        uow.memberships.changeRoleIfUnchanged({
+          memberId: member, expectedRole: "owner", nextRole: "auditor",
+        }));
 
-      expect(isForeignKeyViolation(blocked)).toBe(true);
+      expect(first).toBe(true);
+      expect(second).toBe(false);
+
+      const final = await transactions.runForWorkspace(WS, uow =>
+        uow.memberships.findMember(member));
+      expect(final?.role).toBe("administrator");
     });
   });
 
@@ -253,78 +241,64 @@ suite("persistence integration", () => {
 
   describe("mapping", () => {
     it("round-trips a UTC timestamp without shifting it", async () => {
-      // `timestamptz` plus a pinned type parser. A naive column, or a driver
-      // returning a string, would silently reinterpret this in local time.
-      const transactions = createTransactionManager(database.db);
-      const workspaces = createWorkspaceRepository(database.db);
+      await seed(WS, "mem_1");
+      const loaded = await createTransactionManager(database.db)
+        .runForWorkspace(WS, uow => uow.workspaces.find());
 
-      await transactions.runForWorkspace(WS_SCOPE, tx => workspaces.save({
-        workspaceId: "ws_time" as WorkspaceId, name: "Time",
-        ownerUserId: OWNER, createdAt: CREATED_AT,
-      }, tx));
-
-      await transactions.runForWorkspace("ws_time" as WorkspaceId, async t => {
-        const loaded = await workspaces.findById("ws_time" as WorkspaceId, t);
-        expect(loaded?.createdAt).toBe(CREATED_AT);
-        expect(new Date(loaded!.createdAt).toISOString()).toBe("2026-08-09T06:30:00.000Z");
-      });
+      expect(loaded?.createdAt).toBe(CREATED_AT);
+      expect(new Date(loaded!.createdAt).toISOString()).toBe("2026-08-09T06:30:00.000Z");
     });
 
-    // The "unrecognised role" case is NOT tested here. It requires dropping the
-    // CHECK constraint to write an invalid row, and a test that mutates SCHEMA
-    // breaks isolation: TRUNCATE clears data, not DDL, so a failed run leaks a
-    // dropped constraint into every later run. It is a pure function, so it is
-    // unit-tested in mapping/mapping.test.ts with no database at all.
+    it("orders listed members deterministically", async () => {
+      // PostgreSQL guarantees no row order without ORDER BY, so "insertion
+      // order" is an assumption that holds until it does not.
+      await seed(WS, "mem_1");
+      await createTransactionManager(database.db).runForWorkspace(WS, uow =>
+        uow.memberships.insert({
+          memberId: "mem_2" as WorkspaceMemberId, workspaceId: WS,
+          userId: "usr_2" as UserId, role: "sender", createdAt: CREATED_AT,
+        }));
+
+      const first = await createTransactionManager(database.db)
+        .runForWorkspace(WS, uow => uow.memberships.list());
+      const second = await createTransactionManager(database.db)
+        .runForWorkspace(WS, uow => uow.memberships.list());
+
+      expect(first.map(m => m.memberId)).toEqual(second.map(m => m.memberId));
+    });
   });
 
-  // ── Tenancy ────────────────────────────────────────────────────────────────
+  // ── Constraints still hold ─────────────────────────────────────────────────
 
-  describe("tenancy", () => {
-    it("CANNOT read a member of another workspace", async () => {
-      const transactions = createTransactionManager(database.db);
-      const workspaces = createWorkspaceRepository(database.db);
-      const memberships = createWorkspaceMembershipRepository(database.db);
+  describe("constraints", () => {
+    it("refuses to delete a workspace that still has members", async () => {
+      // ON DELETE RESTRICT. Deleting a workspace must not silently erase who
+      // belonged to it — deletion semantics are unresolved.
+      await seed(WS, "mem_1");
+      const blocked = await withRawTenantTransaction(database, WS, trx =>
+        trx.deleteFrom("workspaces").where("workspace_id", "=", WS).execute(),
+      ).catch((e: unknown) => translatePersistenceError(e));
 
-      await transactions.runForWorkspace(WS_SCOPE, async tx => {
-        await workspaces.save({ workspaceId: "ws_a" as WorkspaceId, name: "A", ownerUserId: OWNER, createdAt: CREATED_AT }, tx);
-        await workspaces.save({ workspaceId: "ws_b" as WorkspaceId, name: "B", ownerUserId: OWNER, createdAt: CREATED_AT }, tx);
-        await memberships.save({
-          memberId: "mem_b" as WorkspaceMemberId, workspaceId: "ws_b" as WorkspaceId,
-          userId: OWNER, role: "owner", createdAt: CREATED_AT,
-        }, tx);
-      });
-
-      // The member exists — in workspace B. Scoped to A it is simply absent.
-      await transactions.runForWorkspace("ws_a" as WorkspaceId, async t => {
-        expect(await memberships.findInWorkspace(
-          "ws_a" as WorkspaceId, "mem_b" as WorkspaceMemberId, t,
-        )).toBeNull();
-      });
-      await transactions.runForWorkspace("ws_b" as WorkspaceId, async t => {
-        const fromB = await memberships.findInWorkspace(
-          "ws_b" as WorkspaceId, "mem_b" as WorkspaceMemberId, t,
-        );
-        expect(fromB?.memberId).toBe("mem_b");
-      });
+      expect(blocked).toBeInstanceOf(ForeignKeyConstraintViolation);
     });
 
-    it("lists only the requested workspace's members", async () => {
-      const transactions = createTransactionManager(database.db);
-      const workspaces = createWorkspaceRepository(database.db);
-      const memberships = createWorkspaceMembershipRepository(database.db);
+    it("rejects a blank workspace name", async () => {
+      const failure = await withRawTenantTransaction(database, "ws_blank" as WorkspaceId, trx =>
+        trx.insertInto("workspaces").values({
+          workspace_id: "ws_blank", name: "   ",
+          owner_user_id: OWNER, created_at: new Date(CREATED_AT),
+        }).execute(),
+      ).catch((e: unknown) => translatePersistenceError(e));
 
-      await transactions.runForWorkspace(WS_SCOPE, async tx => {
-        await workspaces.save({ workspaceId: "ws_a" as WorkspaceId, name: "A", ownerUserId: OWNER, createdAt: CREATED_AT }, tx);
-        await workspaces.save({ workspaceId: "ws_b" as WorkspaceId, name: "B", ownerUserId: OWNER, createdAt: CREATED_AT }, tx);
-        await memberships.save({ memberId: "mem_a" as WorkspaceMemberId, workspaceId: "ws_a" as WorkspaceId, userId: OWNER, role: "owner", createdAt: CREATED_AT }, tx);
-        await memberships.save({ memberId: "mem_b" as WorkspaceMemberId, workspaceId: "ws_b" as WorkspaceId, userId: OWNER, role: "owner", createdAt: CREATED_AT }, tx);
-      });
+      expect(failure).toBeInstanceOf(CheckConstraintViolation);
+    });
 
-      await transactions.runForWorkspace("ws_a" as WorkspaceId, async t => {
-        const inA = await memberships.listForWorkspace("ws_a" as WorkspaceId, t);
-        expect(inA).toHaveLength(1);
-        expect(inA[0]?.memberId).toBe("mem_a");
-      });
+    it("keeps the compound-key target in place for future child tables", async () => {
+      const indexes = await sql<{ indexname: string }>`
+        select indexname from pg_indexes where tablename = 'workspace_memberships'
+      `.execute(database.db);
+      expect(indexes.rows.map(r => r.indexname))
+        .toContain("uq_workspace_memberships_workspace_member");
     });
   });
 
@@ -335,8 +309,6 @@ suite("persistence integration", () => {
       // The application use case, unchanged, running on real adapters. It never
       // learns that PostgreSQL exists.
       const useCase = new CreateWorkspace({
-        workspaces: createWorkspaceRepository(database.db),
-        memberships: createWorkspaceMembershipRepository(database.db),
         transactions: createTransactionManager(database.db),
         clock: { now: () => CREATED_AT },
         workspaceIds: { nextWorkspaceId: () => "ws_real" as WorkspaceId },
@@ -344,15 +316,12 @@ suite("persistence integration", () => {
       });
 
       const result = await useCase.execute({ ownerUserId: OWNER, name: "Northbridge Legal" });
-
       expect(result.workspaceId).toBe("ws_real");
-      await createTransactionManager(database.db)
-        .runForWorkspace("ws_real" as WorkspaceId, async t => {
-          const members = await createWorkspaceMembershipRepository(database.db)
-            .listForWorkspace("ws_real" as WorkspaceId, t);
-          expect(members).toHaveLength(1);
-          expect(members[0]?.role).toBe("owner");
-        });
+
+      const members = await createTransactionManager(database.db)
+        .runForWorkspace("ws_real" as WorkspaceId, uow => uow.memberships.list());
+      expect(members).toHaveLength(1);
+      expect(members[0]?.role).toBe("owner");
     });
   });
 });

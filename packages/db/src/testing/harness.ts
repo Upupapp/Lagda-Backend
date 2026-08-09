@@ -65,3 +65,41 @@ export async function truncateAll(database: LagdaDatabase): Promise<void> {
   await database.db.deleteFrom("workspace_memberships").execute();
   await database.db.deleteFrom("workspaces").execute();
 }
+
+// ── Privileged test-only access ──────────────────────────────────────────────
+
+import { sql, type Transaction } from "kysely";
+import type { WorkspaceId } from "@lagda/contracts";
+import type { Database } from "../schema/index.js";
+
+/**
+ * Runs raw SQL inside a tenant transaction. **Test-only.**
+ *
+ * Production code cannot obtain a raw transaction: the unit of work builds
+ * repositories internally and hands out no handle. That is deliberate — a raw
+ * handle is a way to write an unscoped query.
+ *
+ * Tenancy tests need it precisely to write the queries production cannot: a
+ * SELECT with no predicate at all, an INSERT naming another workspace. Those
+ * assertions are how we know RLS is doing its job rather than the repository's.
+ *
+ * Exported from the testing module only, never from the package entry point.
+ */
+export async function withRawTenantTransaction<T>(
+  database: LagdaDatabase,
+  workspaceId: WorkspaceId,
+  operation: (trx: Transaction<Database>) => Promise<T>,
+): Promise<T> {
+  return database.db.transaction().execute(async trx => {
+    await sql`select set_config('lagda.workspace_id', ${workspaceId}, true)`.execute(trx);
+    return operation(trx);
+  });
+}
+
+/** As above, with NO tenant context — for fail-closed assertions. */
+export async function withRawGlobalTransaction<T>(
+  database: LagdaDatabase,
+  operation: (trx: Transaction<Database>) => Promise<T>,
+): Promise<T> {
+  return database.db.transaction().execute(trx => operation(trx));
+}

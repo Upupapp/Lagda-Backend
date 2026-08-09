@@ -43,61 +43,7 @@ export interface WorkspaceMemberIdGenerator {
   nextWorkspaceMemberId(): WorkspaceMemberId;
 }
 
-// ── Transactions ─────────────────────────────────────────────────────────────
-
-/**
- * An opaque handle to an in-flight transaction.
- *
- * Deliberately carries nothing. A `PoolClient` or ORM transaction object here
- * would put a database type in every repository signature, and application
- * would depend on the driver through the back door.
- */
-declare const transactionBrand: unique symbol;
-
-export interface TransactionContext {
-  readonly [transactionBrand]: true;
-}
-
-/**
- * Groups writes that must succeed or fail together.
- *
- * ONE style, chosen and documented: repositories take the context as an
- * explicit final parameter. The alternative — a transaction-scoped repository
- * set — reads better but requires every adapter to rebuild its whole repository
- * surface per transaction. Mixing both is what makes transaction boundaries
- * impossible to audit.
- *
- * External side effects do not belong inside `run`. Email delivery, storage
- * uploads and remote calls hold the transaction open for as long as the network
- * takes, and cannot be rolled back when the commit later fails.
- */
-export interface TransactionManager {
-  /**
-   * A transaction bound to ONE workspace. The ordinary path.
-   *
-   * The adapter establishes tenant context for the transaction, so a query that
-   * forgets its scope returns nothing rather than another tenant's rows.
-   * Application code never issues that context itself — it names the workspace
-   * and the DB layer does the rest.
-   */
-  runForWorkspace<T>(
-    workspaceId: WorkspaceId,
-    operation: (tx: TransactionContext) => Promise<T>,
-  ): Promise<T>;
-
-  /**
-   * A transaction with NO tenant context, for genuinely global data — user
-   * accounts, sessions, system records.
-   *
-   * A separate method rather than an optional workspace argument. With
-   * `run(workspaceId?)`, forgetting the argument would silently mean
-   * unrestricted access — the most dangerous possible default. Here, global
-   * access is something you have to ask for by name.
-   */
-  runGlobal<T>(operation: (tx: TransactionContext) => Promise<T>): Promise<T>;
-}
-
-// ── Repositories ─────────────────────────────────────────────────────────────
+// ── Records ──────────────────────────────────────────────────────────────────
 
 export interface WorkspaceRecord {
   readonly workspaceId: WorkspaceId;
@@ -114,46 +60,116 @@ export interface WorkspaceMembershipRecord {
   readonly createdAt: number;
 }
 
+// ── Scoped repositories ──────────────────────────────────────────────────────
+//
+// Bound to ONE workspace and ONE transaction, obtained from a unit of work.
+//
+// The binding is the security property. Previously a method took a workspace ID
+// and a transaction as arguments, which made `findInWorkspace(otherWorkspace,
+// …)` inside this workspace's transaction *expressible* — RLS caught it, but
+// the API allowed writing it. Here the workspace is not a parameter, so the
+// mistake cannot be typed.
+//
+// No `workspaceId` argument, no optional tenant scope, no bypass flag anywhere.
+
+export interface ScopedWorkspaceRepository {
+  /** The workspace this unit of work is bound to, or null if it does not exist. */
+  find(): Promise<WorkspaceRecord | null>;
+
+  /**
+   * @throws if the record's workspace differs from the bound scope. The
+   *         workspace is never silently rewritten to match.
+   */
+  insert(workspace: WorkspaceRecord): Promise<void>;
+}
+
+export interface ScopedMembershipRepository {
+  findMember(memberId: WorkspaceMemberId): Promise<WorkspaceMembershipRecord | null>;
+
+  findByUser(userId: UserId): Promise<WorkspaceMembershipRecord | null>;
+
+  list(): Promise<readonly WorkspaceMembershipRecord[]>;
+
+  countOwners(): Promise<number>;
+
+  /** @throws on workspace mismatch, as above. */
+  insert(membership: WorkspaceMembershipRecord): Promise<void>;
+
+  /**
+   * Changes a role only if it still holds the expected value.
+   *
+   * A conditional update, not read-then-write: two concurrent requests reading
+   * `sender` would both write, and the second would overwrite the first without
+   * either noticing. Here the second matches zero rows.
+   *
+   * Returns whether the change applied. **Zero rows is ambiguous** — the member
+   * may not exist, may belong to another workspace, or may have changed
+   * concurrently — and a caller must not reveal which.
+   *
+   * The repository makes an *authorized* transition race-safe. Whether the
+   * transition is *valid* is a domain question and stays in `@lagda/core`.
+   */
+  changeRoleIfUnchanged(input: {
+    readonly memberId: WorkspaceMemberId;
+    readonly expectedRole: WorkspaceRole;
+    readonly nextRole: WorkspaceRole;
+  }): Promise<boolean>;
+}
+
+// ── Unit of work ─────────────────────────────────────────────────────────────
+
 /**
- * Workspaces themselves are not workspace-scoped — a workspace IS the scope —
- * so `findById` takes only its own identifier. Forcing a redundant
- * `workspaceId` here would make the tenancy rule look ceremonial rather than
- * meaningful.
+ * Repositories sharing ONE transaction and ONE workspace.
+ *
+ * Every repository reachable here writes through the same transaction, so
+ * "atomic" means atomic. The previous shape — separate repository instances each
+ * handed a context — made it possible for one to use the pool while another used
+ * the transaction, producing false atomicity that looked correct.
+ *
+ * Do not retain this past the callback: its repositories are bound to a
+ * transaction that has committed, and using them afterwards is a
+ * use-after-commit bug.
  */
-export interface WorkspaceRepository {
-  findById(workspaceId: WorkspaceId, tx: TransactionContext): Promise<WorkspaceRecord | null>;
-  save(workspace: WorkspaceRecord, tx: TransactionContext): Promise<void>;
+export interface WorkspaceUnitOfWork {
+  readonly workspaceId: WorkspaceId;
+  readonly workspaces: ScopedWorkspaceRepository;
+  readonly memberships: ScopedMembershipRepository;
 }
 
 /**
- * Memberships ARE workspace-owned, so every read is scoped by construction
- * (INV-003). There is deliberately no `findByMemberId(memberId)`: such a method
- * would resolve a member from any workspace, and a caller that forgot to check
- * ownership would silently read across tenants.
+ * A unit of work with NO tenant context, for genuinely global data.
  *
- * Absence returns `null` rather than throwing. A membership belonging to
- * another workspace is indistinguishable from one that does not exist, which is
- * what stops a lookup confirming another tenant's data.
- *
- * READS TAKE A TRANSACTION TOO, which looks redundant until you consider RLS.
- * Tenant context is transaction-local (`SET LOCAL`), so a read issued on a
- * pooled connection outside the transaction carries NO context and — because
- * the policy fails closed — returns nothing. Found by a test that expected a
- * workspace to see its own members and got an empty list.
+ * Deliberately exposes no tenant repositories: global mode is not a route to
+ * workspace data. Under RLS it would see nothing anyway; this makes that
+ * structural rather than incidental.
  */
-export interface WorkspaceMembershipRepository {
-  findInWorkspace(
-    workspaceId: WorkspaceId,
-    memberId: WorkspaceMemberId,
-    tx: TransactionContext,
-  ): Promise<WorkspaceMembershipRecord | null>;
+export interface GlobalUnitOfWork {
+  readonly scope: "global";
+}
 
-  listForWorkspace(
+export interface TransactionManager {
+  /**
+   * A transaction bound to ONE workspace. The ordinary path.
+   *
+   * The adapter establishes tenant context for the transaction, so a query that
+   * forgets its scope returns nothing rather than another tenant's rows.
+   * Application code never issues that context itself.
+   */
+  runForWorkspace<T>(
     workspaceId: WorkspaceId,
-    tx: TransactionContext,
-  ): Promise<readonly WorkspaceMembershipRecord[]>;
+    operation: (uow: WorkspaceUnitOfWork) => Promise<T>,
+  ): Promise<T>;
 
-  save(membership: WorkspaceMembershipRecord, tx: TransactionContext): Promise<void>;
+  /**
+   * A transaction with NO tenant context — user accounts, sessions, system
+   * records.
+   *
+   * A separate method rather than an optional workspace argument. With
+   * `run(workspaceId?)`, forgetting the argument would silently mean
+   * unrestricted access — the most dangerous possible default. Here, global
+   * access is something you have to ask for by name.
+   */
+  runGlobal<T>(operation: (uow: GlobalUnitOfWork) => Promise<T>): Promise<T>;
 }
 
 // ── Document sealing ─────────────────────────────────────────────────────────
@@ -162,9 +178,7 @@ export interface WorkspaceMembershipRepository {
  * The escape hatch BACKEND-00 built the architecture around.
  *
  * **This port has no consumer yet**, and that is stated rather than hidden.
- * It exists here now because §148 asked to fix its ownership, and because a
- * port's whole job is to invert a dependency before the implementation exists:
- * `@lagda/sealing` will implement this (BACKEND-09), and the signing completion
+ * `@lagda/sealing` will implement it (BACKEND-09) and the signing completion
  * use case will consume it (BACKEND-38).
  *
  * ONE operation. `mergeFields`, `hashDocument` and `signPdf` stay internal to

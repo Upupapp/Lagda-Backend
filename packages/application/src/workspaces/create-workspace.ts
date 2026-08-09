@@ -12,7 +12,6 @@ import type { UserId, WorkspaceId } from "@lagda/contracts";
 import { assertExactlyOneOwner, type MembershipView } from "@lagda/core";
 import type {
   Clock, TransactionManager, WorkspaceIdGenerator, WorkspaceMemberIdGenerator,
-  WorkspaceRepository, WorkspaceMembershipRepository,
   WorkspaceRecord, WorkspaceMembershipRecord,
 } from "../common/ports/index.js";
 import { ApplicationValidationError } from "../common/errors/index.js";
@@ -37,8 +36,6 @@ export interface CreateWorkspaceResult {
 }
 
 export interface CreateWorkspaceDependencies {
-  readonly workspaces: WorkspaceRepository;
-  readonly memberships: WorkspaceMembershipRepository;
   readonly transactions: TransactionManager;
   readonly clock: Clock;
   readonly workspaceIds: WorkspaceIdGenerator;
@@ -84,9 +81,12 @@ export class CreateWorkspace {
     // Bound to the workspace being created. The ID is generated first, so the
     // tenant context matches the rows about to be written and RLS's WITH CHECK
     // permits them — no global escape is needed to create a workspace.
-    await this.deps.transactions.runForWorkspace(workspaceId, async tx => {
-      await this.deps.workspaces.save(workspace, tx);
-      await this.deps.memberships.save(ownerMembership, tx);
+    await this.deps.transactions.runForWorkspace(workspaceId, async uow => {
+      // Both repositories come from the unit of work, so both write through the
+      // same transaction. Independently constructed repositories could hold the
+      // pool instead, and the resulting write would survive a rollback.
+      await uow.workspaces.insert(workspace);
+      await uow.memberships.insert(ownerMembership);
     });
 
     // No event is published here. Publishing before the commit is durable would
