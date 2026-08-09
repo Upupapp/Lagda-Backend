@@ -187,6 +187,23 @@ export interface IdempotencyRecordsTable {
   expires_at: Timestamptz;
 }
 
+/**
+ * Abuse counters. One row per (policy, scope, window), not per request.
+ *
+ * Mixed scope, no RLS — the same pattern as idempotency, and for the same
+ * reason: ip/account/challenge scopes have no workspace at all.
+ */
+export interface RateLimitCountersTable {
+  policy: string;
+  scope_type: string;
+  /** A digest for ip/account/challenge; the plain ID for user/workspace. */
+  scope_key: string;
+  window_start: Timestamptz;
+  count: ColumnType<number, number | undefined, number>;
+  updated_at: ColumnType<Date, Date | undefined, Date>;
+  expires_at: Timestamptz;
+}
+
 /** Migration bookkeeping, owned by Kysely's migrator.
  *
  * Declared so the type-checker knows it exists; application code never reads it.
@@ -206,5 +223,6 @@ export interface Database {
   verification_records: VerificationRecordsTable;
   user_sessions: UserSessionsTable;
   idempotency_records: IdempotencyRecordsTable;
+  rate_limit_counters: RateLimitCountersTable;
   kysely_migration: KyselyMigrationTable;
 }

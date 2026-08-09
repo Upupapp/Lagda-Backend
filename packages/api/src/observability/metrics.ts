@@ -30,6 +30,8 @@ export const METRIC_NAMES = [
   "document_seal_errors_total",
   "readiness_check_failures_total",
   "security_events_total",
+  "rate_limit_checks_total",
+  "rate_limit_rejections_total",
 ] as const;
 export type MetricName = (typeof METRIC_NAMES)[number];
 
@@ -58,6 +60,11 @@ export const METRIC_LABELS = {
   document_seal_errors_total: ["errorCategory", "processRole"],
   readiness_check_failures_total: ["dependency", "processRole"],
   security_events_total: ["securityEvent", "result", "processRole"],
+  // `policy` and `route` are both code-defined and bounded. Deliberately NOT
+  // the IP, the account key, the user or the scope digest — every one is
+  // unbounded, and an IP label would put personal data in a metrics store.
+  rate_limit_checks_total: ["policy", "result", "processRole"],
+  rate_limit_rejections_total: ["policy", "route", "processRole"],
 } as const satisfies Record<MetricName, readonly string[]>;
 
 export type LabelsFor<N extends MetricName> = Partial<

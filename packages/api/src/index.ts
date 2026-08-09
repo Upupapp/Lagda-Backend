@@ -33,3 +33,7 @@ export {
   createIdempotencyKeyDigester, createIdempotencyRecordIdGenerator,
 } from "./security/crypto.js";
 export { sessionResolution, requireSession, type RequestAuth } from "./security/session-plugin.js";
+export {
+  applyIpRateLimit, checkSemanticLimits, createRateLimitScopeDigester,
+  type RateLimitOptions,
+} from "./security/rate-limit-plugin.js";

@@ -16,3 +16,6 @@ export * from "./security/session-service.js";
 export * from "./common/ports/idempotency.js";
 export * from "./idempotency/canonical.js";
 export * from "./idempotency/service.js";
+export * from "./common/ports/rate-limit.js";
+export * from "./rate-limit/policies.js";
+export * from "./rate-limit/limiter.js";

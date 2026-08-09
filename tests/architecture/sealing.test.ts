@@ -237,8 +237,13 @@ describe("hashing is confined to the sealing adapter", () => {
     //                              A different domain entirely: these are
     //                              lookup keys for high-entropy credentials,
     //                              never document content.
+    //   api/security/rate-limit-plugin — RATE-LIMIT SCOPE digests. A third
+    //                              domain: irreversible bucket keys for IP and
+    //                              account values, so a counter table holds no
+    //                              reversible personal data.
     expect(users.sort()).toEqual([
       "packages/api/src/security/crypto.ts",
+      "packages/api/src/security/rate-limit-plugin.ts",
       "packages/sealing/src/internal/digest.ts",
     ]);
   });
