@@ -7,7 +7,11 @@
 // Routes receive the specific capability they need, never this whole object,
 // so a route cannot reach a dependency it was not given.
 
-import type { SessionService } from "@lagda/application";
+import type {
+  SessionService, AbuseLimiter,
+  CreateWorkspaceDependencies, GetWorkspaceDependencies,
+  ListMyWorkspacesDependencies,
+} from "@lagda/application";
 
 /**
  * A bounded liveness probe for readiness.
@@ -31,4 +35,31 @@ export interface AppDependencies {
    * there is nothing to protect.
    */
   readonly sessions?: SessionService;
+  /**
+   * The workspace surface (BACKEND-25).
+   *
+   * Optional as a WHOLE, and the whole is what matters: present means the
+   * authenticated scope is built and every workspace route inside it is
+   * protected; absent means no workspace route is registered at all. There is
+   * no state in which the routes exist and the session requirement does not —
+   * which is the failure mode a per-route flag produces.
+   *
+   * `sessions` is required alongside it. `createApp` refuses to build the scope
+   * without one rather than registering routes with authentication silently
+   * disabled.
+   */
+  readonly workspaces?: WorkspaceDependencies;
+  /**
+   * The abuse limiter, for semantic (per-user) policies.
+   *
+   * Optional so a test can exercise routing without one. Absent is reported,
+   * never implied to be enforcement.
+   */
+  readonly limiter?: AbuseLimiter;
+}
+
+export interface WorkspaceDependencies {
+  readonly create: () => CreateWorkspaceDependencies;
+  readonly list: () => ListMyWorkspacesDependencies;
+  readonly workspace: () => GetWorkspaceDependencies;
 }

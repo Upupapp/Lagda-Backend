@@ -8,9 +8,11 @@
 // called out where it appears. A port nobody consumes is the same failure as a
 // field nobody reads.
 import type { ScopedUploadRepository } from "./upload.js";
+import type { IdempotencyRepository } from "./idempotency.js";
 
-import type { WorkspaceId, WorkspaceMemberId, UserId } from "@lagda/contracts";
-import type { WorkspaceRole } from "@lagda/core";
+import type {
+  WorkspaceId, WorkspaceMemberId, UserId, WorkspaceRole,
+} from "@lagda/contracts";
 
 // ── Time ─────────────────────────────────────────────────────────────────────
 
@@ -46,11 +48,42 @@ export interface WorkspaceMemberIdGenerator {
 
 // ── Records ──────────────────────────────────────────────────────────────────
 
+/**
+ * A workspace row.
+ *
+ * ── There is no `ownerUserId`, and its removal is the point of BACKEND-25 ──
+ *
+ * The column existed from BACKEND-05 and was a SECOND authority on who owns a
+ * workspace, alongside the `owner` membership row that the same transaction
+ * writes. Two authorities agree until one of them is updated alone — which is
+ * exactly what an ownership transfer does — and then "who owns this workspace?"
+ * has two answers and no rule for choosing.
+ *
+ * Membership is the authoritative user-to-tenant edge (§12). Ownership is a
+ * membership whose role is `owner`, and it is read from `workspace_memberships`
+ * or it is not read at all. Migration 013 drops the column.
+ */
 export interface WorkspaceRecord {
   readonly workspaceId: WorkspaceId;
   readonly name: string;
-  readonly ownerUserId: UserId;
   readonly createdAt: number;
+}
+
+/**
+ * One row of "the workspaces this user belongs to".
+ *
+ * A JOIN projection, not a workspace and not a membership: it carries the
+ * caller's OWN role, which is meaningful only in relation to the user who asked.
+ * Modelling it as a `WorkspaceRecord` with a role bolted on would invite that
+ * role to be read as a property of the workspace.
+ */
+export interface UserWorkspaceMembershipRecord {
+  readonly workspaceId: WorkspaceId;
+  readonly name: string;
+  readonly workspaceCreatedAt: number;
+  readonly membershipId: WorkspaceMemberId;
+  readonly role: WorkspaceRole;
+  readonly joinedAt: number;
 }
 
 export interface WorkspaceMembershipRecord {
@@ -82,6 +115,16 @@ export interface ScopedWorkspaceRepository {
    *         workspace is never silently rewritten to match.
    */
   insert(workspace: WorkspaceRecord): Promise<void>;
+
+  /**
+   * Renames the bound workspace. Returns false if it does not exist.
+   *
+   * ONE named column. Not `update(patch: Partial<WorkspaceRecord>)`, which would
+   * let a caller pass `{ workspaceId }` and move a tenant, or `{ createdAt }`
+   * and rewrite history — the mass-assignment shape INV-306 already banned on
+   * the accounts table for the same reason.
+   */
+  updateName(name: string): Promise<boolean>;
 }
 
 export interface ScopedMembershipRepository {
@@ -147,6 +190,20 @@ export interface WorkspaceUnitOfWork {
    * second would have no RLS context at all.
    */
   readonly uploads: ScopedUploadRepository;
+  /**
+   * Durable idempotency, on the SAME transaction (BACKEND-25).
+   *
+   * Reachable from the unit of work because the guarantee depends on it: the
+   * claim row must be inserted inside the business transaction, so that a
+   * rollback takes the claim with it and a retry can execute. A repository built
+   * from the pool would leave a poisoned key behind every failed mutation.
+   *
+   * `idempotency_records` carries no `workspace_id` and no RLS — its scope is a
+   * typed union that includes user and recipient. It is on the tenant unit of
+   * work for transactional reasons only, and every method still takes the full
+   * identity.
+   */
+  readonly idempotency: IdempotencyRepository;
 }
 
 /**
@@ -158,6 +215,44 @@ export interface WorkspaceUnitOfWork {
  */
 export interface GlobalUnitOfWork {
   readonly scope: "global";
+}
+
+/**
+ * Reads a user's own memberships, across every workspace they belong to.
+ *
+ * ── Why this exists, and why it is not `runGlobal` ─────────────────────────
+ *
+ * "Which workspaces do I belong to?" is the one question that is genuinely
+ * user-scoped rather than tenant-scoped: there is no single workspace to bind,
+ * because finding them is the point. Under `runGlobal` the RLS policies match
+ * nothing and the answer is always empty; the alternatives are to grant the
+ * runtime role BYPASSRLS (§85 forbids it) or to define a user-scoped access
+ * path (§88 requires it). This is that path.
+ *
+ * ── Why it cannot become a tenant escape ───────────────────────────────────
+ *
+ * The transaction sets `lagda.user_id` and NOT `lagda.workspace_id`, so the
+ * tenant-isolation policies match nothing for the whole transaction. The
+ * user-scoped policies added by migration 013 are `FOR SELECT` only. A write of
+ * any kind against `workspaces` or `workspace_memberships` from here is refused
+ * by PostgreSQL, not by convention — which is why this interface has one method
+ * and it is a read.
+ */
+export interface UserMembershipQueryRepository {
+  /**
+   * The caller's memberships joined to their workspaces.
+   *
+   * Ordered by the database, deterministically. Sorting in the application
+   * would require loading every row first, and "insertion order" is an
+   * assumption PostgreSQL never made.
+   */
+  listWorkspaces(): Promise<readonly UserWorkspaceMembershipRecord[]>;
+}
+
+/** A transaction scoped to ONE user's own records. Read-only by policy. */
+export interface UserUnitOfWork {
+  readonly userId: UserId;
+  readonly memberships: UserMembershipQueryRepository;
 }
 
 export interface TransactionManager {
@@ -183,6 +278,23 @@ export interface TransactionManager {
    * access is something you have to ask for by name.
    */
   runGlobal<T>(operation: (uow: GlobalUnitOfWork) => Promise<T>): Promise<T>;
+
+  /**
+   * A transaction scoped to ONE user's own membership records (BACKEND-25).
+   *
+   * A THIRD named method rather than an optional argument on either of the
+   * others, for the same reason `runGlobal` is separate: every scope you can
+   * get has to be asked for by name, so no scope is ever the accidental
+   * default.
+   *
+   * Not a second tenant mechanism (§92). It establishes no workspace context and
+   * exposes no tenant repositories — the only thing reachable through it is the
+   * caller's own membership edges, and only for reading.
+   */
+  runForUser<T>(
+    userId: UserId,
+    operation: (uow: UserUnitOfWork) => Promise<T>,
+  ): Promise<T>;
 }
 
 import type {

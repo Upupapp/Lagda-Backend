@@ -1,18 +1,26 @@
-// GetWorkspaceMember — a representative QUERY.
+// GetWorkspaceMember — a tenant-scoped read.
 //
-// FOUNDATION IMPLEMENTATION. It proves tenant-scoped reads: the unit of work is
-// bound to the actor's workspace, so there is no workspace parameter to get
-// wrong and no way to express a read against another tenant.
+// Predates BACKEND-25 as BACKEND-05's representative QUERY. Retained and
+// rewired: it now takes a `WorkspaceAccessContext` rather than a `UserActor`
+// carrying a workspace, because BACKEND-25 made membership resolution the thing
+// that produces workspace scope.
+//
+// It is NOT a member directory. It reads one membership by ID inside a
+// workspace the caller already holds access to; listing members is BACKEND-26.
 
-import type { WorkspaceId, WorkspaceMemberId } from "@lagda/contracts";
-import type { WorkspaceRole } from "@lagda/core";
+import type { WorkspaceId, WorkspaceMemberId, WorkspaceRole } from "@lagda/contracts";
 import type { TransactionManager } from "../common/ports/index.js";
 import { ResourceNotFoundError } from "../common/errors/index.js";
-import type { UserActor } from "../common/context.js";
+import type { WorkspaceAccessContext } from "./workspace-access.js";
 
 export interface GetWorkspaceMemberInput {
-  /** Resolved from authentication. The workspace scope comes from here. */
-  readonly actor: UserActor;
+  /**
+   * Proof of membership, obtained from `resolveWorkspaceAccess`.
+   *
+   * The workspace scope comes from HERE, so there is no workspace parameter to
+   * get wrong and no way to express a read against another tenant.
+   */
+  readonly access: WorkspaceAccessContext;
   readonly memberId: WorkspaceMemberId;
 }
 
@@ -27,11 +35,12 @@ export class GetWorkspaceMember {
   constructor(private readonly transactions: TransactionManager) {}
 
   async execute(input: GetWorkspaceMemberInput): Promise<GetWorkspaceMemberResult> {
-    // Scope comes from the ACTOR, never from the request. The unit of work binds
-    // it, so `findMember` cannot be pointed at another workspace — and under RLS
-    // the transaction also carries tenant context, scoping the query twice.
+    // Scope comes from the resolved ACCESS CONTEXT, never from the request. The
+    // unit of work binds it, so `findMember` cannot be pointed at another
+    // workspace — and under RLS the transaction also carries tenant context,
+    // scoping the query twice.
     const membership = await this.transactions.runForWorkspace(
-      input.actor.workspaceId,
+      input.access.workspaceId,
       uow => uow.memberships.findMember(input.memberId),
     );
 

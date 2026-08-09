@@ -48,7 +48,7 @@ describe("row → domain mapping", () => {
     // Date is mutable — handing one out lets a caller change a record's time.
     const record = toWorkspaceRecord({
       workspace_id: "ws_1", name: "Acme",
-      owner_user_id: "usr_1", created_at: CREATED_AT,
+      created_at: CREATED_AT,
     });
     expect(typeof record.createdAt).toBe("number");
     expect(new Date(record.createdAt).toISOString()).toBe("2026-08-09T06:30:00.000Z");
@@ -57,7 +57,7 @@ describe("row → domain mapping", () => {
   it("refuses an invalid persisted timestamp", () => {
     expect(() => toWorkspaceRecord({
       workspace_id: "ws_1", name: "Acme",
-      owner_user_id: "usr_1", created_at: new Date("nonsense"),
+      created_at: new Date("nonsense"),
     })).toThrow(PersistenceMappingError);
   });
 });

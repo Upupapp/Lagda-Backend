@@ -265,6 +265,50 @@ export const RATE_LIMIT_POLICIES = {
       + "worth guessing against.",
   },
 
+  // ── Workspace lifecycle (BACKEND-25) ────────────────────────────────────
+  //
+  // Creation is cheap per call and expensive in aggregate: each one is a
+  // permanent tenant row, a permanent membership row, and — once documents
+  // exist — a namespace nothing in the system can currently delete. There is no
+  // erasure endpoint until BACKEND-55, so an unlimited create endpoint produces
+  // rows that accumulate forever and that support has no tool to remove.
+  //
+  // Scoped to `user` rather than `ip`: the endpoint is authenticated, so there
+  // is always a real identity to count against, and an IP counter would punish
+  // an office NAT for one runaway client. Registration already bounds how many
+  // identities an address can obtain.
+  //
+  // fail-CLOSED. Refusing workspace creation during a database blip is a
+  // recoverable annoyance; creating unlimited permanent tenants during one is
+  // not, precisely because nothing can undo it.
+  "workspace.create.user": {
+    id: "workspace.create.user",
+    scopeType: "user",
+    limit: 10,
+    windowMs: 60 * MINUTE,
+    failureMode: "fail-closed",
+    source: "BACKEND-25 - not specified by the handoff. Chosen: a person setting "
+      + "up several organizations in one sitting is plausible, ten per hour "
+      + "forever is not. Deliberately NOT a product entitlement - plan limits "
+      + "are BACKEND-50 (OD-090).",
+  },
+
+  // A metadata rename. Bounded only to stop a loop hammering the table; a
+  // legitimate user renames a workspace roughly never.
+  //
+  // fail-OPEN, unlike create: a failed rename changes nothing permanent, so
+  // refusing renames during a limiter outage costs more than it protects.
+  "workspace.update.user": {
+    id: "workspace.update.user",
+    scopeType: "user",
+    limit: 30,
+    windowMs: MINUTE,
+    failureMode: "fail-open",
+    source: "BACKEND-25 - not specified by the handoff. Sits under the general "
+      + "authenticated write ceiling (handoff §317, 100/min) because a rename "
+      + "is rarer than an ordinary write.",
+  },
+
   "api.write.user": {
     id: "api.write.user",
     scopeType: "user",

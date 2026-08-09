@@ -97,7 +97,7 @@ describe.skipIf(!ready)("secure upload pipeline", () => {
     await truncateAll(database);
     for (const workspace of [WS_A, WS_B]) {
       await database.db.insertInto("workspaces").values({
-        workspace_id: workspace, name: workspace, owner_user_id: "usr_1",
+        workspace_id: workspace, name: workspace,
         created_at: new Date(0),
       }).execute();
     }

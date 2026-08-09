@@ -18,12 +18,20 @@ const PACKAGES = [
  */
 export default defineConfig({
   resolve: {
-    alias: Object.fromEntries(
-      PACKAGES.map(name => [
-        `@lagda/${name}`,
-        path.resolve(here, `packages/${name}/src/index.ts`),
-      ]),
-    ),
+    // An ORDERED array, not a map. Vite applies string aliases by prefix, so a
+    // bare `@lagda/application` entry rewrites `@lagda/application/test-support`
+    // to `.../src/index.ts/test-support` and the import fails. The subpath rule
+    // has to be tried first, which an object literal cannot guarantee.
+    alias: [
+      ...PACKAGES.map(name => ({
+        find: `@lagda/${name}/`,
+        replacement: `${path.resolve(here, `packages/${name}/src`)}/`,
+      })),
+      ...PACKAGES.map(name => ({
+        find: `@lagda/${name}`,
+        replacement: path.resolve(here, `packages/${name}/src/index.ts`),
+      })),
+    ],
   },
   test: {
     environment: "node",

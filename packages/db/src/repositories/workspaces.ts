@@ -10,12 +10,14 @@ import type { UserId, WorkspaceId, WorkspaceMemberId } from "@lagda/contracts";
 import type { WorkspaceRole } from "@lagda/core";
 import type {
   ScopedWorkspaceRepository, ScopedMembershipRepository,
-  WorkspaceRecord, WorkspaceMembershipRecord,
+  UserMembershipQueryRepository,
+  WorkspaceRecord, WorkspaceMembershipRecord, UserWorkspaceMembershipRecord,
 } from "@lagda/application";
 import type { Database } from "../schema/index.js";
 import {
   toWorkspaceRecord, fromWorkspaceRecord,
   toMembershipRecord, fromMembershipRecord,
+  toUserWorkspaceMembershipRecord,
 } from "../mapping/index.js";
 import { WorkspaceScopeMismatchError, translatePersistenceError } from "../errors.js";
 
@@ -61,6 +63,74 @@ export function createScopedWorkspaceRepository(
       } catch (error) {
         throw translatePersistenceError(error);
       }
+    },
+
+    async updateName(name: string): Promise<boolean> {
+      // ONE column in the SET clause, and the scope in the WHERE clause.
+      //
+      // Not `.set(patch)`. A patch object reaching an UPDATE is how
+      // `workspace_id` becomes settable — which would move a workspace between
+      // tenants, orphaning every membership and every future document that
+      // referenced it. RLS's WITH CHECK would refuse the write, but the API
+      // should not have made it expressible.
+      const result = await trx
+        .updateTable("workspaces")
+        .set({ name })
+        .where("workspace_id", "=", scope)
+        .executeTakeFirst();
+
+      return Number(result.numUpdatedRows) === 1;
+    },
+  };
+}
+
+/**
+ * Reads ONE user's memberships across every workspace.
+ *
+ * Built only by `runForUser`, which establishes user context and no tenant
+ * context. Deliberately not part of `WorkspaceUnitOfWork`: a tenant-scoped
+ * operation has no business asking a cross-tenant question, and putting this
+ * method there would make that question one keystroke away in every use case.
+ */
+export function createUserMembershipRepository(
+  trx: Transaction<Database>,
+  userId: UserId,
+): UserMembershipQueryRepository {
+  return {
+    async listWorkspaces(): Promise<readonly UserWorkspaceMembershipRecord[]> {
+      // ── An INNER JOIN, filtered on user_id, ordered in SQL ────────────────
+      //
+      // The `where user_id = ?` predicate is explicit even though the
+      // `member_self_read` policy constrains the same column. Two layers,
+      // deliberately (INV-058): a reader sees the scope without having to know
+      // a policy exists, and the query is still correct if someone runs it as
+      // the table owner during an incident.
+      //
+      // The join means a workspace row can only be reached THROUGH a membership
+      // the caller holds. There is no query here that selects workspaces and
+      // then narrows them.
+      const rows = await trx
+        .selectFrom("workspace_memberships as m")
+        .innerJoin("workspaces as w", "w.workspace_id", "m.workspace_id")
+        .where("m.user_id", "=", userId)
+        .select([
+          "w.workspace_id as workspace_id",
+          "w.name as name",
+          "w.created_at as workspace_created_at",
+          "m.member_id as member_id",
+          "m.role as role",
+          "m.created_at as joined_at",
+        ])
+        // Newest membership first — the workspace someone just created or just
+        // joined is the one they are looking for. `member_id` breaks ties, so
+        // two memberships written in the same transaction (which share a
+        // timestamp, because the clock is read once) have a stable order.
+        // PostgreSQL guarantees no order at all without this.
+        .orderBy("m.created_at", "desc")
+        .orderBy("m.member_id", "asc")
+        .execute();
+
+      return rows.map(toUserWorkspaceMembershipRecord);
     },
   };
 }

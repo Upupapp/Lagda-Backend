@@ -20,6 +20,15 @@ export interface ContractHarness {
   readonly transactions: TransactionManager;
   /** Clears all state between cases. */
   reset(): Promise<void>;
+  /**
+   * Ensures an account exists for `userId`.
+   *
+   * Required by the PostgreSQL adapter since migration 013 gave
+   * `workspace_memberships.user_id` a foreign key. A no-op for the in-memory
+   * fake, which models repositories rather than the database's referential
+   * integrity.
+   */
+  seedUser(userId: UserId): Promise<void>;
 }
 
 export interface ContractTestApi {
@@ -67,15 +76,21 @@ export function runRepositoryContract(
       await harness.reset();
     });
 
-    const seed = async (workspaceId: WorkspaceId, memberId: WorkspaceMemberId, userId: UserId) =>
-      harness.transactions.runForWorkspace(workspaceId, async uow => {
+    // Every membership references a real account since migration 013. The
+    // harness creates one where the adapter needs it and no-ops for the fake,
+    // which has no accounts table — the contract describes repository
+    // behaviour, not the referential integrity only PostgreSQL can enforce.
+    const seed = async (workspaceId: WorkspaceId, memberId: WorkspaceMemberId, userId: UserId) => {
+      await harness.seedUser(userId);
+      return harness.transactions.runForWorkspace(workspaceId, async uow => {
         await uow.workspaces.insert({
-          workspaceId, name: `Workspace ${workspaceId}`, ownerUserId: userId, createdAt: AT,
+          workspaceId, name: `Workspace ${workspaceId}`, createdAt: AT,
         });
         await uow.memberships.insert({
           memberId, workspaceId, userId, role: "owner", createdAt: AT,
         });
       });
+    };
 
     it("round-trips a workspace and its owner", async () => {
       await seed(WS_A, MEM_A, USER_A);
@@ -138,7 +153,7 @@ export function runRepositoryContract(
       await expect(
         harness.transactions.runForWorkspace(WS_A, uow =>
           uow.workspaces.insert({
-            workspaceId: WS_B, name: "Wrong", ownerUserId: USER_A, createdAt: AT,
+            workspaceId: WS_B, name: "Wrong", createdAt: AT,
           })),
       ).rejects.toThrow();
     });
@@ -207,7 +222,7 @@ export function runRepositoryContract(
       await expect(
         harness.transactions.runForWorkspace(WS_A, async uow => {
           await uow.workspaces.insert({
-            workspaceId: WS_A, name: "Doomed", ownerUserId: USER_A, createdAt: AT,
+            workspaceId: WS_A, name: "Doomed", createdAt: AT,
           });
           await uow.memberships.insert({
             memberId: MEM_A, workspaceId: WS_A, userId: USER_A, role: "owner", createdAt: AT,
@@ -227,12 +242,97 @@ export function runRepositoryContract(
     it("sees its own uncommitted writes within the same transaction", async () => {
       const seen = await harness.transactions.runForWorkspace(WS_A, async uow => {
         await uow.workspaces.insert({
-          workspaceId: WS_A, name: "Acme", ownerUserId: USER_A, createdAt: AT,
+          workspaceId: WS_A, name: "Acme", createdAt: AT,
         });
         return uow.workspaces.find();
       });
       expect(seen?.name).toBe("Acme");
     });
+
+    // ── Workspace metadata (BACKEND-25) ────────────────────────────────────
+
+    it("renames the bound workspace and leaves its identity alone", async () => {
+      await seed(WS_A, MEM_A, USER_A);
+
+      const applied = await harness.transactions.runForWorkspace(WS_A, uow =>
+        uow.workspaces.updateName("Renamed"));
+      expect(applied).toBe(true);
+
+      const after = await harness.transactions.runForWorkspace(WS_A, uow =>
+        uow.workspaces.find());
+      expect(after?.name).toBe("Renamed");
+      // The tenant identity and the creation time are untouched. A rename must
+      // not produce a new tenant, and must not rewrite history.
+      expect(after?.workspaceId).toBe(WS_A);
+      expect(after?.createdAt).toBe(AT);
+    });
+
+    it("reports false when renaming a workspace that does not exist", async () => {
+      const applied = await harness.transactions.runForWorkspace(WS_A, uow =>
+        uow.workspaces.updateName("Nothing"));
+      expect(applied).toBe(false);
+    });
+
+    it("cannot rename another workspace from this one's scope", async () => {
+      await seed(WS_A, MEM_A, USER_A);
+      await seed(WS_B, MEM_B, USER_B);
+
+      // Scoped to B, the update touches B — there is no parameter that could
+      // aim it at A, which is the property the scoped repository exists for.
+      await harness.transactions.runForWorkspace(WS_B, uow =>
+        uow.workspaces.updateName("B renamed"));
+
+      const a = await harness.transactions.runForWorkspace(WS_A, uow =>
+        uow.workspaces.find());
+      expect(a?.name).toBe(`Workspace ${WS_A}`);
+    });
+
+    // ── User-scoped membership reads (BACKEND-25) ──────────────────────────
+
+    it("lists only the caller's own workspaces", async () => {
+      await seed(WS_A, MEM_A, USER_A);
+      await seed(WS_B, MEM_B, USER_B);
+
+      const mine = await harness.transactions.runForUser(USER_A, uow =>
+        uow.memberships.listWorkspaces());
+
+      expect(mine).toHaveLength(1);
+      expect(mine[0]?.workspaceId).toBe(WS_A);
+      expect(mine[0]?.role).toBe("owner");
+      expect(mine[0]?.membershipId).toBe(MEM_A);
+    });
+
+    it("returns an empty list for a user with no memberships", async () => {
+      await seed(WS_A, MEM_A, USER_A);
+      const none = await harness.transactions.runForUser(USER_B, uow =>
+        uow.memberships.listWorkspaces());
+      expect(none).toHaveLength(0);
+    });
+
+    it("lists every workspace one user belongs to", async () => {
+      // The multi-tenancy property: one global account, several independent
+      // memberships. `USER_A` is deliberately a member of both.
+      await seed(WS_A, MEM_A, USER_A);
+      await harness.transactions.runForWorkspace(WS_B, async uow => {
+        await uow.workspaces.insert({
+          workspaceId: WS_B, name: `Workspace ${WS_B}`, createdAt: AT,
+        });
+        await uow.memberships.insert({
+          memberId: MEM_B, workspaceId: WS_B, userId: USER_A,
+          role: "owner", createdAt: AT + 1000,
+        });
+      });
+
+      const mine = await harness.transactions.runForUser(USER_A, uow =>
+        uow.memberships.listWorkspaces());
+
+      expect(mine).toHaveLength(2);
+      // Newest membership first, and both adapters must agree — the SQL orders
+      // in the database and the fake orders in JavaScript.
+      expect(mine[0]?.workspaceId).toBe(WS_B);
+      expect(mine[1]?.workspaceId).toBe(WS_A);
+    });
+
     // ── Evidence ───────────────────────────────────────────────────────────
     //
     // Behaviour the fake and PostgreSQL must agree on. Ordering is the case that

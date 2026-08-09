@@ -32,6 +32,8 @@ export const METRIC_NAMES = [
   "security_events_total",
   "rate_limit_checks_total",
   "rate_limit_rejections_total",
+  // BACKEND-25. Workspace lifecycle volume — creations and renames.
+  "workspace_operations_total",
 ] as const;
 export type MetricName = (typeof METRIC_NAMES)[number];
 
@@ -65,6 +67,11 @@ export const METRIC_LABELS = {
   // unbounded, and an IP label would put personal data in a metrics store.
   rate_limit_checks_total: ["policy", "result", "processRole"],
   rate_limit_rejections_total: ["policy", "route", "processRole"],
+  // `operation` is a two-value union in code and `result` is an outcome.
+  // Deliberately NOT `workspaceId`, `userId`, `membershipId` or the workspace
+  // NAME: the first three are unbounded, and the name is business data that
+  // would end up in a metrics store nobody classifies (§126, §185).
+  workspace_operations_total: ["operation", "result", "processRole"],
 } as const satisfies Record<MetricName, readonly string[]>;
 
 export type LabelsFor<N extends MetricName> = Partial<

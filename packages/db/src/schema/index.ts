@@ -34,14 +34,40 @@ type Timestamptz = ColumnType<Date, Date, Date>;
  */
 type GeneratedTimestamptz = ColumnType<Date, Date | undefined, never>;
 
+/**
+ * The tenant.
+ *
+ * **No `owner_user_id`** — dropped in migration 013. Ownership is a membership
+ * row whose `role` is `owner`, and a denormalized copy here would be a second
+ * authority that an ownership transfer could leave disagreeing with the first.
+ *
+ * No `archived_at` and no `lifecycle_state`: the product has no archive,
+ * suspend or delete action for a workspace, so there is no second state to
+ * store. See WORKSPACE_LIFECYCLE.md.
+ *
+ * No `updated_at`: nothing reads one. This repository has already shipped a
+ * field declared on 225 routes that no code consumed and that drifted until it
+ * misreported itself; a timestamp column with no reader is that failure in
+ * miniature.
+ */
 export interface WorkspacesTable {
   /** Opaque branded identifier, e.g. `ws_...`. Not a sequential integer. */
   workspace_id: string;
   name: string;
-  owner_user_id: string;
   created_at: Timestamptz;
 }
 
+/**
+ * The authoritative user-to-tenant edge.
+ *
+ * A row here means ACTUAL ACCESS. A pending invitation is not a membership and
+ * gets its own table in BACKEND-26 — collapsing them would make every
+ * authorization query carry a status filter that one caller eventually forgets
+ * (§70, §71).
+ *
+ * Foreign keys to BOTH sides (`workspaces` since 001, `users` since 013), each
+ * ON DELETE RESTRICT.
+ */
 export interface WorkspaceMembershipsTable {
   member_id: string;
   /** First-class tenant column. Every workspace-owned table carries it. */

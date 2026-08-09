@@ -177,7 +177,7 @@ describe.skipIf(!hasIntegrationDatabase())("idempotency on PostgreSQL", () => {
   it("commits the claim and the business write together", async () => {
     // The atomicity guarantee, using a real second table.
     await database.db.insertInto("workspaces").values({
-      workspace_id: "ws_a", name: "A", owner_user_id: "usr_a", created_at: new Date(AT),
+      workspace_id: "ws_a", name: "A", created_at: new Date(AT),
     }).execute();
 
     await database.db.transaction().execute(async (trx) => {
@@ -198,7 +198,7 @@ describe.skipIf(!hasIntegrationDatabase())("idempotency on PostgreSQL", () => {
 
   it("rolls back the business write when completion fails", async () => {
     await database.db.insertInto("workspaces").values({
-      workspace_id: "ws_a", name: "A", owner_user_id: "usr_a", created_at: new Date(AT),
+      workspace_id: "ws_a", name: "A", created_at: new Date(AT),
     }).execute();
 
     await expect(

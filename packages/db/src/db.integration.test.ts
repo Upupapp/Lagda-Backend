@@ -11,7 +11,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { sql } from "kysely";
 import type { UserId, WorkspaceId, WorkspaceMemberId } from "@lagda/contracts";
-import { CreateWorkspace } from "@lagda/application";
+import { CreateWorkspace, type SessionId } from "@lagda/application";
 import type { LagdaDatabase } from "./client/index.js";
 import { migrationStatus, migrateToLatest } from "./migrations/runner.js";
 import { createTransactionManager } from "./transactions/index.js";
@@ -20,8 +20,12 @@ import {
   WorkspaceScopeMismatchError, translatePersistenceError,
 } from "./errors.js";
 import {
-  createTestDatabase, truncateAll, hasIntegrationDatabase, withRawTenantTransaction,
+  createTestDatabase, truncateAll, hasIntegrationDatabase, seedUser,
+  withRawTenantTransaction,
 } from "./testing/harness.js";
+import {
+  createIdempotencyKeyDigester, createIdempotencyRecordIds,
+} from "@lagda/application/test-support";
 
 const CREATED_AT = Date.parse("2026-08-09T06:30:00.000Z");
 const OWNER = "usr_1" as UserId;
@@ -43,12 +47,14 @@ suite("persistence integration", () => {
 
   beforeEach(async () => {
     await truncateAll(database);
+    // Every membership references a real account since migration 013.
+    await seedUser(database, OWNER);
   });
 
   const seed = (workspaceId: WorkspaceId, memberId: string) =>
     createTransactionManager(database.db).runForWorkspace(workspaceId, async uow => {
       await uow.workspaces.insert({
-        workspaceId, name: `Workspace ${workspaceId}`, ownerUserId: OWNER, createdAt: CREATED_AT,
+        workspaceId, name: `Workspace ${workspaceId}`, createdAt: CREATED_AT,
       });
       await uow.memberships.insert({
         memberId: memberId as WorkspaceMemberId, workspaceId,
@@ -97,7 +103,7 @@ suite("persistence integration", () => {
       await expect(
         transactions.runForWorkspace(WS, async uow => {
           await uow.workspaces.insert({
-            workspaceId: WS, name: "Doomed", ownerUserId: OWNER, createdAt: CREATED_AT,
+            workspaceId: WS, name: "Doomed", createdAt: CREATED_AT,
           });
           await uow.memberships.insert({
             memberId: "mem_doomed" as WorkspaceMemberId, workspaceId: WS,
@@ -148,7 +154,7 @@ suite("persistence integration", () => {
         createTransactionManager(database.db).runForWorkspace(WS, uow =>
           uow.workspaces.insert({
             workspaceId: "ws_other" as WorkspaceId, name: "Wrong",
-            ownerUserId: OWNER, createdAt: CREATED_AT,
+            createdAt: CREATED_AT,
           })),
       ).rejects.toBeInstanceOf(WorkspaceScopeMismatchError);
     });
@@ -253,6 +259,10 @@ suite("persistence integration", () => {
       // PostgreSQL guarantees no row order without ORDER BY, so "insertion
       // order" is an assumption that holds until it does not.
       await seed(WS, "mem_1");
+      // A second, DIFFERENT account: `UNIQUE(workspace_id, user_id)` forbids two
+      // memberships for one user, and the foreign key forbids a user that does
+      // not exist.
+      await seedUser(database, "usr_2");
       await createTransactionManager(database.db).runForWorkspace(WS, uow =>
         uow.memberships.insert({
           memberId: "mem_2" as WorkspaceMemberId, workspaceId: WS,
@@ -286,7 +296,7 @@ suite("persistence integration", () => {
       const failure = await withRawTenantTransaction(database, "ws_blank" as WorkspaceId, trx =>
         trx.insertInto("workspaces").values({
           workspace_id: "ws_blank", name: "   ",
-          owner_user_id: OWNER, created_at: new Date(CREATED_AT),
+          created_at: new Date(CREATED_AT),
         }).execute(),
       ).catch((e: unknown) => translatePersistenceError(e));
 
@@ -313,9 +323,18 @@ suite("persistence integration", () => {
         clock: { now: () => CREATED_AT },
         workspaceIds: { nextWorkspaceId: () => "ws_real" as WorkspaceId },
         memberIds: { nextWorkspaceMemberId: () => "mem_real" as WorkspaceMemberId },
+        idempotency: {
+          digester: createIdempotencyKeyDigester(),
+          ids: createIdempotencyRecordIds(),
+          clock: { now: () => CREATED_AT },
+          policy: { retentionMs: 24 * 3_600_000 },
+        },
       });
 
-      const result = await useCase.execute({ ownerUserId: OWNER, name: "Northbridge Legal" });
+      const result = await useCase.execute({
+        actor: { actorType: "user", userId: OWNER, sessionId: "ses_x" as SessionId },
+        name: "Northbridge Legal",
+      });
       expect(result.workspaceId).toBe("ws_real");
 
       const members = await createTransactionManager(database.db)

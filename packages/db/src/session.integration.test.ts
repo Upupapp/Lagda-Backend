@@ -12,6 +12,7 @@ import type {
 import type { LagdaDatabase } from "./client/index.js";
 import { createSessionRepository } from "./repositories/session.js";
 import { createTestDatabase, hasIntegrationDatabase } from "./testing/harness.js";
+import { truncateAccounts } from "./testing/harness.js";
 
 const USER_A = "usr_a" as UserId;
 const USER_B = "usr_b" as UserId;
@@ -42,8 +43,7 @@ describe.skipIf(!hasIntegrationDatabase())("session persistence on PostgreSQL", 
   afterAll(async () => { await database?.close(); });
 
   beforeEach(async () => {
-    await database.db.deleteFrom("user_sessions").execute();
-    await database.db.deleteFrom("users").execute();
+    await truncateAccounts(database);
 
     // Sessions now carry a REAL foreign key to `users` (migration 008). Before
     // it existed these tests invented user ids freely; the constraint made that

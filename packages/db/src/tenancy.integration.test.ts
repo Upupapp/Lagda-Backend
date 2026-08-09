@@ -13,7 +13,7 @@ import { createDatabase, type LagdaDatabase } from "./client/index.js";
 import { loadDatabaseConfig } from "./config/index.js";
 import { createTransactionManager } from "./transactions/index.js";
 import {
-  createTestDatabase, truncateAll, hasIntegrationDatabase,
+  createTestDatabase, truncateAll, hasIntegrationDatabase, seedUser,
   withRawTenantTransaction, withRawGlobalTransaction,
 } from "./testing/harness.js";
 
@@ -50,13 +50,15 @@ suite("workspace tenancy (RLS, runtime role)", () => {
 
   beforeEach(async () => {
     await truncateAll(owner);
+    // Memberships reference a real account since migration 013.
+    await seedUser(owner, USER);
     // Seeded as owner. FORCE RLS applies to the owner too, so seeding happens
     // through a tenant transaction like anything else.
     const tx = createTransactionManager(owner.db);
     for (const [id, member] of [[WS_A, "mem_a"], [WS_B, "mem_b"]] as const) {
       await tx.runForWorkspace(id, async uow => {
         await uow.workspaces.insert({
-          workspaceId: id, name: `Workspace ${id}`, ownerUserId: USER, createdAt: AT,
+          workspaceId: id, name: `Workspace ${id}`, createdAt: AT,
         });
         await uow.memberships.insert({
           memberId: member as WorkspaceMemberId, workspaceId: id,
@@ -200,7 +202,7 @@ suite("workspace tenancy (RLS, runtime role)", () => {
       const failure = await withRawGlobalTransaction(app, trx =>
         trx.insertInto("workspaces").values({
           workspace_id: "ws_sneaky", name: "Sneaky",
-          owner_user_id: USER, created_at: new Date(AT),
+          created_at: new Date(AT),
         }).execute(),
       ).catch((e: unknown) => e);
       expect(failure).toBeInstanceOf(Error);

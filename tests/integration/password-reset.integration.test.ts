@@ -31,6 +31,7 @@ import {
   createSecurityTokenDigester, digestSubmittedResetToken, digestResetToken,
   isWellFormedResetToken, buildPasswordResetUrl, digestVerificationCode,
 } from "@lagda/api";
+import { truncateAccounts } from "@lagda/db";
 
 const PASSWORD = "correct horse battery staple";
 const NEW_PASSWORD = "a completely different passphrase";
@@ -64,10 +65,7 @@ describe.skipIf(!hasIntegrationDatabase())("password recovery", () => {
   afterAll(async () => { await database?.close(); });
 
   beforeEach(async () => {
-    await database.db.deleteFrom("password_reset_challenges").execute();
-    await database.db.deleteFrom("email_verification_challenges").execute();
-    await database.db.deleteFrom("user_sessions").execute();
-    await database.db.deleteFrom("users").execute();
+    await truncateAccounts(database);
   });
 
   let seq = 0;

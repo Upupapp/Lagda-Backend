@@ -5,7 +5,9 @@
 // import from binding a port during a test run.
 
 export { createApp, type CreateAppOptions } from "./app/create-app.js";
-export type { AppDependencies, DatabaseHealth } from "./app/dependencies.js";
+export type {
+  AppDependencies, DatabaseHealth, WorkspaceDependencies,
+} from "./app/dependencies.js";
 export {
   loadApiConfig, ApiConfigError,
   type ApiConfig, type TrustProxySetting, type NodeEnvironment,
@@ -65,6 +67,13 @@ export {
   createPreAuthCredentialFactory, digestPreAuthToken,
   digestSubmittedPreAuthToken, isWellFormedPreAuthToken,
 } from "./security/pre-auth-token.js";
+export {
+  registerWorkspaceRoutes, CreateWorkspaceRequestSchema,
+  UpdateWorkspaceRequestSchema, WorkspaceResponseSchema,
+  WorkspaceListResponseSchema,
+  type WorkspaceRouteOptions,
+} from "./workspaces/workspace-routes.js";
+
 export {
   registerAccountRoutes, CurrentUserResponseSchema, UpdateProfileRequestSchema,
   UpdatePreferencesRequestSchema, ChangePasswordRequestSchema,

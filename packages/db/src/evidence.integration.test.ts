@@ -7,7 +7,9 @@
 import { toStorageObjectKey } from "@lagda/application";
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { sql } from "kysely";
-import type { WorkspaceId, DocumentId, TransactionId, VerificationId, Sha256Digest, UserId } from "@lagda/contracts";
+import type {
+  WorkspaceId, DocumentId, TransactionId, VerificationId, Sha256Digest,
+} from "@lagda/contracts";
 import type {
   ArtifactId, ArtifactRecord, EvidenceEventId, EvidenceEventInput,
   SealId, SealRecord, VerificationRecord, RecipientId,
@@ -91,9 +93,7 @@ describe.skipIf(!hasIntegrationDatabase())("evidence persistence on PostgreSQL",
     await truncateAll(database);
     for (const id of [WS_A, WS_B]) {
       await transactions.runForWorkspace(id, async (uow) => {
-        await uow.workspaces.insert({
-          workspaceId: id, name: id, ownerUserId: "usr_owner" as UserId, createdAt: 0,
-        });
+        await uow.workspaces.insert({ workspaceId: id, name: id, createdAt: 0 });
       });
     }
   });

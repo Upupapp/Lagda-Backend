@@ -3,19 +3,30 @@
 // Three responsibilities, and they are deliberately in one place:
 //
 //   1. `@lagda/application` never learns what a Kysely transaction is.
-//   2. A tenant transaction establishes RLS context — and only here, because
+//   2. A scoped transaction establishes RLS context — and only here, because
 //      `SET LOCAL` issued anywhere else reopens the pooling hazard.
 //   3. Every repository in one operation is built on the SAME transaction, so
 //      "atomic" means atomic rather than looking like it.
+//
+// ── Three scopes, each asked for by name ───────────────────────────────────
+//
+//   runForWorkspace  tenant context. The ordinary path.
+//   runForUser       the caller's own membership edges. Read-only by policy.
+//   runGlobal        no context. Accounts, sessions, system records.
+//
+// Never one method with an optional argument. With `run(workspaceId?)`, omitting
+// the argument would silently mean unrestricted access — the most dangerous
+// possible default.
 
 import { sql, type Kysely, type Transaction } from "kysely";
-import type { WorkspaceId } from "@lagda/contracts";
+import type { UserId, WorkspaceId } from "@lagda/contracts";
 import type {
-  TransactionManager, WorkspaceUnitOfWork, GlobalUnitOfWork,
+  TransactionManager, WorkspaceUnitOfWork, GlobalUnitOfWork, UserUnitOfWork,
 } from "@lagda/application";
 import type { Database } from "../schema/index.js";
 import {
   createScopedWorkspaceRepository, createScopedMembershipRepository,
+  createUserMembershipRepository,
 } from "../repositories/workspaces.js";
 import {
   createEvidenceRepository,
@@ -23,9 +34,11 @@ import {
   createFinalizationRepository,
 } from "../repositories/evidence.js";
 import { createUploadRepository } from "../repositories/uploads.js";
+import { createIdempotencyRepository } from "../repositories/idempotency.js";
 
-/** The setting name RLS policies read. Must match migration 002. */
+/** The setting names RLS policies read. Must match migrations 002 and 013. */
 const WORKSPACE_SETTING = "lagda.workspace_id";
+const USER_SETTING = "lagda.user_id";
 
 /**
  * Builds the repository set for one transaction and one workspace.
@@ -46,6 +59,10 @@ function buildUnitOfWork(
     artifacts: createArtifactRepository(trx, workspaceId),
     finalizations: createFinalizationRepository(trx, workspaceId),
     uploads: createUploadRepository(trx, workspaceId),
+    // On the SAME transaction as the business writes. That is the entire
+    // idempotency guarantee: the claim commits with the mutation or dies with
+    // it, so there is no lease, no reclaim job and no poisoned key.
+    idempotency: createIdempotencyRepository(trx),
   };
 }
 
@@ -65,12 +82,37 @@ export function createTransactionManager(db: Kysely<Database>): TransactionManag
       });
     },
 
+    async runForUser<T>(
+      userId: UserId,
+      operation: (uow: UserUnitOfWork) => Promise<T>,
+    ): Promise<T> {
+      return db.transaction().execute(async trx => {
+        // USER context and NO workspace context. Both halves matter:
+        //
+        //   set    — the `member_self_read` and `member_workspace_read`
+        //            policies (migration 013) can match, so the caller's own
+        //            memberships and their workspaces become readable.
+        //   unset  — `lagda_current_workspace()` returns NULL, so the
+        //            tenant-isolation policies match nothing. Combined with
+        //            those two policies being FOR SELECT, this transaction is
+        //            incapable of writing to either table.
+        //
+        // The same transaction-local mechanism as tenant context (§89): never a
+        // session-level SET, which would leak onto the next pooled request.
+        await sql`select set_config(${USER_SETTING}, ${userId}, true)`.execute(trx);
+        return operation({
+          userId,
+          memberships: createUserMembershipRepository(trx, userId),
+        });
+      });
+    },
+
     async runGlobal<T>(operation: (uow: GlobalUnitOfWork) => Promise<T>): Promise<T> {
       return db.transaction().execute(async () => {
-        // No tenant context and no tenant repositories. Under RLS, workspace
-        // tables are invisible from here — global mode is for user accounts and
-        // system records, and if it strays into tenant data it fails closed
-        // rather than seeing everything.
+        // No tenant context, no user context and no tenant repositories. Under
+        // RLS, workspace tables are invisible from here — global mode is for
+        // user accounts and system records, and if it strays into tenant data
+        // it fails closed rather than seeing everything.
         return operation({ scope: "global" });
       });
     },

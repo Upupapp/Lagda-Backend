@@ -90,7 +90,7 @@ describe.skipIf(!hasIntegrationDatabase())("worker and queue on PostgreSQL", () 
 
       await database.db.transaction().execute(async (trx) => {
         await trx.insertInto("workspaces").values({
-          workspace_id: "ws_tx", name: "A", owner_user_id: "usr_1",
+          workspace_id: "ws_tx", name: "A",
           created_at: new Date(AT),
         }).execute();
 
@@ -113,7 +113,7 @@ describe.skipIf(!hasIntegrationDatabase())("worker and queue on PostgreSQL", () 
       await expect(
         database.db.transaction().execute(async (trx) => {
           await trx.insertInto("workspaces").values({
-            workspace_id: "ws_rb", name: "B", owner_user_id: "usr_1",
+            workspace_id: "ws_rb", name: "B",
             created_at: new Date(AT),
           }).execute();
           await scheduler.enqueue(definition, { batchSize: 10 }, { transaction: trx });

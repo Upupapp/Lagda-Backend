@@ -20,5 +20,9 @@ runRepositoryContract("in-memory fake", () => {
       store.memberships.length = 0;
       return Promise.resolve();
     },
+    // The fake has no accounts table. Referential integrity between a
+    // membership and an account is a database guarantee, and the PostgreSQL run
+    // of this same suite is where it is exercised.
+    seedUser: () => Promise.resolve(),
   };
 }, api);

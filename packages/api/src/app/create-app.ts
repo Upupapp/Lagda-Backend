@@ -12,6 +12,7 @@ import swagger from "@fastify/swagger";
 import cookie from "@fastify/cookie";
 import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import { ApiErrorSchema, REQUEST_ID_HEADER, type RequestId } from "@lagda/contracts";
+import { RateLimitedError } from "@lagda/application";
 import type { ApiConfig } from "../config/index.js";
 import { buildLoggerOptions } from "../logging/index.js";
 import {
@@ -27,7 +28,8 @@ import {
 import { registerHealthRoutes } from "../routes/health.js";
 import { registerReadinessRoutes } from "../routes/readiness.js";
 import type { AppDependencies } from "./dependencies.js";
-import { sessionResolution } from "../security/session-plugin.js";
+import { sessionResolution, requireSession } from "../security/session-plugin.js";
+import { registerWorkspaceRoutes } from "../workspaces/workspace-routes.js";
 
 export interface CreateAppOptions {
   readonly config: ApiConfig;
@@ -232,6 +234,15 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
     const translated = translateFastifyError(error);
     const mapped = mapError(translated ?? error, requestId);
 
+    // `Retry-After` is transport metadata, and the canonical error envelope has
+    // no field for it. The IP limiter sets it before throwing because it runs in
+    // its own hook; a SEMANTIC limit is checked inside a handler, where the
+    // throw unwinds past any header the handler might have set. Setting it here
+    // means every rate-limited response carries it, whichever layer refused.
+    if (error instanceof RateLimitedError) {
+      void reply.header("Retry-After", String(error.retryAfterSeconds));
+    }
+
     if (mapped.logLevel === "error") {
       // The full error, with stack and cause, goes to the LOG. The client gets
       // the generic body and the request ID that finds this line.
@@ -269,6 +280,72 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
 
   await registerHealthRoutes(app);
   await registerReadinessRoutes(app, { databaseHealth: dependencies.databaseHealth });
+
+  // ── The authenticated scope ────────────────────────────────────────────────
+  //
+  // BACKEND-25 is the first command to COMPOSE protected routes into the
+  // running application. Seventeen auth and account routes were built by
+  // BACKEND-19..24 and none was registered here (OD-069), which meant every
+  // control they specify — the pre-auth refusal, CSRF, the rate limits — was
+  // demonstrated against a test double rather than in an app a request flows
+  // through. This scope is the structure that closes that, and the remaining
+  // route modules plug into the same place.
+  //
+  // ── Why `requireSession` is CALLED, not registered ───────────────────────
+  //
+  // `scope.register(requireSession)` looks correct and protects NOTHING: a
+  // plugin not wrapped in `fastify-plugin` gets its own encapsulation context,
+  // so its hooks apply only to routes declared inside IT. Wrapping it in
+  // `fastify-plugin` would be worse — the hook would escape to the root and
+  // require a session on `/health`. Called directly on the scope, the hook
+  // belongs to that context and covers every route in it.
+  //
+  // Protection is therefore a property of WHERE a route lives. A future
+  // workspace route added inside this callback is authenticated and CSRF-
+  // checked because of its position, not because anyone remembered a flag.
+  if (dependencies.workspaces !== undefined) {
+    const sessions = dependencies.sessions;
+    if (sessions === undefined) {
+      // Refusing to boot, rather than registering the routes unprotected. A
+      // misconfiguration that silently disables authentication is the one
+      // outcome worth crashing over.
+      throw new Error(
+        "workspace routes require a session service: refusing to register them unauthenticated.",
+      );
+    }
+    const workspaces = dependencies.workspaces;
+    const limiter = dependencies.limiter;
+
+    // Not `async`: the body registers a hook and some routes synchronously, and
+    // an `async` callback with nothing to await is a promise that exists only to
+    // satisfy a signature. Fastify accepts any function returning one.
+    await app.register(scope => {
+      requireSession(scope, { sessions, metrics });
+
+      registerWorkspaceRoutes(scope, {
+        // Reads the state `requireSession` has already validated. It cannot be
+        // reached with anything else: the hook rejects an anonymous or pre-auth
+        // request before a handler runs, so `status === "authenticated"` here
+        // is guaranteed rather than assumed — and the null branch stays as the
+        // fail-closed answer if that ever stops being true.
+        authenticatedUser: request => Promise.resolve(
+          request.auth.status === "authenticated"
+            ? {
+                userId: request.auth.actor.userId,
+                sessionId: request.auth.actor.sessionId,
+              }
+            : null,
+        ),
+        createWorkspaceDependencies: workspaces.create,
+        listDependencies: workspaces.list,
+        workspaceDependencies: workspaces.workspace,
+        ...(limiter === undefined ? {} : { rateLimit: { limiter, metrics } }),
+        metrics,
+      });
+
+      return Promise.resolve();
+    });
+  }
 
   // Deliberately NOT `await app.ready()`. Readying seals the instance, and a
   // sealed app cannot have routes added — which would make the factory

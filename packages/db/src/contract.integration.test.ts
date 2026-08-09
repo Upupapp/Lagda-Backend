@@ -12,7 +12,9 @@ import { describe, it, expect, beforeEach, beforeAll, afterAll } from "vitest";
 import { runRepositoryContract, type ContractTestApi } from "@lagda/application";
 import type { LagdaDatabase } from "./client/index.js";
 import { createTransactionManager } from "./transactions/index.js";
-import { createTestDatabase, truncateAll, hasIntegrationDatabase } from "./testing/harness.js";
+import {
+  createTestDatabase, truncateAll, hasIntegrationDatabase, seedUser,
+} from "./testing/harness.js";
 
 const api = { describe, it, beforeEach, expect } as unknown as ContractTestApi;
 
@@ -35,5 +37,6 @@ describe.skipIf(!hasIntegrationDatabase())("repository contract on PostgreSQL", 
   runRepositoryContract("PostgreSQL", () => ({
     transactions: createTransactionManager(database.db),
     reset: () => truncateAll(database),
+    seedUser: userId => seedUser(database, userId),
   }), api);
 });

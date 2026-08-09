@@ -24,6 +24,7 @@ import {
   PasswordHasherConfigError,
 } from "@lagda/api";
 import { createVerificationTokenFactory, buildVerificationUrl } from "@lagda/api";
+import { truncateAccounts } from "@lagda/db";
 
 const PASSWORD = "correct horse battery staple";
 const TERMS = "2026-01-01";
@@ -38,9 +39,7 @@ describe.skipIf(!hasIntegrationDatabase())("registration", () => {
   afterAll(async () => { await database?.close(); });
 
   beforeEach(async () => {
-    await database.db.deleteFrom("email_verification_challenges").execute();
-    await database.db.deleteFrom("user_sessions").execute();
-    await database.db.deleteFrom("users").execute();
+    await truncateAccounts(database);
   });
 
   let seq = 0;

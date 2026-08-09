@@ -22,6 +22,7 @@ import {
   digestSubmittedCode, canonicalizeVerificationCode, buildVerificationUrl,
 } from "@lagda/api";
 import { createSessionService } from "@lagda/application";
+import { truncateAccounts } from "@lagda/db";
 
 const PASSWORD = "correct horse battery staple";
 const TTL = 24 * 60 * 60 * 1000;
@@ -52,9 +53,7 @@ describe.skipIf(!hasIntegrationDatabase())("email verification", () => {
   afterAll(async () => { await database?.close(); });
 
   beforeEach(async () => {
-    await database.db.deleteFrom("email_verification_challenges").execute();
-    await database.db.deleteFrom("user_sessions").execute();
-    await database.db.deleteFrom("users").execute();
+    await truncateAccounts(database);
   });
 
   let seq = 0;

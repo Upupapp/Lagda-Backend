@@ -57,21 +57,25 @@ export async function createTestDatabase(): Promise<LagdaDatabase> {
 /**
  * Empties every table between tests.
  *
- * Child tables first: the membership foreign key is ON DELETE RESTRICT, so
- * truncating workspaces first would fail — which is itself confirmation the
- * constraint is doing its job.
+ * ONE ordered list, and it is the only one. Seven integration suites used to
+ * carry their own inline cleanup blocks; BACKEND-25 added a table that
+ * references `users`, and every one of those blocks then failed on a foreign
+ * key in a way that reads like a defect in the feature rather than a fixture
+ * that fell behind the schema.
+ *
+ * Children first, always. Every reference in this schema is ON DELETE RESTRICT
+ * — a deliberate choice, because signing evidence and membership history must
+ * not vanish when a parent does — which makes deletion order load-bearing here.
+ *
+ * This runs as the test superuser, which bypasses RLS and the append-only
+ * privileges. That is the point: the runtime role CANNOT do this, and a harness
+ * that could would have to weaken the controls the tests exist to verify.
  */
 export async function truncateAll(database: LagdaDatabase): Promise<void> {
-  // Child-first, because every evidence relation is ON DELETE RESTRICT — a
-  // deliberate choice (signing evidence must not vanish when a parent does), and
-  // one that makes deletion order load-bearing here.
+  // ── Tenant-owned data ─────────────────────────────────────────────────────
   //
-  // This runs as the test superuser, which bypasses RLS and the append-only
-  // privileges. That is the point: the runtime role CANNOT do this, and a
-  // harness that could not clean up would have to weaken the very controls the
-  // tests exist to verify.
-  // document_uploads references BOTH workspaces and document_artifacts, so it
-  // must go before either. Omitting it made every upload test fail on the
+  // `document_uploads` references BOTH `workspaces` and `document_artifacts`,
+  // so it goes before either. Omitting it made every upload test fail on the
   // workspace delete rather than on anything it was testing.
   await database.db.deleteFrom("document_uploads").execute();
   await database.db.deleteFrom("verification_records").execute();
@@ -80,6 +84,86 @@ export async function truncateAll(database: LagdaDatabase): Promise<void> {
   await database.db.deleteFrom("document_artifacts").execute();
   await database.db.deleteFrom("workspace_memberships").execute();
   await database.db.deleteFrom("workspaces").execute();
+
+  // ── Account-owned data ────────────────────────────────────────────────────
+  await database.db.deleteFrom("mfa_recovery_codes").execute();
+  await database.db.deleteFrom("pending_authentications").execute();
+  await database.db.deleteFrom("mfa_factors").execute();
+  await database.db.deleteFrom("password_reset_challenges").execute();
+  await database.db.deleteFrom("email_verification_challenges").execute();
+  await database.db.deleteFrom("user_sessions").execute();
+  await database.db.deleteFrom("users").execute();
+
+  // ── Operational, no foreign keys ──────────────────────────────────────────
+  //
+  // Cleared so a suite running several idempotent operations does not inherit
+  // the previous test's claims. Leaving them made a later test reuse a record
+  // id and fail on the primary key, which reads as an idempotency defect and is
+  // a fixture leak.
+  await database.db.deleteFrom("idempotency_records").execute();
+  await database.db.deleteFrom("rate_limit_counters").execute();
+}
+
+/**
+ * Alias for `truncateAll`, named for what the auth suites are clearing.
+ *
+ * They call this rather than listing the dependents of `users` themselves, so
+ * the next command that adds a table referencing an account makes ONE edit
+ * above instead of finding every suite that forgot.
+ */
+export const truncateAccounts = truncateAll;
+
+/**
+ * Creates the minimum account a membership can reference.
+ *
+ * Every column the schema requires, and nothing more: no password worth
+ * anything, no verified email, no profile. Test fixtures that need a REAL
+ * account use the registration use case — this exists so a tenancy test can
+ * satisfy a foreign key without also exercising Argon2id, which costs ~50ms of
+ * dedicated CPU per call by design.
+ *
+ * `onConflict … doNothing` because several fixtures seed the same user.
+ */
+export async function seedUser(
+  database: LagdaDatabase,
+  userId: string,
+  overrides: { readonly email?: string } = {},
+): Promise<void> {
+  const email = overrides.email ?? `${userId}@fixture.invalid`;
+  await database.db
+    .insertInto("users")
+    .values({
+      user_id: userId,
+      email,
+      normalized_email: email.toLowerCase(),
+      // Argon2id-SHAPED but not a hash of anything. The `users_password_argon2id`
+      // CHECK requires the prefix, and satisfying it with a real hash would cost
+      // ~50ms of dedicated CPU per fixture for a credential no test ever
+      // presents. Anything that signs in registers properly instead.
+      password_hash: "$argon2id$v=19$m=19456,t=2,p=1$Zml4dHVyZQ$bm90LWEtcmVhbC1oYXNo",
+      display_name: userId,
+      organization: null,
+      intended_use: null,
+      email_verified_at: null,
+      terms_version: "fixture",
+      terms_accepted_at: new Date(0),
+      full_name: null,
+      job_title: null,
+      department: null,
+      preferred_sender_name: null,
+      timezone: null,
+      locale: null,
+      language: null,
+      date_format: null,
+      time_format: null,
+      number_format: null,
+      appearance: null,
+      density: null,
+      document_list_view: null,
+      profile_updated_at: null,
+    })
+    .onConflict(oc => oc.column("user_id").doNothing())
+    .execute();
 }
 
 // ── Privileged test-only access ──────────────────────────────────────────────

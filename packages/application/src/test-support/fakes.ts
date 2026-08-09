@@ -14,14 +14,16 @@ import type { UserId, WorkspaceId, WorkspaceMemberId } from "@lagda/contracts";
 import type { WorkspaceRole } from "@lagda/core";
 import type { UploadRecord, ScopedUploadRepository } from "../common/ports/upload.js";
 import type {
-  Clock, TransactionManager, WorkspaceUnitOfWork, GlobalUnitOfWork,
+  Clock, TransactionManager, WorkspaceUnitOfWork, GlobalUnitOfWork, UserUnitOfWork,
   ScopedWorkspaceRepository, ScopedMembershipRepository,
+  UserMembershipQueryRepository, UserWorkspaceMembershipRecord,
   WorkspaceIdGenerator, WorkspaceMemberIdGenerator,
   WorkspaceRecord, WorkspaceMembershipRecord,
   ScopedEvidenceRepository, ScopedArtifactRepository, ScopedFinalizationRepository,
   EvidenceEventInput, EvidenceEventRecord, ArtifactRecord, ArtifactId,
   FinalizationInput, SealRecord,
 } from "../common/ports/index.js";
+import { InMemoryIdempotencyRepository } from "./idempotency-fake.js";
 import type { TransactionId, DocumentId } from "@lagda/contracts";
 
 /** A fixed instant, so assertions mean the same thing in any year. */
@@ -117,6 +119,47 @@ function scopedWorkspaces(store: InMemoryStore, scope: WorkspaceId): ScopedWorks
       }
       store.workspaces.set(workspace.workspaceId, workspace);
       return Promise.resolve();
+    },
+    updateName: (name: string) => {
+      const existing = store.workspaces.get(scope);
+      if (existing === undefined) return Promise.resolve(false);
+      store.workspaces.set(scope, { ...existing, name });
+      return Promise.resolve(true);
+    },
+  };
+}
+
+/**
+ * The user-scoped read, in memory.
+ *
+ * Filters on `userId` and joins to the workspace, exactly as the SQL does — and
+ * applies the SAME ordering. A fake that returned insertion order would let a
+ * test assert an order the database does not guarantee.
+ */
+function userMemberships(
+  store: InMemoryStore, userId: UserId,
+): UserMembershipQueryRepository {
+  return {
+    listWorkspaces: () => {
+      const rows: UserWorkspaceMembershipRecord[] = [];
+      for (const membership of store.memberships) {
+        if (membership.userId !== userId) continue;
+        const workspace = store.workspaces.get(membership.workspaceId);
+        // An INNER JOIN. A membership without its workspace produces no row,
+        // which is what the database does and what the foreign key prevents.
+        if (workspace === undefined) continue;
+        rows.push({
+          workspaceId: workspace.workspaceId,
+          name: workspace.name,
+          workspaceCreatedAt: workspace.createdAt,
+          membershipId: membership.memberId,
+          role: membership.role,
+          joinedAt: membership.createdAt,
+        });
+      }
+      rows.sort((a, b) =>
+        b.joinedAt - a.joinedAt || a.membershipId.localeCompare(b.membershipId));
+      return Promise.resolve(rows);
     },
   };
 }
@@ -266,7 +309,14 @@ export class FakeTransactionManager implements TransactionManager {
   started = 0;
   committed = 0;
   rolledBack = 0;
-  readonly scopes: (WorkspaceId | "global")[] = [];
+  readonly scopes: (WorkspaceId | UserId | "global")[] = [];
+  /**
+   * Shared across transactions, like the real table.
+   *
+   * A per-transaction instance would make every retry a fresh claim, and the
+   * idempotency tests would pass against a fake that guarantees nothing.
+   */
+  readonly idempotency = new InMemoryIdempotencyRepository();
 
   constructor(readonly store: InMemoryStore = new InMemoryStore()) {}
 
@@ -286,11 +336,33 @@ export class FakeTransactionManager implements TransactionManager {
         artifacts: scopedArtifacts(this.store, workspaceId),
         finalizations: scopedFinalizations(this.store, workspaceId),
         uploads: scopedUploads(this.store, workspaceId),
+        idempotency: this.idempotency,
       });
       this.committed++;
       return result;
     } catch (error) {
       this.store.restore(snapshot);
+      this.rolledBack++;
+      throw error;
+    }
+  }
+
+  async runForUser<T>(
+    userId: UserId,
+    operation: (uow: UserUnitOfWork) => Promise<T>,
+  ): Promise<T> {
+    this.scopes.push(userId);
+    this.started++;
+    try {
+      const result = await operation({
+        userId,
+        memberships: userMemberships(this.store, userId),
+      });
+      this.committed++;
+      return result;
+    } catch (error) {
+      // No snapshot restore: this scope cannot write. The real one cannot
+      // either, because its policies are FOR SELECT.
       this.rolledBack++;
       throw error;
     }
@@ -320,6 +392,13 @@ export class FailingTransactionManager implements TransactionManager {
   runForWorkspace<T>(
     _workspaceId: WorkspaceId,
     _operation: (uow: WorkspaceUnitOfWork) => Promise<T>,
+  ): Promise<T> {
+    return this.fail();
+  }
+
+  runForUser<T>(
+    _userId: UserId,
+    _operation: (uow: UserUnitOfWork) => Promise<T>,
   ): Promise<T> {
     return this.fail();
   }

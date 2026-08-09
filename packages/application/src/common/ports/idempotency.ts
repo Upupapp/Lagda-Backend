@@ -56,6 +56,19 @@ export const IDEMPOTENT_OPERATIONS = [
   "billing.plan.change",
   "signature.submit",
   "otp.deliver",
+  /**
+   * Workspace creation (BACKEND-25).
+   *
+   * Added because a lost response is indistinguishable from a failure to the
+   * browser that sent it, and the natural reaction — retry — creates a SECOND
+   * TENANT. Unlike most duplicates that is not a cosmetic problem: the user now
+   * has two workspaces with the same name, no way to tell which the first
+   * request produced, and no deletion endpoint to remove the wrong one.
+   *
+   * Scoped to `user`, not `workspace`: the workspace does not exist when the key
+   * is claimed, so there is nothing else to scope by.
+   */
+  "workspace.create",
 ] as const;
 export type IdempotentOperation = (typeof IDEMPOTENT_OPERATIONS)[number];
 

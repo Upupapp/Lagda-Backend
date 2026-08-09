@@ -36,6 +36,7 @@ import {
   isWellFormedTotpCode, issueRecoveryCodes, digestSubmittedRecoveryCode,
   createPreAuthCredentialFactory, digestPreAuthToken,
 } from "@lagda/api";
+import { truncateAccounts } from "@lagda/db";
 
 const PASSWORD = "correct horse battery staple";
 const LABEL = "user@example.com";
@@ -88,13 +89,7 @@ describe.skipIf(!hasIntegrationDatabase())("multi-factor authentication", () => 
   afterAll(async () => { await database?.close(); });
 
   beforeEach(async () => {
-    await database.db.deleteFrom("mfa_recovery_codes").execute();
-    await database.db.deleteFrom("pending_authentications").execute();
-    await database.db.deleteFrom("mfa_factors").execute();
-    await database.db.deleteFrom("password_reset_challenges").execute();
-    await database.db.deleteFrom("email_verification_challenges").execute();
-    await database.db.deleteFrom("user_sessions").execute();
-    await database.db.deleteFrom("users").execute();
+    await truncateAccounts(database);
   });
 
   let seq = 0;

@@ -10,7 +10,9 @@
 
 import type { UserId, WorkspaceId, WorkspaceMemberId } from "@lagda/contracts";
 import { WORKSPACE_ROLES, type WorkspaceRole } from "@lagda/core";
-import type { WorkspaceRecord, WorkspaceMembershipRecord } from "@lagda/application";
+import type {
+  WorkspaceRecord, WorkspaceMembershipRecord, UserWorkspaceMembershipRecord,
+} from "@lagda/application";
 import type { Selectable, Insertable } from "kysely";
 import type { WorkspacesTable, WorkspaceMembershipsTable } from "../schema/index.js";
 
@@ -68,7 +70,6 @@ export function toWorkspaceRecord(row: WorkspaceRow): WorkspaceRecord {
   return {
     workspaceId: row.workspace_id as WorkspaceId,
     name: row.name,
-    ownerUserId: row.owner_user_id as UserId,
     createdAt: toInstant("workspaces", "created_at", row.created_at),
   };
 }
@@ -79,8 +80,39 @@ export function fromWorkspaceRecord(record: WorkspaceRecord): WorkspaceInsert {
   return {
     workspace_id: record.workspaceId,
     name: record.name,
-    owner_user_id: record.ownerUserId,
     created_at: new Date(record.createdAt),
+  };
+}
+
+/**
+ * The "my workspaces" join projection.
+ *
+ * A hand-written row type rather than a table type: this shape comes from a
+ * JOIN and belongs to no single table, so declaring it against one would be a
+ * lie the compiler happily accepts.
+ *
+ * `role` goes through the same `toRole` validation as a plain membership read.
+ * A join is not a reason to trust a column less carefully.
+ */
+export interface UserWorkspaceJoinRow {
+  readonly workspace_id: string;
+  readonly name: string;
+  readonly workspace_created_at: Date;
+  readonly member_id: string;
+  readonly role: string;
+  readonly joined_at: Date;
+}
+
+export function toUserWorkspaceMembershipRecord(
+  row: UserWorkspaceJoinRow,
+): UserWorkspaceMembershipRecord {
+  return {
+    workspaceId: row.workspace_id as WorkspaceId,
+    name: row.name,
+    workspaceCreatedAt: toInstant("workspaces", "created_at", row.workspace_created_at),
+    membershipId: row.member_id as WorkspaceMemberId,
+    role: toRole(row.role),
+    joinedAt: toInstant("workspace_memberships", "created_at", row.joined_at),
   };
 }
 
