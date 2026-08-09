@@ -1,0 +1,14 @@
+{
+  // Typechecks the files that are NOT part of the build graph: the smoke tests
+  // and root tooling config. They are checked but never emitted, so they stay
+  // out of the composite project references that produce `dist/`.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["tests/**/*.ts", "*.config.ts"]
+}

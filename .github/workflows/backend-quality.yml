@@ -1,0 +1,65 @@
+# LAGDA backend quality gates (BACKEND-01).
+#
+# Every step here is a hard gate. There is no `continue-on-error` and there are
+# no soft warnings: a failure fails the run.
+#
+# The lint step is also the ARCHITECTURE gate. The package-boundary rules from
+# BACKEND-00 are implemented as ESLint import restrictions, so a layer reaching
+# for infrastructure it may not depend on fails CI here (INV-001, INV-005,
+# INV-007). It must not be skipped or made advisory.
+#
+# This workflow needs NO secrets, NO database and NO cloud account. Foundation
+# checks stay fast and deterministic; database-backed CI arrives with the
+# database, in a later command.
+
+name: Backend Quality
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: "true"
+
+jobs:
+  quality:
+    name: Typecheck, lint, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Node 24 is the runtime decision in ADR-001. Deliberately a single
+          # version rather than a matrix: testing older majors would undermine
+          # the runtime boundary the engines field declares.
+          node-version: 24
+          cache: npm
+
+      # Lockfile-respecting install. Fails if package.json and the lockfile
+      # disagree, which is the point.
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Architecture gate. See the note at the top of this file.
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build

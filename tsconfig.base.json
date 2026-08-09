@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+
+    // ESM throughout. `nodenext` is what makes TypeScript agree with Node's own
+    // resolver about extensions and package `exports`, so a build that passes
+    // here also runs. Mixing CommonJS in later would break that agreement.
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+
+    // Project references need composite + declarations: cross-package
+    // typechecking reads the emitted .d.ts of a dependency, which is also what
+    // makes the build order deterministic.
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+
+    "strict": true,
+
+    // Beyond `strict`. Each of these catches a class of defect that `strict`
+    // alone permits, and all are cheap to satisfy in new code — which is the
+    // only reason they can be switched on at the start rather than argued about
+    // later against thousands of existing violations.
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+    "useUnknownInCatchVariables": true,
+    "noPropertyAccessFromIndexSignature": true,
+
+    // CI runs on Linux. Windows and macOS resolve paths case-insensitively, so
+    // without this a wrong-cased import passes locally and fails only in CI.
+    "forceConsistentCasingInFileNames": true,
+
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "noEmitOnError": true
+  }
+}

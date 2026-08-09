@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Secrets. `.env.example` is deliberately allowed through — it is the documented
+# template and contains no real values.
+.env
+.env.*
+!.env.example
