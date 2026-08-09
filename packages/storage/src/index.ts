@@ -23,8 +23,10 @@ export {
   createInMemoryObjectStorage, collect, type InMemoryObjectStorage,
 } from "./testing/in-memory-object-storage.js";
 export {
-  runObjectStorageContract, samplePdf, type ContractHarness,
-} from "./testing/storage-contract.js";
-export {
-  ensureTestBuckets, testStorageConfig, TEST_BUCKETS,
+  ensureTestBuckets, testStorageConfig, samplePdf, TEST_BUCKETS,
 } from "./testing/test-service.js";
+
+// NOT exported here: `runObjectStorageContract`. It imports `vitest`, and
+// anything this index re-exports is pulled in by every consumer - which put a
+// test framework into production imports of @lagda/storage. Test files import
+// it by path instead.

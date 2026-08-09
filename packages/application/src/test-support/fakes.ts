@@ -12,6 +12,7 @@
 
 import type { UserId, WorkspaceId, WorkspaceMemberId } from "@lagda/contracts";
 import type { WorkspaceRole } from "@lagda/core";
+import type { UploadRecord, ScopedUploadRepository } from "../common/ports/upload.js";
 import type {
   Clock, TransactionManager, WorkspaceUnitOfWork, GlobalUnitOfWork,
   ScopedWorkspaceRepository, ScopedMembershipRepository,
@@ -61,6 +62,7 @@ interface StoreSnapshot {
   readonly artifacts: ArtifactRecord[];
   readonly seals: SealRecord[];
   readonly verifications: FinalizationInput["verification"][];
+  readonly uploads: Map<string, UploadRecord>;
 }
 
 /** Shared store, so a unit of work sees writes from earlier transactions. */
@@ -71,10 +73,12 @@ export class InMemoryStore {
   readonly artifacts: ArtifactRecord[] = [];
   readonly seals: SealRecord[] = [];
   readonly verifications: FinalizationInput["verification"][] = [];
+  readonly uploads = new Map<string, UploadRecord>();
 
   snapshot(): StoreSnapshot {
     return {
       workspaces: new Map(this.workspaces),
+      uploads: new Map(this.uploads),
       memberships: [...this.memberships],
       evidence: [...this.evidence],
       artifacts: [...this.artifacts],
@@ -84,6 +88,11 @@ export class InMemoryStore {
   }
 
   restore(snapshot: StoreSnapshot): void {
+    // Uploads restore with everything else. Omitting them would let a
+    // rolled-back transaction leave an upload row behind - the exact
+    // inconsistency the snapshot exists to prevent.
+    this.uploads.clear();
+    for (const [key, value] of snapshot.uploads) this.uploads.set(key, value);
     this.workspaces.clear();
     for (const [key, value] of snapshot.workspaces) this.workspaces.set(key, value);
     this.memberships.length = 0;
@@ -276,6 +285,7 @@ export class FakeTransactionManager implements TransactionManager {
         evidence: scopedEvidence(this.store, workspaceId),
         artifacts: scopedArtifacts(this.store, workspaceId),
         finalizations: scopedFinalizations(this.store, workspaceId),
+        uploads: scopedUploads(this.store, workspaceId),
       });
       this.committed++;
       return result;
@@ -323,4 +333,46 @@ export class FailingTransactionManager implements TransactionManager {
     this.rolledBack++;
     return Promise.reject(this.failure);
   }
+}
+
+/**
+ * In-memory upload records, tenant-scoped like the real repository.
+ *
+ * Mirrors the DATABASE's constraints rather than being permissive: only a row
+ * still in flight may be completed, and an accepted row must name an artifact.
+ * A fake that allowed either would let a test pass against behaviour production
+ * rejects.
+ */
+function scopedUploads(
+  store: InMemoryStore, workspaceId: WorkspaceId,
+): ScopedUploadRepository {
+  const rows = store.uploads;
+  return {
+    insert(record: UploadRecord) {
+      rows.set(record.uploadId, { ...record, workspaceId });
+      return Promise.resolve();
+    },
+    find(uploadId: UploadRecord["uploadId"]) {
+      const row = rows.get(uploadId);
+      return Promise.resolve(
+        row === undefined || row.workspaceId !== workspaceId ? null : row);
+    },
+    complete(input: Parameters<ScopedUploadRepository["complete"]>[0]) {
+      const row = rows.get(input.uploadId);
+      if (row === undefined || row.workspaceId !== workspaceId) return Promise.resolve();
+      if (row.status !== "quarantined") return Promise.resolve();
+      rows.set(input.uploadId, {
+        ...row,
+        status: input.status,
+        detectedMediaType: input.detectedMediaType ?? row.detectedMediaType,
+        digest: input.digest ?? row.digest,
+        rejectionReason: input.rejectionReason ?? null,
+        acceptedArtifactId: input.acceptedArtifactId ?? null,
+        scanOutcome: input.scanOutcome ?? row.scanOutcome,
+        scannedAt: input.scannedAt ?? row.scannedAt,
+        completedAt: input.completedAt,
+      });
+      return Promise.resolve();
+    },
+  };
 }

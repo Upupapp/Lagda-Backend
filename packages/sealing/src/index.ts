@@ -17,3 +17,7 @@ export {
   InvalidSealInputError,
   PdfProcessingError,
 } from "./errors/index.js";
+export { createPdfInspector } from "./inspection/pdf-inspector.js";
+export {
+  buildTestPdf, buildTestPdfWithTrailingBytes,
+} from "./testing/fixtures.js";

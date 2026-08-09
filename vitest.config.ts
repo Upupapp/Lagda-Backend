@@ -12,7 +12,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
  * `src` keeps the test run honest about what is currently written.
  */
 const PACKAGES = [
-  "contracts", "core", "application", "db", "sealing", "storage", "api", "worker",
+  "contracts", "core", "application", "db", "sealing", "storage", "scanning", "api", "worker",
 ];
 
 export default defineConfig({

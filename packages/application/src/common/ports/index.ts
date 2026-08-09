@@ -7,6 +7,7 @@
 // Every port here has a NAMED CONSUMER except one, and that exception is
 // called out where it appears. A port nobody consumes is the same failure as a
 // field nobody reads.
+import type { ScopedUploadRepository } from "./upload.js";
 
 import type { WorkspaceId, WorkspaceMemberId, UserId } from "@lagda/contracts";
 import type { WorkspaceRole } from "@lagda/core";
@@ -137,6 +138,15 @@ export interface WorkspaceUnitOfWork {
   readonly evidence: ScopedEvidenceRepository;
   readonly artifacts: ScopedArtifactRepository;
   readonly finalizations: ScopedFinalizationRepository;
+  /**
+   * Upload processing records (BACKEND-18).
+   *
+   * In the unit of work like every other tenant repository, so an upload row
+   * and the artifact it accepts are written on ONE transaction with ONE tenant
+   * context. Built separately, they would run on different connections and the
+   * second would have no RLS context at all.
+   */
+  readonly uploads: ScopedUploadRepository;
 }
 
 /**

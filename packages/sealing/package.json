@@ -21,6 +21,7 @@
   "dependencies": {
     "@lagda/application": "*",
     "@lagda/contracts": "*",
+    "file-type": "22.0.1",
     "pdf-lib": "^1.17.1"
   },
   "sideEffects": false

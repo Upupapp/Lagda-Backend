@@ -59,6 +59,22 @@ const LAGDA_ADAPTERS = ["@lagda/db", "@lagda/storage", "@lagda/sealing"];
 const LAGDA_ADAPTER_PATTERNS = ["@lagda/db/*", "@lagda/storage/*", "@lagda/sealing/*"];
 
 /**
+ * Malware scanning. Legitimate ONLY inside `packages/scanning`.
+ *
+ * There is no npm ClamAV client here - the daemon protocol is implemented
+ * directly - so this bans the wrappers someone might reach for later, plus
+ * `node:net`, because a raw socket to a scanner from application code is the
+ * same boundary violation by another route.
+ */
+const SCANNER_PACKAGES = ["clamscan", "clamdjs", "node-clam", "clamav.js"];
+
+/** Multipart parsing. Legitimate ONLY in the API upload adapter. */
+const MULTIPART_PACKAGES = ["@fastify/multipart", "busboy", "multer", "formidable"];
+
+/** Content-type sniffing. Legitimate ONLY inside the inspection adapter. */
+const FILE_TYPE_PACKAGES = ["file-type", "mime-types", "mmmagic", "magic-bytes.js"];
+
+/**
  * Builds ONE `no-restricted-imports` config from several groups, each keeping
  * its own message.
  *
@@ -119,6 +135,24 @@ const STORAGE_SDK_ONLY =
   "lets the provider be replaced without touching business logic. A composition " +
   "root wires `createS3ObjectStorage` from @lagda/storage - it does not reach for " +
   "the SDK itself. See docs/backend/storage/STORAGE_ARCHITECTURE.md.";
+
+const SCANNER_ONLY =
+  "Malware scanner clients may only be imported inside packages/scanning (INV-221). " +
+  "Everything above works with the MalwareScanner port, which is what lets ClamAV be " +
+  "replaced by a managed service without touching the upload pipeline. " +
+  "See docs/backend/upload/MALWARE_SCANNING.md.";
+
+const MULTIPART_ONLY =
+  "Multipart parsing belongs in the API upload adapter (INV-223). The application " +
+  "receives an AsyncIterable<Uint8Array>, never a Fastify multipart object - a " +
+  "framework type in a use case makes the pipeline untestable without HTTP and " +
+  "couples document ingestion to one web framework. " +
+  "See docs/backend/upload/UPLOAD_ARCHITECTURE.md.";
+
+const FILE_TYPE_ONLY =
+  "Content-type detection belongs in the inspection adapter (INV-219). A caller that " +
+  "sniffs types itself is a second acceptance authority, and the two will disagree. " +
+  "Depend on DocumentInspector. See docs/backend/upload/FILE_ACCEPTANCE_POLICY.md.";
 
 const CONTRACTS_PURE =
   "@lagda/contracts is consumed by both the frontend and the backend and must stay " +
@@ -191,6 +225,18 @@ export default tseslint.config(
           patterns: STORAGE_SDK_PATTERNS,
           message: STORAGE_SDK_ONLY,
         },
+        {
+          names: SCANNER_PACKAGES,
+          message: SCANNER_ONLY,
+        },
+        {
+          names: MULTIPART_PACKAGES,
+          message: MULTIPART_ONLY,
+        },
+        {
+          names: FILE_TYPE_PACKAGES,
+          message: FILE_TYPE_ONLY,
+        },
       ]),
     },
   },
@@ -211,6 +257,18 @@ export default tseslint.config(
           names: STORAGE_SDK_PACKAGES,
           patterns: STORAGE_SDK_PATTERNS,
           message: STORAGE_SDK_ONLY,
+        },
+        {
+          names: SCANNER_PACKAGES,
+          message: SCANNER_ONLY,
+        },
+        {
+          names: MULTIPART_PACKAGES,
+          message: MULTIPART_ONLY,
+        },
+        {
+          names: FILE_TYPE_PACKAGES,
+          message: FILE_TYPE_ONLY,
         },
       ]),
     },
@@ -238,6 +296,18 @@ export default tseslint.config(
           patterns: STORAGE_SDK_PATTERNS,
           message: STORAGE_SDK_ONLY,
         },
+        {
+          names: SCANNER_PACKAGES,
+          message: SCANNER_ONLY,
+        },
+        {
+          names: MULTIPART_PACKAGES,
+          message: MULTIPART_ONLY,
+        },
+        {
+          names: FILE_TYPE_PACKAGES,
+          message: FILE_TYPE_ONLY,
+        },
       ]),
     },
   },
@@ -262,6 +332,14 @@ export default tseslint.config(
           patterns: STORAGE_SDK_PATTERNS,
           message: STORAGE_SDK_ONLY,
         },
+        {
+          names: SCANNER_PACKAGES,
+          message: SCANNER_ONLY,
+        },
+        {
+          names: MULTIPART_PACKAGES,
+          message: MULTIPART_ONLY,
+        },
       ]),
     },
   },
@@ -278,6 +356,18 @@ export default tseslint.config(
           names: ["@lagda/db", "@lagda/sealing", "@lagda/api", "@lagda/worker"],
           patterns: ["@lagda/db/*", "@lagda/sealing/*", "@lagda/api/*", "@lagda/worker/*"],
           message: NO_INFRA,
+        },
+        {
+          names: SCANNER_PACKAGES,
+          message: SCANNER_ONLY,
+        },
+        {
+          names: MULTIPART_PACKAGES,
+          message: MULTIPART_ONLY,
+        },
+        {
+          names: FILE_TYPE_PACKAGES,
+          message: FILE_TYPE_ONLY,
         },
       ]),
     },
@@ -299,6 +389,18 @@ export default tseslint.config(
           names: STORAGE_SDK_PACKAGES,
           patterns: STORAGE_SDK_PATTERNS,
           message: STORAGE_SDK_ONLY,
+        },
+        {
+          names: SCANNER_PACKAGES,
+          message: SCANNER_ONLY,
+        },
+        {
+          names: MULTIPART_PACKAGES,
+          message: MULTIPART_ONLY,
+        },
+        {
+          names: FILE_TYPE_PACKAGES,
+          message: FILE_TYPE_ONLY,
         },
       ]),
     },
@@ -327,6 +429,14 @@ export default tseslint.config(
           patterns: STORAGE_SDK_PATTERNS,
           message: STORAGE_SDK_ONLY,
         },
+        {
+          names: SCANNER_PACKAGES,
+          message: SCANNER_ONLY,
+        },
+        {
+          names: FILE_TYPE_PACKAGES,
+          message: FILE_TYPE_ONLY,
+        },
       ]),
     },
   },
@@ -344,6 +454,18 @@ export default tseslint.config(
           names: STORAGE_SDK_PACKAGES,
           patterns: STORAGE_SDK_PATTERNS,
           message: STORAGE_SDK_ONLY,
+        },
+        {
+          names: SCANNER_PACKAGES,
+          message: SCANNER_ONLY,
+        },
+        {
+          names: MULTIPART_PACKAGES,
+          message: MULTIPART_ONLY,
+        },
+        {
+          names: FILE_TYPE_PACKAGES,
+          message: FILE_TYPE_ONLY,
         },
       ]),
     },

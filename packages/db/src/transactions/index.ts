@@ -22,6 +22,7 @@ import {
   createArtifactRepository,
   createFinalizationRepository,
 } from "../repositories/evidence.js";
+import { createUploadRepository } from "../repositories/uploads.js";
 
 /** The setting name RLS policies read. Must match migration 002. */
 const WORKSPACE_SETTING = "lagda.workspace_id";
@@ -44,6 +45,7 @@ function buildUnitOfWork(
     evidence: createEvidenceRepository(trx, workspaceId),
     artifacts: createArtifactRepository(trx, workspaceId),
     finalizations: createFinalizationRepository(trx, workspaceId),
+    uploads: createUploadRepository(trx, workspaceId),
   };
 }
 

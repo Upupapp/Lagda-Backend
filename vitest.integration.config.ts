@@ -5,7 +5,7 @@ import path from "node:path";
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 const PACKAGES = [
-  "contracts", "core", "application", "db", "sealing", "storage", "api", "worker",
+  "contracts", "core", "application", "db", "sealing", "storage", "scanning", "api", "worker",
 ];
 
 /**

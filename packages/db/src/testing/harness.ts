@@ -70,6 +70,10 @@ export async function truncateAll(database: LagdaDatabase): Promise<void> {
   // privileges. That is the point: the runtime role CANNOT do this, and a
   // harness that could not clean up would have to weaken the very controls the
   // tests exist to verify.
+  // document_uploads references BOTH workspaces and document_artifacts, so it
+  // must go before either. Omitting it made every upload test fail on the
+  // workspace delete rather than on anything it was testing.
+  await database.db.deleteFrom("document_uploads").execute();
   await database.db.deleteFrom("verification_records").execute();
   await database.db.deleteFrom("document_seals").execute();
   await database.db.deleteFrom("evidence_events").execute();

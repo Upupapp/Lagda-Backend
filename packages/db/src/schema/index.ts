@@ -214,6 +214,34 @@ export interface KyselyMigrationTable {
 }
 
 /** The complete database. Kysely resolves table names from these keys. */
+
+/**
+ * Upload processing records (BACKEND-18).
+ *
+ * Operational and security history for an untrusted file's journey. NOT the
+ * document, NOT the artifact, and NOT signing evidence.
+ */
+export interface DocumentUploadsTable {
+  upload_id: string;
+  workspace_id: string;
+  uploader_user_id: string;
+  quarantine_reference: string;
+  quarantine_cleared_at: ColumnType<Date | null, Date | null, Date | null>;
+  original_filename: string | null;
+  client_media_type: string | null;
+  detected_media_type: string | null;
+  byte_size: ColumnType<string, number | string, number | string>;
+  digest_algorithm: ColumnType<string, string | undefined, string>;
+  digest: string | null;
+  status: string;
+  rejection_reason: string | null;
+  accepted_artifact_id: string | null;
+  scan_outcome: string | null;
+  scanned_at: ColumnType<Date | null, Date | null, Date | null>;
+  created_at: ColumnType<Date, Date | undefined, Date>;
+  completed_at: ColumnType<Date | null, Date | null, Date | null>;
+}
+
 export interface Database {
   workspaces: WorkspacesTable;
   workspace_memberships: WorkspaceMembershipsTable;
@@ -224,5 +252,6 @@ export interface Database {
   user_sessions: UserSessionsTable;
   idempotency_records: IdempotencyRecordsTable;
   rate_limit_counters: RateLimitCountersTable;
+  document_uploads: DocumentUploadsTable;
   kysely_migration: KyselyMigrationTable;
 }

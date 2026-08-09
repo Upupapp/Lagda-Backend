@@ -54,3 +54,17 @@ export async function ensureTestBuckets(endpoint: string): Promise<void> {
     client.destroy();
   }
 }
+
+/**
+ * A small syntactically valid PDF. Synthetic - never a customer document.
+ *
+ * Lives here rather than in the contract suite because that file imports
+ * `vitest`, and anything the package INDEX re-exports is pulled into every
+ * consumer. Exporting the suite from the index dragged the test framework into
+ * production imports of @lagda/storage.
+ */
+export function samplePdf(): Uint8Array {
+  return new TextEncoder().encode(
+    "%PDF-1.7\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n",
+  );
+}

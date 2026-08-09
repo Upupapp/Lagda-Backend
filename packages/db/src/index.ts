@@ -35,3 +35,6 @@ export { createIdempotencyRepository } from "./repositories/idempotency.js";
 export { createRateLimitCounterRepository } from "./repositories/rate-limit.js";
 export type { Database } from "./schema/index.js";
 export { createTestDatabase, hasIntegrationDatabase, truncateAll } from "./testing/harness.js";
+export {
+  createUploadRepository, createQuarantineCleanupLookup,
+} from "./repositories/uploads.js";
