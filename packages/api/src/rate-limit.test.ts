@@ -65,10 +65,22 @@ describe("policy registry", () => {
     expect(() => { assertPoliciesValid(); }).not.toThrow();
   });
 
-  it("sources every threshold", () => {
+  it("sources every threshold as MEASURED or explicitly CHOSEN", () => {
     // An unsourced number is one nobody can defend when it blocks a customer.
+    //
+    // The original check was `toMatch(/handoff/)`, which any string containing
+    // the word satisfied - including "not specified by the handoff". It read as
+    // a provenance rule while accepting anything that mentioned the document.
+    //
+    // Now a source must either CITE a handoff section, or say plainly that the
+    // handoff is silent and the number was chosen here. Both are honest; a
+    // bare assertion is not.
+    const cites = /handoff §\d+/;
+    const admitsChoosing = /not specified by the handoff/;
+
     for (const policy of Object.values(RATE_LIMIT_POLICIES)) {
-      expect(policy.source, policy.id).toMatch(/handoff/);
+      const sourced = cites.test(policy.source) || admitsChoosing.test(policy.source);
+      expect(sourced, `${policy.id}: ${policy.source}`).toBe(true);
     }
   });
 

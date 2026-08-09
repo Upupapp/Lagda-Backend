@@ -123,6 +123,50 @@ export const RATE_LIMIT_POLICIES = {
       + "against one email identity. Subject to product review (OD-064).",
   },
 
+  // ── Email verification ──────────────────────────────────────────────────
+  //
+  // Two different risks, two different scopes.
+  //
+  // Redeeming a code is cheap and the credential carries 60 bits of entropy, so
+  // the limit here is VOLUMETRIC - it bounds someone submitting random codes at
+  // scale rather than being what makes the code safe (§10, §55).
+  "verification.redeem.ip": {
+    id: "verification.redeem.ip",
+    scopeType: "ip",
+    limit: 20,
+    windowMs: MINUTE,
+    failureMode: "fail-closed",
+    source: "handoff §317 - verification 20/min, applied to email-verification "
+      + "code redemption.",
+  },
+
+  // Resend TRIGGERS OUTBOUND EMAIL, which makes it an email-bombing tool if
+  // left open. Both scopes are required: per-account stops one address being
+  // buried, per-IP stops one source doing it to many addresses at once (§154).
+  //
+  // Deliberately layered rather than aggressive on one axis: a shared office
+  // NAT must not make verification unusable for everyone behind it (§155).
+  "verification.resend.account": {
+    id: "verification.resend.account",
+    scopeType: "account",
+    limit: 3,
+    windowMs: 10 * MINUTE,
+    failureMode: "fail-closed",
+    source: "BACKEND-21 - not specified by the handoff. Chosen to match OTP "
+      + "delivery (handoff §317, 3/10min), which carries the same "
+      + "outbound-email risk. The frontend's 30-second cooldown sits inside it.",
+  },
+  "verification.resend.ip": {
+    id: "verification.resend.ip",
+    scopeType: "ip",
+    limit: 10,
+    windowMs: 10 * MINUTE,
+    failureMode: "fail-closed",
+    source: "BACKEND-21 - not specified by the handoff. Bounds one source "
+      + "triggering mail to many addresses; deliberately higher than the "
+      + "per-account limit so a shared office NAT stays usable.",
+  },
+
   "api.write.user": {
     id: "api.write.user",
     scopeType: "user",

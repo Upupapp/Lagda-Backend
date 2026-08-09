@@ -42,7 +42,8 @@ export {
   PasswordHasherConfigError, type PasswordHasherOptions,
 } from "./security/password-hasher.js";
 export {
-  createVerificationTokenFactory, digestVerificationToken, buildVerificationUrl,
+  createVerificationTokenFactory, digestVerificationCode, digestSubmittedCode,
+  canonicalizeVerificationCode, formatVerificationCode, buildVerificationUrl,
 } from "./security/verification-token.js";
 export {
   registerAuthRoutes, RegisterRequestSchema, RegisterResponseSchema,
@@ -52,3 +53,8 @@ export {
   registerSessionRoutes, SignInRequestSchema, SignInResponseSchema,
   type SessionRouteOptions,
 } from "./auth/session-routes.js";
+export {
+  registerVerificationRoutes, VerifyEmailRequestSchema, VerifyEmailResponseSchema,
+  ResendVerificationRequestSchema, ResendVerificationResponseSchema,
+  type VerificationRouteOptions,
+} from "./auth/verification-routes.js";

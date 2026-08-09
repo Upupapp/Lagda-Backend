@@ -41,3 +41,6 @@ export {
 export {
   createUserRepository, createVerificationChallengeRepository,
 } from "./repositories/users.js";
+export {
+  createVerificationRepository, createVerifiableUserRepository,
+} from "./repositories/verification.js";

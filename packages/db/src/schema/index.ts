@@ -270,6 +270,8 @@ export interface EmailVerificationChallengesTable {
   created_at: ColumnType<Date, Date | undefined, Date>;
   expires_at: Timestamptz;
   consumed_at: ColumnType<Date | null, Date | null, Date | null>;
+  /** Set when a resend rotates this challenge. Distinct from consumed. */
+  superseded_at: ColumnType<Date | null, Date | null, Date | null>;
 }
 
 export interface Database {

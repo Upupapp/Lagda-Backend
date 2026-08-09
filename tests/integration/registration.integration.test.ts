@@ -215,14 +215,18 @@ describe.skipIf(!hasIntegrationDatabase())("registration", () => {
     const issued = Array.from({ length: 20 }, () => tokens.issue());
     expect(new Set(issued.map(t => t.raw)).size).toBe(20);
     expect(new Set(issued.map(t => t.digest)).size).toBe(20);
-    // 32 random bytes, base64url: 43 characters.
-    expect(issued[0]?.raw.length).toBeGreaterThanOrEqual(43);
+    // BACKEND-21 changed the credential from a 43-character link token to a
+    // 12-character Crockford base32 code the user TYPES, because that is what
+    // the real verification page collects. Grouped as XXXX-XXXX-XXXX.
+    expect(issued[0]?.raw).toMatch(
+      /^[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$/);
   });
 
   it("builds the verification URL from CONFIGURATION, not a Host header", () => {
     const { raw } = tokens.issue();
     const url = buildVerificationUrl("https://app.lagda.example/", raw);
-    expect(url.startsWith("https://app.lagda.example/verify-email?token=")).toBe(true);
+    // `code`, not `token` - the parameter name follows the credential.
+    expect(url.startsWith("https://app.lagda.example/verify-email?code=")).toBe(true);
     // The token is URL-encoded, so a token containing reserved characters
     // cannot alter the query string.
     expect(url).toContain(encodeURIComponent(raw));
