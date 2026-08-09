@@ -132,10 +132,25 @@ export default tseslint.config(
   },
 
   // ── Application depends on ports it owns, never on concrete infrastructure ─
+  //
+  // Two bans, for two different reasons.
+  //
+  // Third-party infrastructure (fastify, pg, pdf-lib …) would make a use case
+  // untestable without that infrastructure present.
+  //
+  // LAGDA's OWN adapter packages are banned too, and that one is easy to miss:
+  // `@lagda/db` implements the ports application declares, so an import in the
+  // other direction inverts the dependency the architecture is built on and
+  // creates a cycle. Only the composition roots — api and worker — may import
+  // both sides, because wiring is exactly their job.
   {
     files: ["packages/application/**/*.ts"],
     rules: {
-      "no-restricted-imports": restrict(INFRA_PACKAGES, NO_INFRA, PDF_PATTERNS),
+      "no-restricted-imports": restrict(
+        [...INFRA_PACKAGES, "@lagda/db", "@lagda/storage", "@lagda/sealing", "@lagda/api", "@lagda/worker"],
+        NO_INFRA,
+        [...PDF_PATTERNS, "@lagda/db/*", "@lagda/storage/*", "@lagda/sealing/*"],
+      ),
     },
   },
 

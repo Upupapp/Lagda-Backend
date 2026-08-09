@@ -7,6 +7,18 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./ports": {
+      "types": "./dist/common/ports/index.d.ts",
+      "default": "./dist/common/ports/index.js"
+    },
+    "./errors": {
+      "types": "./dist/common/errors/index.d.ts",
+      "default": "./dist/common/errors/index.js"
+    },
+    "./workspaces": {
+      "types": "./dist/workspaces/index.d.ts",
+      "default": "./dist/workspaces/index.js"
     }
   },
   "main": "./dist/index.js",
@@ -21,5 +33,6 @@
   "dependencies": {
     "@lagda/contracts": "*",
     "@lagda/core": "*"
-  }
+  },
+  "sideEffects": false
 }
