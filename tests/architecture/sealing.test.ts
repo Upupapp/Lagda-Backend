@@ -1,0 +1,248 @@
+// The sealing boundary, enforced.
+//
+// BACKEND-00 claims a future Java or .NET signing service can replace
+// `@lagda/sealing` without any caller changing. That claim is only true if
+// nothing outside the package knows a PDF library exists and nothing in the
+// seam mentions a library type. Both are checkable, so they are checked here
+// rather than asserted in a document nobody runs.
+
+import { describe, it, expect } from "vitest";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const PACKAGES = path.join(ROOT, "packages");
+
+function sourceFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir)) {
+    if (entry === "node_modules" || entry === "dist") continue;
+    const full = path.join(dir, entry);
+    if (statSync(full).isDirectory()) out.push(...sourceFiles(full));
+    else if (entry.endsWith(".ts")) out.push(full);
+  }
+  return out;
+}
+
+function read(file: string): string {
+  return readFileSync(file, "utf8");
+}
+
+/**
+ * Import specifiers only — not prose. A comment naming pdf-lib is not a
+ * dependency.
+ *
+ * The bare form `import "pdf-lib";` is included deliberately. An earlier
+ * version of this matched only `from "…"`, and a probe that appended a
+ * side-effect import to the application package passed every check — the
+ * boundary was unguarded against the one import form that has no `from`.
+ */
+function importsOf(source: string): string[] {
+  const specifiers: string[] = [];
+  const pattern =
+    /(?:from\s*|import\s*\(\s*|require\s*\(\s*|import\s+)["']([^"']+)["']/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(source)) !== null) {
+    const specifier = match[1];
+    if (specifier !== undefined) specifiers.push(specifier);
+  }
+  return specifiers;
+}
+
+const PDF_LIBRARIES = /^(pdf-lib|pdfkit|jspdf|pdfmake|@signpdf\/|@pdf-lib\/)/;
+
+describe("PDF libraries are confined to @lagda/sealing", () => {
+  it("no package outside sealing imports a PDF library", () => {
+    const offenders: string[] = [];
+
+    for (const pkg of readdirSync(PACKAGES)) {
+      if (pkg === "sealing") continue;
+      const src = path.join(PACKAGES, pkg, "src");
+      try {
+        if (!statSync(src).isDirectory()) continue;
+      } catch {
+        continue;
+      }
+      for (const file of sourceFiles(src)) {
+        for (const specifier of importsOf(read(file))) {
+          if (PDF_LIBRARIES.test(specifier)) {
+            offenders.push(`${path.relative(ROOT, file)} → ${specifier}`);
+          }
+        }
+      }
+    }
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("sealing DOES import pdf-lib — the negative control", () => {
+    // Without this, the check above would pass just as happily if the sealer
+    // were deleted, or if the detector's regex silently matched nothing. A
+    // boundary test that cannot fail proves nothing about the boundary.
+    const found = sourceFiles(path.join(PACKAGES, "sealing", "src")).some((file) =>
+      importsOf(read(file)).some((s) => PDF_LIBRARIES.test(s)),
+    );
+    expect(found).toBe(true);
+  });
+
+  it("only pdf-lib appears in any package manifest, and only in sealing's", () => {
+    const declarations: string[] = [];
+    for (const pkg of readdirSync(PACKAGES)) {
+      const manifest = path.join(PACKAGES, pkg, "package.json");
+      let raw: string;
+      try {
+        raw = read(manifest);
+      } catch {
+        continue;
+      }
+      const parsed = JSON.parse(raw) as {
+        dependencies?: Record<string, string>;
+        devDependencies?: Record<string, string>;
+      };
+      for (const name of Object.keys({ ...parsed.dependencies, ...parsed.devDependencies })) {
+        if (PDF_LIBRARIES.test(name)) declarations.push(`${pkg}:${name}`);
+      }
+    }
+    expect(declarations).toEqual(["sealing:pdf-lib"]);
+  });
+});
+
+/**
+ * Source with comments removed.
+ *
+ * Without this, a check for a forbidden identifier matches the comment that
+ * explains why the identifier is forbidden — the detector reports a violation
+ * created by documenting the rule.
+ */
+function code(file: string): string {
+  return read(file)
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+}
+
+describe("the seam is library-neutral", () => {
+  const seamPath = path.join(PACKAGES, "application/src/common/ports/sealing.ts");
+  const seam = read(seamPath);
+
+  it("names no PDF library type", () => {
+    // `PDFDocument`, `PDFPage`, `PDFFont` in the port would make the interface
+    // unimplementable by a service running outside Node.
+    expect(code(seamPath)).not.toMatch(/\bPDF(Document|Page|Font|Image|Ref)\b/);
+    expect(importsOf(seam).some((s) => PDF_LIBRARIES.test(s))).toBe(false);
+  });
+
+  it("uses Uint8Array rather than Node's Buffer for document bytes", () => {
+    // `Buffer` is Node-only. A remote signer implemented in Java could not
+    // satisfy a contract that demands one.
+    expect(code(seamPath)).toMatch(/DocumentBytes\s*=\s*Uint8Array/);
+    expect(code(seamPath)).not.toMatch(/\bBuffer\b/);
+  });
+
+  it("imports only from @lagda/contracts", () => {
+    const external = importsOf(seam).filter((s) => !s.startsWith("."));
+    expect(external).toEqual(["@lagda/contracts"]);
+  });
+
+  it("declares exactly one operation on DocumentSealer", () => {
+    // The seam is one high-level capability. `mergeFields`/`hashDocument`
+    // hanging off the interface would give callers a reason to reach past it,
+    // and every one of those becomes a migration cost later.
+    const body = /interface DocumentSealer\s*\{([\s\S]*?)\n\}/.exec(seam)?.[1] ?? "";
+    expect(body).not.toBe("");
+    const methods = body.match(/^\s*\w+\s*\(/gm) ?? [];
+    expect(methods).toHaveLength(1);
+    expect(body).toMatch(/seal\s*\(/);
+  });
+});
+
+describe("dependency direction", () => {
+  it("application never imports @lagda/sealing", () => {
+    // The port is defined in application and IMPLEMENTED in sealing. An import
+    // the other way would invert the dependency and make the swap impossible.
+    const offenders = sourceFiles(path.join(PACKAGES, "application", "src")).filter((file) =>
+      importsOf(read(file)).includes("@lagda/sealing"),
+    );
+    expect(offenders.map((f) => path.relative(ROOT, f))).toEqual([]);
+  });
+
+  it("core never imports @lagda/sealing", () => {
+    const offenders = sourceFiles(path.join(PACKAGES, "core", "src")).filter((file) =>
+      importsOf(read(file)).includes("@lagda/sealing"),
+    );
+    expect(offenders.map((f) => path.relative(ROOT, f))).toEqual([]);
+  });
+
+  it("sealing imports the port from @lagda/application, not a local copy", () => {
+    // One definition. A second `interface DocumentSealer` in sealing would
+    // typecheck, drift, and give the two layers different contracts.
+    const sealer = read(path.join(PACKAGES, "sealing/src/node-document-sealer.ts"));
+    expect(importsOf(sealer)).toContain("@lagda/application");
+    expect(sealer).not.toMatch(/interface\s+DocumentSealer\b/);
+  });
+
+  it("defines DocumentSealer in exactly one file", () => {
+    const declarations: string[] = [];
+    for (const pkg of readdirSync(PACKAGES)) {
+      const src = path.join(PACKAGES, pkg, "src");
+      try {
+        if (!statSync(src).isDirectory()) continue;
+      } catch {
+        continue;
+      }
+      for (const file of sourceFiles(src)) {
+        if (/interface\s+DocumentSealer\b/.test(read(file))) {
+          declarations.push(path.relative(ROOT, file).replace(/\\/g, "/"));
+        }
+      }
+    }
+    expect(declarations).toEqual(["packages/application/src/common/ports/sealing.ts"]);
+  });
+});
+
+describe("node:crypto is confined to the sealing adapter", () => {
+  it("hashing happens in exactly one file", () => {
+    // Several hash implementations across layers is how one of them ends up
+    // base64 while the other is hex, and a verification comparison silently
+    // never matches.
+    const users: string[] = [];
+    for (const pkg of readdirSync(PACKAGES)) {
+      const src = path.join(PACKAGES, pkg, "src");
+      try {
+        if (!statSync(src).isDirectory()) continue;
+      } catch {
+        continue;
+      }
+      for (const file of sourceFiles(src)) {
+        if (file.endsWith(".test.ts")) continue;
+        if (importsOf(read(file)).includes("node:crypto")) {
+          users.push(path.relative(ROOT, file).replace(/\\/g, "/"));
+        }
+      }
+    }
+    expect(users).toEqual(["packages/sealing/src/internal/digest.ts"]);
+  });
+});
+
+describe("the sealer is deterministic", () => {
+  it("reads no clock and no randomness", () => {
+    // Every time-dependent and random value is supplied in the request
+    // (`sealedAt`, `verificationId`). A hidden `Date.now()` would make the same
+    // request produce different bytes, and the determinism test would only fail
+    // when the clock happened to tick between two runs.
+    const files = sourceFiles(path.join(PACKAGES, "sealing", "src")).filter(
+      (f) => !f.endsWith(".test.ts"),
+    );
+    const offenders: string[] = [];
+    for (const file of files) {
+      const source = read(file)
+        // Strip comments so prose about clocks is not mistaken for a clock read.
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/^\s*\/\/.*$/gm, "");
+      if (/\bDate\.now\s*\(|new\s+Date\s*\(|Math\.random\s*\(|process\.env\b/.test(source)) {
+        offenders.push(path.relative(ROOT, file));
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});

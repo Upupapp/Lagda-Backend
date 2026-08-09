@@ -173,35 +173,8 @@ export interface TransactionManager {
 }
 
 // ── Document sealing ─────────────────────────────────────────────────────────
+//
+// The seam lives in ./sealing.ts, re-exported here so there is exactly one
+// definition of DocumentSealer in the codebase.
 
-/**
- * The escape hatch BACKEND-00 built the architecture around.
- *
- * **This port has no consumer yet**, and that is stated rather than hidden.
- * `@lagda/sealing` will implement it (BACKEND-09) and the signing completion
- * use case will consume it (BACKEND-38).
- *
- * ONE operation. `mergeFields`, `hashDocument` and `signPdf` stay internal to
- * the sealing package — exposing them would give twenty callers a reason to
- * reach past the seam, and INV-002 exists so exactly one does.
- *
- * `SealRequest` and `SealResult` are LAGDA-owned. No `pdf-lib` type crosses
- * this boundary (INV-008), which is what makes a later Java or .NET
- * implementation a substitution rather than a rewrite.
- */
-export interface SealRequest {
-  readonly transactionId: string;
-  readonly workspaceId: WorkspaceId;
-  readonly sealedAt: number;
-}
-
-export interface SealResult {
-  readonly signedDocumentHash: string;
-  readonly sealScheme: string;
-  readonly sealVersion: number;
-  readonly digestAlgorithm: string;
-}
-
-export interface DocumentSealer {
-  seal(request: SealRequest): Promise<SealResult>;
-}
+export * from "./sealing.js";

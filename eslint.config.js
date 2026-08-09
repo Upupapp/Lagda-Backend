@@ -25,22 +25,42 @@ const PDF_PACKAGES = [
 ];
 const PDF_PATTERNS = ["@signpdf/*", "pdf-lib/*", "pdfkit/*"];
 
-/** Concrete infrastructure. Adapters may import these; domain layers may not. */
-const INFRA_PACKAGES = [
+/** Database access. Legitimate ONLY inside `packages/db`. */
+const DB_PACKAGES = ["pg", "postgres", "pg-boss", "kysely"];
+const DB_PATTERNS = ["kysely/*", "pg/*"];
+
+/** Server, mail and object-storage infrastructure. Never a domain dependency. */
+const INFRA_NON_PDF = [
   "fastify", "@fastify/cookie", "@fastify/csrf-protection", "@fastify/rate-limit",
-  "pg", "postgres", "pg-boss",
   "pino", "pino-http",
   "@aws-sdk/client-s3", "@aws-sdk/s3-request-presigner", "aws-sdk", "minio",
   "nodemailer",
-  ...PDF_PACKAGES,
 ];
 
-/** Builds a `no-restricted-imports` entry with a message that says why. */
-const restrict = (names, message, patterns = []) => [
+/** Frontend-only packages. `@lagda/contracts` is shared and must not pull these in. */
+const FRONTEND_PACKAGES = ["react", "react-dom", "vite"];
+
+/** LAGDA's own adapter packages — implementations of ports, never dependencies of them. */
+const LAGDA_ADAPTERS = ["@lagda/db", "@lagda/storage", "@lagda/sealing"];
+const LAGDA_ADAPTER_PATTERNS = ["@lagda/db/*", "@lagda/storage/*", "@lagda/sealing/*"];
+
+/**
+ * Builds ONE `no-restricted-imports` config from several groups, each keeping
+ * its own message.
+ *
+ * A single merged message was the previous approach, and it told a developer
+ * importing `pdf-lib` that "Database access belongs in @lagda/db". A rule whose
+ * explanation is about the wrong subject gets worked around rather than obeyed.
+ */
+const restrictGroups = (groups) => [
   "error",
   {
-    paths: names.map(name => ({ name, message })),
-    ...(patterns.length ? { patterns: patterns.map(group => ({ group: [group], message })) } : {}),
+    paths: groups.flatMap(({ names, message }) =>
+      names.map(name => ({ name, message })),
+    ),
+    patterns: groups.flatMap(({ patterns = [], message }) =>
+      patterns.map(group => ({ group: [group], message })),
+    ),
   },
 ];
 
@@ -49,6 +69,11 @@ const SEALING_ONLY =
   "The sealing package is the seam that lets certificate-backed signing move to a " +
   "dedicated service later; an import here would defeat it. " +
   "See docs/backend/ARCHITECTURE_INVARIANTS.md.";
+
+const PERSISTENCE_ONLY =
+  "Database access belongs in @lagda/db. Depend on a repository port owned by " +
+  "@lagda/application and let the composition root inject the adapter (INV-046). " +
+  "See docs/backend/db/DATABASE_CONVENTIONS.md.";
 
 const NO_INFRA =
   "This package may not depend on concrete infrastructure. Depend on a port owned " +
@@ -95,83 +120,144 @@ export default tseslint.config(
     },
   },
 
-  // ── INV-001 · PDF libraries are confined to packages/sealing ───────────────
-  // Applied to every package except sealing. No PDF dependency is installed yet,
-  // so this passes trivially today; it exists to stop the first violation.
-  {
-    files: [
-      "packages/contracts/**/*.ts", "packages/core/**/*.ts",
-      "packages/application/**/*.ts", "packages/db/**/*.ts",
-      "packages/storage/**/*.ts", "packages/api/**/*.ts",
-      "packages/worker/**/*.ts", "tests/**/*.ts",
-    ],
-    rules: {
-      "no-restricted-imports": restrict(PDF_PACKAGES, SEALING_ONLY, PDF_PATTERNS),
-    },
-  },
+  // ── Import boundaries, ONE block per package ───────────────────────────────
+  //
+  // Structured this way for a reason discovered by probe. `no-restricted-imports`
+  // is LAST-WINS per file: when two blocks both match `packages/contracts/**`,
+  // the second REPLACES the first rather than adding to it. The previous layout
+  // had overlapping blocks, and the final one silently deleted the earlier bans —
+  // `contracts` could import `react` and `vite`, and `application` could import
+  // `@lagda/api` and `@lagda/worker`, with lint reporting nothing.
+  //
+  // So each package gets exactly one rule, built from groups that each carry
+  // their OWN message. Merging the lists but keeping one message would have
+  // produced the other half of that bug: importing `pdf-lib` inside sealing was
+  // reported as "Database access belongs in @lagda/db".
 
-  // ── INV-005 · core is pure domain logic ────────────────────────────────────
-  // Core must be executable in tests without a server or a database.
-  {
-    files: ["packages/core/**/*.ts"],
-    rules: {
-      "no-restricted-imports": restrict(INFRA_PACKAGES, NO_INFRA, PDF_PATTERNS),
-    },
-  },
-
-  // ── INV-007 · contracts stays consumable by the frontend ───────────────────
+  // contracts — consumed by the frontend AND the backend.
   {
     files: ["packages/contracts/**/*.ts"],
     rules: {
-      "no-restricted-imports": restrict(
-        [...INFRA_PACKAGES, "react", "react-dom", "vite"],
-        CONTRACTS_PURE,
-        PDF_PATTERNS,
-      ),
+      "no-restricted-imports": restrictGroups([
+        { names: PDF_PACKAGES, patterns: PDF_PATTERNS, message: SEALING_ONLY },
+        { names: DB_PACKAGES, patterns: DB_PATTERNS, message: PERSISTENCE_ONLY },
+        {
+          names: [...INFRA_NON_PDF, ...FRONTEND_PACKAGES, ...LAGDA_ADAPTERS],
+          patterns: LAGDA_ADAPTER_PATTERNS,
+          message: CONTRACTS_PURE,
+        },
+      ]),
     },
   },
 
-  // ── Application depends on ports it owns, never on concrete infrastructure ─
+  // core — pure domain logic, executable with no server and no database.
+  {
+    files: ["packages/core/**/*.ts"],
+    rules: {
+      "no-restricted-imports": restrictGroups([
+        { names: PDF_PACKAGES, patterns: PDF_PATTERNS, message: SEALING_ONLY },
+        { names: DB_PACKAGES, patterns: DB_PATTERNS, message: PERSISTENCE_ONLY },
+        {
+          names: [...INFRA_NON_PDF, ...LAGDA_ADAPTERS],
+          patterns: LAGDA_ADAPTER_PATTERNS,
+          message: NO_INFRA,
+        },
+      ]),
+    },
+  },
+
+  // application — owns the ports; depends on none of their implementations.
   //
-  // Two bans, for two different reasons.
-  //
-  // Third-party infrastructure (fastify, pg, pdf-lib …) would make a use case
-  // untestable without that infrastructure present.
-  //
-  // LAGDA's OWN adapter packages are banned too, and that one is easy to miss:
+  // LAGDA's own adapter packages are banned here too, which is easy to miss:
   // `@lagda/db` implements the ports application declares, so an import in the
-  // other direction inverts the dependency the architecture is built on and
-  // creates a cycle. Only the composition roots — api and worker — may import
-  // both sides, because wiring is exactly their job.
+  // other direction inverts the dependency the architecture is built on. Only
+  // the composition roots — api and worker — may import both sides.
   {
     files: ["packages/application/**/*.ts"],
     rules: {
-      "no-restricted-imports": restrict(
-        [...INFRA_PACKAGES, "@lagda/db", "@lagda/storage", "@lagda/sealing", "@lagda/api", "@lagda/worker"],
-        NO_INFRA,
-        [...PDF_PATTERNS, "@lagda/db/*", "@lagda/storage/*", "@lagda/sealing/*"],
-      ),
+      "no-restricted-imports": restrictGroups([
+        { names: PDF_PACKAGES, patterns: PDF_PATTERNS, message: SEALING_ONLY },
+        { names: DB_PACKAGES, patterns: DB_PATTERNS, message: PERSISTENCE_ONLY },
+        {
+          names: [...INFRA_NON_PDF, ...LAGDA_ADAPTERS, "@lagda/api", "@lagda/worker"],
+          patterns: [...LAGDA_ADAPTER_PATTERNS, "@lagda/api/*", "@lagda/worker/*"],
+          message: NO_INFRA,
+        },
+      ]),
     },
   },
 
-
-  // ── Persistence stays inside packages/db ───────────────────────────────────
-  // `pg` and `kysely` are the database. Anywhere but @lagda/db, they mean a
-  // layer has reached past its adapter (INV-046).
+  // sealing — the ONE package permitted a PDF library.
+  //
+  // No PDF ban here, deliberately. Everything else still applies: sealing is an
+  // adapter for one capability, not a second place to reach the database or
+  // serve HTTP.
   {
-    files: [
-      "packages/contracts/**/*.ts", "packages/core/**/*.ts",
-      "packages/application/**/*.ts", "packages/sealing/**/*.ts",
-      "packages/storage/**/*.ts", "tests/**/*.ts",
-    ],
+    files: ["packages/sealing/**/*.ts"],
     rules: {
-      "no-restricted-imports": restrict(
-        [...INFRA_PACKAGES, "kysely", "@lagda/db", "@lagda/storage", "@lagda/sealing"],
-        "Database access belongs in @lagda/db. Depend on a repository port owned " +
-        "by @lagda/application and let the composition root inject the adapter " +
-        "(INV-046). See docs/backend/db/DATABASE_CONVENTIONS.md.",
-        [...PDF_PATTERNS, "kysely/*"],
-      ),
+      "no-restricted-imports": restrictGroups([
+        { names: DB_PACKAGES, patterns: DB_PATTERNS, message: PERSISTENCE_ONLY },
+        {
+          names: [...INFRA_NON_PDF, "@lagda/db", "@lagda/storage", "@lagda/api", "@lagda/worker"],
+          patterns: ["@lagda/db/*", "@lagda/storage/*", "@lagda/api/*", "@lagda/worker/*"],
+          message: NO_INFRA,
+        },
+      ]),
+    },
+  },
+
+  // storage — object storage adapter. No PDF library: it moves bytes, it does
+  // not interpret them.
+  {
+    files: ["packages/storage/**/*.ts"],
+    rules: {
+      "no-restricted-imports": restrictGroups([
+        { names: PDF_PACKAGES, patterns: PDF_PATTERNS, message: SEALING_ONLY },
+        { names: DB_PACKAGES, patterns: DB_PATTERNS, message: PERSISTENCE_ONLY },
+        {
+          names: ["@lagda/db", "@lagda/sealing", "@lagda/api", "@lagda/worker"],
+          patterns: ["@lagda/db/*", "@lagda/sealing/*", "@lagda/api/*", "@lagda/worker/*"],
+          message: NO_INFRA,
+        },
+      ]),
+    },
+  },
+
+  // db — persistence adapter. `pg` and `kysely` belong here and nowhere else,
+  // so this package is exempt from the persistence ban and no other.
+  {
+    files: ["packages/db/**/*.ts"],
+    rules: {
+      "no-restricted-imports": restrictGroups([
+        { names: PDF_PACKAGES, patterns: PDF_PATTERNS, message: SEALING_ONLY },
+        {
+          names: ["@lagda/sealing", "@lagda/storage", "@lagda/api", "@lagda/worker"],
+          patterns: ["@lagda/sealing/*", "@lagda/storage/*", "@lagda/api/*", "@lagda/worker/*"],
+          message: NO_INFRA,
+        },
+      ]),
+    },
+  },
+
+  // api and worker — the composition roots. They may import both sides, because
+  // wiring is exactly their job. They still may not open a PDF themselves.
+  {
+    files: ["packages/api/**/*.ts", "packages/worker/**/*.ts"],
+    rules: {
+      "no-restricted-imports": restrictGroups([
+        { names: PDF_PACKAGES, patterns: PDF_PATTERNS, message: SEALING_ONLY },
+      ]),
+    },
+  },
+
+  // Cross-cutting tests. `packages/sealing` has its own tests that legitimately
+  // open PDFs; those are covered by the sealing block above.
+  {
+    files: ["tests/**/*.ts"],
+    rules: {
+      "no-restricted-imports": restrictGroups([
+        { names: PDF_PACKAGES, patterns: PDF_PATTERNS, message: SEALING_ONLY },
+      ]),
     },
   },
 

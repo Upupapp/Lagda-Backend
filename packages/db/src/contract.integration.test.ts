@@ -16,7 +16,12 @@ import { createTestDatabase, truncateAll, hasIntegrationDatabase } from "./testi
 
 const api = { describe, it, beforeEach, expect } as unknown as ContractTestApi;
 
-if (hasIntegrationDatabase()) {
+// Wrapped in `describe.skipIf` rather than a bare `if`. With a plain guard, a
+// machine without a database registered NO suite at all, and Vitest fails a
+// file containing no tests — so a missing database was reported as a hard test
+// failure indistinguishable from broken code. Here the suite always exists and
+// is skipped when there is nothing to connect to.
+describe.skipIf(!hasIntegrationDatabase())("repository contract on PostgreSQL", () => {
   let database: LagdaDatabase;
 
   beforeAll(async () => {
@@ -31,4 +36,4 @@ if (hasIntegrationDatabase()) {
     transactions: createTransactionManager(database.db),
     reset: () => truncateAll(database),
   }), api);
-}
+});
