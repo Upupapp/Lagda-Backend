@@ -66,6 +66,13 @@ export {
   digestSubmittedPreAuthToken, isWellFormedPreAuthToken,
 } from "./security/pre-auth-token.js";
 export {
+  registerAccountRoutes, CurrentUserResponseSchema, UpdateProfileRequestSchema,
+  UpdatePreferencesRequestSchema, ChangePasswordRequestSchema,
+  ChangePasswordResponseSchema, SessionListResponseSchema,
+  RevokeSessionRequestSchema, RevokeSessionResponseSchema,
+  type AccountRouteOptions,
+} from "./account/account-routes.js";
+export {
   registerMfaRoutes, VerifyMfaRequestSchema, VerifyMfaResponseSchema,
   EnrollMfaResponseSchema, ConfirmMfaRequestSchema, ConfirmMfaResponseSchema,
   DisableMfaRequestSchema, DisableMfaResponseSchema, type MfaRouteOptions,

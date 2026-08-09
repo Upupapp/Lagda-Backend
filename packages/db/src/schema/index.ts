@@ -260,6 +260,32 @@ export interface UsersTable {
   terms_version: string;
   terms_accepted_at: Timestamptz;
   created_at: ColumnType<Date, Date | undefined, Date>;
+
+  // ── Profile (BACKEND-24) ──────────────────────────────────────────────
+  //
+  // Nullable because the registration form does not ask for them. `""` would
+  // conflate "never filled in" with "deliberately cleared".
+  full_name: ColumnType<string | null, string | null, string | null>;
+  job_title: ColumnType<string | null, string | null, string | null>;
+  department: ColumnType<string | null, string | null, string | null>;
+  preferred_sender_name: ColumnType<string | null, string | null, string | null>;
+
+  // ── Preferences (BACKEND-24) ──────────────────────────────────────────
+  //
+  // Explicit typed columns, not a `preferences jsonb` bag. The closed sets
+  // carry database CHECKs, so a value the product cannot render is not
+  // storable.
+  /** An IANA identifier, e.g. `Asia/Manila`. Never a raw offset. */
+  timezone: ColumnType<string | null, string | null, string | null>;
+  locale: ColumnType<string | null, string | null, string | null>;
+  language: ColumnType<string | null, string | null, string | null>;
+  date_format: ColumnType<string | null, string | null, string | null>;
+  time_format: ColumnType<string | null, string | null, string | null>;
+  number_format: ColumnType<string | null, string | null, string | null>;
+  appearance: ColumnType<string | null, string | null, string | null>;
+  density: ColumnType<string | null, string | null, string | null>;
+  document_list_view: ColumnType<string | null, string | null, string | null>;
+  profile_updated_at: ColumnType<Date | null, Date | null, Date | null>;
 }
 
 /** Email verification challenges. Holds a DIGEST, never a raw token. */

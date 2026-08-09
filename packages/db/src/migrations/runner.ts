@@ -19,6 +19,7 @@ import * as m008 from "./008_users_and_verification.js";
 import * as m009 from "./009_verification_supersession.js";
 import * as m010 from "./010_password_reset_challenges.js";
 import * as m011 from "./011_mfa_and_pending_auth.js";
+import * as m012 from "./012_user_profile.js";
 
 /**
  * Migrations listed explicitly rather than read from disk.
@@ -42,6 +43,7 @@ const MIGRATIONS: Record<string, Migration> = {
   "009_verification_supersession": m009,
   "010_password_reset_challenges": m010,
   "011_mfa_and_pending_auth": m011,
+  "012_user_profile": m012,
 };
 
 class ExplicitMigrationProvider implements MigrationProvider {

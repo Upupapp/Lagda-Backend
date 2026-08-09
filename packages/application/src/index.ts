@@ -31,3 +31,4 @@ export * from "./auth/login-user.js";
 export * from "./auth/verify-email.js";
 export * from "./auth/reset-password.js";
 export * from "./auth/mfa.js";
+export * from "./account/profile.js";

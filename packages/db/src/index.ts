@@ -51,3 +51,7 @@ export {
   createMfaFactorRepository, createRecoveryCodeRepository,
   createPendingAuthenticationRepository,
 } from "./repositories/mfa.js";
+export {
+  createAccountProfileRepository, createAccountCredentialRepository,
+  createAccountSessionRepository,
+} from "./repositories/account.js";
