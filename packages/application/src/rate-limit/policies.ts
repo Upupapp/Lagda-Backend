@@ -167,6 +167,59 @@ export const RATE_LIMIT_POLICIES = {
       + "per-account limit so a shared office NAT stays usable.",
   },
 
+  // ── Password recovery (BACKEND-22) ──────────────────────────────────────
+  //
+  // Requesting a reset TRIGGERS OUTBOUND EMAIL to an address the caller does
+  // not have to prove anything about, which makes an unlimited endpoint a
+  // mailbox-flooding tool aimed at any user by name (§27).
+  //
+  // The per-account limit is TIGHTER than verification resend. The reason is
+  // the payload: a verification code proves an address; a reset link GRANTS THE
+  // ACCOUNT. Every additional one sitting in a mailbox is another chance for
+  // the most dangerous credential in the system to be read by the wrong person.
+  //
+  // The account scope is keyed on the NORMALIZED address and is applied to
+  // unknown addresses too — otherwise "unlimited attempts" versus "limited
+  // attempts" is itself an account-existence oracle, and the whole
+  // anti-enumeration design leaks through the limiter (§28, §188).
+  "auth.reset.request.account": {
+    id: "auth.reset.request.account",
+    scopeType: "account",
+    limit: 3,
+    windowMs: 15 * MINUTE,
+    failureMode: "fail-closed",
+    source: "BACKEND-22 - not specified by the handoff. Chosen below the OTP "
+      + "delivery rate (handoff §317, 3/10min) because a reset link is a "
+      + "higher-value secret than a one-time code; three genuine attempts in "
+      + "fifteen minutes covers a user who mistypes their address twice.",
+  },
+  "auth.reset.request.ip": {
+    id: "auth.reset.request.ip",
+    scopeType: "ip",
+    limit: 10,
+    windowMs: 15 * MINUTE,
+    failureMode: "fail-closed",
+    source: "BACKEND-22 - not specified by the handoff. Bounds one source "
+      + "triggering reset mail to many addresses; higher than the per-account "
+      + "limit so a shared NAT does not lock out everyone behind it.",
+  },
+
+  // Submitting a reset token is bounded because it costs ARGON2 - roughly 50ms
+  // of dedicated CPU and 19MB per attempt. Unbounded, that is a
+  // one-request-per-core denial of service against an unauthenticated endpoint,
+  // which is a bigger risk here than guessing: the token carries 256 bits and
+  // is not brute-forceable at any rate (§54, §56, §107).
+  "auth.reset.submit.ip": {
+    id: "auth.reset.submit.ip",
+    scopeType: "ip",
+    limit: 10,
+    windowMs: MINUTE,
+    failureMode: "fail-closed",
+    source: "BACKEND-22 - not specified by the handoff. Sized against Argon2 "
+      + "cost rather than guessing risk: ten hashes per minute per address is "
+      + "far above any real user and far below what saturates a core.",
+  },
+
   "api.write.user": {
     id: "api.write.user",
     scopeType: "user",

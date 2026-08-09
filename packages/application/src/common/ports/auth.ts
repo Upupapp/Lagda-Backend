@@ -182,3 +182,47 @@ export interface VerificationChallengeRepository {
 export interface VerificationTokenFactory {
   readonly issue: () => { readonly raw: string; readonly digest: VerificationTokenDigest };
 }
+
+// ── Password reset ───────────────────────────────────────────────────────────
+
+export type PasswordResetChallengeId = string & {
+  readonly __brand: "PasswordResetChallengeId";
+};
+
+/**
+ * A digest of a password-reset token.
+ *
+ * A DISTINCT brand from `VerificationTokenDigest`, not an alias. Both are
+ * 64 lowercase hex characters, so without separate brands a verification digest
+ * could be passed to a reset lookup and the compiler would agree. The two
+ * credentials are different security domains (§2, §8) and the type system is
+ * asked to say so.
+ */
+export type ResetTokenDigest = string & { readonly __brand: "ResetTokenDigest" };
+
+/**
+ * Generates password-reset tokens.
+ *
+ * Domain-separated from verification, session and CSRF tokens. A token minted
+ * to prove mailbox possession for VERIFICATION must never be presentable as
+ * authority to REPLACE A PASSWORD — that is a straight account takeover
+ * (INV-278).
+ */
+export interface ResetTokenFactory {
+  readonly issue: () => { readonly raw: string; readonly digest: ResetTokenDigest };
+}
+
+/**
+ * The one credential write password reset needs on an account.
+ *
+ * Deliberately not a generic patch: a method that can set arbitrary user
+ * columns is a method that can set `email_verified_at`, and reset must never do
+ * that (§34, §100).
+ */
+export interface PasswordResettableUserRepository
+  extends Pick<UserRepository, "findByNormalizedEmail"> {
+  readonly replacePasswordHash: (input: {
+    readonly userId: UserId;
+    readonly passwordHash: PasswordHash;
+  }) => Promise<boolean>;
+}

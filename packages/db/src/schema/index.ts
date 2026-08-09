@@ -274,6 +274,28 @@ export interface EmailVerificationChallengesTable {
   superseded_at: ColumnType<Date | null, Date | null, Date | null>;
 }
 
+/**
+ * Structurally identical to `EmailVerificationChallengesTable`, and a separate
+ * type on purpose.
+ *
+ * Making them one type would let a verification challenge be passed where a
+ * reset challenge is expected — the compiler would accept it, because the rows
+ * have the same shape. Separate declarations mean the type system enforces the
+ * same credential-domain boundary the two tables do.
+ */
+export interface PasswordResetChallengesTable {
+  challenge_id: string;
+  user_id: string;
+  /** A digest. The raw reset token is never persisted (INV-280). */
+  token_digest: string;
+  created_at: ColumnType<Date, Date | undefined, Date>;
+  expires_at: Timestamptz;
+  /** Set when this token successfully replaced a password. */
+  consumed_at: ColumnType<Date | null, Date | null, Date | null>;
+  /** Set when a later request rotated it, or a successful reset retired it. */
+  superseded_at: ColumnType<Date | null, Date | null, Date | null>;
+}
+
 export interface Database {
   workspaces: WorkspacesTable;
   workspace_memberships: WorkspaceMembershipsTable;
@@ -287,5 +309,6 @@ export interface Database {
   document_uploads: DocumentUploadsTable;
   users: UsersTable;
   email_verification_challenges: EmailVerificationChallengesTable;
+  password_reset_challenges: PasswordResetChallengesTable;
   kysely_migration: KyselyMigrationTable;
 }

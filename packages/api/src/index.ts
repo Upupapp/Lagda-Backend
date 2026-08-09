@@ -46,6 +46,15 @@ export {
   canonicalizeVerificationCode, formatVerificationCode, buildVerificationUrl,
 } from "./security/verification-token.js";
 export {
+  createResetTokenFactory, digestResetToken, digestSubmittedResetToken,
+  isWellFormedResetToken, buildPasswordResetUrl,
+} from "./security/reset-token.js";
+export {
+  registerPasswordResetRoutes, ForgotPasswordRequestSchema,
+  ForgotPasswordResponseSchema, ResetPasswordRequestSchema,
+  ResetPasswordResponseSchema, type PasswordResetRouteOptions,
+} from "./auth/password-reset-routes.js";
+export {
   registerAuthRoutes, RegisterRequestSchema, RegisterResponseSchema,
   type RegisterRouteOptions,
 } from "./auth/register-route.js";

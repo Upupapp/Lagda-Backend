@@ -44,3 +44,6 @@ export {
 export {
   createVerificationRepository, createVerifiableUserRepository,
 } from "./repositories/verification.js";
+export {
+  createPasswordResetRepository, createPasswordResettableUserRepository,
+} from "./repositories/password-reset.js";

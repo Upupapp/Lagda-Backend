@@ -245,6 +245,12 @@ describe("hashing is confined to the sealing adapter", () => {
     //                              (BACKEND-19). A fourth domain, with its own
     //                              prefix so a verification token and a session
     //                              token can never produce the same digest.
+    //   api/security/reset-token — PASSWORD RESET token digests (BACKEND-22).
+    //                              A fifth domain. The `lagda.password-reset:`
+    //                              prefix is what stops a verification code
+    //                              from digesting to a reset challenge, which
+    //                              would turn proof of a mailbox into authority
+    //                              to replace a password.
     //
     // Each addition is a deliberate entry with a named domain. A caller that
     // appears without one still fails, which is what keeps this from becoming a
@@ -252,6 +258,7 @@ describe("hashing is confined to the sealing adapter", () => {
     expect(users.sort()).toEqual([
       "packages/api/src/security/crypto.ts",
       "packages/api/src/security/rate-limit-plugin.ts",
+      "packages/api/src/security/reset-token.ts",
       "packages/api/src/security/verification-token.ts",
       "packages/sealing/src/internal/digest.ts",
     ]);
