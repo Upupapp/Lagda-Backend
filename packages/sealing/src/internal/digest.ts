@@ -4,7 +4,7 @@
 // across layers becomes several implementations that disagree about encoding.
 
 import { createHash } from "node:crypto";
-import type { Sha256Digest } from "@lagda/contracts";
+import { toSha256Digest, type Sha256Digest } from "@lagda/contracts";
 
 /**
  * Digest of EXACT bytes, lowercase hex.
@@ -17,13 +17,11 @@ import type { Sha256Digest } from "@lagda/contracts";
  * `^[a-f0-9]{64}$`. Mixing hex and base64 across fields is how a verification
  * comparison silently never matches.
  *
- * NOTE: `Sha256Digest` is currently a plain alias for `string`, unlike the ID
- * types, which are branded. So the return type documents intent but enforces
- * nothing — `preparedDocumentHash` and `signedDocumentHash` are mutually
- * assignable, and swapping them would typecheck. The tests compare each against
- * an independently computed digest for exactly that reason. Branding it is
- * OD-022, deferred because `@lagda/contracts` is shared with the frontend.
+ * The brand is acquired HERE and only here, through the validating constructor.
+ * `Sha256Digest` used to be a plain `string` alias, which made
+ * `preparedDocumentHash` and `signedDocumentHash` mutually assignable —
+ * swapping them compiled silently (OD-022, now closed).
  */
 export function sha256(bytes: Uint8Array): Sha256Digest {
-  return createHash("sha256").update(bytes).digest("hex");
+  return toSha256Digest(createHash("sha256").update(bytes).digest("hex"));
 }

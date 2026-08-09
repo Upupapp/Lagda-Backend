@@ -17,6 +17,11 @@ import type { Database } from "../schema/index.js";
 import {
   createScopedWorkspaceRepository, createScopedMembershipRepository,
 } from "../repositories/workspaces.js";
+import {
+  createEvidenceRepository,
+  createArtifactRepository,
+  createFinalizationRepository,
+} from "../repositories/evidence.js";
 
 /** The setting name RLS policies read. Must match migration 002. */
 const WORKSPACE_SETTING = "lagda.workspace_id";
@@ -36,6 +41,9 @@ function buildUnitOfWork(
     workspaceId,
     workspaces: createScopedWorkspaceRepository(trx, workspaceId),
     memberships: createScopedMembershipRepository(trx, workspaceId),
+    evidence: createEvidenceRepository(trx, workspaceId),
+    artifacts: createArtifactRepository(trx, workspaceId),
+    finalizations: createFinalizationRepository(trx, workspaceId),
   };
 }
 

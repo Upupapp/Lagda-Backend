@@ -10,6 +10,7 @@ import { Migrator, type MigrationProvider, type Migration } from "kysely/migrati
 import type { Database } from "../schema/index.js";
 import * as m001 from "./001_workspaces.js";
 import * as m002 from "./002_tenancy_rls.js";
+import * as m003 from "./003_evidence_and_integrity.js";
 
 /**
  * Migrations listed explicitly rather than read from disk.
@@ -24,6 +25,7 @@ import * as m002 from "./002_tenancy_rls.js";
 const MIGRATIONS: Record<string, Migration> = {
   "001_workspaces": m001,
   "002_tenancy_rls": m002,
+  "003_evidence_and_integrity": m003,
 };
 
 class ExplicitMigrationProvider implements MigrationProvider {

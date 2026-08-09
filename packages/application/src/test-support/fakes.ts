@@ -17,7 +17,11 @@ import type {
   ScopedWorkspaceRepository, ScopedMembershipRepository,
   WorkspaceIdGenerator, WorkspaceMemberIdGenerator,
   WorkspaceRecord, WorkspaceMembershipRecord,
+  ScopedEvidenceRepository, ScopedArtifactRepository, ScopedFinalizationRepository,
+  EvidenceEventInput, EvidenceEventRecord, ArtifactRecord, ArtifactId,
+  FinalizationInput, SealRecord,
 } from "../common/ports/index.js";
+import type { TransactionId, DocumentId } from "@lagda/contracts";
 
 /** A fixed instant, so assertions mean the same thing in any year. */
 export class FixedClock implements Clock {
@@ -53,15 +57,30 @@ export class FakeScopeMismatchError extends Error {
 interface StoreSnapshot {
   readonly workspaces: Map<string, WorkspaceRecord>;
   readonly memberships: WorkspaceMembershipRecord[];
+  readonly evidence: EvidenceEventRecord[];
+  readonly artifacts: ArtifactRecord[];
+  readonly seals: SealRecord[];
+  readonly verifications: FinalizationInput["verification"][];
 }
 
 /** Shared store, so a unit of work sees writes from earlier transactions. */
 export class InMemoryStore {
   readonly workspaces = new Map<string, WorkspaceRecord>();
   readonly memberships: WorkspaceMembershipRecord[] = [];
+  readonly evidence: EvidenceEventRecord[] = [];
+  readonly artifacts: ArtifactRecord[] = [];
+  readonly seals: SealRecord[] = [];
+  readonly verifications: FinalizationInput["verification"][] = [];
 
   snapshot(): StoreSnapshot {
-    return { workspaces: new Map(this.workspaces), memberships: [...this.memberships] };
+    return {
+      workspaces: new Map(this.workspaces),
+      memberships: [...this.memberships],
+      evidence: [...this.evidence],
+      artifacts: [...this.artifacts],
+      seals: [...this.seals],
+      verifications: [...this.verifications],
+    };
   }
 
   restore(snapshot: StoreSnapshot): void {
@@ -69,6 +88,14 @@ export class InMemoryStore {
     for (const [key, value] of snapshot.workspaces) this.workspaces.set(key, value);
     this.memberships.length = 0;
     this.memberships.push(...snapshot.memberships);
+    this.evidence.length = 0;
+    this.evidence.push(...snapshot.evidence);
+    this.artifacts.length = 0;
+    this.artifacts.push(...snapshot.artifacts);
+    this.seals.length = 0;
+    this.seals.push(...snapshot.seals);
+    this.verifications.length = 0;
+    this.verifications.push(...snapshot.verifications);
   }
 }
 
@@ -127,6 +154,98 @@ function scopedMemberships(store: InMemoryStore, scope: WorkspaceId): ScopedMemb
   };
 }
 
+
+/**
+ * Append-only, exactly as the port and the database demand.
+ *
+ * There is no update or delete here either. A fake that quietly allowed
+ * mutation would let a use case be written against behaviour PostgreSQL
+ * refuses, and the divergence would only surface in the integration run.
+ */
+function scopedEvidence(store: InMemoryStore, scope: WorkspaceId): ScopedEvidenceRepository {
+  return {
+    append: (event: EvidenceEventInput) => {
+      store.evidence.push({
+        ...event,
+        workspaceId: scope,
+        // The real adapter lets the database stamp this. The fake cannot, and
+        // says so by reusing occurredAt rather than inventing a plausible gap.
+        recordedAt: event.occurredAt,
+      });
+      return Promise.resolve();
+    },
+
+    listForSigningRequest: (signingRequestId: TransactionId) =>
+      Promise.resolve(
+        store.evidence
+          .filter(e => e.workspaceId === scope && e.signingRequestId === signingRequestId)
+          // Same total order as the adapter: occurredAt, then ID. Sorting only
+          // by timestamp would make the fake and PostgreSQL disagree whenever
+          // two events share a millisecond.
+          .sort((a, b) =>
+            a.occurredAt - b.occurredAt
+            || a.evidenceEventId.localeCompare(b.evidenceEventId)),
+      ),
+  };
+}
+
+function scopedArtifacts(store: InMemoryStore, scope: WorkspaceId): ScopedArtifactRepository {
+  return {
+    insert: (artifact: ArtifactRecord) => {
+      if (artifact.workspaceId !== scope) {
+        throw new FakeScopeMismatchError("Artifact", scope, artifact.workspaceId);
+      }
+      if (artifact.sourceArtifactId === artifact.artifactId) {
+        throw new Error("An artifact cannot be derived from itself.");
+      }
+      store.artifacts.push(artifact);
+      return Promise.resolve();
+    },
+
+    find: (artifactId: ArtifactId) =>
+      Promise.resolve(
+        store.artifacts.find(a => a.workspaceId === scope && a.artifactId === artifactId) ?? null,
+      ),
+
+    listForDocument: (documentId: DocumentId) =>
+      Promise.resolve(
+        store.artifacts.filter(a => a.workspaceId === scope && a.documentId === documentId),
+      ),
+  };
+}
+
+function scopedFinalizations(
+  store: InMemoryStore,
+  scope: WorkspaceId,
+): ScopedFinalizationRepository {
+  return {
+    recordFinalization: (input: FinalizationInput) => {
+      const { seal, verification } = input;
+      if (seal.workspaceId !== scope) {
+        throw new FakeScopeMismatchError("Seal", scope, seal.workspaceId);
+      }
+      if (verification.workspaceId !== scope) {
+        throw new FakeScopeMismatchError("VerificationRecord", scope, verification.workspaceId);
+      }
+      // Mirrors the database's UNIQUE (workspace_id, signing_request_id).
+      // Resealing is not a product feature.
+      if (store.seals.some(s => s.workspaceId === scope
+        && s.signingRequestId === seal.signingRequestId)) {
+        throw new Error("This signing request is already finalized.");
+      }
+      store.seals.push(seal);
+      store.verifications.push(verification);
+      return Promise.resolve();
+    },
+
+    findBySigningRequest: (signingRequestId: TransactionId) =>
+      Promise.resolve(
+        store.seals.find(s => s.workspaceId === scope
+          && s.signingRequestId === signingRequestId) ?? null,
+      ),
+  };
+}
+
 /**
  * Commits on success and restores a snapshot on failure.
  *
@@ -154,6 +273,9 @@ export class FakeTransactionManager implements TransactionManager {
         workspaceId,
         workspaces: scopedWorkspaces(this.store, workspaceId),
         memberships: scopedMemberships(this.store, workspaceId),
+        evidence: scopedEvidence(this.store, workspaceId),
+        artifacts: scopedArtifacts(this.store, workspaceId),
+        finalizations: scopedFinalizations(this.store, workspaceId),
       });
       this.committed++;
       return result;

@@ -11,8 +11,9 @@
 // Lives in application because application owns the ports. `@lagda/db` imports
 // it to run the same suite against PostgreSQL.
 
-import type { UserId, WorkspaceId, WorkspaceMemberId } from "@lagda/contracts";
-import type { TransactionManager } from "../common/ports/index.js";
+import { toSha256Digest, type UserId, type WorkspaceId, type WorkspaceMemberId,
+  type TransactionId, type DocumentId } from "@lagda/contracts";
+import type { TransactionManager, EvidenceEventId, ArtifactId } from "../common/ports/index.js";
 
 export interface ContractHarness {
   readonly transactions: TransactionManager;
@@ -40,6 +41,9 @@ const WS_A = "ws_contract_a" as WorkspaceId;
 const WS_B = "ws_contract_b" as WorkspaceId;
 const MEM_A = "mem_contract_a" as WorkspaceMemberId;
 const MEM_B = "mem_contract_b" as WorkspaceMemberId;
+const REQ = "txn_contract_1" as TransactionId;
+const DOC = "doc_contract_1" as DocumentId;
+const DIGEST = toSha256Digest("c".repeat(64));
 
 /**
  * Runs the contract against a harness.
@@ -228,5 +232,107 @@ export function runRepositoryContract(
       });
       expect(seen?.name).toBe("Acme");
     });
+    // ── Evidence ───────────────────────────────────────────────────────────
+    //
+    // Behaviour the fake and PostgreSQL must agree on. Ordering is the case that
+    // matters: the adapter orders in SQL and the fake in JavaScript, so they are
+    // two independent implementations of one rule and nothing but this suite
+    // would notice them diverging.
+
+    it("appends evidence and reads it back in the bound workspace", async () => {
+      await seed(WS_A, MEM_A, USER_A);
+      await harness.transactions.runForWorkspace(WS_A, uow =>
+        uow.evidence.append({
+          evidenceEventId: "ev_1" as EvidenceEventId,
+          signingRequestId: REQ,
+          eventType: "transaction-created",
+          actor: { type: "workspace-user", actorId: USER_A },
+          occurredAt: AT,
+        }));
+
+      const events = await harness.transactions.runForWorkspace(WS_A, uow =>
+        uow.evidence.listForSigningRequest(REQ));
+
+      expect(events.length).toBe(1);
+      expect(events[0]?.workspaceId).toBe(WS_A);
+    });
+
+    it("returns an empty timeline for a signing request with no evidence", async () => {
+      await seed(WS_A, MEM_A, USER_A);
+      const events = await harness.transactions.runForWorkspace(WS_A, uow =>
+        uow.evidence.listForSigningRequest("txn_absent" as TransactionId));
+      expect(events.length).toBe(0);
+    });
+
+    it("breaks timestamp ties by event id, identically in both implementations", async () => {
+      await seed(WS_A, MEM_A, USER_A);
+      await harness.transactions.runForWorkspace(WS_A, async uow => {
+        for (const id of ["ev_c", "ev_a", "ev_b"]) {
+          await uow.evidence.append({
+            evidenceEventId: id as EvidenceEventId,
+            signingRequestId: REQ,
+            eventType: "document-viewed",
+            actor: { type: "system" },
+            occurredAt: AT,
+          });
+        }
+      });
+
+      const ids = (await harness.transactions.runForWorkspace(WS_A, uow =>
+        uow.evidence.listForSigningRequest(REQ))).map(e => e.evidenceEventId);
+
+      expect(ids.join(",")).toBe("ev_a,ev_b,ev_c");
+    });
+
+    it("does not leak evidence across workspaces", async () => {
+      await seed(WS_A, MEM_A, USER_A);
+      await seed(WS_B, MEM_B, USER_B);
+      await harness.transactions.runForWorkspace(WS_A, uow =>
+        uow.evidence.append({
+          evidenceEventId: "ev_1" as EvidenceEventId,
+          signingRequestId: REQ,
+          eventType: "transaction-created",
+          actor: { type: "system" },
+          occurredAt: AT,
+        }));
+
+      const fromB = await harness.transactions.runForWorkspace(WS_B, uow =>
+        uow.evidence.listForSigningRequest(REQ));
+
+      expect(fromB.length).toBe(0);
+    });
+
+    it("exposes no mutation methods on the evidence repository", async () => {
+      await seed(WS_A, MEM_A, USER_A);
+      await harness.transactions.runForWorkspace(WS_A, uow => {
+        const names = Object.keys(uow.evidence).sort().join(",");
+        expect(names).toBe("append,listForSigningRequest");
+        return Promise.resolve();
+      });
+    });
+
+    it("round-trips an artifact digest and size", async () => {
+      await seed(WS_A, MEM_A, USER_A);
+      await harness.transactions.runForWorkspace(WS_A, uow =>
+        uow.artifacts.insert({
+          artifactId: "art_1" as ArtifactId,
+          workspaceId: WS_A,
+          documentId: DOC,
+          artifactType: "original",
+          storageReference: "lagda://foundation/art_1",
+          mediaType: "application/pdf",
+          sizeBytes: 2048,
+          digestAlgorithm: "sha-256",
+          digest: DIGEST,
+          createdAt: AT,
+        }));
+
+      const found = await harness.transactions.runForWorkspace(WS_A, uow =>
+        uow.artifacts.find("art_1" as ArtifactId));
+
+      expect(found?.digest).toBe(DIGEST);
+      expect(found?.sizeBytes).toBe(2048);
+    });
+
   });
 }

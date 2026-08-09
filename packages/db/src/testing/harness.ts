@@ -62,6 +62,18 @@ export async function createTestDatabase(): Promise<LagdaDatabase> {
  * constraint is doing its job.
  */
 export async function truncateAll(database: LagdaDatabase): Promise<void> {
+  // Child-first, because every evidence relation is ON DELETE RESTRICT — a
+  // deliberate choice (signing evidence must not vanish when a parent does), and
+  // one that makes deletion order load-bearing here.
+  //
+  // This runs as the test superuser, which bypasses RLS and the append-only
+  // privileges. That is the point: the runtime role CANNOT do this, and a
+  // harness that could not clean up would have to weaken the very controls the
+  // tests exist to verify.
+  await database.db.deleteFrom("verification_records").execute();
+  await database.db.deleteFrom("document_seals").execute();
+  await database.db.deleteFrom("evidence_events").execute();
+  await database.db.deleteFrom("document_artifacts").execute();
   await database.db.deleteFrom("workspace_memberships").execute();
   await database.db.deleteFrom("workspaces").execute();
 }

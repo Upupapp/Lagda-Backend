@@ -134,6 +134,9 @@ export interface WorkspaceUnitOfWork {
   readonly workspaceId: WorkspaceId;
   readonly workspaces: ScopedWorkspaceRepository;
   readonly memberships: ScopedMembershipRepository;
+  readonly evidence: ScopedEvidenceRepository;
+  readonly artifacts: ScopedArtifactRepository;
+  readonly finalizations: ScopedFinalizationRepository;
 }
 
 /**
@@ -171,6 +174,18 @@ export interface TransactionManager {
    */
   runGlobal<T>(operation: (uow: GlobalUnitOfWork) => Promise<T>): Promise<T>;
 }
+
+import type {
+  ScopedEvidenceRepository,
+  ScopedArtifactRepository,
+  ScopedFinalizationRepository,
+} from "./evidence.js";
+
+// ── Evidence, artifacts and finalization ─────────────────────────────────────
+//
+// Defined in ./evidence.ts and re-exported here, same as the sealing seam.
+
+export * from "./evidence.js";
 
 // ── Document sealing ─────────────────────────────────────────────────────────
 //

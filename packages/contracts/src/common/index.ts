@@ -57,7 +57,44 @@ export const Sha256DigestSchema = Type.String({
   title: "Sha256Digest",
   description: "Lowercase hex SHA-256 digest (64 characters).",
 });
-export type Sha256Digest = Static<typeof Sha256DigestSchema>;
+/**
+ * Branded, like the ID types — and for a sharper reason than most.
+ *
+ * `Static<>` of a string schema is plain `string`, which made
+ * `preparedDocumentHash` and `signedDocumentHash` mutually assignable: swapping
+ * them compiled, and the swap publishes the input's digest as the verification
+ * value for the output. Two adjacent columns in `document_seals` carry exactly
+ * those two values.
+ *
+ * Branding was deferred in BACKEND-09 (OD-022) on the grounds that
+ * `@lagda/contracts` is shared with the frontend. That reason was wrong — the
+ * frontend consumes nothing from this package (OD-005), so the change costs
+ * nothing today and gets more expensive every command that persists a digest.
+ *
+ * The brand is compile-time only: on the wire this is still a 64-character
+ * string, and `Sha256DigestSchema` still validates it.
+ */
+declare const digestBrand: unique symbol;
+export type Sha256Digest = Static<typeof Sha256DigestSchema>
+  & { readonly [digestBrand]: "Sha256Digest" };
+
+/**
+ * The single validating entry point into the branded type.
+ *
+ * Everything that produces a digest goes through here, so the brand cannot be
+ * acquired by assertion in ordinary code — which is what stops it degrading
+ * back into a decorative type.
+ *
+ * @throws if the value is not lowercase hex of exactly 64 characters. Uppercase
+ *         is rejected rather than normalized: a digest that silently changes
+ *         case is a digest that fails a string comparison somewhere else.
+ */
+export function toSha256Digest(value: string): Sha256Digest {
+  if (!/^[a-f0-9]{64}$/.test(value)) {
+    throw new TypeError(`Not a lowercase hex SHA-256 digest: ${JSON.stringify(value)}`);
+  }
+  return value as Sha256Digest;
+}
 
 // ── Counts ───────────────────────────────────────────────────────────────────
 
