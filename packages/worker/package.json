@@ -19,11 +19,12 @@
     "clean": "tsc --build --clean"
   },
   "dependencies": {
+    "@lagda/application": "*",
     "@lagda/contracts": "*",
     "@lagda/core": "*",
-    "@lagda/application": "*",
     "@lagda/db": "*",
     "@lagda/sealing": "*",
-    "@lagda/storage": "*"
+    "@lagda/storage": "*",
+    "pg-boss": "^12.27.0"
   }
 }

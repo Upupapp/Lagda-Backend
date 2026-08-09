@@ -86,6 +86,19 @@ const ROUTES_NO_INFRA =
   "unit of work and the tenant context it carries. Take the capability as a " +
   "parameter and let the composition root (api/src/app, api/src/server) wire it.";
 
+const QUEUE_IS_THE_WORKERS =
+  "The API must not reach the queue driver or the worker package (INV-190). An " +
+  "API process that can call `boss.work` can start a consumer inside a web " +
+  "process, and the two roles scale and restart for different reasons. When a " +
+  "route needs to enqueue, take a JobScheduler port as a parameter — the adapter " +
+  "moves to a shared package at that point (OD-046), it is not imported from here. " +
+  "See docs/backend/worker/WORKER_ARCHITECTURE.md.";
+
+const WORKER_SERVES_NO_HTTP =
+  "The worker serves no HTTP and must not import a web framework or @lagda/api " +
+  "(INV-190). Its liveness is proven by consuming jobs, not by answering a port. " +
+  "See docs/backend/worker/WORKER_ARCHITECTURE.md.";
+
 const CONTRACTS_PURE =
   "@lagda/contracts is consumed by both the frontend and the backend and must stay " +
   "free of infrastructure and framework dependencies (INV-007).";
@@ -247,11 +260,35 @@ export default tseslint.config(
 
   // api and worker — the composition roots. They may import both sides, because
   // wiring is exactly their job. They still may not open a PDF themselves.
+  //
+  // They are TWO blocks, not one. A single block covering both was the earlier
+  // shape, and it let the API import `pg-boss` and `@lagda/worker`: everything
+  // needed to start a queue consumer inside a web process. The two roles scale,
+  // restart and fail differently (INV-190), and a shared block cannot express a
+  // ban that applies to one of them.
   {
-    files: ["packages/api/**/*.ts", "packages/worker/**/*.ts"],
+    files: ["packages/api/**/*.ts"],
     rules: {
       "no-restricted-imports": restrictGroups([
         { names: PDF_PACKAGES, patterns: PDF_PATTERNS, message: SEALING_ONLY },
+        {
+          names: ["pg-boss", "@lagda/worker"],
+          patterns: ["pg-boss/*", "@lagda/worker/*"],
+          message: QUEUE_IS_THE_WORKERS,
+        },
+      ]),
+    },
+  },
+  {
+    files: ["packages/worker/**/*.ts"],
+    rules: {
+      "no-restricted-imports": restrictGroups([
+        { names: PDF_PACKAGES, patterns: PDF_PATTERNS, message: SEALING_ONLY },
+        {
+          names: ["fastify", "@fastify/cookie", "@fastify/csrf-protection", "@lagda/api"],
+          patterns: ["@fastify/*", "@lagda/api/*"],
+          message: WORKER_SERVES_NO_HTTP,
+        },
       ]),
     },
   },

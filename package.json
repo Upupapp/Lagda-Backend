@@ -27,7 +27,9 @@
     "check:full": "npm run check && npm run test:integration",
     "test:tenancy": "vitest run --config vitest.integration.config.ts packages/db/src/tenancy.integration.test.ts",
     "dev:api": "tsx watch packages/api/src/server/main.ts",
-    "start:api": "node packages/api/dist/server/main.js"
+    "start:api": "node packages/api/dist/server/main.js",
+    "dev:worker": "tsx watch packages/worker/src/server/main.ts",
+    "start:worker": "node packages/worker/dist/server/main.js"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

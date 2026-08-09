@@ -33,3 +33,5 @@ export {
 export { createSessionRepository } from "./repositories/session.js";
 export { createIdempotencyRepository } from "./repositories/idempotency.js";
 export { createRateLimitCounterRepository } from "./repositories/rate-limit.js";
+export type { Database } from "./schema/index.js";
+export { createTestDatabase, hasIntegrationDatabase, truncateAll } from "./testing/harness.js";
