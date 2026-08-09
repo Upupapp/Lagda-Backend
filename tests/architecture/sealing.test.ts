@@ -241,9 +241,18 @@ describe("hashing is confined to the sealing adapter", () => {
     //                              domain: irreversible bucket keys for IP and
     //                              account values, so a counter table holds no
     //                              reversible personal data.
+    //   api/security/verification-token — EMAIL VERIFICATION token digests
+    //                              (BACKEND-19). A fourth domain, with its own
+    //                              prefix so a verification token and a session
+    //                              token can never produce the same digest.
+    //
+    // Each addition is a deliberate entry with a named domain. A caller that
+    // appears without one still fails, which is what keeps this from becoming a
+    // list that grows whenever it is inconvenient.
     expect(users.sort()).toEqual([
       "packages/api/src/security/crypto.ts",
       "packages/api/src/security/rate-limit-plugin.ts",
+      "packages/api/src/security/verification-token.ts",
       "packages/sealing/src/internal/digest.ts",
     ]);
   });

@@ -37,3 +37,14 @@ export {
   applyIpRateLimit, checkSemanticLimits, createRateLimitScopeDigester,
   type RateLimitOptions,
 } from "./security/rate-limit-plugin.js";
+export {
+  createArgon2PasswordHasher, describeHash, ARGON2_PARAMETERS,
+  PasswordHasherConfigError, type PasswordHasherOptions,
+} from "./security/password-hasher.js";
+export {
+  createVerificationTokenFactory, digestVerificationToken, buildVerificationUrl,
+} from "./security/verification-token.js";
+export {
+  registerAuthRoutes, RegisterRequestSchema, RegisterResponseSchema,
+  type RegisterRouteOptions,
+} from "./auth/register-route.js";

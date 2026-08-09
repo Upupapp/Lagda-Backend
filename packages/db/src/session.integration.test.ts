@@ -43,6 +43,30 @@ describe.skipIf(!hasIntegrationDatabase())("session persistence on PostgreSQL", 
 
   beforeEach(async () => {
     await database.db.deleteFrom("user_sessions").execute();
+    await database.db.deleteFrom("users").execute();
+
+    // Sessions now carry a REAL foreign key to `users` (migration 008). Before
+    // it existed these tests invented user ids freely; the constraint made that
+    // impossible, which is the constraint working. Each user is created here so
+    // the tests assert session behaviour rather than fighting referential
+    // integrity.
+    for (const userId of [USER_A, USER_B]) {
+      await database.db.insertInto("users").values({
+        user_id: userId,
+        email: `${userId}@example.com`,
+        normalized_email: `${userId}@example.com`,
+        // A syntactically valid Argon2id string: the column has a CHECK
+        // constraint requiring one, and this fixture is never verified against.
+        password_hash: "$argon2id$v=19$m=19456,p=1,t=2$c2FsdHNhbHQ$aGFzaGhhc2g",
+        display_name: userId,
+        organization: null,
+        intended_use: null,
+        email_verified_at: null,
+        terms_version: "2026-01-01",
+        terms_accepted_at: new Date(0),
+        created_at: new Date(0),
+      }).execute();
+    }
   });
 
   it("round-trips a session", async () => {

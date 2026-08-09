@@ -242,6 +242,36 @@ export interface DocumentUploadsTable {
   completed_at: ColumnType<Date | null, Date | null, Date | null>;
 }
 
+
+/**
+ * Accounts (BACKEND-19). GLOBAL - no workspace_id, no RLS.
+ *
+ * A user exists before any workspace and may belong to several.
+ */
+export interface UsersTable {
+  user_id: string;
+  email: string;
+  normalized_email: string;
+  password_hash: string;
+  display_name: string;
+  organization: string | null;
+  intended_use: string | null;
+  email_verified_at: ColumnType<Date | null, Date | null, Date | null>;
+  terms_version: string;
+  terms_accepted_at: Timestamptz;
+  created_at: ColumnType<Date, Date | undefined, Date>;
+}
+
+/** Email verification challenges. Holds a DIGEST, never a raw token. */
+export interface EmailVerificationChallengesTable {
+  challenge_id: string;
+  user_id: string;
+  token_digest: string;
+  created_at: ColumnType<Date, Date | undefined, Date>;
+  expires_at: Timestamptz;
+  consumed_at: ColumnType<Date | null, Date | null, Date | null>;
+}
+
 export interface Database {
   workspaces: WorkspacesTable;
   workspace_memberships: WorkspaceMembershipsTable;
@@ -253,5 +283,7 @@ export interface Database {
   idempotency_records: IdempotencyRecordsTable;
   rate_limit_counters: RateLimitCountersTable;
   document_uploads: DocumentUploadsTable;
+  users: UsersTable;
+  email_verification_challenges: EmailVerificationChallengesTable;
   kysely_migration: KyselyMigrationTable;
 }

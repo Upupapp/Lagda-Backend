@@ -92,6 +92,37 @@ export const RATE_LIMIT_POLICIES = {
   // A volumetric ceiling against runaway clients, not a feature security
   // control. Deliberately generous: set too low it breaks a document editor
   // doing legitimate work.
+  // ── Registration ────────────────────────────────────────────────────────
+  //
+  // The handoff specifies limits for sign-in, OTP and verification but NOT for
+  // registration (§317). Rather than leave account creation unlimited, these
+  // are chosen here and marked as chosen - the `source` says so plainly, so a
+  // reader can tell a measured threshold from a judged one.
+  //
+  // Registration is the most expensive unauthenticated operation LAGDA has: it
+  // costs an Argon2id hash, which is memory-hard BY DESIGN. Limiting it is what
+  // keeps that cost from becoming a denial-of-service primitive (INV-234).
+  "auth.register.ip": {
+    id: "auth.register.ip",
+    scopeType: "ip",
+    limit: 5,
+    windowMs: 10 * MINUTE,
+    // Fail closed: unlimited account creation during a database blip is worse
+    // than refusing registration during one.
+    failureMode: "fail-closed",
+    source: "BACKEND-19 - not specified by the handoff; chosen to bound Argon2id "
+      + "cost and mass account creation. Subject to product review (OD-064).",
+  },
+  "auth.register.account": {
+    id: "auth.register.account",
+    scopeType: "account",
+    limit: 3,
+    windowMs: 10 * MINUTE,
+    failureMode: "fail-closed",
+    source: "BACKEND-19 - not specified by the handoff; bounds repeated attempts "
+      + "against one email identity. Subject to product review (OD-064).",
+  },
+
   "api.write.user": {
     id: "api.write.user",
     scopeType: "user",

@@ -24,3 +24,6 @@ export * from "./jobs/definitions.js";
 export * from "./common/ports/storage.js";
 export * from "./common/ports/upload.js";
 export * from "./upload/process-upload.js";
+export * from "./common/ports/auth.js";
+export * from "./auth/email-identity.js";
+export * from "./auth/register-user.js";

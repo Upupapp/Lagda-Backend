@@ -15,6 +15,7 @@ import * as m004 from "./004_sessions.js";
 import * as m005 from "./005_idempotency.js";
 import * as m006 from "./006_rate_limits.js";
 import * as m007 from "./007_document_uploads.js";
+import * as m008 from "./008_users_and_verification.js";
 
 /**
  * Migrations listed explicitly rather than read from disk.
@@ -34,6 +35,7 @@ const MIGRATIONS: Record<string, Migration> = {
   "005_idempotency": m005,
   "006_rate_limits": m006,
   "007_document_uploads": m007,
+  "008_users_and_verification": m008,
 };
 
 class ExplicitMigrationProvider implements MigrationProvider {

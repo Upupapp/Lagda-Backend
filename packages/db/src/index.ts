@@ -38,3 +38,6 @@ export { createTestDatabase, hasIntegrationDatabase, truncateAll } from "./testi
 export {
   createUploadRepository, createQuarantineCleanupLookup,
 } from "./repositories/uploads.js";
+export {
+  createUserRepository, createVerificationChallengeRepository,
+} from "./repositories/users.js";
