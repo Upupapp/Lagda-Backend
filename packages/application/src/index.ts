@@ -27,3 +27,4 @@ export * from "./upload/process-upload.js";
 export * from "./common/ports/auth.js";
 export * from "./auth/email-identity.js";
 export * from "./auth/register-user.js";
+export * from "./auth/login-user.js";

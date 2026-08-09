@@ -48,3 +48,7 @@ export {
   registerAuthRoutes, RegisterRequestSchema, RegisterResponseSchema,
   type RegisterRouteOptions,
 } from "./auth/register-route.js";
+export {
+  registerSessionRoutes, SignInRequestSchema, SignInResponseSchema,
+  type SessionRouteOptions,
+} from "./auth/session-routes.js";

@@ -2,9 +2,19 @@
 //
 // Nothing here names Argon2, a database, or a mail provider.
 
+import type { UserId } from "@lagda/contracts";
 import type { NormalizedEmail } from "../../auth/email-identity.js";
 
-export type UserId = string & { readonly __brand: "UserId" };
+/**
+ * Re-exported from contracts, NOT redeclared.
+ *
+ * A second `UserId` brand was declared here originally, and it was structurally
+ * incompatible with the one BACKEND-13's session service takes - so the account
+ * id returned by login could not be passed to `issue()` without a cast. Two
+ * brands for one concept is exactly the kind of duplication branding exists to
+ * prevent.
+ */
+export type { UserId };
 
 /**
  * An encoded password hash.
