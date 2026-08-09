@@ -2,7 +2,7 @@
   "name": "@lagda/backend",
   "private": true,
   "version": "0.0.0",
-  "description": "LAGDA eSignature backend \u2014 modular monolith. Foundation stage.",
+  "description": "LAGDA eSignature backend — modular monolith. Foundation stage.",
   "type": "module",
   "engines": {
     "node": ">=24 <25"
@@ -25,13 +25,16 @@
     "db:migrate:status": "node --experimental-strip-types infra/migrate.ts status",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "check:full": "npm run check && npm run test:integration",
-    "test:tenancy": "vitest run --config vitest.integration.config.ts packages/db/src/tenancy.integration.test.ts"
+    "test:tenancy": "vitest run --config vitest.integration.config.ts packages/db/src/tenancy.integration.test.ts",
+    "dev:api": "tsx watch packages/api/src/server/main.ts",
+    "start:api": "node packages/api/dist/server/main.js"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
     "@types/node": "^22.10.2",
     "eslint": "^9.17.0",
     "globals": "^15.14.0",
+    "tsx": "^4.23.11",
     "typescript": "^5.6.3",
     "typescript-eslint": "^8.18.2",
     "vitest": "^3.2.4"

@@ -287,12 +287,17 @@ describe("NodeDocumentSealer failures", () => {
 
   it("classifies failures as retryable or not", async () => {
     const preparedDocument = new TextEncoder().encode("not a pdf");
-    const error = await sealer.seal(await makeRequest({ preparedDocument })).catch(
-      (e: unknown) => e as SealingError,
-    );
+    // Narrowed rather than asserted: `.catch()` widens the result to
+    // `SealResult | SealingError`, and casting past that hid a type error from
+    // `npm run typecheck` for a whole command.
+    const outcome: unknown = await sealer
+      .seal(await makeRequest({ preparedDocument }))
+      .catch((e: unknown) => e);
+
+    expect(outcome).toBeInstanceOf(SealingError);
     // A malformed document will be malformed on every retry. Marking it
     // retryable would have the completion pipeline loop over a permanent fault.
-    expect(error.retryable).toBe(false);
+    expect((outcome as SealingError).retryable).toBe(false);
   });
 
   it("exposes a stable machine-readable code on every error", () => {

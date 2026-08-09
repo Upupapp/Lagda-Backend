@@ -1,3 +1,26 @@
-// @lagda/api — entry point.
-// Empty by design at the foundation stage. See README.md.
-export {};
+// @lagda/api — the HTTP adapter and composition root.
+//
+// Importing this module starts NOTHING. `startServer()` must be called
+// explicitly, which is what makes the app factory testable and keeps a stray
+// import from binding a port during a test run.
+
+export { createApp, type CreateAppOptions } from "./app/create-app.js";
+export type { AppDependencies, DatabaseHealth } from "./app/dependencies.js";
+export {
+  loadApiConfig, ApiConfigError,
+  type ApiConfig, type TrustProxySetting, type NodeEnvironment,
+} from "./config/index.js";
+export {
+  startServer, createProductionDependencies, type StartedServer,
+} from "./server/start-server.js";
+export { createShutdown, type ShutdownTarget, type ShutdownOptions } from "./server/shutdown.js";
+export {
+  mapError, HttpError, badRequest, validationFailed, routeNotFound,
+  payloadTooLarge, unsupportedMediaType, type MappedError,
+} from "./errors/index.js";
+export { toValidationDetails, toFieldPath } from "./errors/validation.js";
+export {
+  observeRequest, observeIp, observeUserAgent, generateRequestId,
+  MAX_USER_AGENT_LENGTH,
+  type ObservedRequestMetadata, type ObservedIpAddress, type IpProvenance,
+} from "./context/index.js";

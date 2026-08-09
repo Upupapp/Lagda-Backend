@@ -80,6 +80,12 @@ const NO_INFRA =
   "by @lagda/application and let the composition root (api/worker) inject the " +
   "implementation (INV-005). See docs/backend/architecture.md.";
 
+const ROUTES_NO_INFRA =
+  "Route handlers receive capabilities; they do not construct or reach for them. " +
+  "A route able to import @lagda/db can issue an unscoped query, bypassing the " +
+  "unit of work and the tenant context it carries. Take the capability as a " +
+  "parameter and let the composition root (api/src/app, api/src/server) wire it.";
+
 const CONTRACTS_PURE =
   "@lagda/contracts is consumed by both the frontend and the backend and must stay " +
   "free of infrastructure and framework dependencies (INV-007).";
@@ -246,6 +252,42 @@ export default tseslint.config(
     rules: {
       "no-restricted-imports": restrictGroups([
         { names: PDF_PACKAGES, patterns: PDF_PATTERNS, message: SEALING_ONLY },
+      ]),
+    },
+  },
+
+  // ── Route handlers are NOT the composition root ────────────────────────────
+  //
+  // The api package as a whole may import `@lagda/db` — that is what a
+  // composition root does. But `api/src/routes/**` may not, and the distinction
+  // is the entire point: a route that can reach the query builder is a route
+  // that can issue an unscoped query, bypassing the unit of work and the tenant
+  // context that comes with it.
+  //
+  // Directory-scoped, so `app/dependencies.ts` and `server/start-server.ts`
+  // keep the access they legitimately need.
+  {
+    files: ["packages/api/src/routes/**/*.ts", "packages/api/src/plugins/**/*.ts"],
+    rules: {
+      "no-restricted-imports": restrictGroups([
+        { names: PDF_PACKAGES, patterns: PDF_PATTERNS, message: SEALING_ONLY },
+        {
+          names: [...DB_PACKAGES, "@lagda/db"],
+          patterns: [...DB_PATTERNS, "@lagda/db/*"],
+          message: ROUTES_NO_INFRA,
+        },
+        {
+          // Fastify itself is excluded: a route module is a Fastify route
+          // module. What it may not reach for is a DATA source — storage,
+          // sealing, mail, object stores.
+          names: [
+            "@lagda/sealing", "@lagda/storage",
+            "@aws-sdk/client-s3", "@aws-sdk/s3-request-presigner", "aws-sdk",
+            "minio", "nodemailer",
+          ],
+          patterns: ["@lagda/sealing/*", "@lagda/storage/*"],
+          message: ROUTES_NO_INFRA,
+        },
       ]),
     },
   },

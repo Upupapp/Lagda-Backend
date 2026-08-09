@@ -200,11 +200,17 @@ describe("dependency direction", () => {
   });
 });
 
-describe("node:crypto is confined to the sealing adapter", () => {
-  it("hashing happens in exactly one file", () => {
+describe("hashing is confined to the sealing adapter", () => {
+  it("createHash is called in exactly one file", () => {
     // Several hash implementations across layers is how one of them ends up
     // base64 while the other is hex, and a verification comparison silently
     // never matches.
+    //
+    // Scoped to `createHash`, not to `node:crypto` as a whole. The broader form
+    // failed the moment BACKEND-11 used `randomUUID` for request IDs — which is
+    // not hashing and is legitimately elsewhere. A detector wider than the
+    // invariant it enforces produces failures that teach the wrong lesson, and
+    // the tempting fix is to add an allowlist rather than narrow the check.
     const users: string[] = [];
     for (const pkg of readdirSync(PACKAGES)) {
       const src = path.join(PACKAGES, pkg, "src");
@@ -215,7 +221,8 @@ describe("node:crypto is confined to the sealing adapter", () => {
       }
       for (const file of sourceFiles(src)) {
         if (file.endsWith(".test.ts")) continue;
-        if (importsOf(read(file)).includes("node:crypto")) {
+        const source = read(file);
+        if (importsOf(source).includes("node:crypto") && /\bcreateHash\s*\(/.test(source)) {
           users.push(path.relative(ROOT, file).replace(/\\/g, "/"));
         }
       }

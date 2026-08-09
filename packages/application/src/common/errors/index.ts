@@ -11,8 +11,19 @@
  */
 export const APPLICATION_ERROR_CATEGORIES = [
   "validation", "authentication", "authorization",
-  "not-found", "conflict", "dependency-unavailable", "internal",
+  "not-found", "gone", "conflict", "rate-limit",
+  "dependency-unavailable", "internal",
 ] as const;
+
+// `gone` and `rate-limit` were MISSING until BACKEND-11, even though the comment
+// above claimed this list matched the API conventions. The API's explicit total
+// category map is what caught it.
+//
+// `gone` is the one that mattered: API_CONVENTIONS states an expired signing
+// request "is not 'not found' — the recipient screen needs the difference to
+// explain what happened". Without the category, a use case could only report
+// `not-found` or `conflict`, and the 410 the conventions require would have been
+// unreachable from the application layer.
 export type ApplicationErrorCategory = (typeof APPLICATION_ERROR_CATEGORIES)[number];
 
 /**

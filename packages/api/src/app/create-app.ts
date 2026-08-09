@@ -1,0 +1,251 @@
+// The Fastify app factory.
+//
+// Builds a fully configured instance and does NOT listen. That separation is
+// what lets integration tests use `app.inject()` with no TCP port, no free-port
+// races and no cleanup — and it is why importing this package cannot start a
+// server (INV: no listen on import).
+
+import Fastify, { type FastifyError, type FastifyInstance, type FastifyServerOptions } from "fastify";
+import helmet from "@fastify/helmet";
+import cors from "@fastify/cors";
+import swagger from "@fastify/swagger";
+import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
+import { ApiErrorSchema, REQUEST_ID_HEADER, type RequestId } from "@lagda/contracts";
+import type { ApiConfig } from "../config/index.js";
+import { buildLoggerOptions } from "../logging/index.js";
+import {
+  mapError, badRequest, payloadTooLarge, unsupportedMediaType, routeNotFound,
+  validationFailed,
+} from "../errors/index.js";
+import { toValidationDetails } from "../errors/validation.js";
+import { generateRequestId } from "../context/index.js";
+import { registerHealthRoutes } from "../routes/health.js";
+import { registerReadinessRoutes } from "../routes/readiness.js";
+import type { AppDependencies } from "./dependencies.js";
+
+export interface CreateAppOptions {
+  readonly config: ApiConfig;
+  readonly dependencies: AppDependencies;
+}
+
+/**
+ * Translates the config's trust-proxy setting into Fastify's option.
+ *
+ * `true` is unreachable here by construction — the config parser rejects it —
+ * so the permissive case cannot arrive by accident from an environment
+ * variable.
+ */
+function toFastifyTrustProxy(config: ApiConfig): boolean | number | string[] {
+  switch (config.trustProxy.mode) {
+    case "none": return false;
+    case "hops": return config.trustProxy.hops;
+    case "addresses": return [...config.trustProxy.addresses];
+  }
+}
+
+export async function createApp(options: CreateAppOptions): Promise<FastifyInstance> {
+  const { config, dependencies } = options;
+
+  // Annotated so TypeScript selects the default HTTP/1 server overload. Without
+  // it, the options literal is structurally ambiguous and inference lands on the
+  // HTTP/2-secure variant, whose request/reply types then fail everywhere.
+  const serverOptions: FastifyServerOptions = {
+    logger: buildLoggerOptions(config),
+    // Server-generated, always. API_CONVENTIONS §9: "a client value is untrusted
+    // input that flows into logs". Fastify would otherwise adopt an inbound
+    // `request-id` header, which would let a client choose its own correlation
+    // key — and inject CRLF into a response header while doing so.
+    genReqId: () => generateRequestId(),
+    requestIdHeader: false,
+    trustProxy: toFastifyTrustProxy(config),
+    bodyLimit: config.bodyLimitBytes,
+    requestTimeout: config.requestTimeoutMs,
+    // Fastify does not send X-Powered-By, and nothing here adds one.
+    //
+    // `requestIdLogLabel` and `disableRequestLogging` are NOT set: both are
+    // deprecated in Fastify 5 and removed in 6, and each emitted a deprecation
+    // warning on every boot. Request logging is on by default, and Fastify's
+    // default request-id log key (`reqId`) is fine — the pino serializer in
+    // logging/index.ts emits `requestId` explicitly, so log consumers see the
+    // canonical name regardless. `logController` is not used because it demands
+    // a full implementation of ten members to override one label.
+    ajv: {
+      customOptions: {
+        // `removeAdditional: false` — unknown properties are REJECTED, not
+        // stripped (API_CONVENTIONS §4). Stripping hides stale clients and
+        // typos; rejecting is also the cheapest defence against mass assignment.
+        removeAdditional: false,
+        // Deliberate, bounded coercion: "10" becomes 10 for a numeric query
+        // parameter, while "10abc" fails. Ajv's coercion is type-directed, not
+        // JavaScript's `Number()`, so it does not silently accept garbage.
+        coerceTypes: true,
+        // Report every problem at once rather than one per round trip.
+        allErrors: true,
+      },
+    },
+  };
+
+  const app = Fastify(serverOptions).withTypeProvider<TypeBoxTypeProvider>();
+
+  // ── Plugin order matters ───────────────────────────────────────────────────
+  //
+  // 1. security headers  — applied to every response including errors and 404s
+  // 2. CORS              — must run before routes so preflight is handled
+  // 3. swagger           — must be registered before the routes it documents
+  // 4. request context   — decorates the request for handlers
+  // 5. routes
+  // 6. error / not-found handlers
+  //
+  // Registered on the root instance so encapsulation does not hide them from
+  // later route groups. BACKEND-13 adds cookie/session plugins between 3 and 5,
+  // inside an encapsulated scope so public routes stay public.
+
+  await app.register(helmet, {
+    // This process serves JSON, never HTML. A CSP governs what a *document* may
+    // load, and there is no document — so it would be a header nobody enforces.
+    // If the API ever serves a rendered page, this is the line to revisit.
+    contentSecurityPolicy: false,
+    // HSTS belongs at the TLS-terminating proxy. Setting it here would have the
+    // API asserting a transport guarantee it does not itself provide.
+    hsts: false,
+  });
+
+  if (config.corsOrigins.length > 0) {
+    await app.register(cors, {
+      // A function, not a list, so a request with NO Origin header (curl,
+      // server-to-server) is allowed through rather than being handed
+      // `Access-Control-Allow-Origin: null`.
+      origin(origin, callback) {
+        if (origin === undefined) { callback(null, true); return; }
+        // EXACT equality. Never `origin.includes("lagda.io")`, which admits
+        // `lagda.io.attacker.example`.
+        callback(null, config.corsOrigins.includes(origin));
+      },
+      // Required for the cookie sessions BACKEND-13 will add. Safe only because
+      // the origin list is exact and `*` is rejected at config load.
+      credentials: true,
+      allowedHeaders: ["Content-Type", "X-CSRF-Token", "Idempotency-Key"],
+      exposedHeaders: [REQUEST_ID_HEADER],
+    });
+  }
+
+  // Generation only — no UI, and no route is exposed. `app.swagger()` builds the
+  // document from the route schemas already declared, which keeps route schemas
+  // the single source of truth and makes a hand-written spec impossible to drift
+  // from. Exposing it over HTTP is a separate decision (OD-029).
+  await app.register(swagger, {
+    // Without this, a schema registered as `$id: "ApiError"` is emitted into the
+    // document as `def-0`, and every generated client would produce a type
+    // called `Def0`. The resolver keeps the name we chose.
+    refResolver: {
+      buildLocalReference(json, _base, _fragment, i) {
+        return typeof json["$id"] === "string" ? json["$id"] : `def-${String(i)}`;
+      },
+    },
+    openapi: {
+      info: { title: "LAGDA API", version: "0.0.0" },
+      tags: [{ name: "System", description: "Process health. Not product API." }],
+    },
+  });
+
+  // The canonical error schema, registered ONCE and referenced by `$ref`.
+  // Copying it into every route is how twelve routes end up describing eleven
+  // slightly different error shapes.
+  app.addSchema({ $id: "ApiError", ...ApiErrorSchema });
+
+  // ── Request context ────────────────────────────────────────────────────────
+
+  app.decorateRequest("observed", null);
+
+  app.addHook("onRequest", (request, reply, done) => {
+    // Echoed on EVERY response — success, error and 404 alike. Support cannot
+    // correlate a failure the user reports if the failing response is the one
+    // response without an ID.
+    void reply.header(REQUEST_ID_HEADER, request.id);
+    done();
+  });
+
+  // ── Error handling ─────────────────────────────────────────────────────────
+
+  app.setErrorHandler((error: FastifyError, request, reply) => {
+    const requestId = request.id as RequestId;
+
+    // Fastify signals these structurally, via `validation` and `code`. Nothing
+    // below reads an error message.
+    if (error.validation) {
+      // Through the SAME mapper as everything else, so there is one envelope
+      // builder rather than a second one that drifts.
+      const mapped = mapError(
+        validationFailed(toValidationDetails(error.validation)), requestId,
+      );
+      request.log.info(
+        { requestId, details: mapped.body.error.details?.length ?? 0 },
+        "request validation failed",
+      );
+      void reply.status(mapped.status).send(mapped.body);
+      return;
+    }
+
+    const translated = translateFastifyError(error);
+    const mapped = mapError(translated ?? error, requestId);
+
+    if (mapped.logLevel === "error") {
+      // The full error, with stack and cause, goes to the LOG. The client gets
+      // the generic body and the request ID that finds this line.
+      request.log.error(
+        { requestId, err: mapped.cause ?? error, route: request.routeOptions.url },
+        "unhandled error",
+      );
+    } else {
+      request.log.info(
+        { requestId, status: mapped.status, code: mapped.body.error.code },
+        "request failed",
+      );
+    }
+
+    void reply.status(mapped.status).send(mapped.body);
+  });
+
+  app.setNotFoundHandler((request, reply) => {
+    const mapped = mapError(routeNotFound(), request.id as RequestId);
+    void reply.status(mapped.status).send(mapped.body);
+  });
+
+  // ── Routes ─────────────────────────────────────────────────────────────────
+  //
+  // No prefix. API_CONVENTIONS §12 declined URL versioning, and health probes
+  // conventionally sit at the process root where an orchestrator expects them.
+
+  await registerHealthRoutes(app);
+  await registerReadinessRoutes(app, { databaseHealth: dependencies.databaseHealth });
+
+  // Deliberately NOT `await app.ready()`. Readying seals the instance, and a
+  // sealed app cannot have routes added — which would make the factory
+  // untestable for exactly the cases worth testing (strict validation, response
+  // stripping, error mapping) without inventing product endpoints to probe.
+  //
+  // `inject()` and `listen()` both ready the instance themselves, so nothing is
+  // skipped; the caller simply decides when the instance closes to extension.
+  return app;
+}
+
+/**
+ * Recognises Fastify's own failures by CODE, never by message.
+ *
+ * Returning `null` means "not one of ours" and the generic 500 path handles it,
+ * which is the safe direction to fail.
+ */
+function translateFastifyError(error: { code?: string; statusCode?: number }): Error | null {
+  switch (error.code) {
+    case "FST_ERR_CTP_EMPTY_JSON_BODY":
+    case "FST_ERR_CTP_INVALID_JSON_BODY":
+      return badRequest("The request body is not valid JSON.");
+    case "FST_ERR_CTP_INVALID_MEDIA_TYPE":
+    case "FST_ERR_CTP_INVALID_CONTENT_LENGTH":
+      return unsupportedMediaType();
+    case "FST_ERR_CTP_BODY_TOO_LARGE":
+      return payloadTooLarge();
+    default:
+      return null;
+  }
+}

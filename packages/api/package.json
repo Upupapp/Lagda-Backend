@@ -19,11 +19,16 @@
     "clean": "tsc --build --clean"
   },
   "dependencies": {
+    "@fastify/cors": "^11.3.0",
+    "@fastify/helmet": "^13.1.0",
+    "@fastify/swagger": "^9.8.1",
+    "@fastify/type-provider-typebox": "^6.1.0",
+    "@lagda/application": "*",
     "@lagda/contracts": "*",
     "@lagda/core": "*",
-    "@lagda/application": "*",
     "@lagda/db": "*",
     "@lagda/sealing": "*",
-    "@lagda/storage": "*"
+    "@lagda/storage": "*",
+    "fastify": "^5.11.3"
   }
 }
