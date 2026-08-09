@@ -10,3 +10,6 @@ export * from "./workspaces/index.js";
 
 // Behavioural contract for repository adapters. Consumed by @lagda/db tests.
 export * from "./test-support/repository-contract.js";
+
+export * from "./common/ports/session.js";
+export * from "./security/session-service.js";

@@ -69,6 +69,19 @@ export class NodeDocumentSealer implements DocumentSealer {
     // count matches what the signers saw.
     const pdf = await this.load(preparedDocument);
     await this.merge(pdf, fields);
+
+    // Pin the document's modification date to the SUPPLIED `sealedAt`.
+    //
+    // pdf-lib stamps it from the system clock on save, which made the output
+    // non-deterministic across a one-second boundary — the determinism test
+    // failed intermittently, which is worse than failing consistently. The
+    // value is already in the request, so this removes a hidden clock read
+    // rather than adding a workaround.
+    const sealedAtDate = new Date(sealedAt);
+    if (!Number.isNaN(sealedAtDate.getTime())) {
+      pdf.setModificationDate(sealedAtDate);
+    }
+
     const sealedDocument = await this.serialize(pdf);
 
     const completionCertificate = await renderCertificate({

@@ -140,6 +140,10 @@ describe("observability context is not a data-access source", () => {
       "packages/api/src/app/create-app.ts",
       "packages/api/src/logging/index.ts",
       "packages/api/src/observability/observe.ts",
+      // Enriches the log context with the resolved actor. Authorization reads
+      // `request.auth`, never this store (INV-135) — a separate architecture
+      // test asserts no @lagda/db file reads it at all.
+      "packages/api/src/security/session-plugin.ts",
     ]);
   });
 });

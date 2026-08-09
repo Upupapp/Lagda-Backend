@@ -39,6 +39,24 @@ export interface ApiConfig {
   readonly bodyLimitBytes: number;
   readonly requestTimeoutMs: number;
   readonly shutdownTimeoutMs: number;
+
+  // ── Session cookies ────────────────────────────────────────────────────────
+
+  /**
+   * `Lax` by default, and OD-028 does NOT block this.
+   *
+   * SameSite is evaluated per SITE, not per origin. `app.lagda.io` calling
+   * `api.lagda.io` is same-site, so `Lax` works under both candidate
+   * deployments. Only a frontend on a different registrable domain would need
+   * `none`, which is why that value additionally requires `Secure`.
+   */
+  readonly sessionCookieSameSite: "lax" | "strict" | "none";
+  /** Forced true in production. See `assertProductionSafety`. */
+  readonly sessionCookieSecure: boolean;
+  readonly sessionAbsoluteLifetimeMs: number;
+  /** Handoff §3: "default 8 hours idle". */
+  readonly sessionIdleTimeoutMs: number;
+  readonly sessionTouchIntervalMs: number;
 }
 
 export class ApiConfigError extends Error {
@@ -182,6 +200,23 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     bodyLimitBytes: readInt(env["REQUEST_BODY_LIMIT"], "REQUEST_BODY_LIMIT", DEFAULT_BODY_LIMIT),
     requestTimeoutMs: readInt(env["REQUEST_TIMEOUT_MS"], "REQUEST_TIMEOUT_MS", 30_000),
     shutdownTimeoutMs: readInt(env["SHUTDOWN_TIMEOUT_MS"], "SHUTDOWN_TIMEOUT_MS", 15_000),
+
+    sessionCookieSameSite: parseSameSite(env["SESSION_COOKIE_SAMESITE"]),
+    // Secure by default EVERYWHERE. Development must opt out explicitly, so a
+    // missing variable can never silently produce an insecure production cookie.
+    sessionCookieSecure: env["SESSION_COOKIE_SECURE"] !== "false",
+    // 7 days. The handoff specifies an idle timeout but no absolute ceiling
+    // (OD-033), so this is a conservative configurable default rather than an
+    // invented business rule.
+    sessionAbsoluteLifetimeMs: readInt(
+      env["SESSION_ABSOLUTE_LIFETIME_MS"], "SESSION_ABSOLUTE_LIFETIME_MS", 7 * 24 * 3_600_000),
+    // 8 hours — specified by handoff §3.
+    sessionIdleTimeoutMs: readInt(
+      env["SESSION_IDLE_TIMEOUT_MS"], "SESSION_IDLE_TIMEOUT_MS", 8 * 3_600_000),
+    // 5 minutes. Precision of minutes is ample for an 8-hour window, and it
+    // keeps a read path from writing a row on every request.
+    sessionTouchIntervalMs: readInt(
+      env["SESSION_TOUCH_INTERVAL_MS"], "SESSION_TOUCH_INTERVAL_MS", 300_000),
   };
 
   assertProductionSafety(config);
@@ -195,8 +230,39 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
  * convenience rather than a vulnerability — but the moment `NODE_ENV` says
  * production, a configuration that would silently be insecure stops the boot.
  */
+function parseSameSite(raw: string | undefined): "lax" | "strict" | "none" {
+  const value = raw ?? "lax";
+  if (value !== "lax" && value !== "strict" && value !== "none") {
+    throw new ApiConfigError(
+      `SESSION_COOKIE_SAMESITE must be lax, strict or none, got ${JSON.stringify(value)}.`,
+    );
+  }
+  return value;
+}
+
 function assertProductionSafety(config: ApiConfig): void {
   if (config.environment !== "production") return;
+
+  // Non-negotiable. A session cookie without Secure is sent over plaintext HTTP,
+  // where any network position can read it.
+  if (!config.sessionCookieSecure) {
+    throw new ApiConfigError(
+      "SESSION_COOKIE_SECURE=false is not permitted in production. A session "
+      + "cookie without Secure is transmitted in the clear.",
+    );
+  }
+  // `SameSite=None` disables the browser's cross-site protection entirely, and
+  // without Secure the browser rejects the cookie outright.
+  if (config.sessionCookieSameSite === "none" && !config.sessionCookieSecure) {
+    throw new ApiConfigError("SameSite=none requires Secure cookies.");
+  }
+  if (config.sessionIdleTimeoutMs > config.sessionAbsoluteLifetimeMs) {
+    // Otherwise the idle window can never elapse and the sliding expiry the
+    // handoff requires would silently do nothing.
+    throw new ApiConfigError(
+      "SESSION_IDLE_TIMEOUT_MS cannot exceed SESSION_ABSOLUTE_LIFETIME_MS.",
+    );
+  }
 
   if (config.corsOrigins.length === 0) {
     // Not fatal in itself — an API on the same origin as its frontend needs no

@@ -227,7 +227,20 @@ describe("hashing is confined to the sealing adapter", () => {
         }
       }
     }
-    expect(users).toEqual(["packages/sealing/src/internal/digest.ts"]);
+    // An explicit ALLOWLIST of two, each with a stated domain — not a widened
+    // rule. A third caller still fails, which is the point.
+    //
+    //   sealing/internal/digest  — DOCUMENT digests (INV-080). One
+    //                              implementation, so hex vs base64 cannot
+    //                              disagree across layers.
+    //   api/security/crypto      — SESSION and CSRF token digests (BACKEND-13).
+    //                              A different domain entirely: these are
+    //                              lookup keys for high-entropy credentials,
+    //                              never document content.
+    expect(users.sort()).toEqual([
+      "packages/api/src/security/crypto.ts",
+      "packages/sealing/src/internal/digest.ts",
+    ]);
   });
 });
 
@@ -246,7 +259,12 @@ describe("the sealer is deterministic", () => {
         // Strip comments so prose about clocks is not mistaken for a clock read.
         .replace(/\/\*[\s\S]*?\*\//g, "")
         .replace(/^\s*\/\/.*$/gm, "");
-      if (/\bDate\.now\s*\(|new\s+Date\s*\(|Math\.random\s*\(|process\.env\b/.test(source)) {
+      // `new Date()` with NO argument is a clock read. `new Date(sealedAt)`
+      // CONVERTS a value the caller supplied, which is the opposite — it is how
+      // the sealer avoids reading a clock at all. The broader pattern flagged
+      // the fix for a real nondeterminism bug, so the detector is narrowed to
+      // the actual concern rather than suppressed.
+      if (/\bDate\.now\s*\(|new\s+Date\s*\(\s*\)|Math\.random\s*\(|process\.env\b/.test(source)) {
         offenders.push(path.relative(ROOT, file));
       }
     }

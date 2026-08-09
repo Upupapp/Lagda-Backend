@@ -7,6 +7,8 @@
 // Routes receive the specific capability they need, never this whole object,
 // so a route cannot reach a dependency it was not given.
 
+import type { SessionService } from "@lagda/application";
+
 /**
  * A bounded liveness probe for readiness.
  *
@@ -22,4 +24,11 @@ export interface DatabaseHealth {
 
 export interface AppDependencies {
   readonly databaseHealth: DatabaseHealth;
+  /**
+   * Optional so tests that care only about health and errors need not build a
+   * session stack. Absent means no session plugin is registered at all — not a
+   * silently-disabled security control, because with no authenticated scope
+   * there is nothing to protect.
+   */
+  readonly sessions?: SessionService;
 }

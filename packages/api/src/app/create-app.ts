@@ -9,6 +9,7 @@ import Fastify, { type FastifyError, type FastifyInstance, type FastifyServerOpt
 import helmet from "@fastify/helmet";
 import cors from "@fastify/cors";
 import swagger from "@fastify/swagger";
+import cookie from "@fastify/cookie";
 import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import { ApiErrorSchema, REQUEST_ID_HEADER, type RequestId } from "@lagda/contracts";
 import type { ApiConfig } from "../config/index.js";
@@ -26,6 +27,7 @@ import {
 import { registerHealthRoutes } from "../routes/health.js";
 import { registerReadinessRoutes } from "../routes/readiness.js";
 import type { AppDependencies } from "./dependencies.js";
+import { sessionResolution } from "../security/session-plugin.js";
 
 export interface CreateAppOptions {
   readonly config: ApiConfig;
@@ -140,6 +142,11 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
     });
   }
 
+  // Cookie parsing, BEFORE session resolution — the resolver reads
+  // `request.cookies`. Hand-parsing the Cookie header would get quoting and
+  // multiple-cookie cases subtly wrong.
+  await app.register(cookie);
+
   // Generation only — no UI, and no route is exposed. `app.swagger()` builds the
   // document from the route schemas already declared, which keeps route schemas
   // the single source of truth and makes a hand-written spec impossible to drift
@@ -251,6 +258,14 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
   //
   // No prefix. API_CONVENTIONS §12 declined URL versioning, and health probes
   // conventionally sit at the process root where an orchestrator expects them.
+
+  // Resolves a session when a cookie is present and NEVER rejects, so public
+  // routes stay public. Enforcement happens inside the authenticated scope.
+  if (dependencies.sessions !== undefined) {
+    await app.register(sessionResolution, {
+      sessions: dependencies.sessions, metrics,
+    });
+  }
 
   await registerHealthRoutes(app);
   await registerReadinessRoutes(app, { databaseHealth: dependencies.databaseHealth });

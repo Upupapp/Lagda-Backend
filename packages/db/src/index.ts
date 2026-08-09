@@ -29,3 +29,5 @@ export {
   isUniqueViolation, isForeignKeyViolation, isCheckViolation, isTransientConflict,
   translatePersistenceError,
 } from "./errors.js";
+
+export { createSessionRepository } from "./repositories/session.js";

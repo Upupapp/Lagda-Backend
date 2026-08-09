@@ -140,6 +140,27 @@ export interface VerificationRecordsTable {
   created_at: GeneratedTimestamptz;
 }
 
+/**
+ * A browser session.
+ *
+ * **No `workspace_id`, deliberately.** A session says which user is calling;
+ * whether that user may touch a workspace is membership (BACKEND-27). Classified
+ * GLOBAL_AUTHENTICATION, and the one table with no RLS.
+ */
+export interface UserSessionsTable {
+  session_id: string;
+  /** No FK yet — `users` arrives with BACKEND-19. */
+  user_id: string;
+  /** SHA-256 of the raw token. The raw token is NEVER stored. */
+  token_hash: string;
+  csrf_token_hash: string;
+  created_at: GeneratedTimestamptz;
+  last_seen_at: ColumnType<Date, Date | undefined, Date>;
+  expires_at: Timestamptz;
+  revoked_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
+  revocation_reason: ColumnType<string | null, string | null | undefined, string | null>;
+}
+
 /** Migration bookkeeping, owned by Kysely's migrator.
  *
  * Declared so the type-checker knows it exists; application code never reads it.
@@ -157,5 +178,6 @@ export interface Database {
   evidence_events: EvidenceEventsTable;
   document_seals: DocumentSealsTable;
   verification_records: VerificationRecordsTable;
+  user_sessions: UserSessionsTable;
   kysely_migration: KyselyMigrationTable;
 }
