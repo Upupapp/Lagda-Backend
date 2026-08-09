@@ -6,7 +6,10 @@ import { randomBytes, createHash, timingSafeEqual, randomUUID } from "node:crypt
 import type {
   CsrfToken, SecurityTokenDigester, SecurityTokenGenerator, SessionId,
   SessionToken, TokenDigest,
+  IdempotencyKeyDigester, IdempotencyKeyDigest, IdempotencyRecordId,
+  IdempotencyRecordIdGenerator, RequestFingerprint,
 } from "@lagda/application";
+import type { IdempotencyKey } from "@lagda/contracts";
 
 /**
  * 32 bytes = **256 bits** of entropy, base64url-encoded to 43 characters.
@@ -76,5 +79,41 @@ export function createSecurityTokenDigester(): SecurityTokenDigester {
       if (left.length !== right.length) return false;
       return timingSafeEqual(left, right);
     },
+  };
+}
+
+// ── Idempotency ──────────────────────────────────────────────────────────────
+
+/**
+ * Digests for idempotency.
+ *
+ * Two DIFFERENT things, and conflating them would be a real bug:
+ *
+ *   keyDigest    identifies WHICH operation a retry belongs to
+ *   fingerprint  identifies WHAT the caller asked for
+ *
+ * Domain-separated from each other and from session digests, so no value can
+ * be compared meaningfully across domains.
+ *
+ * SHA-256, not Argon2 — the same reasoning as session tokens. These are lookup
+ * keys, and a slow hash would tax every protected mutation for no benefit.
+ */
+export function createIdempotencyKeyDigester(): IdempotencyKeyDigester {
+  return {
+    digestKey: (key: IdempotencyKey): IdempotencyKeyDigest =>
+      createHash("sha256").update(`lagda.idem.key:${key}`)
+        .digest("hex") as IdempotencyKeyDigest,
+
+    fingerprint: (canonical: string): RequestFingerprint =>
+      createHash("sha256").update(`lagda.idem.request:${canonical}`)
+        .digest("hex") as RequestFingerprint,
+  };
+}
+
+export function createIdempotencyRecordIdGenerator(): IdempotencyRecordIdGenerator {
+  return {
+    // Opaque and internal. Safe in a log line, unlike the key it stands for.
+    nextIdempotencyRecordId: () =>
+      `idem_${randomUUID().replace(/-/g, "")}` as IdempotencyRecordId,
   };
 }

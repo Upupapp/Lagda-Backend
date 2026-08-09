@@ -28,5 +28,8 @@ export {
   SESSION_COOKIE_NAME, CSRF_COOKIE_NAME,
   sessionCookieOptions, csrfCookieOptions, clearCookieOptions, clearCsrfCookieOptions,
 } from "./security/cookies.js";
-export { createSecurityTokenGenerator, createSecurityTokenDigester } from "./security/crypto.js";
+export {
+  createSecurityTokenGenerator, createSecurityTokenDigester,
+  createIdempotencyKeyDigester, createIdempotencyRecordIdGenerator,
+} from "./security/crypto.js";
 export { sessionResolution, requireSession, type RequestAuth } from "./security/session-plugin.js";

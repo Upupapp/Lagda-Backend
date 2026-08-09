@@ -161,6 +161,32 @@ export interface UserSessionsTable {
   revocation_reason: ColumnType<string | null, string | null | undefined, string | null>;
 }
 
+/**
+ * Durable idempotency.
+ *
+ * MIXED TYPED SCOPE and no RLS — the second deliberate exception after
+ * sessions. Safety comes from every lookup carrying the full identity, not
+ * from a policy that would have to decide what a null workspace means.
+ */
+export interface IdempotencyRecordsTable {
+  record_id: string;
+  scope_type: string;
+  /** Derived from the typed scope by the application, never client-supplied. */
+  scope_key: string;
+  operation: string;
+  /** SHA-256 of the client key. The raw key is NEVER stored. */
+  key_digest: string;
+  /** SHA-256 of the canonical logical request. Distinct from key_digest. */
+  request_fingerprint: string;
+  state: string;
+  response_status: ColumnType<number | null, number | null | undefined, number | null>;
+  response_body: ColumnType<unknown, string | null | undefined, string | null>;
+  response_version: ColumnType<number | null, number | null | undefined, number | null>;
+  created_at: ColumnType<Date, Date | undefined, Date>;
+  completed_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
+  expires_at: Timestamptz;
+}
+
 /** Migration bookkeeping, owned by Kysely's migrator.
  *
  * Declared so the type-checker knows it exists; application code never reads it.
@@ -179,5 +205,6 @@ export interface Database {
   document_seals: DocumentSealsTable;
   verification_records: VerificationRecordsTable;
   user_sessions: UserSessionsTable;
+  idempotency_records: IdempotencyRecordsTable;
   kysely_migration: KyselyMigrationTable;
 }

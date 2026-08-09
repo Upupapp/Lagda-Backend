@@ -31,3 +31,4 @@ export {
 } from "./errors.js";
 
 export { createSessionRepository } from "./repositories/session.js";
+export { createIdempotencyRepository } from "./repositories/idempotency.js";

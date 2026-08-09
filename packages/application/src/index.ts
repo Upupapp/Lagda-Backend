@@ -13,3 +13,6 @@ export * from "./test-support/repository-contract.js";
 
 export * from "./common/ports/session.js";
 export * from "./security/session-service.js";
+export * from "./common/ports/idempotency.js";
+export * from "./idempotency/canonical.js";
+export * from "./idempotency/service.js";

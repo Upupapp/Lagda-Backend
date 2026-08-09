@@ -12,6 +12,7 @@ import * as m001 from "./001_workspaces.js";
 import * as m002 from "./002_tenancy_rls.js";
 import * as m003 from "./003_evidence_and_integrity.js";
 import * as m004 from "./004_sessions.js";
+import * as m005 from "./005_idempotency.js";
 
 /**
  * Migrations listed explicitly rather than read from disk.
@@ -28,6 +29,7 @@ const MIGRATIONS: Record<string, Migration> = {
   "002_tenancy_rls": m002,
   "003_evidence_and_integrity": m003,
   "004_sessions": m004,
+  "005_idempotency": m005,
 };
 
 class ExplicitMigrationProvider implements MigrationProvider {
