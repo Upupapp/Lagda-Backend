@@ -81,7 +81,10 @@ export class CreateWorkspace {
     // Both writes or neither. A workspace with no owner is unrecoverable: no
     // one could transfer ownership or delete it. That is exactly the state a
     // partial write would produce.
-    await this.deps.transactions.run(async tx => {
+    // Bound to the workspace being created. The ID is generated first, so the
+    // tenant context matches the rows about to be written and RLS's WITH CHECK
+    // permits them — no global escape is needed to create a workspace.
+    await this.deps.transactions.runForWorkspace(workspaceId, async tx => {
       await this.deps.workspaces.save(workspace, tx);
       await this.deps.memberships.save(ownerMembership, tx);
     });

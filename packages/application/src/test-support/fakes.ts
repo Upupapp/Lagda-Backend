@@ -53,8 +53,23 @@ export class FakeTransactionManager implements TransactionManager {
   started = 0;
   committed = 0;
   rolledBack = 0;
+  /** Records the scope each transaction ran under, so tests can assert it. */
+  readonly scopes: (WorkspaceId | "global")[] = [];
 
-  async run<T>(operation: (tx: TransactionContext) => Promise<T>): Promise<T> {
+  async runForWorkspace<T>(
+    workspaceId: WorkspaceId,
+    operation: (tx: TransactionContext) => Promise<T>,
+  ): Promise<T> {
+    this.scopes.push(workspaceId);
+    return this.execute(operation);
+  }
+
+  async runGlobal<T>(operation: (tx: TransactionContext) => Promise<T>): Promise<T> {
+    this.scopes.push("global");
+    return this.execute(operation);
+  }
+
+  private async execute<T>(operation: (tx: TransactionContext) => Promise<T>): Promise<T> {
     this.started++;
     try {
       const result = await operation(TX);
@@ -74,7 +89,18 @@ export class FailingTransactionManager implements TransactionManager {
 
   constructor(private readonly failure: Error) {}
 
-  async run<T>(_operation: (tx: TransactionContext) => Promise<T>): Promise<T> {
+  runForWorkspace<T>(
+    _workspaceId: WorkspaceId,
+    _operation: (tx: TransactionContext) => Promise<T>,
+  ): Promise<T> {
+    return this.fail();
+  }
+
+  runGlobal<T>(_operation: (tx: TransactionContext) => Promise<T>): Promise<T> {
+    return this.fail();
+  }
+
+  private fail<T>(): Promise<T> {
     this.started++;
     this.rolledBack++;
     return Promise.reject(this.failure);
@@ -86,7 +112,7 @@ export class InMemoryWorkspaceRepository implements WorkspaceRepository {
   /** Records the transaction each write was given, so scoping can be asserted. */
   readonly writeContexts: TransactionContext[] = [];
 
-  findById(workspaceId: WorkspaceId): Promise<WorkspaceRecord | null> {
+  findById(workspaceId: WorkspaceId, _tx: TransactionContext): Promise<WorkspaceRecord | null> {
     return Promise.resolve(this.rows.get(workspaceId) ?? null);
   }
 
@@ -104,6 +130,7 @@ export class InMemoryMembershipRepository implements WorkspaceMembershipReposito
   findInWorkspace(
     workspaceId: WorkspaceId,
     memberId: WorkspaceMemberId,
+    _tx: TransactionContext,
   ): Promise<WorkspaceMembershipRecord | null> {
     // BOTH keys, deliberately. Matching on `memberId` alone would make this
     // fake more permissive than the contract and hide cross-tenant reads.
@@ -113,7 +140,10 @@ export class InMemoryMembershipRepository implements WorkspaceMembershipReposito
     return Promise.resolve(found ?? null);
   }
 
-  listForWorkspace(workspaceId: WorkspaceId): Promise<readonly WorkspaceMembershipRecord[]> {
+  listForWorkspace(
+    workspaceId: WorkspaceId,
+    _tx: TransactionContext,
+  ): Promise<readonly WorkspaceMembershipRecord[]> {
     return Promise.resolve(this.rows.filter(row => row.workspaceId === workspaceId));
   }
 

@@ -9,6 +9,7 @@ import type { Kysely } from "kysely";
 import { Migrator, type MigrationProvider, type Migration } from "kysely/migration";
 import type { Database } from "../schema/index.js";
 import * as m001 from "./001_workspaces.js";
+import * as m002 from "./002_tenancy_rls.js";
 
 /**
  * Migrations listed explicitly rather than read from disk.
@@ -22,6 +23,7 @@ import * as m001 from "./001_workspaces.js";
  */
 const MIGRATIONS: Record<string, Migration> = {
   "001_workspaces": m001,
+  "002_tenancy_rls": m002,
 };
 
 class ExplicitMigrationProvider implements MigrationProvider {

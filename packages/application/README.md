@@ -18,7 +18,13 @@ That last group is the one that catches people: those packages *implement* the p
 
 **No hidden time or randomness.** `Clock` supplies "now"; generators supply IDs.
 
-**Workspace scope comes from the actor**, never from a request body.
+**Workspace scope comes from the actor**, never from a request body. Every
+workspace-owned repository call takes the workspace **and** the transaction —
+reads included, because tenant context is transaction-local under RLS.
+
+Transactions are explicitly scoped: `runForWorkspace(workspaceId, op)` or
+`runGlobal(op)`. There is no optional-workspace variant, because forgetting the
+argument would mean unrestricted access.
 
 **Errors carry no HTTP semantics** — a `category`, which BACKEND-11 maps to a status.
 

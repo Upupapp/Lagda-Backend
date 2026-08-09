@@ -1,10 +1,18 @@
 // PostgreSQL implementation of the application's TransactionManager port.
 //
-// The whole point of this file is that `@lagda/application` never learns what a
-// Kysely transaction is. Application declares an opaque `TransactionContext`;
-// this carries a real transaction inside one and unwraps it here.
+// Two responsibilities. The first is that `@lagda/application` never learns what
+// a Kysely transaction is. The second — added by BACKEND-07 — is that a tenant
+// transaction establishes RLS context, and does so in exactly one place.
+//
+// THE POOLING HAZARD, and why this is the only file that touches tenant context:
+// `SET` is session-level, so a connection carrying `lagda.workspace_id` back to
+// the pool would hand it to the next request — a silent, intermittent,
+// load-dependent cross-tenant read. `SET LOCAL` is scoped to the transaction and
+// disappears on COMMIT or ROLLBACK. Setting it anywhere but here would reopen
+// that hazard.
 
-import type { Kysely, Transaction } from "kysely";
+import { sql, type Kysely, type Transaction } from "kysely";
+import type { WorkspaceId } from "@lagda/contracts";
 import type { TransactionContext, TransactionManager } from "@lagda/application";
 import type { Database } from "../schema/index.js";
 
@@ -21,15 +29,38 @@ interface CarriedContext {
   readonly [HANDLE]: Transaction<Database>;
 }
 
+/** The setting name RLS policies read. Must match migration 002. */
+const WORKSPACE_SETTING = "lagda.workspace_id";
+
 export function createTransactionManager(db: Kysely<Database>): TransactionManager {
+  const wrap = (trx: Transaction<Database>): TransactionContext =>
+    ({ [HANDLE]: trx } as unknown as TransactionContext);
+
   return {
-    async run<T>(operation: (tx: TransactionContext) => Promise<T>): Promise<T> {
-      // Kysely commits when the callback resolves and rolls back when it
-      // throws, releasing the pooled connection either way. That is what stops
-      // repeated failures leaking connections until the pool is exhausted.
+    async runForWorkspace<T>(
+      workspaceId: WorkspaceId,
+      operation: (tx: TransactionContext) => Promise<T>,
+    ): Promise<T> {
       return db.transaction().execute(async trx => {
-        const context = { [HANDLE]: trx } as unknown as TransactionContext;
-        return operation(context);
+        // SET LOCAL, always. Parameterized through Kysely so a workspace ID can
+        // never be concatenated into SQL — `set_config` takes the value as a
+        // bind parameter, which `SET LOCAL x = '...'` cannot.
+        //
+        // `true` as the third argument makes it transaction-local, which is the
+        // entire safety property.
+        await sql`select set_config(${WORKSPACE_SETTING}, ${workspaceId}, true)`.execute(trx);
+        return operation(wrap(trx));
+      });
+    },
+
+    async runGlobal<T>(operation: (tx: TransactionContext) => Promise<T>): Promise<T> {
+      return db.transaction().execute(async trx => {
+        // No tenant context is set, so RLS policies match nothing and every
+        // workspace-owned table is invisible. That is deliberate: a global
+        // transaction is for user accounts and system records, and if it
+        // accidentally touches tenant data it fails closed rather than seeing
+        // everything.
+        return operation(wrap(trx));
       });
     },
   };

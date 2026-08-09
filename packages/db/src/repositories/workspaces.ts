@@ -18,10 +18,15 @@ import {
   toMembershipRecord, fromMembershipRecord,
 } from "../mapping/index.js";
 
-export function createWorkspaceRepository(db: Kysely<Database>): WorkspaceRepository {
+export function createWorkspaceRepository(_db: Kysely<Database>): WorkspaceRepository {
   return {
-    async findById(workspaceId: WorkspaceId): Promise<WorkspaceRecord | null> {
-      const row = await db
+    async findById(
+      workspaceId: WorkspaceId,
+      tx: TransactionContext,
+    ): Promise<WorkspaceRecord | null> {
+      // Through the transaction, not the pool. RLS context is transaction-local,
+      // so a pooled read has no tenant context and sees nothing.
+      const row = await unwrapTransaction(tx)
         .selectFrom("workspaces")
         .selectAll()
         .where("workspace_id", "=", workspaceId)
@@ -43,17 +48,18 @@ export function createWorkspaceRepository(db: Kysely<Database>): WorkspaceReposi
 }
 
 export function createWorkspaceMembershipRepository(
-  db: Kysely<Database>,
+  _db: Kysely<Database>,
 ): WorkspaceMembershipRepository {
   return {
     async findInWorkspace(
       workspaceId: WorkspaceId,
       memberId: WorkspaceMemberId,
+      tx: TransactionContext,
     ): Promise<WorkspaceMembershipRecord | null> {
       // BOTH predicates in the query. Fetching by member_id and comparing the
       // workspace afterwards would still read another tenant's row into memory,
       // and would rely on every caller remembering the comparison.
-      const row = await db
+      const row = await unwrapTransaction(tx)
         .selectFrom("workspace_memberships")
         .selectAll()
         .where("workspace_id", "=", workspaceId)
@@ -64,8 +70,9 @@ export function createWorkspaceMembershipRepository(
 
     async listForWorkspace(
       workspaceId: WorkspaceId,
+      tx: TransactionContext,
     ): Promise<readonly WorkspaceMembershipRecord[]> {
-      const rows = await db
+      const rows = await unwrapTransaction(tx)
         .selectFrom("workspace_memberships")
         .selectAll()
         .where("workspace_id", "=", workspaceId)

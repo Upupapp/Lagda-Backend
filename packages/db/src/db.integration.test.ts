@@ -18,6 +18,8 @@ import { createTestDatabase, truncateAll, hasIntegrationDatabase } from "./testi
 
 const CREATED_AT = Date.parse("2026-08-09T06:30:00.000Z");
 const OWNER = "usr_1" as UserId;
+// Most of these tests write to one workspace; the tenancy suite covers the rest.
+const WS_SCOPE = "ws_1" as WorkspaceId;
 
 // Skips cleanly when no integration database is configured, so `npm test` stays
 // offline. CI sets DATABASE_TEST_URL and these run for real.
@@ -65,7 +67,7 @@ suite("persistence integration", () => {
       const workspaces = createWorkspaceRepository(database.db);
       const memberships = createWorkspaceMembershipRepository(database.db);
 
-      await transactions.run(async tx => {
+      await transactions.runForWorkspace(WS_SCOPE, async tx => {
         await workspaces.save({
           workspaceId: "ws_1" as WorkspaceId, name: "Acme",
           ownerUserId: OWNER, createdAt: CREATED_AT,
@@ -76,8 +78,11 @@ suite("persistence integration", () => {
         }, tx);
       });
 
-      expect(await workspaces.findById("ws_1" as WorkspaceId)).not.toBeNull();
-      expect(await memberships.listForWorkspace("ws_1" as WorkspaceId)).toHaveLength(1);
+      const tx2 = createTransactionManager(database.db);
+      await tx2.runForWorkspace("ws_1" as WorkspaceId, async t => {
+        expect(await workspaces.findById("ws_1" as WorkspaceId, t)).not.toBeNull();
+        expect(await memberships.listForWorkspace("ws_1" as WorkspaceId, t)).toHaveLength(1);
+      });
     });
 
     it("ROLLS BACK both writes when the second fails", async () => {
@@ -89,7 +94,7 @@ suite("persistence integration", () => {
       const workspaces = createWorkspaceRepository(database.db);
 
       await expect(
-        transactions.run(async tx => {
+        transactions.runForWorkspace(WS_SCOPE, async tx => {
           await workspaces.save({
             workspaceId: "ws_rollback" as WorkspaceId, name: "Doomed",
             ownerUserId: OWNER, createdAt: CREATED_AT,
@@ -100,7 +105,9 @@ suite("persistence integration", () => {
         }),
       ).rejects.toThrow("deliberate failure");
 
-      expect(await workspaces.findById("ws_rollback" as WorkspaceId)).toBeNull();
+      await transactions.runForWorkspace("ws_rollback" as WorkspaceId, async t => {
+        expect(await workspaces.findById("ws_rollback" as WorkspaceId, t)).toBeNull();
+      });
     });
 
     it("releases connections after repeated failures", async () => {
@@ -109,7 +116,7 @@ suite("persistence integration", () => {
       const transactions = createTransactionManager(database.db);
       for (let i = 0; i < 15; i++) {
         await expect(
-          transactions.run(() => Promise.reject(new Error("boom"))),
+          transactions.runForWorkspace(WS_SCOPE, () => Promise.reject(new Error("boom"))),
         ).rejects.toThrow("boom");
       }
       expect(await database.ping()).toBe(true);
@@ -133,7 +140,7 @@ suite("persistence integration", () => {
     const seedWorkspace = async (id: string) => {
       const transactions = createTransactionManager(database.db);
       const workspaces = createWorkspaceRepository(database.db);
-      await transactions.run(tx => workspaces.save({
+      await transactions.runForWorkspace(WS_SCOPE, tx => workspaces.save({
         workspaceId: id as WorkspaceId, name: `Workspace ${id}`,
         ownerUserId: OWNER, createdAt: CREATED_AT,
       }, tx));
@@ -144,12 +151,12 @@ suite("persistence integration", () => {
       const transactions = createTransactionManager(database.db);
       const memberships = createWorkspaceMembershipRepository(database.db);
 
-      await transactions.run(tx => memberships.save({
+      await transactions.runForWorkspace(WS_SCOPE, tx => memberships.save({
         memberId: "mem_1" as WorkspaceMemberId, workspaceId: "ws_1" as WorkspaceId,
         userId: OWNER, role: "owner", createdAt: CREATED_AT,
       }, tx));
 
-      const duplicate = await transactions.run(tx => memberships.save({
+      const duplicate = await transactions.runForWorkspace(WS_SCOPE, tx => memberships.save({
         memberId: "mem_2" as WorkspaceMemberId, workspaceId: "ws_1" as WorkspaceId,
         userId: OWNER, role: "sender", createdAt: CREATED_AT,
       }, tx)).catch((e: unknown) => e);
@@ -165,7 +172,7 @@ suite("persistence integration", () => {
       const transactions = createTransactionManager(database.db);
       const memberships = createWorkspaceMembershipRepository(database.db);
 
-      await transactions.run(async tx => {
+      await transactions.runForWorkspace(WS_SCOPE, async tx => {
         await memberships.save({
           memberId: "mem_1" as WorkspaceMemberId, workspaceId: "ws_1" as WorkspaceId,
           userId: OWNER, role: "owner", createdAt: CREATED_AT,
@@ -177,15 +184,18 @@ suite("persistence integration", () => {
       });
 
       // Uniqueness is per workspace, not global — the distinction §25 warns about.
-      expect(await memberships.listForWorkspace("ws_1" as WorkspaceId)).toHaveLength(1);
-      expect(await memberships.listForWorkspace("ws_2" as WorkspaceId)).toHaveLength(1);
+      for (const id of ["ws_1", "ws_2"] as const) {
+        await transactions.runForWorkspace(id as WorkspaceId, async t => {
+          expect(await memberships.listForWorkspace(id as WorkspaceId, t)).toHaveLength(1);
+        });
+      }
     });
 
     it("rejects a membership in a workspace that does not exist", async () => {
       const transactions = createTransactionManager(database.db);
       const memberships = createWorkspaceMembershipRepository(database.db);
 
-      const orphan = await transactions.run(tx => memberships.save({
+      const orphan = await transactions.runForWorkspace(WS_SCOPE, tx => memberships.save({
         memberId: "mem_x" as WorkspaceMemberId, workspaceId: "ws_missing" as WorkspaceId,
         userId: OWNER, role: "owner", createdAt: CREATED_AT,
       }, tx)).catch((e: unknown) => e);
@@ -226,7 +236,7 @@ suite("persistence integration", () => {
       await seedWorkspace("ws_1");
       const transactions = createTransactionManager(database.db);
       const memberships = createWorkspaceMembershipRepository(database.db);
-      await transactions.run(tx => memberships.save({
+      await transactions.runForWorkspace(WS_SCOPE, tx => memberships.save({
         memberId: "mem_1" as WorkspaceMemberId, workspaceId: "ws_1" as WorkspaceId,
         userId: OWNER, role: "owner", createdAt: CREATED_AT,
       }, tx));
@@ -248,14 +258,16 @@ suite("persistence integration", () => {
       const transactions = createTransactionManager(database.db);
       const workspaces = createWorkspaceRepository(database.db);
 
-      await transactions.run(tx => workspaces.save({
+      await transactions.runForWorkspace(WS_SCOPE, tx => workspaces.save({
         workspaceId: "ws_time" as WorkspaceId, name: "Time",
         ownerUserId: OWNER, createdAt: CREATED_AT,
       }, tx));
 
-      const loaded = await workspaces.findById("ws_time" as WorkspaceId);
-      expect(loaded?.createdAt).toBe(CREATED_AT);
-      expect(new Date(loaded!.createdAt).toISOString()).toBe("2026-08-09T06:30:00.000Z");
+      await transactions.runForWorkspace("ws_time" as WorkspaceId, async t => {
+        const loaded = await workspaces.findById("ws_time" as WorkspaceId, t);
+        expect(loaded?.createdAt).toBe(CREATED_AT);
+        expect(new Date(loaded!.createdAt).toISOString()).toBe("2026-08-09T06:30:00.000Z");
+      });
     });
 
     // The "unrecognised role" case is NOT tested here. It requires dropping the
@@ -273,7 +285,7 @@ suite("persistence integration", () => {
       const workspaces = createWorkspaceRepository(database.db);
       const memberships = createWorkspaceMembershipRepository(database.db);
 
-      await transactions.run(async tx => {
+      await transactions.runForWorkspace(WS_SCOPE, async tx => {
         await workspaces.save({ workspaceId: "ws_a" as WorkspaceId, name: "A", ownerUserId: OWNER, createdAt: CREATED_AT }, tx);
         await workspaces.save({ workspaceId: "ws_b" as WorkspaceId, name: "B", ownerUserId: OWNER, createdAt: CREATED_AT }, tx);
         await memberships.save({
@@ -283,15 +295,17 @@ suite("persistence integration", () => {
       });
 
       // The member exists — in workspace B. Scoped to A it is simply absent.
-      const fromA = await memberships.findInWorkspace(
-        "ws_a" as WorkspaceId, "mem_b" as WorkspaceMemberId,
-      );
-      expect(fromA).toBeNull();
-
-      const fromB = await memberships.findInWorkspace(
-        "ws_b" as WorkspaceId, "mem_b" as WorkspaceMemberId,
-      );
-      expect(fromB?.memberId).toBe("mem_b");
+      await transactions.runForWorkspace("ws_a" as WorkspaceId, async t => {
+        expect(await memberships.findInWorkspace(
+          "ws_a" as WorkspaceId, "mem_b" as WorkspaceMemberId, t,
+        )).toBeNull();
+      });
+      await transactions.runForWorkspace("ws_b" as WorkspaceId, async t => {
+        const fromB = await memberships.findInWorkspace(
+          "ws_b" as WorkspaceId, "mem_b" as WorkspaceMemberId, t,
+        );
+        expect(fromB?.memberId).toBe("mem_b");
+      });
     });
 
     it("lists only the requested workspace's members", async () => {
@@ -299,16 +313,18 @@ suite("persistence integration", () => {
       const workspaces = createWorkspaceRepository(database.db);
       const memberships = createWorkspaceMembershipRepository(database.db);
 
-      await transactions.run(async tx => {
+      await transactions.runForWorkspace(WS_SCOPE, async tx => {
         await workspaces.save({ workspaceId: "ws_a" as WorkspaceId, name: "A", ownerUserId: OWNER, createdAt: CREATED_AT }, tx);
         await workspaces.save({ workspaceId: "ws_b" as WorkspaceId, name: "B", ownerUserId: OWNER, createdAt: CREATED_AT }, tx);
         await memberships.save({ memberId: "mem_a" as WorkspaceMemberId, workspaceId: "ws_a" as WorkspaceId, userId: OWNER, role: "owner", createdAt: CREATED_AT }, tx);
         await memberships.save({ memberId: "mem_b" as WorkspaceMemberId, workspaceId: "ws_b" as WorkspaceId, userId: OWNER, role: "owner", createdAt: CREATED_AT }, tx);
       });
 
-      const inA = await memberships.listForWorkspace("ws_a" as WorkspaceId);
-      expect(inA).toHaveLength(1);
-      expect(inA[0]?.memberId).toBe("mem_a");
+      await transactions.runForWorkspace("ws_a" as WorkspaceId, async t => {
+        const inA = await memberships.listForWorkspace("ws_a" as WorkspaceId, t);
+        expect(inA).toHaveLength(1);
+        expect(inA[0]?.memberId).toBe("mem_a");
+      });
     });
   });
 
@@ -330,10 +346,13 @@ suite("persistence integration", () => {
       const result = await useCase.execute({ ownerUserId: OWNER, name: "Northbridge Legal" });
 
       expect(result.workspaceId).toBe("ws_real");
-      const members = await createWorkspaceMembershipRepository(database.db)
-        .listForWorkspace("ws_real" as WorkspaceId);
-      expect(members).toHaveLength(1);
-      expect(members[0]?.role).toBe("owner");
+      await createTransactionManager(database.db)
+        .runForWorkspace("ws_real" as WorkspaceId, async t => {
+          const members = await createWorkspaceMembershipRepository(database.db)
+            .listForWorkspace("ws_real" as WorkspaceId, t);
+          expect(members).toHaveLength(1);
+          expect(members[0]?.role).toBe("owner");
+        });
     });
   });
 });

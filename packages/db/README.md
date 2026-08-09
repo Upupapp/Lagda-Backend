@@ -60,13 +60,34 @@ code cannot reach it — and `unwrapTransaction` throws if handed a context this
 manager did not create, because silently starting an independent transaction
 would break the atomicity the caller believes it has.
 
-## Tenancy
+## Tenancy — read this before writing a query
 
-Every workspace-owned query is scoped **in SQL**, with both predicates in the
-query. Fetching by ID and comparing the workspace afterwards still reads another
-tenant's row into memory, and relies on every caller remembering the comparison.
+**Two layers, both required.**
 
-There is deliberately no unscoped lookup for a tenant-owned resource.
+1. Every workspace-owned query is scoped **in SQL**. Fetching by ID and comparing
+   the workspace afterwards still reads another tenant's row into memory.
+2. **Row Level Security** (ADR-004) catches the query that *forgot* — the bug
+   repository scoping cannot catch, because the forgetting happens there.
+
+**Every query, including reads, runs inside a tenant transaction.** RLS context
+is transaction-local (`SET LOCAL`), so a read issued on a pooled connection has
+no context and returns nothing:
+
+```ts
+await transactions.runForWorkspace(workspaceId, tx =>
+  memberships.findInWorkspace(workspaceId, memberId, tx));
+```
+
+If a query mysteriously returns empty, check that it is inside
+`runForWorkspace` before checking anything else.
+
+`runGlobal` exists for genuinely global data — user accounts, sessions. It sets
+no tenant context, so tenant tables are invisible from it. That is deliberate:
+missing context means **nothing**, never everything.
+
+There is no unscoped lookup for a tenant-owned resource, no optional workspace
+parameter, and no bypass flag. Privileged cross-tenant access, when it is ever
+needed, will be a separate named capability.
 
 ## Prohibited
 

@@ -72,7 +72,29 @@ export interface TransactionContext {
  * takes, and cannot be rolled back when the commit later fails.
  */
 export interface TransactionManager {
-  run<T>(operation: (tx: TransactionContext) => Promise<T>): Promise<T>;
+  /**
+   * A transaction bound to ONE workspace. The ordinary path.
+   *
+   * The adapter establishes tenant context for the transaction, so a query that
+   * forgets its scope returns nothing rather than another tenant's rows.
+   * Application code never issues that context itself — it names the workspace
+   * and the DB layer does the rest.
+   */
+  runForWorkspace<T>(
+    workspaceId: WorkspaceId,
+    operation: (tx: TransactionContext) => Promise<T>,
+  ): Promise<T>;
+
+  /**
+   * A transaction with NO tenant context, for genuinely global data — user
+   * accounts, sessions, system records.
+   *
+   * A separate method rather than an optional workspace argument. With
+   * `run(workspaceId?)`, forgetting the argument would silently mean
+   * unrestricted access — the most dangerous possible default. Here, global
+   * access is something you have to ask for by name.
+   */
+  runGlobal<T>(operation: (tx: TransactionContext) => Promise<T>): Promise<T>;
 }
 
 // ── Repositories ─────────────────────────────────────────────────────────────
@@ -99,7 +121,7 @@ export interface WorkspaceMembershipRecord {
  * meaningful.
  */
 export interface WorkspaceRepository {
-  findById(workspaceId: WorkspaceId): Promise<WorkspaceRecord | null>;
+  findById(workspaceId: WorkspaceId, tx: TransactionContext): Promise<WorkspaceRecord | null>;
   save(workspace: WorkspaceRecord, tx: TransactionContext): Promise<void>;
 }
 
@@ -112,14 +134,24 @@ export interface WorkspaceRepository {
  * Absence returns `null` rather than throwing. A membership belonging to
  * another workspace is indistinguishable from one that does not exist, which is
  * what stops a lookup confirming another tenant's data.
+ *
+ * READS TAKE A TRANSACTION TOO, which looks redundant until you consider RLS.
+ * Tenant context is transaction-local (`SET LOCAL`), so a read issued on a
+ * pooled connection outside the transaction carries NO context and — because
+ * the policy fails closed — returns nothing. Found by a test that expected a
+ * workspace to see its own members and got an empty list.
  */
 export interface WorkspaceMembershipRepository {
   findInWorkspace(
     workspaceId: WorkspaceId,
     memberId: WorkspaceMemberId,
+    tx: TransactionContext,
   ): Promise<WorkspaceMembershipRecord | null>;
 
-  listForWorkspace(workspaceId: WorkspaceId): Promise<readonly WorkspaceMembershipRecord[]>;
+  listForWorkspace(
+    workspaceId: WorkspaceId,
+    tx: TransactionContext,
+  ): Promise<readonly WorkspaceMembershipRecord[]>;
 
   save(membership: WorkspaceMembershipRecord, tx: TransactionContext): Promise<void>;
 }

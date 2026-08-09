@@ -6,7 +6,9 @@
 
 import type { WorkspaceId, WorkspaceMemberId } from "@lagda/contracts";
 import type { WorkspaceRole } from "@lagda/core";
-import type { WorkspaceMembershipRepository } from "../common/ports/index.js";
+import type {
+  WorkspaceMembershipRepository, TransactionManager,
+} from "../common/ports/index.js";
 import { ResourceNotFoundError } from "../common/errors/index.js";
 import type { UserActor } from "../common/context.js";
 
@@ -24,15 +26,21 @@ export interface GetWorkspaceMemberResult {
 }
 
 export class GetWorkspaceMember {
-  constructor(private readonly memberships: WorkspaceMembershipRepository) {}
+  constructor(
+    private readonly memberships: WorkspaceMembershipRepository,
+    private readonly transactions: TransactionManager,
+  ) {}
 
   async execute(input: GetWorkspaceMemberInput): Promise<GetWorkspaceMemberResult> {
     // Scope comes from the ACTOR, not from the request. A workspace ID supplied
     // alongside the member ID would be a client-controlled scope, and honouring
     // it would make the tenant boundary a suggestion.
-    const membership = await this.memberships.findInWorkspace(
+    // Reads run inside a tenant transaction. Under RLS the tenant context is
+    // transaction-local, so a read outside one carries no context and returns
+    // nothing — the query is scoped twice, by predicate and by policy.
+    const membership = await this.transactions.runForWorkspace(
       input.actor.workspaceId,
-      input.memberId,
+      tx => this.memberships.findInWorkspace(input.actor.workspaceId, input.memberId, tx),
     );
 
     // A member belonging to another workspace produces the SAME outcome as one

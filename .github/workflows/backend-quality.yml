@@ -129,7 +129,10 @@ jobs:
       - name: Migrate again (idempotency)
         run: npm run db:migrate
 
-      # Transactions, rollback, constraints, tenancy, mapping — against real
-      # PostgreSQL. These cannot be faked.
-      - name: PostgreSQL integration tests
+      # Transactions, rollback, constraints, mapping AND the workspace tenancy
+      # security suite — against real PostgreSQL. These cannot be faked, and the
+      # tenancy tests run as the RUNTIME role: an owner bypasses RLS unless
+      # forced, so a suite connecting as the superuser would pass while
+      # production leaked.
+      - name: PostgreSQL integration and tenancy security tests
         run: npm run test:integration

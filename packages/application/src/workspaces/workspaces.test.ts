@@ -137,7 +137,10 @@ describe("GetWorkspaceMember", () => {
       role: "sender",
       createdAt: CREATED_AT,
     });
-    return { memberships, useCase: new GetWorkspaceMember(memberships) };
+    return {
+      memberships,
+      useCase: new GetWorkspaceMember(memberships, new FakeTransactionManager()),
+    };
   }
 
   it("returns a member of the actor's own workspace", async () => {
