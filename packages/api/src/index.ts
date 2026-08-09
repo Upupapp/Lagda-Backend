@@ -50,6 +50,27 @@ export {
   isWellFormedResetToken, buildPasswordResetUrl,
 } from "./security/reset-token.js";
 export {
+  createSecretBox, generateSecretBoxKey, SecretBoxError, type SecretBox,
+  type SealedSecret,
+} from "./security/secret-box.js";
+export {
+  generateTotpSecret, buildProvisioningUri, verifyTotp, timeStepFor,
+  isWellFormedTotpCode, TOTP_PARAMETERS, type TotpSecret,
+} from "./security/totp.js";
+export {
+  issueRecoveryCodes, digestRecoveryCode, digestSubmittedRecoveryCode,
+  canonicalizeRecoveryCode, RECOVERY_CODE_COUNT,
+} from "./security/recovery-codes.js";
+export {
+  createPreAuthCredentialFactory, digestPreAuthToken,
+  digestSubmittedPreAuthToken, isWellFormedPreAuthToken,
+} from "./security/pre-auth-token.js";
+export {
+  registerMfaRoutes, VerifyMfaRequestSchema, VerifyMfaResponseSchema,
+  EnrollMfaResponseSchema, ConfirmMfaRequestSchema, ConfirmMfaResponseSchema,
+  DisableMfaRequestSchema, DisableMfaResponseSchema, type MfaRouteOptions,
+} from "./auth/mfa-routes.js";
+export {
   registerPasswordResetRoutes, ForgotPasswordRequestSchema,
   ForgotPasswordResponseSchema, ResetPasswordRequestSchema,
   ResetPasswordResponseSchema, type PasswordResetRouteOptions,

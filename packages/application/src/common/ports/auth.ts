@@ -226,3 +226,45 @@ export interface PasswordResettableUserRepository
     readonly passwordHash: PasswordHash;
   }) => Promise<boolean>;
 }
+
+// ── Multi-factor authentication ──────────────────────────────────────────────
+
+export type MfaFactorId = string & { readonly __brand: "MfaFactorId" };
+export type PendingAuthenticationId = string & {
+  readonly __brand: "PendingAuthenticationId";
+};
+export type RecoveryCodeId = string & { readonly __brand: "RecoveryCodeId" };
+
+/**
+ * A digest of a recovery code. A DISTINCT brand from every other digest.
+ *
+ * Four 64-hex-character digest types now exist. Without separate brands any of
+ * them could be passed to any lookup and the compiler would agree — which is
+ * precisely the credential-domain confusion the digest prefixes prevent at
+ * runtime (INV-292).
+ */
+export type RecoveryCodeDigest = string & { readonly __brand: "RecoveryCodeDigest" };
+
+/** A digest of a pre-authentication credential. */
+export type PendingAuthDigest = string & { readonly __brand: "PendingAuthDigest" };
+
+/**
+ * The factor types LAGDA actually supports.
+ *
+ * A closed set, matching the database CHECK. Email and SMS are deliberately
+ * absent: the product has no such account-login flow, and a value that cannot
+ * be constructed cannot be silently routed (§7).
+ */
+export const MFA_FACTOR_TYPES = ["TOTP"] as const;
+export type MfaFactorType = (typeof MFA_FACTOR_TYPES)[number];
+
+/**
+ * How a session was authenticated.
+ *
+ * Recorded on the pending authentication so a future assurance model has
+ * something server-authoritative to read. Never a client claim (§98, §99).
+ */
+export const AUTHENTICATION_METHODS = [
+  "PASSWORD", "PASSWORD_PLUS_TOTP", "PASSWORD_PLUS_RECOVERY_CODE",
+] as const;
+export type AuthenticationMethod = (typeof AUTHENTICATION_METHODS)[number];

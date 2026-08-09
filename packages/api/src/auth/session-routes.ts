@@ -30,6 +30,7 @@ import {
   SESSION_COOKIE_NAME, CSRF_COOKIE_NAME,
   sessionCookieOptions, csrfCookieOptions,
   clearCookieOptions, clearCsrfCookieOptions,
+  PRE_AUTH_COOKIE_NAME, preAuthCookieOptions,
 } from "../security/cookies.js";
 
 /**
@@ -59,6 +60,29 @@ export const SignInResponseSchema = Type.Object({
   email: Type.String(),
   displayName: Type.String(),
   emailVerified: Type.Literal(true),
+  /**
+   * The authentication state machine's terminal success value.
+   *
+   * Explicit rather than implied by HTTP 200, because 200 is also what a
+   * `mfa-required` response returns — the password WAS processed successfully
+   * and the ceremony is continuing, which is not an error (§210, §298).
+   */
+  status: Type.Literal("authenticated"),
+}, { additionalProperties: false });
+
+/**
+ * The password succeeded and a second factor is outstanding.
+ *
+ * Note what is ABSENT: no `userId`, no email, no display name, and above all no
+ * pre-auth credential. The credential travels in an httpOnly cookie so the page
+ * never holds it and cannot put it in `localStorage` (§52, §300).
+ *
+ * `factor` is the only detail returned, because `MfaChallenge.tsx` needs to
+ * know which screen to render.
+ */
+export const MfaRequiredResponseSchema = Type.Object({
+  status: Type.Literal("mfa-required"),
+  factor: Type.Literal("TOTP"),
 }, { additionalProperties: false });
 
 export interface SessionRouteOptions {
@@ -76,7 +100,14 @@ export function registerSessionRoutes(
 ): void {
   // ── Sign in ─────────────────────────────────────────────────────────────
   app.post(options.signInPath, {
-    schema: { body: SignInRequestSchema, response: { 200: SignInResponseSchema } },
+    schema: {
+      body: SignInRequestSchema,
+      // A UNION. Both are 200: the password was validly processed either way,
+      // and forcing MFA into an error status would misdescribe what happened.
+      response: {
+        200: Type.Union([SignInResponseSchema, MfaRequiredResponseSchema]),
+      },
+    },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     if (!originAllowed(request, options.config)) {
       // A cross-site forged login. Refused before any credential work.
@@ -112,6 +143,32 @@ export function registerSessionRoutes(
       });
     }
 
+    if (result.outcome === "mfa-required") {
+      // ── The pre-auth cookie (§45, §257) ──────────────────────────────────
+      //
+      // A DIFFERENT cookie name from the session. Overloading one name with
+      // status-dependent meaning is how a middleware ends up treating a
+      // half-authenticated browser as a full one — the ambiguity would live in
+      // every future authorization check rather than here.
+      //
+      // Scoped to `/auth` so it is not even transmitted to application routes:
+      // a credential the browser does not send to `/documents` cannot be
+      // mistaken for authorization there (§46, §258).
+      const preAuthMaxAge = Math.max(
+        0, Math.floor((result.pendingExpiresAt - Date.now()) / 1000));
+      void reply.setCookie(
+        PRE_AUTH_COOKIE_NAME, result.pendingCredential,
+        preAuthCookieOptions(options.config, preAuthMaxAge),
+      );
+
+      // NO session cookie and NO CSRF cookie. The ceremony is incomplete, and
+      // issuing either here would make the password alone sufficient (§41, §80).
+      return reply.status(200).send({
+        status: "mfa-required" as const,
+        factor: result.factor,
+      });
+    }
+
     // Cookies are written only AFTER the session row exists — `issue` persisted
     // it before returning. A cookie for a session that does not exist would
     // authenticate nothing and look like an outage (§74).
@@ -141,6 +198,7 @@ export function registerSessionRoutes(
       email: result.email,
       displayName: result.displayName,
       emailVerified: true as const,
+      status: "authenticated" as const,
     });
   });
 

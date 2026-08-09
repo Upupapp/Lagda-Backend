@@ -220,6 +220,51 @@ export const RATE_LIMIT_POLICIES = {
       + "far above any real user and far below what saturates a core.",
   },
 
+  // ── MFA (BACKEND-23) ────────────────────────────────────────────────────
+  //
+  // The REAL brute-force bound on a 6-digit code is the per-ceremony attempt
+  // counter (5, durable, atomic), not these. A rate limiter is per IP or per
+  // account; the attempt counter is per LOGIN CEREMONY, which is what an
+  // attacker actually has to defeat and what they cannot spread across
+  // addresses (§70, §77).
+  //
+  // These bound VOLUME on top of that: an attacker who has stolen a password
+  // and is starting ceremony after ceremony to get five fresh guesses each time.
+  "mfa.verify.ip": {
+    id: "mfa.verify.ip",
+    scopeType: "ip",
+    limit: 20,
+    windowMs: 15 * MINUTE,
+    failureMode: "fail-closed",
+    source: "BACKEND-23 - handoff §145 gives OTP verification 5 attempts / "
+      + "15 minutes, which is implemented as the durable per-ceremony counter. "
+      + "This IP policy is chosen at 4x that, so a household behind one address "
+      + "can retry legitimately while bulk guessing is bounded.",
+  },
+  // Enrolment and disable are authenticated settings mutations. Low limits
+  // because a human does each of them roughly once, ever.
+  "mfa.enroll.user": {
+    id: "mfa.enroll.user",
+    scopeType: "user",
+    limit: 5,
+    windowMs: 15 * MINUTE,
+    failureMode: "fail-closed",
+    source: "BACKEND-23 - not specified by the handoff. Chosen: restarting "
+      + "setup a few times is normal, doing it continuously is not.",
+  },
+  // Tighter than enrolment. Each attempt costs an Argon2 verification, and the
+  // action removes a security control — the two reasons to be strict.
+  "mfa.disable.user": {
+    id: "mfa.disable.user",
+    scopeType: "user",
+    limit: 5,
+    windowMs: MINUTE,
+    failureMode: "fail-closed",
+    source: "BACKEND-23 - not specified by the handoff. Chosen to match "
+      + "sign-in (handoff §317, 5/min): both verify a password and both are "
+      + "worth guessing against.",
+  },
+
   "api.write.user": {
     id: "api.write.user",
     scopeType: "user",

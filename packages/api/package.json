@@ -34,6 +34,7 @@
     "@lagda/storage": "*",
     "argon2": "0.45.1",
     "fastify": "^5.11.3",
-    "fastify-plugin": "^6.0.0"
+    "fastify-plugin": "^6.0.0",
+    "otpauth": "9.5.1"
   }
 }

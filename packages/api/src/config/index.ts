@@ -57,6 +57,20 @@ export interface ApiConfig {
   /** Handoff §3: "default 8 hours idle". */
   readonly sessionIdleTimeoutMs: number;
   readonly sessionTouchIntervalMs: number;
+
+  /**
+   * Base64 key for encrypting TOTP secrets at rest (BACKEND-23).
+   *
+   * NULL when unset, and MFA enrolment is then unavailable rather than
+   * silently storing plaintext. A missing key must fail loudly at the point of
+   * use — a deployment that quietly degraded to unencrypted second-factor
+   * secrets would be worse than one that refuses to enrol.
+   *
+   * Never logged, never persisted, never in a queue payload (§16).
+   */
+  readonly mfaSecretKey: string | null;
+  /** Which key encrypted a stored secret. Enables rotation without a migration. */
+  readonly mfaSecretKeyVersion: string;
 }
 
 export class ApiConfigError extends Error {
@@ -217,6 +231,10 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     // keeps a read path from writing a row on every request.
     sessionTouchIntervalMs: readInt(
       env["SESSION_TOUCH_INTERVAL_MS"], "SESSION_TOUCH_INTERVAL_MS", 300_000),
+    // Read, never defaulted. A generated fallback would make every restart
+    // invalidate every enrolled factor.
+    mfaSecretKey: env["MFA_SECRET_KEY"] ?? null,
+    mfaSecretKeyVersion: env["MFA_SECRET_KEY_VERSION"] ?? "v1",
   };
 
   assertProductionSafety(config);

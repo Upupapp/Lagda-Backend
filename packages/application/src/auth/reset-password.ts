@@ -95,6 +95,23 @@ export interface ResetSessionRevoker {
   ) => Promise<number>;
 }
 
+/**
+ * Revokes in-flight login ceremonies (BACKEND-23 §105).
+ *
+ * A pending authentication is a PASSWORD PROOF that has not yet been completed
+ * with a second factor. Changing the password must kill it: otherwise someone
+ * who used the old password to start a ceremony can finish it afterwards, and
+ * the reset the victim just performed did not actually revoke their access.
+ *
+ * Optional so a deployment without MFA behaves exactly as BACKEND-22 built it.
+ */
+export interface ResetPendingAuthRevoker {
+  readonly revokeAllForUser: (input: {
+    readonly userId: UserId;
+    readonly now: number;
+  }) => Promise<number>;
+}
+
 // ── Request ──────────────────────────────────────────────────────────────────
 
 export interface RequestPasswordResetDependencies {
@@ -219,6 +236,7 @@ export interface ResetPasswordDependencies {
       readonly challenges: PasswordResetChallengeRepository;
       readonly users: PasswordResettableUserRepository;
       readonly sessions: ResetSessionRevoker;
+      readonly pendingAuth?: ResetPendingAuthRevoker;
     }) => Promise<T>,
   ) => Promise<T>;
 }
@@ -282,7 +300,7 @@ export async function resetPassword(
   // That is accepted, and handled below rather than assumed away.
   const passwordHash: PasswordHash = await deps.hasher.hash(input.newPassword);
 
-  return deps.commit(async ({ challenges, users, sessions }) => {
+  return deps.commit(async ({ challenges, users, sessions, pendingAuth }) => {
     const now = deps.clock.now();
 
     // ── The TOCTOU boundary (§60, §253) ────────────────────────────────────
@@ -336,6 +354,13 @@ export async function resetPassword(
     const revokedSessionCount = await sessions.revokeAllForUser(
       challenge.userId, now, "password-change",
     );
+
+    // And any login ceremony still in flight. A pending authentication is a
+    // proof of the OLD password; leaving it alive means an attacker who started
+    // logging in before the reset can still finish afterwards (§105, §174).
+    if (pendingAuth !== undefined) {
+      await pendingAuth.revokeAllForUser({ userId: challenge.userId, now });
+    }
 
     return { outcome: "reset", userId: challenge.userId, revokedSessionCount };
   });

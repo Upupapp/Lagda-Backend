@@ -251,13 +251,23 @@ describe("hashing is confined to the sealing adapter", () => {
     //                              from digesting to a reset challenge, which
     //                              would turn proof of a mailbox into authority
     //                              to replace a password.
+    //   api/security/recovery-codes — MFA RECOVERY CODE digests (BACKEND-23).
+    //                              A sixth domain. Each code is a full second-
+    //                              factor bypass, so it is stored the way every
+    //                              other bearer credential here is.
+    //   api/security/pre-auth-token — PRE-AUTHENTICATION credential digests
+    //                              (BACKEND-23). A seventh. This one carries a
+    //                              completed password proof between the two
+    //                              login factors.
     //
     // Each addition is a deliberate entry with a named domain. A caller that
     // appears without one still fails, which is what keeps this from becoming a
     // list that grows whenever it is inconvenient.
     expect(users.sort()).toEqual([
       "packages/api/src/security/crypto.ts",
+      "packages/api/src/security/pre-auth-token.ts",
       "packages/api/src/security/rate-limit-plugin.ts",
+      "packages/api/src/security/recovery-codes.ts",
       "packages/api/src/security/reset-token.ts",
       "packages/api/src/security/verification-token.ts",
       "packages/sealing/src/internal/digest.ts",

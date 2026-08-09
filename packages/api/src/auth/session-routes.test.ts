@@ -11,7 +11,9 @@ import type {
   AuthUserRecord, IssuedCredentials, LoginDependencies, NormalizedEmail,
   PasswordHash, SessionId, UserId,
 } from "@lagda/application";
-import { registerSessionRoutes, SignInResponseSchema } from "./session-routes.js";
+import {
+  registerSessionRoutes, SignInResponseSchema, MfaRequiredResponseSchema,
+} from "./session-routes.js";
 import type { ApiConfig } from "../config/index.js";
 
 const DUMMY = "$argon2id$v=19$m=19456,p=1,t=2$ZHVtbXk$ZHVtbXk" as PasswordHash;
@@ -139,6 +141,11 @@ describe("POST /auth/sign-in", () => {
     expect(response.json()).toEqual({
       userId: "usr_1", email: "User@Example.com",
       displayName: "Real User", emailVerified: true,
+      // BACKEND-23 made the authentication state machine explicit in the body.
+      // 200 alone no longer means "authenticated" — it is also what a
+      // `mfa-required` response returns, and a client that inferred success
+      // from the status would treat a half-finished ceremony as a login.
+      status: "authenticated",
     });
 
     const cookies = cookiesOf(response).join("\n");
@@ -360,7 +367,18 @@ describe("POST /auth/sign-in", () => {
     };
     expect(schema.additionalProperties).toBe(false);
     expect(Object.keys(schema.properties).sort())
-      .toEqual(["displayName", "email", "emailVerified", "userId"]);
+      .toEqual(["displayName", "email", "emailVerified", "status", "userId"]);
+  });
+
+  it("declares a CLOSED mfa-required response carrying NO account data", () => {
+    const schema = MfaRequiredResponseSchema as unknown as {
+      additionalProperties?: boolean; properties: Record<string, unknown>;
+    };
+    expect(schema.additionalProperties).toBe(false);
+    // `factor` and `status`, and nothing else. No userId, no email, and above
+    // all no pre-auth credential — that travels in an httpOnly cookie so the
+    // page never holds it (BACKEND-23 §52, §207).
+    expect(Object.keys(schema.properties).sort()).toEqual(["factor", "status"]);
   });
 });
 

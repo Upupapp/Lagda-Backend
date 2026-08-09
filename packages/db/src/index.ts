@@ -47,3 +47,7 @@ export {
 export {
   createPasswordResetRepository, createPasswordResettableUserRepository,
 } from "./repositories/password-reset.js";
+export {
+  createMfaFactorRepository, createRecoveryCodeRepository,
+  createPendingAuthenticationRepository,
+} from "./repositories/mfa.js";

@@ -296,6 +296,41 @@ export interface PasswordResetChallengesTable {
   superseded_at: ColumnType<Date | null, Date | null, Date | null>;
 }
 
+export interface MfaFactorsTable {
+  factor_id: string;
+  user_id: string;
+  factor_type: string;
+  /** AES-256-GCM ciphertext. The only recoverable secret in the schema. */
+  secret_ciphertext: ColumnType<string | null, string | null, string | null>;
+  secret_key_version: ColumnType<string | null, string | null, string | null>;
+  created_at: ColumnType<Date, Date | undefined, Date>;
+  verified_at: ColumnType<Date | null, Date | null, Date | null>;
+  disabled_at: ColumnType<Date | null, Date | null, Date | null>;
+  /** Replay watermark. bigint, so pg hands it back as a string. */
+  last_used_time_step: ColumnType<string | null, number | null, number | null>;
+}
+
+export interface MfaRecoveryCodesTable {
+  recovery_code_id: string;
+  user_id: string;
+  code_digest: string;
+  created_at: ColumnType<Date, Date | undefined, Date>;
+  consumed_at: ColumnType<Date | null, Date | null, Date | null>;
+}
+
+export interface PendingAuthenticationsTable {
+  pending_id: string;
+  user_id: string;
+  credential_digest: string;
+  created_at: ColumnType<Date, Date | undefined, Date>;
+  expires_at: Timestamptz;
+  consumed_at: ColumnType<Date | null, Date | null, Date | null>;
+  revoked_at: ColumnType<Date | null, Date | null, Date | null>;
+  failed_attempts: ColumnType<number, number | undefined, number>;
+  max_attempts: number;
+  authentication_method: string;
+}
+
 export interface Database {
   workspaces: WorkspacesTable;
   workspace_memberships: WorkspaceMembershipsTable;
@@ -310,5 +345,8 @@ export interface Database {
   users: UsersTable;
   email_verification_challenges: EmailVerificationChallengesTable;
   password_reset_challenges: PasswordResetChallengesTable;
+  mfa_factors: MfaFactorsTable;
+  mfa_recovery_codes: MfaRecoveryCodesTable;
+  pending_authentications: PendingAuthenticationsTable;
   kysely_migration: KyselyMigrationTable;
 }

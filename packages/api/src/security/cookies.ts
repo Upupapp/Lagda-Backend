@@ -97,3 +97,51 @@ export function clearCookieOptions(config: ApiConfig): CookieSerializeOptions {
 export function clearCsrfCookieOptions(config: ApiConfig): CookieSerializeOptions {
   return { ...baseCookie(config), httpOnly: false, maxAge: 0, expires: new Date(0) };
 }
+
+// ── Pre-authentication (BACKEND-23) ──────────────────────────────────────────
+
+/**
+ * A DISTINCT name from the session cookie.
+ *
+ * Overloading `lagda_session` with status-dependent meaning would push the
+ * question "is this browser fully authenticated?" into every middleware that
+ * reads it. A separate name makes a half-finished ceremony unmistakable: code
+ * that looks for a session simply does not find one (§257).
+ */
+export const PRE_AUTH_COOKIE_NAME = "lagda_pre_auth";
+
+/**
+ * The path the pre-auth credential is scoped to.
+ *
+ * Browsers only send a cookie to paths beneath its `Path`, so this credential
+ * is not even TRANSMITTED to `/documents`, `/workspaces` or `/profile`. That is
+ * a stronger guarantee than rejecting it on arrival — a value that never
+ * reaches a handler cannot be misread by one (§46, §258).
+ */
+const PRE_AUTH_PATH = "/auth";
+
+export function preAuthCookieOptions(
+  config: ApiConfig,
+  maxAgeSeconds: number,
+): CookieSerializeOptions {
+  return {
+    ...baseCookie(config),
+    path: PRE_AUTH_PATH,
+    // Carries a completed password proof. Never readable by script.
+    httpOnly: true,
+    // Short by construction — the caller passes the pending transaction's
+    // remaining life, which is capped at 10 minutes and never extended.
+    maxAge: maxAgeSeconds,
+  };
+}
+
+export function clearPreAuthCookieOptions(config: ApiConfig): CookieSerializeOptions {
+  // Same name, path and domain, or the browser keeps the original.
+  return {
+    ...baseCookie(config),
+    path: PRE_AUTH_PATH,
+    httpOnly: true,
+    maxAge: 0,
+    expires: new Date(0),
+  };
+}

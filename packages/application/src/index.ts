@@ -30,3 +30,4 @@ export * from "./auth/register-user.js";
 export * from "./auth/login-user.js";
 export * from "./auth/verify-email.js";
 export * from "./auth/reset-password.js";
+export * from "./auth/mfa.js";

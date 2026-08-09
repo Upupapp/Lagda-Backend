@@ -29,7 +29,7 @@ import type { Clock } from "../common/ports/index.js";
 import type { SessionId } from "../common/ports/session.js";
 import { normalizeEmail } from "./email-identity.js";
 import type {
-  AuthUserRecord, PasswordHash, PasswordHasher, UserId, UserRepository,
+  AuthUserRecord, MfaFactorType, PasswordHash, PasswordHasher, UserId, UserRepository,
 } from "../common/ports/auth.js";
 
 /**
@@ -82,6 +82,27 @@ export interface LoginDependencies {
     readonly currentHash: PasswordHash;
     readonly newHash: PasswordHash;
   }) => Promise<void>;
+  /**
+   * The second factor, if the deployment has one.
+   *
+   * Optional so that BACKEND-20's behaviour is EXACTLY preserved when absent —
+   * an account with no MFA takes the same path it always did, and the existing
+   * login tests continue to describe reality (§250, §264).
+   */
+  readonly mfa?: {
+    /** Server-authoritative. Reads the factor table, never a client claim. */
+    readonly isRequired: (userId: UserId) => Promise<boolean>;
+    /**
+     * Opens a pre-authentication transaction and returns its RAW credential.
+     *
+     * Called only after the password verified, so no OTP, email or ceremony is
+     * ever created for an unauthenticated guess (§149, §150).
+     */
+    readonly beginCeremony: (userId: UserId) => Promise<{
+      readonly raw: string;
+      readonly expiresAt: number;
+    }>;
+  };
 }
 
 /**
@@ -95,6 +116,25 @@ export type LoginFailure =
   | { readonly kind: "email-not-verified" };
 
 export type LoginResult =
+  | {
+    /**
+     * The password was correct AND the account requires a second factor.
+     *
+     * A DISTINCT outcome, not a flag on the authenticated one. `authenticated`
+     * carries `credentials`; this carries none, so "a session exists before MFA
+     * completed" is not a state the type system can even express (§50, §251).
+     *
+     * Reached only after the password verifies, which is what keeps MFA
+     * enrolment from being discoverable by anyone who knows an address
+     * (§123, §125).
+     */
+    readonly outcome: "mfa-required";
+    readonly userId: UserId;
+    readonly factor: MfaFactorType;
+    /** The RAW pre-auth credential. Goes in a cookie, never a body, never a log. */
+    readonly pendingCredential: string;
+    readonly pendingExpiresAt: number;
+  }
   | {
     readonly outcome: "authenticated";
     readonly userId: UserId;
@@ -181,6 +221,24 @@ export async function loginUser(
     } catch {
       // Deliberately swallowed. The user is authenticated either way.
     }
+  }
+
+  // ── Second factor? ──────────────────────────────────────────────────────
+  //
+  // Server-derived, after the password. Nothing the client sent participates,
+  // and an attacker who does not know the password never reaches this line —
+  // so login cannot be used to discover who has MFA enabled (§87, §150, §213).
+  if (deps.mfa !== undefined && await deps.mfa.isRequired(account.userId)) {
+    const pending = await deps.mfa.beginCeremony(account.userId);
+    // NO session, NO credentials. The ceremony is incomplete, and the return
+    // type has no place to put one (§41).
+    return {
+      outcome: "mfa-required",
+      userId: account.userId,
+      factor: "TOTP",
+      pendingCredential: pending.raw,
+      pendingExpiresAt: pending.expiresAt,
+    };
   }
 
   // ── A FRESH session ─────────────────────────────────────────────────────
