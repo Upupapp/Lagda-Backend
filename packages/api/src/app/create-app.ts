@@ -19,6 +19,10 @@ import {
 } from "../errors/index.js";
 import { toValidationDetails } from "../errors/validation.js";
 import { generateRequestId } from "../context/index.js";
+import { withContext } from "../observability/context.js";
+import {
+  normalizeRoute, statusFamily, noopMetrics, type MetricsRecorder,
+} from "../observability/metrics.js";
 import { registerHealthRoutes } from "../routes/health.js";
 import { registerReadinessRoutes } from "../routes/readiness.js";
 import type { AppDependencies } from "./dependencies.js";
@@ -26,6 +30,12 @@ import type { AppDependencies } from "./dependencies.js";
 export interface CreateAppOptions {
   readonly config: ApiConfig;
   readonly dependencies: AppDependencies;
+  /**
+   * Defaults to a no-op. There is no exporter yet (BACKEND-66), so the
+   * instrumentation exists and is tested while collecting nothing — reported as
+   * INSTRUMENTED_NO_EXPORTER rather than implied to be live.
+   */
+  readonly metrics?: MetricsRecorder;
 }
 
 /**
@@ -45,6 +55,7 @@ function toFastifyTrustProxy(config: ApiConfig): boolean | number | string[] {
 
 export async function createApp(options: CreateAppOptions): Promise<FastifyInstance> {
   const { config, dependencies } = options;
+  const metrics = options.metrics ?? noopMetrics;
 
   // Annotated so TypeScript selects the default HTTP/1 server overload. Without
   // it, the options literal is structurally ambiguous and inference lands on the
@@ -162,6 +173,31 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
     // correlate a failure the user reports if the failing response is the one
     // response without an ID.
     void reply.header(REQUEST_ID_HEADER, request.id);
+
+    // Establishes the observability context for the rest of this request's
+    // async execution. `done()` is called INSIDE the store so everything
+    // downstream inherits it.
+    //
+    // This context is for LOGGING. It is never read to decide what data may be
+    // accessed — the unit of work binds workspace scope, and RLS reads the
+    // transaction setting (INV-135).
+    withContext({ requestId: request.id as RequestId }, () => { done(); });
+  });
+
+  // One completion record per request, with a normalized route so the metric
+  // cannot grow a series per document ID.
+  app.addHook("onResponse", (request, reply, done) => {
+    const route = normalizeRoute(request.routeOptions.url, request.url);
+    const labels = { method: request.method, route, processRole: "api" };
+
+    metrics.increment("http_requests_total", {
+      ...labels, statusFamily: statusFamily(reply.statusCode),
+    });
+    metrics.observe("http_request_duration_ms", reply.elapsedTime, labels);
+
+    if (reply.statusCode >= 500) {
+      metrics.increment("http_errors_total", { ...labels, errorCategory: "internal" });
+    }
     done();
   });
 
