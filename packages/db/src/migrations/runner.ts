@@ -1,0 +1,95 @@
+// Migration runner.
+//
+// Migrations are an EXPLICIT DEPLOYMENT STEP, never something the API does on
+// boot. If every process migrated at startup, a rolling deploy would have
+// several instances racing the same schema change, and a schema change would
+// happen at whatever moment a container restarted.
+
+import type { Kysely } from "kysely";
+import { Migrator, type MigrationProvider, type Migration } from "kysely/migration";
+import type { Database } from "../schema/index.js";
+import * as m001 from "./001_workspaces.js";
+
+/**
+ * Migrations listed explicitly rather than read from disk.
+ *
+ * Filesystem discovery breaks once the package is compiled to `dist`, and it
+ * makes ordering depend on directory listing. An explicit map is ordered by the
+ * key, reviewable in a diff, and works identically from source and from build
+ * output.
+ *
+ * Names are zero-padded so lexical order is execution order.
+ */
+const MIGRATIONS: Record<string, Migration> = {
+  "001_workspaces": m001,
+};
+
+class ExplicitMigrationProvider implements MigrationProvider {
+  getMigrations(): Promise<Record<string, Migration>> {
+    return Promise.resolve(MIGRATIONS);
+  }
+}
+
+export interface MigrationOutcome {
+  readonly applied: readonly string[];
+  readonly error?: Error;
+}
+
+function migrator(db: Kysely<Database>): Migrator {
+  return new Migrator({ db, provider: new ExplicitMigrationProvider() });
+}
+
+/**
+ * Applies pending migrations.
+ *
+ * Kysely tracks applied migrations in `kysely_migration` and takes a lock in
+ * `kysely_migration_lock`, so two deploys running this concurrently cannot
+ * apply the same migration twice. Running it when nothing is pending is a
+ * no-op, which is what makes it safe in a deployment pipeline.
+ */
+export async function migrateToLatest(db: Kysely<Database>): Promise<MigrationOutcome> {
+  const { error, results } = await migrator(db).migrateToLatest();
+  const applied = (results ?? [])
+    .filter(r => r.status === "Success")
+    .map(r => r.migrationName);
+
+  // Errors are surfaced, never swallowed. A deployment must stop on a failed
+  // migration rather than start an application against a half-migrated schema.
+  return error === undefined ? { applied } : { applied, error: asError(error) };
+}
+
+/**
+ * Kysely types a migration failure as `unknown`. `String(error)` on a non-Error
+ * object yields "[object Object]", which would replace a real diagnostic with
+ * nothing — so the value is serialized deliberately.
+ */
+function asError(value: unknown): Error {
+  if (value instanceof Error) return value;
+  if (typeof value === "string") return new Error(value);
+  return new Error(`Migration failed: ${JSON.stringify(value)}`);
+}
+
+export interface MigrationStatus {
+  readonly name: string;
+  readonly applied: boolean;
+}
+
+export async function migrationStatus(db: Kysely<Database>): Promise<readonly MigrationStatus[]> {
+  const rows = await migrator(db).getMigrations();
+  return rows.map(row => ({ name: row.name, applied: row.executedAt !== undefined }));
+}
+
+/**
+ * Rolls back the most recent migration.
+ *
+ * Present for local development. Most production migrations are NOT safely
+ * reversible — a migration that drops a column cannot restore the data — so
+ * production rollback is a restore-from-backup question, not a `down` question.
+ */
+export async function migrateDown(db: Kysely<Database>): Promise<MigrationOutcome> {
+  const { error, results } = await migrator(db).migrateDown();
+  const applied = (results ?? [])
+    .filter(r => r.status === "Success")
+    .map(r => r.migrationName);
+  return error === undefined ? { applied } : { applied, error: asError(error) };
+}

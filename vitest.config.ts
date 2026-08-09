@@ -28,7 +28,10 @@ export default defineConfig({
     // Backend code runs on a server. jsdom would let a browser-only assumption
     // pass here and fail in production.
     environment: "node",
+    // Integration tests are EXCLUDED here and run via vitest.integration.config.ts,
+    // so `npm test` never needs a database.
     include: ["tests/**/*.test.ts", "packages/*/src/**/*.test.ts"],
+    exclude: ["**/node_modules/**", "**/dist/**", "**/*.integration.test.ts"],
     reporters: "default",
   },
 });

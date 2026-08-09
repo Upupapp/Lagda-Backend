@@ -73,3 +73,63 @@ jobs:
         run: |
           echo "Backend compiles against @lagda/contracts. The frontend does not."
           echo "Cross-repository contract CI is NOT established. See OD-005, OD-011."
+
+  database:
+    name: Migrations and PostgreSQL integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # Pinned major, matching local development. `postgres:latest` would make CI
+    # results depend on when the workflow happened to run.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          # Ephemeral, CI-only, and disposable. Never a staging or production
+          # credential — this database exists for the length of one job.
+          POSTGRES_USER: lagda_ci
+          POSTGRES_PASSWORD: lagda_ci
+          POSTGRES_DB: lagda_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lagda_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://lagda_ci:lagda_ci@localhost:5432/lagda_test
+      DATABASE_TEST_URL: postgresql://lagda_ci:lagda_ci@localhost:5432/lagda_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      # Proves an EMPTY database can reach the current schema. Incremental
+      # migration against an accumulated developer database proves nothing about
+      # a fresh environment.
+      - name: Migrate from zero
+        run: npm run db:migrate
+
+      - name: Migration status
+        run: npm run db:migrate:status
+
+      # Re-running the deployment step must be a no-op.
+      - name: Migrate again (idempotency)
+        run: npm run db:migrate
+
+      # Transactions, rollback, constraints, tenancy, mapping — against real
+      # PostgreSQL. These cannot be faked.
+      - name: PostgreSQL integration tests
+        run: npm run test:integration

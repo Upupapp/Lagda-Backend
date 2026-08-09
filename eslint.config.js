@@ -154,6 +154,27 @@ export default tseslint.config(
     },
   },
 
+
+  // ── Persistence stays inside packages/db ───────────────────────────────────
+  // `pg` and `kysely` are the database. Anywhere but @lagda/db, they mean a
+  // layer has reached past its adapter (INV-046).
+  {
+    files: [
+      "packages/contracts/**/*.ts", "packages/core/**/*.ts",
+      "packages/application/**/*.ts", "packages/sealing/**/*.ts",
+      "packages/storage/**/*.ts", "tests/**/*.ts",
+    ],
+    rules: {
+      "no-restricted-imports": restrict(
+        [...INFRA_PACKAGES, "kysely", "@lagda/db", "@lagda/storage", "@lagda/sealing"],
+        "Database access belongs in @lagda/db. Depend on a repository port owned " +
+        "by @lagda/application and let the composition root inject the adapter " +
+        "(INV-046). See docs/backend/db/DATABASE_CONVENTIONS.md.",
+        [...PDF_PATTERNS, "kysely/*"],
+      ),
+    },
+  },
+
   // ── Tooling files ──────────────────────────────────────────────────────────
   {
     files: ["*.config.ts", "*.config.js"],

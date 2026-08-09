@@ -19,8 +19,13 @@
     "clean": "tsc --build --clean"
   },
   "dependencies": {
+    "@lagda/application": "*",
     "@lagda/contracts": "*",
     "@lagda/core": "*",
-    "@lagda/application": "*"
+    "kysely": "^0.29.4",
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.21.0"
   }
 }
