@@ -39,6 +39,7 @@ import {
 } from "../workspaces/invitation-routes.js";
 import { registerMemberRoutes } from "../workspaces/member-routes.js";
 import { registerContactRoutes } from "../contacts/contact-routes.js";
+import { registerDocumentRoutes } from "../documents/document-routes.js";
 
 export interface CreateAppOptions {
   readonly config: ApiConfig;
@@ -412,6 +413,25 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
               : null,
           ),
           contactDependencies: contacts,
+          metrics,
+        });
+      }
+
+      // Inside the same scope. A document title is a legal matter name and the
+      // list is a workspace's whole caseload; there is no version of this
+      // surface that is safe to reach anonymously.
+      if (workspaces.documents !== undefined) {
+        const documents = workspaces.documents;
+        registerDocumentRoutes(scope, {
+          authenticatedUser: (request: FastifyRequest) => Promise.resolve(
+            request.auth.status === "authenticated"
+              ? {
+                  userId: request.auth.actor.userId,
+                  sessionId: request.auth.actor.sessionId,
+                }
+              : null,
+          ),
+          documentDependencies: documents,
           metrics,
         });
       }

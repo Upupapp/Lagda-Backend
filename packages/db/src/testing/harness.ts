@@ -82,6 +82,9 @@ export async function truncateAll(database: LagdaDatabase): Promise<void> {
   await database.db.deleteFrom("document_seals").execute();
   await database.db.deleteFrom("evidence_events").execute();
   await database.db.deleteFrom("document_artifacts").execute();
+  // Documents after their artifacts: `document_artifacts` references
+  // `documents` ON DELETE RESTRICT since migration 016.
+  await database.db.deleteFrom("documents").execute();
   // Invitations before memberships and workspaces: they reference both
   // `workspaces` and `users`, all ON DELETE RESTRICT.
   await database.db.deleteFrom("workspace_invitations").execute();

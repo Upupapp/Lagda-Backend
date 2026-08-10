@@ -302,6 +302,11 @@ export async function processDocumentUpload(
         sizeBytes: byteSize,
         digestAlgorithm: "sha-256",
         digest,
+        // Persisted from the inspection that already ran, rather than
+        // discarded. Before BACKEND-29 this number was computed here and
+        // dropped, leaving the product's page count with no source but a
+        // re-parse on every read or a client-supplied value.
+        pageCount: inspection.pageCount,
         createdAt: completedAt,
       },
       uploadId, digest, detectedMediaType: inspection.detectedMediaType,

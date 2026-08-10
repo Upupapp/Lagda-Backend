@@ -1,7 +1,7 @@
 // The authorization policy, exhaustively.
 //
 // Table-driven and complete: every role against every capability, every actor
-// role against every target role. 98 + 49 assertions that run with no database,
+// role against every target role. 119 + 49 assertions that run with no database,
 // no HTTP and nothing mocked — which is the point of keeping the policy pure.
 //
 // The expectations here are written out by hand ON PURPOSE. A test that derived
@@ -27,6 +27,17 @@ const CONTACT_CAPABILITIES: readonly WorkspaceCapability[] = [
   "contact.view", "contact.create", "contact.update", "contact.archive",
 ];
 
+/**
+ * Document WRITE. Held by the four roles with `prepare_documents`.
+ *
+ * Separate from `document.view` because — unlike contacts — the product does
+ * NOT move them together: `view_documents` reaches six roles and
+ * `prepare_documents` only four.
+ */
+const DOCUMENT_WRITE: readonly WorkspaceCapability[] = [
+  "document.create", "document.update",
+];
+
 const ADMIN_CAPABILITIES: readonly WorkspaceCapability[] = [
   "workspace.view", "workspace.update",
   "membership.view", "membership.role.change", "membership.remove",
@@ -34,21 +45,37 @@ const ADMIN_CAPABILITIES: readonly WorkspaceCapability[] = [
 ];
 
 const EXPECTED: Readonly<Record<WorkspaceRole, readonly WorkspaceCapability[]>> = {
-  owner: [...ADMIN_CAPABILITIES, ...CONTACT_CAPABILITIES, "workspace.ownership.transfer"],
-  administrator: [...ADMIN_CAPABILITIES, ...CONTACT_CAPABILITIES],
+  owner: [
+    ...ADMIN_CAPABILITIES, ...CONTACT_CAPABILITIES,
+    "document.view", ...DOCUMENT_WRITE, "workspace.ownership.transfer",
+  ],
+  administrator: [
+    ...ADMIN_CAPABILITIES, ...CONTACT_CAPABILITIES,
+    "document.view", ...DOCUMENT_WRITE,
+  ],
+  // The only role with NOTHING beyond `workspace.view`. Not a PlatformRole, so
+  // it holds neither `manage_contacts` nor `view_documents` (OD-100).
   member: ["workspace.view"],
   // The two rows that make this matrix worth having. Both hold every contact
   // capability and NO membership capability — a shape no `owner ||
   // administrator` check could have produced, and the product's own answer:
   // `manage_contacts` is in four roles' permission sets, and `sender` is the
   // role the address book exists for.
-  template_administrator: ["workspace.view", ...CONTACT_CAPABILITIES],
-  sender: ["workspace.view", ...CONTACT_CAPABILITIES],
+  template_administrator: [
+    "workspace.view", ...CONTACT_CAPABILITIES, "document.view", ...DOCUMENT_WRITE,
+  ],
+  sender: [
+    "workspace.view", ...CONTACT_CAPABILITIES, "document.view", ...DOCUMENT_WRITE,
+  ],
   // No contact capability at all, INCLUDING view. `manage_contacts` is also the
   // navigation gate on /app/contacts, so these roles cannot reach the address
   // book — and it holds counterparties' names, emails and phone numbers.
-  reviewer: ["workspace.view"],
-  auditor: ["workspace.view"],
+  // READ without WRITE. The asymmetry that no `owner || administrator` check
+  // could produce, and the product's own answer: `view_documents` without
+  // `prepare_documents`. A reviewer reads documents for a living and creates
+  // none; an auditor cannot review what happened without reading it.
+  reviewer: ["workspace.view", "document.view"],
+  auditor: ["workspace.view", "document.view"],
 };
 
 describe("the role model", () => {
@@ -85,7 +112,7 @@ describe("role to capability matrix", () => {
     // EXPECTED table not updated, this fails rather than the matrix silently
     // testing fewer combinations.
     expect(Object.keys(EXPECTED).sort()).toEqual([...WORKSPACE_ROLES].sort());
-    expect(WORKSPACE_CAPABILITIES.length).toBe(14);
+    expect(WORKSPACE_CAPABILITIES.length).toBe(17);
   });
 });
 

@@ -24,6 +24,10 @@
       "types": "./dist/contacts/index.d.ts",
       "default": "./dist/contacts/index.js"
     },
+    "./documents": {
+      "types": "./dist/documents/index.d.ts",
+      "default": "./dist/documents/index.js"
+    },
     "./common": {
       "types": "./dist/common/index.d.ts",
       "default": "./dist/common/index.js"

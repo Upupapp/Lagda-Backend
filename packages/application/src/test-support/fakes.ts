@@ -34,6 +34,9 @@ import type { TransactionId, DocumentId, ContactId } from "@lagda/contracts";
 import type {
   ScopedContactRepository, ContactRecord, NewContact, ContactIdGenerator,
 } from "../common/ports/contacts.js";
+import type {
+  ScopedDocumentRepository, DocumentRecord, NewDocument, DocumentIdGenerator,
+} from "../common/ports/documents.js";
 
 /** A fixed instant, so assertions mean the same thing in any year. */
 export class FixedClock implements Clock {
@@ -65,6 +68,13 @@ export class SequentialContactIds implements ContactIdGenerator {
   }
 }
 
+export class SequentialDocumentIds implements DocumentIdGenerator {
+  private next = 1;
+  nextDocumentId(): DocumentId {
+    return `doc_${String(this.next++)}` as DocumentId;
+  }
+}
+
 /** Mirrors the adapter's mismatch rejection so fakes cannot be more permissive. */
 export class FakeScopeMismatchError extends Error {
   constructor(entity: string, scope: string, actual: string) {
@@ -79,6 +89,7 @@ interface StoreSnapshot {
   readonly invitations: WorkspaceInvitationRecord[];
   readonly invitationDigests: Map<string, string>;
   readonly contacts: ContactRecord[];
+  readonly documents: DocumentRecord[];
   readonly evidence: EvidenceEventRecord[];
   readonly artifacts: ArtifactRecord[];
   readonly seals: SealRecord[];
@@ -101,6 +112,7 @@ export class InMemoryStore {
   /** Digest to invitation id. The real lookup is an RLS policy on a unique column. */
   readonly invitationDigests = new Map<string, string>();
   contacts: ContactRecord[] = [];
+  documents: DocumentRecord[] = [];
   readonly evidence: EvidenceEventRecord[] = [];
   readonly artifacts: ArtifactRecord[] = [];
   readonly seals: SealRecord[] = [];
@@ -115,6 +127,7 @@ export class InMemoryStore {
       invitations: [...this.invitations],
       invitationDigests: new Map(this.invitationDigests),
       contacts: [...this.contacts],
+      documents: [...this.documents],
       evidence: [...this.evidence],
       artifacts: [...this.artifacts],
       seals: [...this.seals],
@@ -134,6 +147,7 @@ export class InMemoryStore {
     this.memberships.push(...snapshot.memberships);
     this.invitations = [...snapshot.invitations];
     this.contacts = [...snapshot.contacts];
+    this.documents = [...snapshot.documents];
     this.invitationDigests.clear();
     for (const [k, v] of snapshot.invitationDigests) this.invitationDigests.set(k, v);
     this.evidence.length = 0;
@@ -512,6 +526,77 @@ function scopedContacts(store: InMemoryStore, scope: WorkspaceId): ScopedContact
   };
 }
 
+/**
+ * The in-memory document table.
+ *
+ * Mirrors the adapter's ORDERING and its write-once filename rule, not merely
+ * its return types. The second matters: a fake whose `recordOriginalFilename`
+ * was unconditional would let a use case be written that rewrites the
+ * provenance of an earlier upload.
+ */
+function scopedDocuments(store: InMemoryStore, scope: WorkspaceId): ScopedDocumentRepository {
+  const inScope = () => store.documents.filter(d => d.workspaceId === scope);
+
+  const replace = (
+    documentId: DocumentId,
+    matches: (current: DocumentRecord) => boolean,
+    change: (current: DocumentRecord) => DocumentRecord,
+  ): boolean => {
+    const index = store.documents.findIndex(
+      d => d.workspaceId === scope && d.documentId === documentId && matches(d));
+    const current = index === -1 ? undefined : store.documents[index];
+    if (current === undefined) return false;
+    store.documents[index] = change(current);
+    return true;
+  };
+
+  return {
+    insert: (document: NewDocument) => {
+      if (document.workspaceId !== scope) {
+        throw new FakeScopeMismatchError("Document", scope, document.workspaceId);
+      }
+      store.documents.push({
+        documentId: document.documentId,
+        workspaceId: document.workspaceId,
+        title: document.title,
+        originalFilename: document.originalFilename,
+        createdByUserId: document.createdByUserId,
+        createdAt: document.createdAt,
+        // Equal to createdAt, exactly as the adapter does it.
+        updatedAt: document.createdAt,
+      });
+      return Promise.resolve();
+    },
+
+    findById: (documentId: DocumentId) =>
+      Promise.resolve(inScope().find(d => d.documentId === documentId) ?? null),
+
+    list: (query) => {
+      const sorted = [...inScope()].sort((a, b) => {
+        const cmp = query.sort === "title"
+          ? a.title.localeCompare(b.title)
+          : a.createdAt - b.createdAt;
+        const directed = query.direction === "asc" ? cmp : -cmp;
+        // The same tie-breaker the adapter applies, so pagination is stable.
+        return directed || b.documentId.localeCompare(a.documentId);
+      });
+      return Promise.resolve({
+        items: sorted.slice(query.offset, query.offset + query.limit),
+        total: sorted.length,
+      });
+    },
+
+    rename: (input) => Promise.resolve(
+      replace(input.documentId, () => true,
+        d => ({ ...d, title: input.title, updatedAt: input.now }))),
+
+    recordOriginalFilename: (input) => Promise.resolve(
+      // Write-once, matching the adapter's `where original_filename is null`.
+      replace(input.documentId, d => d.originalFilename === null,
+        d => ({ ...d, originalFilename: input.originalFilename, updatedAt: input.now }))),
+  };
+}
+
 function scopedEvidence(store: InMemoryStore, scope: WorkspaceId): ScopedEvidenceRepository {
   return {
     append: (event: EvidenceEventInput) => {
@@ -637,6 +722,7 @@ export class FakeTransactionManager implements TransactionManager {
         idempotency: this.idempotency,
         invitations: scopedInvitations(this.store, workspaceId),
         contacts: scopedContacts(this.store, workspaceId),
+        documents: scopedDocuments(this.store, workspaceId),
       });
       this.committed++;
       return result;
@@ -702,6 +788,7 @@ export class FakeTransactionManager implements TransactionManager {
             idempotency: this.idempotency,
             invitations: scopedInvitations(store, workspaceId),
             contacts: scopedContacts(store, workspaceId),
+            documents: scopedDocuments(store, workspaceId),
           });
         },
       });

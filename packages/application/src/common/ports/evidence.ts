@@ -199,6 +199,15 @@ export interface ArtifactRecord {
   readonly digest: Sha256Digest;
   /** Provenance as a relation. Ancestry is never inferred from naming. */
   readonly sourceArtifactId?: ArtifactId;
+  /**
+   * Pages in THESE bytes, as counted by the upload inspection (BACKEND-29).
+   *
+   * Optional because it is a property some artifact types have and others may
+   * not, and because artifacts predating migration 016 have none. It is server-
+   * observed: the inspector counts it from the accepted bytes, and no client
+   * value reaches this field.
+   */
+  readonly pageCount?: number;
   readonly createdAt: number;
 }
 

@@ -13,7 +13,7 @@ import type {
   ListMyWorkspacesDependencies,
   InvitationDependencies, AcceptInvitationDependencies,
   MemberAdministrationDependencies, WorkspaceAccessDependencies,
-  ContactDependencies,
+  ContactDependencies, DocumentDependencies,
 } from "@lagda/application";
 
 /**
@@ -98,4 +98,11 @@ export interface WorkspaceDependencies {
    * `restore` without `archive`, which reads as harmless and is not.
    */
   readonly contacts?: () => ContactDependencies;
+  /**
+   * Documents (BACKEND-29).
+   *
+   * Optional as a WHOLE, like every surface before it. Present means all four
+   * document routes are registered; absent means none is.
+   */
+  readonly documents?: () => DocumentDependencies;
 }

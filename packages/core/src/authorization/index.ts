@@ -13,7 +13,7 @@
 //
 // No Fastify, no PostgreSQL, no clock, no I/O. Every decision is a function of
 // its arguments, which is what makes the exhaustive matrix test possible: 7
-// roles times 14 capabilities is 98 assertions, and they run in microseconds
+// roles times 17 capabilities is 119 assertions, and they run in microseconds
 // with nothing mocked.
 
 import type { WorkspaceRole } from "@lagda/contracts";
@@ -34,15 +34,15 @@ import { InvariantViolationError } from "../common/index.js";
  *
  * ── Only what exists ───────────────────────────────────────────────────────
  *
- * Fourteen capabilities, and every one of them governs an operation that is
- * implemented today. There is no `document.create` and no `billing.manage` —
- * those arrive with the commands that build the operations they govern
- * (BACKEND-29, 50). A capability with no operation behind it is a promise the
- * policy cannot keep, and this repository has already shipped one contract that
- * nothing consumed.
+ * Seventeen capabilities, and every one of them governs an operation that is
+ * implemented today. There is no `billing.manage` — that arrives with the
+ * command that builds the operations it governs (BACKEND-50). A capability with
+ * no operation behind it is a promise the policy cannot keep, and this
+ * repository has already shipped one contract that nothing consumed.
  *
- * The four `contact.*` capabilities were added by BACKEND-28 alongside the
- * operations they govern, which is the intended way to extend this list.
+ * The `contact.*` and `document.*` capabilities were added by BACKEND-28 and
+ * BACKEND-29 alongside the operations they govern, which is the intended way to
+ * extend this list.
  *
  * ── Specific, not one `workspace.admin` ────────────────────────────────────
  *
@@ -101,6 +101,27 @@ export const WORKSPACE_CAPABILITIES = [
    * reversible control, and nothing in the product separates them.
    */
   "contact.archive",
+
+  /**
+   * ── Documents ──────────────────────────────────────────────────
+   *
+   * The first domain where VIEW and WRITE diverge. The product splits documents
+   * across two permissions that do not line up: `view_documents` is held by six
+   * roles, `prepare_documents` by four. `reviewer` and `auditor` may read a
+   * document and may not create or rename one — a third distinct shape, after
+   * membership (two roles, all capabilities) and contacts (four roles, all
+   * capabilities).
+   *
+   * There is deliberately no `document.delete` and no `document.archive`: the
+   * product has neither at the document level. Archive and restore are
+   * TRANSACTION actions, and BACKEND-32 owns them.
+   */
+  /** Read a document's metadata. */
+  "document.view",
+  /** Add a document to the workspace, ahead of uploading its bytes. */
+  "document.create",
+  /** Change a document's title. The only mutable field it has. */
+  "document.update",
 
   /**
    * Hand the workspace to someone else.
@@ -166,6 +187,9 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "contact.create",
       "contact.update",
       "contact.archive",
+      "document.view",
+      "document.create",
+      "document.update",
       "workspace.ownership.transfer",
     ] as const),
 
@@ -190,6 +214,9 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "contact.create",
       "contact.update",
       "contact.archive",
+      "document.view",
+      "document.create",
+      "document.update",
     ] as const),
 
     /**
@@ -210,6 +237,11 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
      * No contact capability either — `role_member` does not hold
      * `manage_contacts`, so `member` is the one role present in the workspace
      * that can neither administer people nor use the address book.
+     *
+     * And no document capability, INCLUDING view. `member` is not a
+     * `PlatformRole` at all, so it has no entry in `ROLE_PERMISSIONS` and does
+     * not hold `view_documents`. Same disagreement as OD-100, resolved the same
+     * way: the table that gates reachability wins.
      */
     member: Object.freeze(["workspace.view"] as const),
 
@@ -227,6 +259,9 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "contact.create",
       "contact.update",
       "contact.archive",
+      "document.view",
+      "document.create",
+      "document.update",
     ] as const),
 
     /**
@@ -242,6 +277,9 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "contact.create",
       "contact.update",
       "contact.archive",
+      "document.view",
+      "document.create",
+      "document.update",
     ] as const),
 
     /**
@@ -252,11 +290,21 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
      * same permission — so a reviewer cannot reach the address book at all, and
      * a read-only projection here would grant something the product does not.
      * The address book carries counterparties' names, emails and phone numbers.
+     *
+     * It DOES hold `document.view`, and the asymmetry is the product's:
+     * `view_documents` without `prepare_documents`. A reviewer reads documents
+     * for a living and creates none.
      */
-    reviewer: Object.freeze(["workspace.view"] as const),
+    reviewer: Object.freeze(["workspace.view", "document.view"] as const),
 
-    /** Reads audit history. No workspace administration, no contacts. */
-    auditor: Object.freeze(["workspace.view"] as const),
+    /**
+     * Reads audit history. No workspace administration, no contacts.
+     *
+     * Holds `document.view` for the same reason as `reviewer`: an auditor whose
+     * job is reviewing what happened cannot do it without reading the documents
+     * it happened to.
+     */
+    auditor: Object.freeze(["workspace.view", "document.view"] as const),
   });
 
 /**

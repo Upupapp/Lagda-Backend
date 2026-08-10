@@ -154,6 +154,10 @@ function toArtifact(row: Selectable<DocumentArtifactsTable>): ArtifactRecord {
     ...(row.source_artifact_id === null
       ? {}
       : { sourceArtifactId: row.source_artifact_id as ArtifactId }),
+    // Omitted rather than null when absent, matching `sourceArtifactId`: the
+    // port declares it optional, and `exactOptionalPropertyTypes` distinguishes
+    // "no page count" from "a page count that is null".
+    ...(row.page_count === null ? {} : { pageCount: row.page_count }),
     createdAt: row.created_at.getTime(),
   };
 }
@@ -179,6 +183,7 @@ export function createArtifactRepository(
             digest_algorithm: artifact.digestAlgorithm,
             digest: artifact.digest,
             source_artifact_id: artifact.sourceArtifactId ?? null,
+            page_count: artifact.pageCount ?? null,
           })
           .execute();
       } catch (error) {

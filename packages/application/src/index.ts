@@ -33,3 +33,4 @@ export * from "./auth/reset-password.js";
 export * from "./auth/mfa.js";
 export * from "./account/profile.js";
 export * from "./contacts/contacts.js";
+export * from "./documents/documents.js";

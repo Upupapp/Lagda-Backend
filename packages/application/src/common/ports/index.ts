@@ -14,6 +14,7 @@ import type {
   InvitationTokenDigest,
 } from "./invitations.js";
 import type { ScopedContactRepository } from "./contacts.js";
+import type { ScopedDocumentRepository } from "./documents.js";
 
 import type {
   WorkspaceId, WorkspaceMemberId, UserId, WorkspaceRole,
@@ -302,6 +303,15 @@ export interface WorkspaceUnitOfWork {
    * the recipient snapshot copies values out, it does not reference the row.
    */
   readonly contacts: ScopedContactRepository;
+  /**
+   * Documents (BACKEND-29).
+   *
+   * On the tenant unit of work beside `artifacts`, and that adjacency is the
+   * point: creating a document and later resolving its original artifact happen
+   * through the same transaction and the same tenant context, so a document can
+   * never be paired with bytes from another workspace.
+   */
+  readonly documents: ScopedDocumentRepository;
 }
 
 /**
@@ -433,3 +443,5 @@ export * from "./sealing.js";
 export * from "./invitations.js";
 
 export * from "./contacts.js";
+
+export * from "./documents.js";

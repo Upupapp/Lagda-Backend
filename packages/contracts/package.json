@@ -28,6 +28,10 @@
       "types": "./dist/contacts/index.d.ts",
       "default": "./dist/contacts/index.js"
     },
+    "./documents": {
+      "types": "./dist/documents/index.d.ts",
+      "default": "./dist/documents/index.js"
+    },
     "./api": {
       "types": "./dist/api/index.d.ts",
       "default": "./dist/api/index.js"

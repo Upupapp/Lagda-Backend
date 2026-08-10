@@ -151,6 +151,9 @@ export const WORKSPACE_CAPABILITY_NAMES = [
   "contact.create",
   "contact.update",
   "contact.archive",
+  "document.view",
+  "document.create",
+  "document.update",
   "workspace.ownership.transfer",
 ] as const;
 

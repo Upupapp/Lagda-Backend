@@ -80,6 +80,32 @@ export interface WorkspaceMembershipsTable {
 
 
 /**
+ * A workspace document (BACKEND-29).
+ *
+ * Metadata ONLY. There is no `original_artifact_id` column: the link lives on
+ * `document_artifacts.document_id`, where migration 003 put it and migration
+ * 016 made it a tenant-safe compound foreign key. Duplicating it here would be
+ * two authorities on which bytes belong to a document.
+ *
+ * No `status` and no `archived_at`. The product has no document-level
+ * lifecycle — every status it displays is a TransactionStatus, and archive is a
+ * transaction action. See DOCUMENT_LIFECYCLE.md.
+ */
+export interface DocumentsTable {
+  document_id: string;
+  /** First-class tenant column. */
+  workspace_id: string;
+  /** Mutable display metadata. Never a storage key, never an identity. */
+  title: string;
+  /** What the file arrived as. Write-once, and separate from the title. */
+  original_filename: ColumnType<string | null, string | null, string | null>;
+  /** Audit metadata, NOT authorization. */
+  created_by_user_id: string;
+  created_at: Timestamptz;
+  updated_at: Timestamptz;
+}
+
+/**
  * A byte-distinct artifact.
  *
  * `original.pdf` and `sealed.pdf` are two ROWS, never one row whose digest is
@@ -89,7 +115,13 @@ export interface WorkspaceMembershipsTable {
 export interface DocumentArtifactsTable {
   artifact_id: string;
   workspace_id: string;
-  /** No foreign key yet — the `documents` table arrives with BACKEND-29/30. */
+  /**
+   * Tenant-safe FK to `documents` since migration 016.
+   *
+   * It carried no foreign key from 003 until then, because there was no
+   * `documents` table to point at — so this column named a client-supplied
+   * string. It is now `(workspace_id, document_id)` compound-constrained.
+   */
   document_id: string;
   /** CHECK-constrained: original | sealed | completion-certificate. */
   artifact_type: string;
@@ -101,6 +133,15 @@ export interface DocumentArtifactsTable {
   digest_algorithm: string;
   digest: string;
   source_artifact_id: string | null;
+  /**
+   * Pages in THESE bytes, from the upload inspection (migration 016).
+   *
+   * On the artifact rather than the document because it describes one exact
+   * sequence of bytes: a sealed artifact may legitimately differ from the
+   * original it derives from. NULL for artifacts written before 016 and for any
+   * future artifact type where the question is meaningless.
+   */
+  page_count: ColumnType<number | null, number | null, number | null>;
   created_at: GeneratedTimestamptz;
 }
 
@@ -458,6 +499,7 @@ export interface Database {
   workspace_memberships: WorkspaceMembershipsTable;
   workspace_invitations: WorkspaceInvitationsTable;
   contacts: ContactsTable;
+  documents: DocumentsTable;
   document_artifacts: DocumentArtifactsTable;
   evidence_events: EvidenceEventsTable;
   document_seals: DocumentSealsTable;

@@ -24,6 +24,19 @@ import {
 const WS_A = "ws_evidence_a" as WorkspaceId;
 const WS_B = "ws_evidence_b" as WorkspaceId;
 const DOC = "doc_1" as DocumentId;
+/**
+ * Workspace B's own document.
+ *
+ * `document_id` is the PRIMARY KEY of `documents`, so it is globally unique and
+ * `doc_1` cannot exist in both workspaces. Since BACKEND-29 an artifact must
+ * name a document in ITS OWN workspace, so the cross-tenant assertions below
+ * need a real B-side document to hang a B-side artifact off.
+ */
+const DOC_B = "doc_b1" as DocumentId;
+
+/** The document a workspace's fixture artifacts belong to. */
+const documentFor = (workspaceId: WorkspaceId): DocumentId =>
+  workspaceId === WS_B ? DOC_B : DOC;
 const REQ = "txn_1" as TransactionId;
 const HASH_A = "a".repeat(64) as Sha256Digest;
 const HASH_B = "b".repeat(64) as Sha256Digest;
@@ -31,7 +44,9 @@ const HASH_B = "b".repeat(64) as Sha256Digest;
 const artifact = (over: Partial<ArtifactRecord> = {}): ArtifactRecord => ({
   artifactId: "art_original" as ArtifactId,
   workspaceId: WS_A,
-  documentId: DOC,
+  // Derived from the workspace, so `artifact({ workspaceId: WS_B })` names B's
+  // document rather than A's. An explicit `documentId` in `over` still wins.
+  documentId: documentFor(over.workspaceId ?? WS_A),
   artifactType: "original",
   storageReference: toStorageObjectKey("workspaces/ws_a/documents/doc_1/artifacts/art_original.pdf"),
   mediaType: "application/pdf",
@@ -94,6 +109,18 @@ describe.skipIf(!hasIntegrationDatabase())("evidence persistence on PostgreSQL",
     for (const id of [WS_A, WS_B]) {
       await transactions.runForWorkspace(id, async (uow) => {
         await uow.workspaces.insert({ workspaceId: id, name: id, createdAt: 0 });
+        // Documents, required since BACKEND-29 added the compound foreign key
+        // from `document_artifacts` to `documents`. `doc_2` exists because the
+        // provenance and ordering assertions use a second document.
+        const documents = id === WS_B ? [DOC_B] : [DOC, "doc_2" as DocumentId];
+        for (const documentId of documents) {
+          await uow.documents.insert({
+            documentId, workspaceId: id, title: documentId,
+            originalFilename: null,
+            createdByUserId: "usr_evidence_fixture" as never,
+            createdAt: 0,
+          });
+        }
       });
     }
   });

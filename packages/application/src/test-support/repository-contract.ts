@@ -53,6 +53,10 @@ const MEM_A = "mem_contract_a" as WorkspaceMemberId;
 const MEM_B = "mem_contract_b" as WorkspaceMemberId;
 const REQ = "txn_contract_1" as TransactionId;
 const DOC = "doc_contract_1" as DocumentId;
+
+/** Per-workspace, because `document_id` is globally unique. */
+const documentFor = (workspaceId: WorkspaceId): DocumentId =>
+  `${DOC}_${workspaceId}` as DocumentId;
 const DIGEST = toSha256Digest("c".repeat(64));
 
 /**
@@ -88,6 +92,22 @@ export function runRepositoryContract(
         });
         await uow.memberships.insert({
           memberId, workspaceId, userId, role: "owner", createdAt: AT,
+        });
+        // The document every artifact assertion below hangs off.
+        //
+        // Required since BACKEND-29: `document_artifacts.document_id` is now a
+        // compound foreign key to `documents`, so an artifact can no longer
+        // name a document that does not exist. Before migration 016 that
+        // column pointed at nothing and these fixtures were silently writing
+        // dangling references.
+        //
+        // The id is DERIVED FROM THE WORKSPACE because `document_id` is the
+        // primary key of `documents` and is therefore globally unique — a
+        // fixture that seeded the same id into two workspaces would collide.
+        await uow.documents.insert({
+          documentId: documentFor(workspaceId), workspaceId,
+          title: "Contract fixture",
+          originalFilename: null, createdByUserId: userId, createdAt: AT,
         });
       });
     };
@@ -418,7 +438,7 @@ export function runRepositoryContract(
         uow.artifacts.insert({
           artifactId: "art_1" as ArtifactId,
           workspaceId: WS_A,
-          documentId: DOC,
+          documentId: documentFor(WS_A),
           artifactType: "original",
           storageReference: toStorageObjectKey("workspaces/ws_a/documents/doc_1/artifacts/art_1.pdf"),
           mediaType: "application/pdf",
