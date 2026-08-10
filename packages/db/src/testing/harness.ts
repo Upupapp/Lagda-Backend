@@ -85,6 +85,8 @@ export async function truncateAll(database: LagdaDatabase): Promise<void> {
   // Invitations before memberships and workspaces: they reference both
   // `workspaces` and `users`, all ON DELETE RESTRICT.
   await database.db.deleteFrom("workspace_invitations").execute();
+  // Contacts reference `workspaces` ON DELETE RESTRICT, so they go before it.
+  await database.db.deleteFrom("contacts").execute();
   await database.db.deleteFrom("workspace_memberships").execute();
   await database.db.deleteFrom("workspaces").execute();
 

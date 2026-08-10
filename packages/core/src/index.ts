@@ -7,3 +7,4 @@ export * from "./common/index.js";
 export * from "./signing/index.js";
 export * from "./workspaces/index.js";
 export * from "./authorization/index.js";
+export * from "./contacts/index.js";

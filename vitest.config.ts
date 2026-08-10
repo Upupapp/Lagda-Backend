@@ -40,6 +40,20 @@ export default defineConfig({
     // so `npm test` never needs a database.
     include: ["tests/**/*.test.ts", "packages/*/src/**/*.test.ts"],
     exclude: ["**/node_modules/**", "**/dist/**", "**/*.integration.test.ts"],
+    // 20s, against Vitest's 5s default.
+    //
+    // Not because any test does 20 seconds of work. The FIRST `app.inject()` in
+    // each API suite pays the cost of transforming the whole application graph
+    // — `createApp` pulls in Fastify, the plugins, the error handler and every
+    // route module — and on a cold run that reached 5 s and timed out. Adding a
+    // fourth API suite in BACKEND-28 made it recur on roughly half of full
+    // runs, always on whichever suite happened to compile first.
+    //
+    // A compile-bound limit disguised as a behavioural one produces failures
+    // that point at an innocent test and change with machine load. The headroom
+    // is deliberately large: nothing here should ever legitimately approach it,
+    // so a test that does hit 20 s is genuinely hung and worth investigating.
+    testTimeout: 20_000,
     reporters: "default",
   },
 });

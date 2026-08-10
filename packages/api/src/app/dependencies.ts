@@ -13,6 +13,7 @@ import type {
   ListMyWorkspacesDependencies,
   InvitationDependencies, AcceptInvitationDependencies,
   MemberAdministrationDependencies, WorkspaceAccessDependencies,
+  ContactDependencies,
 } from "@lagda/application";
 
 /**
@@ -88,4 +89,13 @@ export interface WorkspaceDependencies {
     readonly administration: () => MemberAdministrationDependencies;
     readonly access: () => WorkspaceAccessDependencies;
   };
+  /**
+   * The address book (BACKEND-28).
+   *
+   * Optional as a WHOLE, like invitations and members. Present means all six
+   * contact routes are registered; absent means none is. A partial wiring would
+   * produce a surface nobody reviewed as a set — the case that matters here is
+   * `restore` without `archive`, which reads as harmless and is not.
+   */
+  readonly contacts?: () => ContactDependencies;
 }

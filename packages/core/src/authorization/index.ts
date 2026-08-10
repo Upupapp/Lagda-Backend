@@ -13,7 +13,7 @@
 //
 // No Fastify, no PostgreSQL, no clock, no I/O. Every decision is a function of
 // its arguments, which is what makes the exhaustive matrix test possible: 7
-// roles times 10 capabilities is 70 assertions, and they run in microseconds
+// roles times 14 capabilities is 98 assertions, and they run in microseconds
 // with nothing mocked.
 
 import type { WorkspaceRole } from "@lagda/contracts";
@@ -34,12 +34,15 @@ import { InvariantViolationError } from "../common/index.js";
  *
  * ── Only what exists ───────────────────────────────────────────────────────
  *
- * Ten capabilities, and every one of them governs an operation that is
- * implemented today. There is no `document.create`, no `contact.write`, no
- * `billing.manage` — those arrive with the commands that build the operations
- * they govern (BACKEND-28, 29, 50). A capability with no operation behind it is
- * a promise the policy cannot keep, and this repository has already shipped one
- * contract that nothing consumed.
+ * Fourteen capabilities, and every one of them governs an operation that is
+ * implemented today. There is no `document.create` and no `billing.manage` —
+ * those arrive with the commands that build the operations they govern
+ * (BACKEND-29, 50). A capability with no operation behind it is a promise the
+ * policy cannot keep, and this repository has already shipped one contract that
+ * nothing consumed.
+ *
+ * The four `contact.*` capabilities were added by BACKEND-28 alongside the
+ * operations they govern, which is the intended way to extend this list.
  *
  * ── Specific, not one `workspace.admin` ────────────────────────────────────
  *
@@ -70,6 +73,34 @@ export const WORKSPACE_CAPABILITIES = [
   "invitation.resend",
   /** Withdraw a pending invitation. */
   "invitation.revoke",
+
+  /**
+   * ── Contacts ─────────────────────────────────────────────────────────────
+   *
+   * Held by a NOTICEABLY WIDER set of roles than the membership capabilities
+   * above: `template_administrator` and `sender` hold all four while holding no
+   * membership capability at all. That is the product's own answer —
+   * `manage_contacts` appears in four roles' permission sets — and it is the
+   * first case where the capability model earns its keep, because a
+   * `role === "owner" || role === "administrator"` check would have been wrong
+   * for exactly the two roles that use contacts most.
+   */
+  /** Read the workspace address book. */
+  "contact.view",
+  /** Add a contact. */
+  "contact.create",
+  /** Edit a contact's details. */
+  "contact.update",
+  /**
+   * Archive and restore a contact.
+   *
+   * `contact.archive`, not `contact.delete`. The product's action set has
+   * `archive` and `restore` and no delete, and naming the capability after an
+   * operation that does not exist would invite someone to build it. Restore is
+   * the same authority as archive rather than a fifth capability — they are one
+   * reversible control, and nothing in the product separates them.
+   */
+  "contact.archive",
 
   /**
    * Hand the workspace to someone else.
@@ -131,6 +162,10 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "invitation.create",
       "invitation.resend",
       "invitation.revoke",
+      "contact.view",
+      "contact.create",
+      "contact.update",
+      "contact.archive",
       "workspace.ownership.transfer",
     ] as const),
 
@@ -151,6 +186,10 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "invitation.create",
       "invitation.resend",
       "invitation.revoke",
+      "contact.view",
+      "contact.create",
+      "contact.update",
+      "contact.archive",
     ] as const),
 
     /**
@@ -167,25 +206,56 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
      * reachability, and a member directory carries every colleague's email
      * address. Recorded as OD-100 rather than resolved by picking the more
      * permissive reading.
+     *
+     * No contact capability either — `role_member` does not hold
+     * `manage_contacts`, so `member` is the one role present in the workspace
+     * that can neither administer people nor use the address book.
      */
     member: Object.freeze(["workspace.view"] as const),
 
     /**
-     * Template administration. A future-domain role with no capability here yet.
+     * Template administration, plus the address book.
      *
-     * Its powers are over templates (BACKEND-47), and `workspace.view` is what
-     * lets it be in the workspace at all. Listing only that is not an oversight
-     * — it is the honest current answer.
+     * Its main powers are over templates (BACKEND-47) and are still absent. The
+     * product's `role_template_administrator` set includes `manage_contacts`,
+     * so the four contact capabilities are real today — this role administers
+     * no members and no invitations and can still maintain the address book.
      */
-    template_administrator: Object.freeze(["workspace.view"] as const),
+    template_administrator: Object.freeze([
+      "workspace.view",
+      "contact.view",
+      "contact.create",
+      "contact.update",
+      "contact.archive",
+    ] as const),
 
-    /** Prepares and sends documents. No workspace administration. */
-    sender: Object.freeze(["workspace.view"] as const),
+    /**
+     * Prepares and sends documents. No workspace administration.
+     *
+     * Holds all four contact capabilities. This is the role the address book
+     * exists FOR — a sender picks recipients — and it is the clearest evidence
+     * that contacts are not an administrative feature.
+     */
+    sender: Object.freeze([
+      "workspace.view",
+      "contact.view",
+      "contact.create",
+      "contact.update",
+      "contact.archive",
+    ] as const),
 
-    /** Reviews documents. No workspace administration. */
+    /**
+     * Reviews documents. No workspace administration.
+     *
+     * No contact capability, INCLUDING `contact.view`. The product does not give
+     * it `manage_contacts`, and the navigation gate on `/app/contacts` is that
+     * same permission — so a reviewer cannot reach the address book at all, and
+     * a read-only projection here would grant something the product does not.
+     * The address book carries counterparties' names, emails and phone numbers.
+     */
     reviewer: Object.freeze(["workspace.view"] as const),
 
-    /** Reads audit history. No workspace administration. */
+    /** Reads audit history. No workspace administration, no contacts. */
     auditor: Object.freeze(["workspace.view"] as const),
   });
 

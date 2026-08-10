@@ -82,6 +82,9 @@ export {
   type MemberRouteOptions,
 } from "./workspaces/member-routes.js";
 export { createInvitationTokenFactory } from "./security/invitation-token.js";
+export {
+  registerContactRoutes, type ContactRouteOptions, type ContactBody,
+} from "./contacts/contact-routes.js";
 
 export {
   registerWorkspaceRoutes, CreateWorkspaceRequestSchema,

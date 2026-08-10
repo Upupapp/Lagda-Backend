@@ -11,6 +11,7 @@ export * from "./ids/index.js";
 export * from "./common/index.js";
 export * from "./verification/index.js";
 export * from "./workspaces/index.js";
+export * from "./contacts/index.js";
 
 // Cross-cutting API conventions — errors, pagination, sorting, headers.
 export * from "./api/index.js";

@@ -113,6 +113,48 @@ export const instantToIso = (instant: Instant): string =>
 /** Deadlines are exclusive: an item is expired strictly after its deadline. */
 export const hasPassed = (deadline: Instant, now: Instant): boolean => now > deadline;
 
+// ── Email syntax ─────────────────────────────────────────────────────────────
+//
+// SYNTAX ONLY, and the distinction is the point of putting it here.
+//
+// Two unrelated domains need to know whether a string LOOKS like an email
+// address: account identity (`normalizeEmail`, which turns one into an
+// authentication key) and contacts (which stores one as address-book text and
+// authenticates nothing). They must agree on the shape and must NOT share the
+// identity semantics — a contact email is not an account lookup key, and a type
+// that let one be used as the other is the conflation CONTACT_IDENTITY.md
+// exists to prevent.
+//
+// So the shape lives here, unbranded and meaning nothing on its own, and each
+// domain builds its own semantics on top. Before BACKEND-28 this pattern was
+// private to `email-identity.ts`; the alternative was a second copy of the
+// regex in the contact domain, which is two rules that agree until one is
+// edited.
+
+/**
+ * Structure only, deliberately.
+ *
+ * A regex cannot decide whether a mailbox exists or accepts mail — only delivery
+ * can. Attempting RFC 5322 in a pattern produces something unreadable that still
+ * rejects valid addresses. This checks that there is a local part, one `@`, a
+ * domain with a dot, and no whitespace.
+ */
+const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** The RFC 5321 path limit. Longer than this is not a mailbox anyone receives at. */
+export const MAX_EMAIL_LENGTH = 254;
+
+/**
+ * Whether a string has the shape of an email address.
+ *
+ * Says nothing about whether it can receive mail, whether it belongs to a LAGDA
+ * account, or whether anyone has verified it. Callers that need any of those
+ * must establish them separately.
+ */
+export function hasEmailSyntax(value: string): boolean {
+  return EMAIL_SHAPE.test(value);
+}
+
 // ── Exhaustiveness ───────────────────────────────────────────────────────────
 
 /**

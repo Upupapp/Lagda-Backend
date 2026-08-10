@@ -39,6 +39,7 @@ import { createIdempotencyRepository } from "../repositories/idempotency.js";
 import {
   createScopedInvitationRepository, createInvitationCredentialLookup,
 } from "../repositories/invitations.js";
+import { createScopedContactRepository } from "../repositories/contacts.js";
 
 /** The setting names RLS policies read. Must match migrations 002 and 013. */
 const WORKSPACE_SETTING = "lagda.workspace_id";
@@ -69,6 +70,7 @@ function buildUnitOfWork(
     // it, so there is no lease, no reclaim job and no poisoned key.
     idempotency: createIdempotencyRepository(trx),
     invitations: createScopedInvitationRepository(trx, workspaceId),
+    contacts: createScopedContactRepository(trx, workspaceId),
   };
 }
 

@@ -39,6 +39,8 @@ export const METRIC_NAMES = [
   "workspace_invitation_operations_total",
   // BACKEND-27. Member administration — role changes and removals.
   "workspace_member_operations_total",
+  // BACKEND-28. Address-book writes — created, updated, archived, restored.
+  "contact_operations_total",
   // BACKEND-27. Capability denials. Successful checks are NOT counted: one
   // series per authorized request is noise, and the interesting signal is a
   // sustained spike in refusals (§183, §186).
@@ -87,6 +89,12 @@ export const METRIC_LABELS = {
   // personal data, and the fifth is a credential handle (§208, §279).
   workspace_invitation_operations_total: ["operation", "result", "processRole"],
   workspace_member_operations_total: ["operation", "result", "processRole"],
+  // `operation` is a four-value union in code and `result` is an outcome.
+  // Deliberately NOT `contactId`, `workspaceId`, or ANY contact field. The
+  // contact's email is the one that matters most: a metrics store is retained
+  // longer and read more widely than a log, and the address belongs to a
+  // counterparty who is not a LAGDA user and consented to nothing.
+  contact_operations_total: ["operation", "result", "processRole"],
   // `capability` is a ten-value closed set defined in code — bounded, and the
   // most useful dimension a denial has. Deliberately NOT `workspaceId`,
   // `userId` or `membershipId`: all unbounded, and one series per tenant is how

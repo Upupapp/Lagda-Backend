@@ -9,25 +9,20 @@
 // This file is the reason `.toLowerCase()` must not appear next to an email
 // anywhere else.
 
+import { hasEmailSyntax, MAX_EMAIL_LENGTH } from "@lagda/core";
+
 /**
  * Bounded, and matched to the database column.
  *
  * 254 is the practical maximum length of an addressable mailbox (RFC 5321's
  * path limit). Anything longer is not a mailbox anyone can receive at, and an
  * unbounded account identifier is an index problem and a hashing cost.
- */
-export const MAX_EMAIL_LENGTH = 254;
-
-/**
- * Structure only, deliberately.
  *
- * A regex cannot decide whether a mailbox exists or accepts mail — only
- * delivery can, which is what email verification is for. Attempting RFC 5322 in
- * a pattern produces something unreadable that still rejects valid addresses.
- * This checks that there is a local part, one `@`, a domain with a dot, and no
- * whitespace.
+ * Re-exported so existing importers are unaffected. The value now lives in
+ * `@lagda/core/common` alongside the syntax check, because BACKEND-28's contact
+ * domain needs the same shape rule and a second copy would drift.
  */
-const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export { MAX_EMAIL_LENGTH };
 
 /** A normalized email, usable as an account lookup key. */
 export type NormalizedEmail = string & { readonly __brand: "NormalizedEmail" };
@@ -67,7 +62,7 @@ export function normalizeEmail(raw: string): EmailNormalization {
   const display = raw.trim();
   if (display.length === 0) return { outcome: "rejected", reason: "empty" };
   if (display.length > MAX_EMAIL_LENGTH) return { outcome: "rejected", reason: "too-long" };
-  if (!EMAIL_SHAPE.test(display)) return { outcome: "rejected", reason: "malformed" };
+  if (!hasEmailSyntax(display)) return { outcome: "rejected", reason: "malformed" };
 
   // Locale-independent. `toLowerCase()` is affected by the ambient locale for a
   // few characters — Turkish dotless i being the well-known case — and an

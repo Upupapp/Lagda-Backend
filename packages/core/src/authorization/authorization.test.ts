@@ -1,7 +1,7 @@
 // The authorization policy, exhaustively.
 //
 // Table-driven and complete: every role against every capability, every actor
-// role against every target role. 70 + 49 assertions that run with no database,
+// role against every target role. 98 + 49 assertions that run with no database,
 // no HTTP and nothing mocked — which is the point of keeping the policy pure.
 //
 // The expectations here are written out by hand ON PURPOSE. A test that derived
@@ -22,6 +22,11 @@ import { InvariantViolationError } from "../common/index.js";
 
 // ── The expected matrix, written independently of the policy ────────────────
 
+/** The four contact capabilities, which travel together in every role. */
+const CONTACT_CAPABILITIES: readonly WorkspaceCapability[] = [
+  "contact.view", "contact.create", "contact.update", "contact.archive",
+];
+
 const ADMIN_CAPABILITIES: readonly WorkspaceCapability[] = [
   "workspace.view", "workspace.update",
   "membership.view", "membership.role.change", "membership.remove",
@@ -29,11 +34,19 @@ const ADMIN_CAPABILITIES: readonly WorkspaceCapability[] = [
 ];
 
 const EXPECTED: Readonly<Record<WorkspaceRole, readonly WorkspaceCapability[]>> = {
-  owner: [...ADMIN_CAPABILITIES, "workspace.ownership.transfer"],
-  administrator: ADMIN_CAPABILITIES,
+  owner: [...ADMIN_CAPABILITIES, ...CONTACT_CAPABILITIES, "workspace.ownership.transfer"],
+  administrator: [...ADMIN_CAPABILITIES, ...CONTACT_CAPABILITIES],
   member: ["workspace.view"],
-  template_administrator: ["workspace.view"],
-  sender: ["workspace.view"],
+  // The two rows that make this matrix worth having. Both hold every contact
+  // capability and NO membership capability — a shape no `owner ||
+  // administrator` check could have produced, and the product's own answer:
+  // `manage_contacts` is in four roles' permission sets, and `sender` is the
+  // role the address book exists for.
+  template_administrator: ["workspace.view", ...CONTACT_CAPABILITIES],
+  sender: ["workspace.view", ...CONTACT_CAPABILITIES],
+  // No contact capability at all, INCLUDING view. `manage_contacts` is also the
+  // navigation gate on /app/contacts, so these roles cannot reach the address
+  // book — and it holds counterparties' names, emails and phone numbers.
   reviewer: ["workspace.view"],
   auditor: ["workspace.view"],
 };
@@ -72,7 +85,7 @@ describe("role to capability matrix", () => {
     // EXPECTED table not updated, this fails rather than the matrix silently
     // testing fewer combinations.
     expect(Object.keys(EXPECTED).sort()).toEqual([...WORKSPACE_ROLES].sort());
-    expect(WORKSPACE_CAPABILITIES.length).toBe(10);
+    expect(WORKSPACE_CAPABILITIES.length).toBe(14);
   });
 });
 

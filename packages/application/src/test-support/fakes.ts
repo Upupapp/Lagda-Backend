@@ -30,7 +30,10 @@ import type {
 } from "../common/ports/invitations.js";
 import type { WorkspaceInvitationId } from "@lagda/contracts";
 import type { NormalizedEmail } from "../auth/email-identity.js";
-import type { TransactionId, DocumentId } from "@lagda/contracts";
+import type { TransactionId, DocumentId, ContactId } from "@lagda/contracts";
+import type {
+  ScopedContactRepository, ContactRecord, NewContact, ContactIdGenerator,
+} from "../common/ports/contacts.js";
 
 /** A fixed instant, so assertions mean the same thing in any year. */
 export class FixedClock implements Clock {
@@ -55,6 +58,13 @@ export class SequentialMemberIds implements WorkspaceMemberIdGenerator {
   }
 }
 
+export class SequentialContactIds implements ContactIdGenerator {
+  private next = 1;
+  nextContactId(): ContactId {
+    return `con_${String(this.next++)}` as ContactId;
+  }
+}
+
 /** Mirrors the adapter's mismatch rejection so fakes cannot be more permissive. */
 export class FakeScopeMismatchError extends Error {
   constructor(entity: string, scope: string, actual: string) {
@@ -68,6 +78,7 @@ interface StoreSnapshot {
   readonly memberships: WorkspaceMembershipRecord[];
   readonly invitations: WorkspaceInvitationRecord[];
   readonly invitationDigests: Map<string, string>;
+  readonly contacts: ContactRecord[];
   readonly evidence: EvidenceEventRecord[];
   readonly artifacts: ArtifactRecord[];
   readonly seals: SealRecord[];
@@ -89,6 +100,7 @@ export class InMemoryStore {
   readonly accountEmails = new Map<string, UserId>();
   /** Digest to invitation id. The real lookup is an RLS policy on a unique column. */
   readonly invitationDigests = new Map<string, string>();
+  contacts: ContactRecord[] = [];
   readonly evidence: EvidenceEventRecord[] = [];
   readonly artifacts: ArtifactRecord[] = [];
   readonly seals: SealRecord[] = [];
@@ -102,6 +114,7 @@ export class InMemoryStore {
       memberships: [...this.memberships],
       invitations: [...this.invitations],
       invitationDigests: new Map(this.invitationDigests),
+      contacts: [...this.contacts],
       evidence: [...this.evidence],
       artifacts: [...this.artifacts],
       seals: [...this.seals],
@@ -120,6 +133,7 @@ export class InMemoryStore {
     this.memberships.length = 0;
     this.memberships.push(...snapshot.memberships);
     this.invitations = [...snapshot.invitations];
+    this.contacts = [...snapshot.contacts];
     this.invitationDigests.clear();
     for (const [k, v] of snapshot.invitationDigests) this.invitationDigests.set(k, v);
     this.evidence.length = 0;
@@ -374,6 +388,130 @@ function scopedInvitations(
   };
 }
 
+/**
+ * The in-memory address book.
+ *
+ * Mirrors the adapter's ORDERING and its CONDITIONAL updates, not just its
+ * return types. Both matter: a fake that sorted differently would let a
+ * pagination bug pass, and one whose `updateIfActive` was unconditional would
+ * let a use case be written that resurrects an archived contact.
+ *
+ * It deliberately does NOT enforce a unique email — because the table does not.
+ * A fake stricter than the schema would hide the duplicate-warning behaviour
+ * the product asked for.
+ */
+function scopedContacts(store: InMemoryStore, scope: WorkspaceId): ScopedContactRepository {
+  const inScope = () => store.contacts.filter(c => c.workspaceId === scope);
+
+  const replaceWhere = (
+    contactId: ContactId,
+    matches: (current: ContactRecord) => boolean,
+    change: (current: ContactRecord) => ContactRecord,
+  ): boolean => {
+    const index = store.contacts.findIndex(
+      c => c.workspaceId === scope && c.contactId === contactId && matches(c));
+    const current = index === -1 ? undefined : store.contacts[index];
+    if (current === undefined) return false;
+    store.contacts[index] = change(current);
+    return true;
+  };
+
+  const active = (c: ContactRecord) => c.archivedAt === null;
+
+  return {
+    insert: (contact: NewContact) => {
+      if (contact.workspaceId !== scope) {
+        throw new FakeScopeMismatchError("Contact", scope, contact.workspaceId);
+      }
+      store.contacts.push({
+        contactId: contact.contactId,
+        workspaceId: contact.workspaceId,
+        name: contact.name,
+        email: contact.email,
+        emailKey: contact.emailKey,
+        phone: contact.phone,
+        organization: contact.organization,
+        title: contact.title,
+        createdAt: contact.createdAt,
+        // Equal to createdAt, exactly as the adapter does it.
+        updatedAt: contact.createdAt,
+        archivedAt: null,
+      });
+      return Promise.resolve();
+    },
+
+    findById: (contactId: ContactId) =>
+      Promise.resolve(inScope().find(c => c.contactId === contactId) ?? null),
+
+    list: (query) => {
+      const term = query.search?.toLocaleLowerCase("en-US") ?? null;
+      const matched = inScope()
+        .filter(c => query.state === "active" ? c.archivedAt === null : c.archivedAt !== null)
+        .filter(c => term === null || [c.name, c.email, c.organization, c.title]
+          .some(field => field !== null && field.toLocaleLowerCase("en-US").includes(term)));
+
+      const key = (c: ContactRecord): string | number =>
+        query.sort === "name" ? c.name
+          : query.sort === "organization" ? (c.organization ?? "")
+            : c.updatedAt;
+
+      const sorted = [...matched].sort((a, b) => {
+        const left = key(a);
+        const right = key(b);
+        // NULLS LAST in both directions, matching the adapter. An empty
+        // organization sorts after every non-empty one either way.
+        if (query.sort === "organization") {
+          const aNull = a.organization === null;
+          const bNull = b.organization === null;
+          if (aNull !== bNull) return aNull ? 1 : -1;
+        }
+        const cmp = typeof left === "string" && typeof right === "string"
+          ? left.localeCompare(right)
+          : Number(left) - Number(right);
+        const directed = query.direction === "asc" ? cmp : -cmp;
+        // The same tie-breaker the adapter applies, so pagination is stable.
+        return directed || a.contactId.localeCompare(b.contactId);
+      });
+
+      return Promise.resolve({
+        items: sorted.slice(query.offset, query.offset + query.limit),
+        // The total matching the FILTER, not the page.
+        total: sorted.length,
+      });
+    },
+
+    findDuplicateCandidates: (input) => Promise.resolve(
+      inScope()
+        .filter(c => c.emailKey === input.emailKey && c.archivedAt === null)
+        .filter(c => input.excludeContactId === null || c.contactId !== input.excludeContactId)
+        .sort((a, b) => a.createdAt - b.createdAt || a.contactId.localeCompare(b.contactId))),
+
+    updateIfActive: (input) => Promise.resolve(
+      replaceWhere(input.contactId, active, current => ({
+        ...current,
+        // Only the keys the caller supplied — `??` would treat an explicit null
+        // (clear the field) as absent, which is the one distinction that
+        // matters here.
+        name: input.patch.name ?? current.name,
+        email: input.patch.email ?? current.email,
+        emailKey: input.patch.emailKey ?? current.emailKey,
+        phone: input.patch.phone === undefined ? current.phone : input.patch.phone,
+        organization: input.patch.organization === undefined
+          ? current.organization : input.patch.organization,
+        title: input.patch.title === undefined ? current.title : input.patch.title,
+        updatedAt: input.now,
+      }))),
+
+    archiveIfActive: (input) => Promise.resolve(
+      replaceWhere(input.contactId, active,
+        c => ({ ...c, archivedAt: input.now, updatedAt: input.now }))),
+
+    restoreIfArchived: (input) => Promise.resolve(
+      replaceWhere(input.contactId, c => c.archivedAt !== null,
+        c => ({ ...c, archivedAt: null, updatedAt: input.now }))),
+  };
+}
+
 function scopedEvidence(store: InMemoryStore, scope: WorkspaceId): ScopedEvidenceRepository {
   return {
     append: (event: EvidenceEventInput) => {
@@ -498,6 +636,7 @@ export class FakeTransactionManager implements TransactionManager {
         uploads: scopedUploads(this.store, workspaceId),
         idempotency: this.idempotency,
         invitations: scopedInvitations(this.store, workspaceId),
+        contacts: scopedContacts(this.store, workspaceId),
       });
       this.committed++;
       return result;
@@ -562,6 +701,7 @@ export class FakeTransactionManager implements TransactionManager {
             uploads: scopedUploads(store, workspaceId),
             idempotency: this.idempotency,
             invitations: scopedInvitations(store, workspaceId),
+            contacts: scopedContacts(store, workspaceId),
           });
         },
       });

@@ -24,6 +24,10 @@
       "types": "./dist/workspaces/index.d.ts",
       "default": "./dist/workspaces/index.js"
     },
+    "./contacts": {
+      "types": "./dist/contacts/index.d.ts",
+      "default": "./dist/contacts/index.js"
+    },
     "./api": {
       "types": "./dist/api/index.d.ts",
       "default": "./dist/api/index.js"

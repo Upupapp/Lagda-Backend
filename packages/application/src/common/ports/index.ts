@@ -13,6 +13,7 @@ import type {
   ScopedInvitationRepository, InvitationCredentialUnitOfWork,
   InvitationTokenDigest,
 } from "./invitations.js";
+import type { ScopedContactRepository } from "./contacts.js";
 
 import type {
   WorkspaceId, WorkspaceMemberId, UserId, WorkspaceRole,
@@ -291,6 +292,16 @@ export interface WorkspaceUnitOfWork {
    * transaction with ONE tenant context.
    */
   readonly invitations: ScopedInvitationRepository;
+  /**
+   * The workspace address book (BACKEND-28).
+   *
+   * On the tenant unit of work like every other workspace-owned repository. It
+   * is here rather than on its own so a future operation that creates a
+   * document's recipients FROM contacts reads the address book and writes the
+   * recipients on one transaction — but note that reading is all it will do:
+   * the recipient snapshot copies values out, it does not reference the row.
+   */
+  readonly contacts: ScopedContactRepository;
 }
 
 /**
@@ -420,3 +431,5 @@ export * from "./evidence.js";
 export * from "./sealing.js";
 
 export * from "./invitations.js";
+
+export * from "./contacts.js";

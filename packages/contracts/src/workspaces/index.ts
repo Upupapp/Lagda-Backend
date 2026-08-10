@@ -147,6 +147,10 @@ export const WORKSPACE_CAPABILITY_NAMES = [
   "invitation.create",
   "invitation.resend",
   "invitation.revoke",
+  "contact.view",
+  "contact.create",
+  "contact.update",
+  "contact.archive",
   "workspace.ownership.transfer",
 ] as const;
 

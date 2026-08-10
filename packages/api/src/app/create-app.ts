@@ -38,6 +38,7 @@ import {
   registerInvitationRedemptionRoutes,
 } from "../workspaces/invitation-routes.js";
 import { registerMemberRoutes } from "../workspaces/member-routes.js";
+import { registerContactRoutes } from "../contacts/contact-routes.js";
 
 export interface CreateAppOptions {
   readonly config: ApiConfig;
@@ -391,6 +392,26 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
           ),
           memberDependencies: members.administration,
           accessDependencies: members.access,
+          metrics,
+        });
+      }
+
+      // Inside the same scope, so the address book gets a validated session and
+      // a CSRF check because of WHERE it is registered. A contact record is a
+      // counterparty's name, email and phone number; there is no version of
+      // this surface that is safe to reach anonymously.
+      if (workspaces.contacts !== undefined) {
+        const contacts = workspaces.contacts;
+        registerContactRoutes(scope, {
+          authenticatedUser: (request: FastifyRequest) => Promise.resolve(
+            request.auth.status === "authenticated"
+              ? {
+                  userId: request.auth.actor.userId,
+                  sessionId: request.auth.actor.sessionId,
+                }
+              : null,
+          ),
+          contactDependencies: contacts,
           metrics,
         });
       }

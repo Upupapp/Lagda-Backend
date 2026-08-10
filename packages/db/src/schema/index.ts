@@ -416,10 +416,48 @@ export interface WorkspaceInvitationsTable {
   superseded_at: ColumnType<Date | null, Date | null, Date | null>;
 }
 
+/**
+ * A workspace address-book entry (BACKEND-28).
+ *
+ * ── Read the absences ──────────────────────────────────────────────────────
+ *
+ * No `user_id`. No `verified_at`. No `membership_id`. No `invitation_id`. A
+ * contact is data one workspace typed in, and LAGDA has authenticated none of
+ * it — a column linking it to an account would make that claim by implication.
+ *
+ * No `status` column either: state is derived from `archived_at`, so the two
+ * cannot disagree.
+ */
+export interface ContactsTable {
+  contact_id: string;
+  /** First-class tenant column. */
+  workspace_id: string;
+  name: string;
+  /** Exactly what was typed, case preserved. This is what gets displayed. */
+  email: string;
+  /**
+   * The folded comparison key, for DUPLICATE DETECTION and exact-match search.
+   *
+   * Named `normalized_contact_email` rather than `normalized_email` so it can
+   * never be confused at a call site with `users.normalized_email`, which is an
+   * authentication identity. They are the same fold and completely different
+   * guarantees, and there is no unique constraint on this one.
+   */
+  normalized_contact_email: string;
+  phone: ColumnType<string | null, string | null, string | null>;
+  organization: ColumnType<string | null, string | null, string | null>;
+  title: ColumnType<string | null, string | null, string | null>;
+  created_at: Timestamptz;
+  updated_at: Timestamptz;
+  /** NULL means active. The product archives and restores; it never deletes. */
+  archived_at: ColumnType<Date | null, Date | null, Date | null>;
+}
+
 export interface Database {
   workspaces: WorkspacesTable;
   workspace_memberships: WorkspaceMembershipsTable;
   workspace_invitations: WorkspaceInvitationsTable;
+  contacts: ContactsTable;
   document_artifacts: DocumentArtifactsTable;
   evidence_events: EvidenceEventsTable;
   document_seals: DocumentSealsTable;
