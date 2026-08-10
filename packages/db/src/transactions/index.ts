@@ -47,6 +47,10 @@ import { createScopedPreparationRepository } from "../repositories/preparation.j
 import { createScopedRecipientRepository } from "../repositories/recipients.js";
 import { createScopedSigningRequestRepository } from "../repositories/signing-requests.js";
 import { createScopedSigningAccessRepository } from "../repositories/signing-access.js";
+import { createRecipientCeremonyRepository } from "../repositories/signing-ceremony.js";
+import type {
+  RecipientCeremonyUnitOfWork, SigningRequestId, SigningRequestRecipientId,
+} from "@lagda/application";
 import {
   createSigningAccessLookupRepository, createRecipientSessionLookupRepository,
   createScopedRecipientSessionRepository,
@@ -235,6 +239,32 @@ export function createTransactionManager(db: Kysely<Database>): TransactionManag
           .execute(trx);
         return operation({
           session: createRecipientSessionLookupRepository(trx),
+
+          // The tenant transition, on the SAME transaction, exactly as the
+          // credential scope does it.
+          //
+          // The scope comes from the RESOLVED session, so there is no
+          // parameter a request body could reach. With both settings live,
+          // migration 022's restrictive policies bind every ceremony read to
+          // this one recipient - tenant isolation alone would not, because
+          // permissive policies OR together.
+          async enterWorkspace<R>(
+            scope: {
+              readonly workspaceId: WorkspaceId;
+              readonly signingRequestId: SigningRequestId;
+              readonly recipientId: SigningRequestRecipientId;
+            },
+            inner: (uow: RecipientCeremonyUnitOfWork) => Promise<R>,
+          ): Promise<R> {
+            await sql`select set_config(${WORKSPACE_SETTING}, ${scope.workspaceId}, true)`
+              .execute(trx);
+            return inner({
+              workspaceId: scope.workspaceId,
+              signingRequestId: scope.signingRequestId,
+              recipientId: scope.recipientId,
+              ceremony: createRecipientCeremonyRepository(trx, scope),
+            });
+          },
         });
       });
     },

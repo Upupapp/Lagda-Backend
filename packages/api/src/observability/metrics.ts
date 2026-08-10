@@ -53,6 +53,8 @@ export const METRIC_NAMES = [
   "signing_request_send_results_total",
   // BACKEND-34. Recipient signing access.
   "signing_access_attempts_total",
+  // BACKEND-35. Ceremony entry, document access, consent.
+  "signing_ceremony_results_total",
   // BACKEND-27. Capability denials. Successful checks are NOT counted: one
   // series per authorized request is noise, and the interesting signal is a
   // sustained spike in refusals (§183, §186).
@@ -166,6 +168,13 @@ export const METRIC_LABELS = {
   // and a metric that split them would rebuild the oracle for anyone who can
   // read a dashboard.
   signing_access_attempts_total: ["operation", "result", "processRole"],
+  // `operation` is a three-value closed set - enter, document, consent - and
+  // `result` is two. Deliberately NOT `signingRequestId` or `recipientId`:
+  // one time series per document, or per signer, is how a metrics bill and a
+  // PII incident happen at the same time. Nor `blocker`: the ceremony error
+  // is not an oracle the way BACKEND-34's is, but a dashboard that shows why
+  // named signers were refused is still a dashboard nobody meant to build.
+  signing_ceremony_results_total: ["operation", "result", "processRole"],
   // `capability` is a ten-value closed set defined in code — bounded, and the
   // most useful dimension a denial has. Deliberately NOT `workspaceId`,
   // `userId` or `membershipId`: all unbounded, and one series per tenant is how

@@ -39,3 +39,4 @@ export * from "./recipients/recipients.js";
 export * from "./signing-requests/signing-requests.js";
 export * from "./signing-requests/send.js";
 export * from "./signing-access/signing-access.js";
+export * from "./signing-ceremony/signing-ceremony.js";

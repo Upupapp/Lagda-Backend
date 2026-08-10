@@ -45,6 +45,7 @@ import { registerRecipientRoutes } from "../recipients/recipient-routes.js";
 import { registerSigningRequestRoutes } from "../signing-requests/signing-request-routes.js";
 import { registerSendRoutes } from "../signing-requests/send-routes.js";
 import { registerSigningAccessRoutes } from "../signing-access/signing-access-routes.js";
+import { registerSigningCeremonyRoutes } from "../signing-ceremony/signing-ceremony-routes.js";
 
 export interface CreateAppOptions {
   readonly config: ApiConfig;
@@ -571,6 +572,22 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
         : { rateLimit: { limiter: signingLimiter, metrics } }),
       metrics,
     });
+
+    // BACKEND-35. The ceremony needs BOTH: its own dependencies, and the
+    // access dependencies for recipient CSRF validation, which lives in the
+    // BACKEND-34 module because the session credential is BACKEND-34's.
+    if (dependencies.signingCeremony !== undefined) {
+      const ceremony = dependencies.signingCeremony;
+      registerSigningCeremonyRoutes(app, {
+        config,
+        ceremonyDependencies: ceremony,
+        signingAccessDependencies: signingAccess,
+        ...(signingLimiter === undefined
+          ? {}
+          : { rateLimit: { limiter: signingLimiter, metrics } }),
+        metrics,
+      });
+    }
   }
 
   // Deliberately NOT `await app.ready()`. Readying seals the instance, and a

@@ -416,6 +416,51 @@ export const RATE_LIMIT_POLICIES = {
   // corrected: it claimed the same precedent while being sixty times tighter,
   // and a corporate NAT whose staff sign routinely would have found the floor
   // on a limit that was never the control against guessing.
+  // ── Signing ceremony (BACKEND-35) ──────────────────────────────────────────
+  //
+  // IP again, because a recipient has an account nowhere. But these are NOT
+  // sized like the credential endpoints: a signing page reads its ceremony on
+  // load, after consent, and on every reload, and a signer working through a
+  // long document legitimately makes many requests. Limits tight enough to
+  // deter a credential attack would break the ordinary case, and there is no
+  // credential to attack here - the caller already holds a session.
+  //
+  // fail-OPEN, all three. The failure these bound is bandwidth and noise; the
+  // failure of refusing is a signer who cannot finish signing.
+  "signing-ceremony.read.ip": {
+    id: "signing-ceremony.read.ip",
+    scopeType: "ip",
+    limit: 240,
+    windowMs: MINUTE,
+    failureMode: "fail-open",
+    source: "BACKEND-35 - not specified by the handoff. Generous because the "
+      + "ceremony is polled by an authenticated session, and an office behind "
+      + "one NAT may have several signers at once.",
+  },
+  // Separate from reads because a PDF is expensive where a JSON projection is
+  // not. One document fetch per page load is normal; sixty a minute is not.
+  "signing-ceremony.document.ip": {
+    id: "signing-ceremony.document.ip",
+    scopeType: "ip",
+    limit: 60,
+    windowMs: MINUTE,
+    failureMode: "fail-open",
+    source: "BACKEND-35 - not specified by the handoff. Bounds bandwidth "
+      + "rather than access. Deliberately not low enough to break a viewer "
+      + "that refetches, because breaking the render is worse than the cost.",
+  },
+  // Consent converges on one row, so repetition is harmless - this bounds
+  // pointless traffic, not a security exposure.
+  "signing-ceremony.consent.ip": {
+    id: "signing-ceremony.consent.ip",
+    scopeType: "ip",
+    limit: 60,
+    windowMs: MINUTE,
+    failureMode: "fail-open",
+    source: "BACKEND-35 - not specified by the handoff. An idempotent "
+      + "mutation whose repeat is a no-op; the limit is hygiene.",
+  },
+
   "signing-access.bootstrap.ip": {
     id: "signing-access.bootstrap.ip",
     scopeType: "ip",

@@ -16,6 +16,7 @@ import type {
   ContactDependencies, DocumentDependencies, PreparationDependencies,
   RecipientDependencies, SigningRequestDependencies,
   SendSigningRequestDependencies, SigningAccessDependencies,
+  SigningCeremonyDependencies,
 } from "@lagda/application";
 
 /**
@@ -47,6 +48,12 @@ export interface AppDependencies {
    * realm inside the first.
    */
   readonly signingAccess?: () => SigningAccessDependencies;
+  /**
+   * BACKEND-35. Absent in tests that do not exercise the ceremony, exactly as
+   * `signingAccess` is - an undefined dependency means the routes are never
+   * registered, rather than registered and broken.
+   */
+  readonly signingCeremony?: () => SigningCeremonyDependencies;
 
   readonly sessions?: SessionService;
   /**

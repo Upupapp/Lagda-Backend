@@ -524,3 +524,4 @@ export * from "./signing-requests.js";
 export * from "./signing-access.js";
 
 export * from "./signing-sessions.js";
+export * from "./signing-ceremony.js";

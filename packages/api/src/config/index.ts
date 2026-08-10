@@ -109,6 +109,20 @@ export interface ApiConfig {
    * construction, and touching a row on every request buys nothing.
    */
   readonly recipientSessionLifetimeMs: number;
+  /**
+   * The electronic-signature disclosure version the ceremony requires.
+   *
+   * Configured rather than hardcoded, and an IDENTIFIER rather than text. The
+   * operative wording lives in a versioned product/legal artifact; the backend
+   * records which one a recipient accepted, and never a copy of the words.
+   *
+   * The default is deliberately `v0-demonstration`: the disclosure the product
+   * renders today closes with "provided for demonstration purposes only", and
+   * naming the version after what it actually is stops an acceptance of demo
+   * copy from ever being mistaken for an acceptance of operative copy.
+   * Counsel's first real text becomes `v1`.
+   */
+  readonly recipientConsentVersion: string;
 }
 
 export class ApiConfigError extends Error {
@@ -281,6 +295,8 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     recipientSessionLifetimeMs: readInt(
       env["RECIPIENT_SESSION_LIFETIME_MS"], "RECIPIENT_SESSION_LIFETIME_MS",
       8 * 3_600_000),
+    recipientConsentVersion:
+      env["RECIPIENT_CONSENT_VERSION"] ?? "v0-demonstration",
   };
 
   assertProductionSafety(config);

@@ -28,6 +28,9 @@ import type {
   ScopedInvitationRepository, InvitationCredentialUnitOfWork,
   InvitationTokenDigest, WorkspaceInvitationRecord, NewWorkspaceInvitation,
 } from "../common/ports/invitations.js";
+import type {
+  RecipientCeremonyUnitOfWork, NewCeremonyConsent,
+} from "../common/ports/signing-ceremony.js";
 import type { WorkspaceInvitationId } from "@lagda/contracts";
 import type { NormalizedEmail } from "../auth/email-identity.js";
 import type { TransactionId, DocumentId, ContactId } from "@lagda/contracts";
@@ -183,6 +186,26 @@ export class FakeScopeMismatchError extends Error {
   }
 }
 
+/** A ceremony-entry row. Keyed like the real composite primary key. */
+export interface CeremonyProgressRow {
+  readonly workspaceId: string;
+  readonly signingRequestId: string;
+  readonly recipientId: string;
+  readonly firstEnteredAt: number;
+}
+
+/** An acceptance row. The real table's unique constraint is emulated below. */
+export interface CeremonyConsentRow {
+  readonly workspaceId: string;
+  readonly signingRequestId: string;
+  readonly recipientId: string;
+  readonly consentType: string;
+  readonly consentVersion: string;
+  readonly acceptedAt: number;
+  readonly signingSessionId: string;
+  readonly authenticationMethod: string;
+}
+
 interface StoreSnapshot {
   readonly workspaces: Map<string, WorkspaceRecord>;
   readonly memberships: WorkspaceMembershipRecord[];
@@ -200,6 +223,8 @@ interface StoreSnapshot {
   readonly deliveryIntents: NewDeliveryIntent[];
   readonly activations: (RecipientActivationRecord & { signingRequestId: string })[];
   readonly recipientSessions: NewRecipientSigningSession[];
+  readonly ceremonyProgress: CeremonyProgressRow[];
+  readonly ceremonyConsents: CeremonyConsentRow[];
   readonly evidence: EvidenceEventRecord[];
   readonly artifacts: ArtifactRecord[];
   readonly seals: SealRecord[];
@@ -233,6 +258,8 @@ export class InMemoryStore {
   deliveryIntents: NewDeliveryIntent[] = [];
   activations: (RecipientActivationRecord & { signingRequestId: string })[] = [];
   recipientSessions: NewRecipientSigningSession[] = [];
+  ceremonyProgress: CeremonyProgressRow[] = [];
+  ceremonyConsents: CeremonyConsentRow[] = [];
   /** Snapshot row to its request. The real tables carry the column. */
   readonly snapshotOwners = new Map<string, SigningRequestId>();
   /** Field id to preparation id. The real table has a column. */
@@ -262,6 +289,8 @@ export class InMemoryStore {
       deliveryIntents: [...this.deliveryIntents],
       activations: [...this.activations],
       recipientSessions: [...this.recipientSessions],
+      ceremonyProgress: [...this.ceremonyProgress],
+      ceremonyConsents: [...this.ceremonyConsents],
       evidence: [...this.evidence],
       artifacts: [...this.artifacts],
       seals: [...this.seals],
@@ -292,6 +321,8 @@ export class InMemoryStore {
     this.deliveryIntents = [...snapshot.deliveryIntents];
     this.activations = [...snapshot.activations];
     this.recipientSessions = [...snapshot.recipientSessions];
+    this.ceremonyProgress = [...snapshot.ceremonyProgress];
+    this.ceremonyConsents = [...snapshot.ceremonyConsents];
     this.invitationDigests.clear();
     for (const [k, v] of snapshot.invitationDigests) this.invitationDigests.set(k, v);
     this.evidence.length = 0;
@@ -1384,6 +1415,115 @@ export class FakeTransactionManager implements TransactionManager {
             revokedAt: null,
           } satisfies ResolvedRecipientSession);
         },
+      },
+      enterWorkspace: <R,>(
+        scope: {
+          readonly workspaceId: WorkspaceId;
+          readonly signingRequestId: SigningRequestId;
+          readonly recipientId: SigningRequestRecipientId;
+        },
+        inner: (uow: RecipientCeremonyUnitOfWork) => Promise<R>,
+      ) => {
+        // The fake filters exactly as the real repository does. It cannot
+        // prove the RLS policies - only integration can - but it CAN prove the
+        // repository never returns another recipient's rows, which is the
+        // property the use-case tests are about.
+        const mine = <T extends {
+          readonly workspaceId: string;
+          readonly signingRequestId: string;
+          readonly recipientId: string;
+        }>(row: T): boolean =>
+          row.workspaceId === scope.workspaceId
+          && row.signingRequestId === scope.signingRequestId
+          && row.recipientId === scope.recipientId;
+
+        return inner({
+          workspaceId: scope.workspaceId,
+          signingRequestId: scope.signingRequestId,
+          recipientId: scope.recipientId,
+          ceremony: {
+            getRequest: () => Promise.resolve(
+              store.signingRequests.find(
+                r => r.workspaceId === scope.workspaceId
+                  && r.signingRequestId === scope.signingRequestId) ?? null),
+            getRecipient: () => Promise.resolve(
+              store.signingRequestRecipients.find(
+                r => r.recipientId === scope.recipientId
+                  && store.snapshotOwners.get(String(r.recipientId))
+                       === scope.signingRequestId) ?? null),
+            getActivationState: () => Promise.resolve(
+              store.activations.find(
+                a => a.recipientId === scope.recipientId
+                  && a.signingRequestId === scope.signingRequestId)?.state ?? null),
+            listAssignedFields: () => Promise.resolve(
+              store.signingRequestFields.filter(
+                f => f.recipientId === scope.recipientId
+                  && store.snapshotOwners.get(String(f.fieldId))
+                       === scope.signingRequestId)),
+            getSourceArtifact: () => {
+              const request = store.signingRequests.find(
+                r => r.signingRequestId === scope.signingRequestId);
+              if (request === undefined) return Promise.resolve(null);
+              // Joined FROM the request, exactly as the real query is. A test
+              // that adds a newer artifact to the document must not change it.
+              const artifact = store.artifacts.find(
+                a => a.artifactId === request.sourceArtifactId
+                  && a.workspaceId === scope.workspaceId);
+              if (artifact === undefined) return Promise.resolve(null);
+              return Promise.resolve({
+                artifactId: artifact.artifactId,
+                mediaType: artifact.mediaType,
+                sizeBytes: artifact.sizeBytes,
+                digest: String(artifact.digest),
+                pageCount: artifact.pageCount ?? null,
+                storageReference: artifact.storageReference,
+              });
+            },
+            getProgress: () => {
+              const row = store.ceremonyProgress.find(mine);
+              return Promise.resolve(
+                row === undefined ? null : { firstEnteredAt: row.firstEnteredAt });
+            },
+            listConsents: () => Promise.resolve(
+              store.ceremonyConsents.filter(mine).map(row => ({
+                consentType: row.consentType,
+                consentVersion: row.consentVersion,
+                acceptedAt: row.acceptedAt,
+              }))),
+            recordFirstEntry: (input: {
+              readonly firstEnteredAt: number; readonly createdAt: number;
+            }) => {
+              // `on conflict do nothing`: the first write stands.
+              if (store.ceremonyProgress.some(mine)) return Promise.resolve(false);
+              store.ceremonyProgress.push({
+                workspaceId: scope.workspaceId,
+                signingRequestId: scope.signingRequestId,
+                recipientId: scope.recipientId,
+                firstEnteredAt: input.firstEnteredAt,
+              });
+              return Promise.resolve(true);
+            },
+            insertConsent: (consent: NewCeremonyConsent) => {
+              // The real unique constraint, emulated.
+              const exists = store.ceremonyConsents.some(
+                row => mine(row)
+                  && row.consentType === consent.consentType
+                  && row.consentVersion === consent.consentVersion);
+              if (exists) return Promise.resolve(false);
+              store.ceremonyConsents.push({
+                workspaceId: scope.workspaceId,
+                signingRequestId: scope.signingRequestId,
+                recipientId: scope.recipientId,
+                consentType: consent.consentType,
+                consentVersion: consent.consentVersion,
+                acceptedAt: consent.acceptedAt,
+                signingSessionId: String(consent.signingSessionId),
+                authenticationMethod: consent.authenticationMethod,
+              });
+              return Promise.resolve(true);
+            },
+          },
+        });
       },
     });
   }

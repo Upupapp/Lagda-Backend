@@ -262,6 +262,52 @@ export interface RecipientSigningSessionsTable {
   revocation_reason: ColumnType<string | null, string | null, string | null>;
 }
 
+/**
+ * That an authenticated recipient entered the ceremony. BACKEND-35.
+ *
+ * The row's EXISTENCE is the fact - there is no boolean to fall out of step
+ * with the timestamp. The runtime role has SELECT and INSERT only, so
+ * `first_entered_at` cannot be rewritten by any statement it can issue.
+ *
+ * Separate from `signing_request_recipient_activation`, which is whose TURN it
+ * is, and from `signing_request_recipients`, which is the immutable record of
+ * who was asked.
+ */
+export interface SigningRecipientProgressTable {
+  workspace_id: string;
+  signing_request_id: string;
+  request_recipient_id: string;
+  /** Backend Clock. Ceremony entry - not email open, link scan or render. */
+  first_entered_at: Timestamptz;
+  created_at: Timestamptz;
+}
+
+/**
+ * A recipient's acceptance of one disclosure VERSION. BACKEND-35.
+ *
+ * Append-only: SELECT and INSERT, no UPDATE, no DELETE. A later version is a
+ * new row, so an acceptance stays bound to what was actually accepted.
+ *
+ * Holds no legal text. `consent_version` names the operative artifact; storing
+ * the wording here would turn a demo disclosure into something that looks like
+ * a legal record.
+ */
+export interface SigningRecipientConsentsTable {
+  consent_id: string;
+  workspace_id: string;
+  signing_request_id: string;
+  request_recipient_id: string;
+  consent_type: string;
+  consent_version: string;
+  /** Backend Clock. A client-supplied time is a claim, not a fact. */
+  accepted_at: Timestamptz;
+  /** Attribution, NOT a foreign key - evidence outlives operational rows. */
+  signing_session_id: string;
+  /** What the recipient had proven when they agreed. */
+  authentication_method: string;
+  created_at: Timestamptz;
+}
+
 export interface SigningRequestRecipientActivationTable {
   workspace_id: string;
   signing_request_id: string;
@@ -785,6 +831,8 @@ export interface Database {
   signing_request_recipients: SigningRequestRecipientsTable;
   signing_request_fields: SigningRequestFieldsTable;
   signing_request_recipient_activation: SigningRequestRecipientActivationTable;
+  signing_recipient_progress: SigningRecipientProgressTable;
+  signing_recipient_consents: SigningRecipientConsentsTable;
   signing_access_grants: SigningAccessGrantsTable;
   signing_delivery_intents: SigningDeliveryIntentsTable;
   recipient_signing_sessions: RecipientSigningSessionsTable;

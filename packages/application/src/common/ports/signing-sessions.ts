@@ -17,6 +17,7 @@
 
 import type { WorkspaceId } from "@lagda/contracts";
 import type { SigningRequestState } from "@lagda/contracts";
+import type { RecipientCeremonyUnitOfWork } from "./signing-ceremony.js";
 import type {
   SigningRequestId, SigningRequestRecipientId,
 } from "./signing-requests.js";
@@ -191,9 +192,27 @@ export interface RecipientWorkspaceUnitOfWork {
   readonly recipientSessions: ScopedRecipientSessionRepository;
 }
 
-/** A transaction bound to an established recipient SESSION credential. */
+/**
+ * A transaction bound to an established recipient SESSION credential.
+ *
+ * `enterWorkspace` mirrors `SigningCredentialUnitOfWork` exactly, and for the
+ * same reason: the caller holds a cookie, not a tenant. The session resolves
+ * the workspace, the request and the recipient, and the ceremony repository is
+ * bound to all three before it exists.
+ *
+ * Same transaction, deliberately. Two would leave a window in which the
+ * session is valid and the request it names has moved on.
+ */
 export interface RecipientSessionUnitOfWork {
   readonly session: RecipientSessionLookupRepository;
+  enterWorkspace<T>(
+    scope: {
+      readonly workspaceId: WorkspaceId;
+      readonly signingRequestId: SigningRequestId;
+      readonly recipientId: SigningRequestRecipientId;
+    },
+    operation: (uow: RecipientCeremonyUnitOfWork) => Promise<T>,
+  ): Promise<T>;
 }
 
 export interface RecipientSigningSessionIdGenerator {
