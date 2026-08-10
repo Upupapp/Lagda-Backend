@@ -49,6 +49,27 @@ export const SIGNING_REQUEST_STATES = [
   "ready-to-send",
   "sent",
   "partially-completed",
+  /**
+   * Every required signing participant has completed their obligation, and the
+   * final signed artifact has NOT been produced.
+   *
+   * ── The one value in this union the product does not have ──────────────────
+   *
+   * Every other member was read out of the product's `TransactionStatus`. This
+   * one was added by BACKEND-37, deliberately, because the product conflates
+   * two facts that fail independently: "everyone signed" and "the completed
+   * document exists". PDF merge, certificate generation and sealing can each
+   * fail after the last signature is legally binding, and a status field that
+   * called that moment `completed` would be claiming an artifact nobody has.
+   *
+   * Naming it `completed` and repairing it later is not available: `completed`
+   * is terminal and legally significant, and a request that reached it wrongly
+   * cannot be walked back.
+   *
+   * BACKEND-38 owns the transition out of here. BACKEND-37 must never write
+   * `completed`.
+   */
+  "completion-ready",
   "completed",
   "declined",
   "cancelled",
@@ -56,6 +77,80 @@ export const SIGNING_REQUEST_STATES = [
 ] as const;
 
 export type SigningRequestState = (typeof SIGNING_REQUEST_STATES)[number];
+
+/**
+ * What one recipient of one signing request is currently doing about it.
+ *
+ * ── Four values, and why not more ──────────────────────────────────────────
+ *
+ * The product's `StageParticipantStatus` has thirteen, and nine of them are
+ * either EVENTS (`viewed`, `in-progress`), facts about a different subject
+ * (`waiting-for-prior-stage`), or outcomes of a machine that does not exist yet
+ * (`authentication-failed`, `no-longer-required`). A status field with one slot
+ * cannot hold a history, which is the same finding `lifecycle.ts` recorded for
+ * the request — so the events are stored as their own timestamps and only the
+ * mutually exclusive positions are states.
+ *
+ * `waiting` and `active` are BACKEND-33's, unchanged in meaning. `signed` and
+ * `declined` are the ceremony outcomes BACKEND-37 adds.
+ *
+ * There is no `viewed` state on purpose: a recipient who opened the document is
+ * still `active`, and overwriting that would lose the only thing the routing
+ * gate needs to know. First entry is a timestamp on `signing_recipient_progress`
+ * (BACKEND-35) and stays there.
+ */
+export const RECIPIENT_WORKFLOW_STATES = [
+  /** In the request, not yet this recipient's turn. Holds no credential. */
+  "waiting",
+  /** May authenticate, enter the ceremony and submit. Not "has viewed". */
+  "active",
+  /** An accepted `RecipientSubmission` exists for them. Terminal. */
+  "signed",
+  /** They refused. Terminal, and it ends the request for everyone. */
+  "declined",
+] as const;
+
+export type RecipientWorkflowState = (typeof RECIPIENT_WORKFLOW_STATES)[number];
+
+export const RecipientWorkflowStateSchema = Type.Union(
+  RECIPIENT_WORKFLOW_STATES.map(state => Type.Literal(state)),
+  {
+    title: "RecipientWorkflowState",
+    description: "Where one recipient stands in one signing request.",
+  },
+);
+
+/**
+ * Why a recipient refused, as a CLOSED set.
+ *
+ * Exactly `DECLINE_REASON_CATEGORIES` from `models/recipient.ts`, in the
+ * product's order. A closed code rather than the free-text note the product
+ * also collects: §78 warns that a free-text reason creates PII and content
+ * risk, the note is optional in the product and its own copy tells the
+ * recipient nothing is persisted, and an unbounded string authored by an
+ * external party would land in a legal record with no redaction path.
+ *
+ * The code is enough for every use the product makes of it — the sender sees
+ * that the request was declined and why, from a bounded vocabulary that is
+ * safe to log, safe to aggregate and safe to render.
+ */
+export const SIGNING_DECLINE_REASONS = [
+  "not-agree",
+  "not-intended",
+  "needs-correction",
+  "cannot-complete",
+  "other",
+] as const;
+
+export type SigningDeclineReason = (typeof SIGNING_DECLINE_REASONS)[number];
+
+export const SigningDeclineReasonSchema = Type.Union(
+  SIGNING_DECLINE_REASONS.map(reason => Type.Literal(reason)),
+  {
+    title: "SigningDeclineReason",
+    description: "Why the recipient declined. A closed vocabulary, never free text.",
+  },
+);
 
 /**
  * The wire schema.

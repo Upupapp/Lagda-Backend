@@ -20,6 +20,9 @@ import type { ScopedRecipientRepository } from "./recipients.js";
 import type { ScopedSigningRequestRepository } from "./signing-requests.js";
 import type { ScopedSigningAccessRepository } from "./signing-access.js";
 import type {
+  ScopedSigningWorkflowRepository, SigningWorkflowReconciliationRepository,
+} from "./signing-workflow.js";
+import type {
   SigningCredentialUnitOfWork, RecipientSessionUnitOfWork,
   RecipientSessionDigest,
 } from "./signing-sessions.js";
@@ -355,6 +358,15 @@ export interface WorkspaceUnitOfWork {
    * recipients hold no way in is worse than one that failed to send.
    */
   readonly signingAccess: ScopedSigningAccessRepository;
+  /**
+   * Signing workflow state (BACKEND-37).
+   *
+   * Beside `signingAccess`, and the adjacency is load-bearing: activating the
+   * next cohort writes the recipients' states AND their credentials AND their
+   * delivery intents, and a cohort that activated without a usable way in is
+   * worse than one that did not activate at all (§53, §54, §167).
+   */
+  readonly signingWorkflow: ScopedSigningWorkflowRepository;
 }
 
 /**
@@ -366,6 +378,20 @@ export interface WorkspaceUnitOfWork {
  */
 export interface GlobalUnitOfWork {
   readonly scope: "global";
+  /**
+   * Outstanding signing-workflow advances, across every tenant (BACKEND-37).
+   *
+   * The ONE exception to "global mode is not a route to workspace data", and it
+   * is narrow enough to state exactly: the table it reads carries no policy
+   * because a cross-tenant scan cannot have one without `BYPASSRLS`, and it
+   * returns IDENTIFIERS ONLY. The caller then enters each workspace properly
+   * and does the work under normal tenancy.
+   *
+   * `idempotency_records` established the shape. Nothing here can read a name,
+   * an address, a field value or a credential, because none of those is in the
+   * table.
+   */
+  readonly signingWorkflowReconciliation: SigningWorkflowReconciliationRepository;
 }
 
 /**
@@ -526,3 +552,4 @@ export * from "./signing-access.js";
 export * from "./signing-sessions.js";
 export * from "./signing-ceremony.js";
 export * from "./signing-submission.js";
+export * from "./signing-workflow.js";

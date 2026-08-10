@@ -49,6 +49,10 @@ const DOCUMENT_WRITE: readonly WorkspaceCapability[] = [
   // one most likely to be split first - assembling a document and releasing it
   // are different acts with different consequences.
   "signing-request.send",
+  // BACKEND-37. Withdrawing it from them. The product gates cancel on
+  // `canPrepare` and offers it only while the transaction is active, so it
+  // belongs to this group rather than to the administrative one.
+  "signing-request.cancel",
 ];
 
 /**
@@ -135,7 +139,7 @@ describe("role to capability matrix", () => {
     // EXPECTED table not updated, this fails rather than the matrix silently
     // testing fewer combinations.
     expect(Object.keys(EXPECTED).sort()).toEqual([...WORKSPACE_ROLES].sort());
-    expect(WORKSPACE_CAPABILITIES.length).toBe(21);
+    expect(WORKSPACE_CAPABILITIES.length).toBe(22);
   });
 });
 

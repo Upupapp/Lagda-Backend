@@ -16,7 +16,7 @@
 // lives. Every credential in LAGDA follows the same shape: a factory port here,
 // an adapter there, one adapter per purpose so digest domains cannot collide.
 
-import type { WorkspaceId } from "@lagda/contracts";
+import type { WorkspaceId, RecipientWorkflowState } from "@lagda/contracts";
 import type {
   SigningRequestId, SigningRequestRecipientId,
 } from "./signing-requests.js";
@@ -101,7 +101,17 @@ export interface SigningAccessIdGenerator {
 
 // ── Records ──────────────────────────────────────────────────────────────────
 
-export type RecipientActivationState = "waiting" | "active";
+/**
+ * BACKEND-37 widened this from `"waiting" | "active"` to the canonical
+ * four-value union and kept the name.
+ *
+ * Not an alias for tidiness: BACKEND-34's bootstrap check and BACKEND-35's
+ * ceremony both read this type, and widening it is what forces both to handle
+ * `signed` and `declined` rather than silently treating them as "not active".
+ * A separate type would have let them keep the old two-value view and answer
+ * "routing-waiting" to somebody who had already signed.
+ */
+export type RecipientActivationState = RecipientWorkflowState;
 
 export interface RecipientActivationRecord {
   readonly recipientId: SigningRequestRecipientId;

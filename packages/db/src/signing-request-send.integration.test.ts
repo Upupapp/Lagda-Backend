@@ -103,6 +103,8 @@ suite("signing request send (RLS, runtime role)", () => {
             sourceArtifactId: `art_${doc}` as ArtifactId,
             sourcePreparationId: `prep_${doc}` as PreparationId,
             sourcePreparationRevision: 1, state: "draft",
+            completionReadyAt: null, terminatedAt: null,
+            terminationReason: null, cancellationNote: null,
             documentTitle: "Office Lease", createdByUserId: USER,
             createdAt: AT, updatedAt: AT,
           },
@@ -362,28 +364,63 @@ suite("signing request send (RLS, runtime role)", () => {
       expect(rows[0]?.activatedAt).toBe(AT);
     });
 
-    it("refuses an active row with no timestamp", async () => {
+    // BACKEND-37 renamed `activation_state` to `recipient_state` and widened
+    // it from two values to four. Both tests below were updated rather than
+    // deleted: the RULES they assert are unchanged, and one of them used
+    // `'signed'` as its example of an impossible value, which is now a real
+    // state and would have made the test pass for the wrong reason.
+    it("refuses a non-waiting row with no timestamp", async () => {
       await expect(app.db.transaction().execute(async trx => {
         await sql`select set_config('lagda.workspace_id', ${WS_A}, true)`.execute(trx);
         await sql`
           insert into signing_request_recipient_activation (workspace_id,
-            signing_request_id, request_recipient_id, activation_state, created_at)
+            signing_request_id, request_recipient_id, recipient_state, created_at)
           values (${WS_A}, ${requestOf(WS_A)}, ${recipientOf(WS_A)}, 'active', now())
         `.execute(trx);
       })).rejects.toThrow(/check|violates/i);
     });
 
-    it("refuses an unknown activation state", async () => {
+    it("refuses an unknown recipient state", async () => {
       await expect(app.db.transaction().execute(async trx => {
         await sql`select set_config('lagda.workspace_id', ${WS_A}, true)`.execute(trx);
         await sql`
           insert into signing_request_recipient_activation (workspace_id,
-            signing_request_id, request_recipient_id, activation_state,
+            signing_request_id, request_recipient_id, recipient_state,
             activated_at, created_at)
-          values (${WS_A}, ${requestOf(WS_A)}, ${recipientOf(WS_A)}, 'signed',
+          values (${WS_A}, ${requestOf(WS_A)}, ${recipientOf(WS_A)}, 'completed',
             now(), now())
         `.execute(trx);
       })).rejects.toThrow(/check|violates/i);
+    });
+
+    it("refuses SIGNED with no submission", async () => {
+      // §108, at the storage layer. A workflow row claiming a signature it
+      // cannot name is the one state that would make `signed` untrustworthy.
+      await expect(app.db.transaction().execute(async trx => {
+        await sql`select set_config('lagda.workspace_id', ${WS_A}, true)`.execute(trx);
+        await sql`
+          insert into signing_request_recipient_activation (workspace_id,
+            signing_request_id, request_recipient_id, recipient_state,
+            activated_at, signed_at, created_at)
+          values (${WS_A}, ${requestOf(WS_A)}, ${recipientOf(WS_A)}, 'signed',
+            now(), now(), now())
+        `.execute(trx);
+      })).rejects.toThrow(/check|violates/i);
+    });
+
+    it("refuses SIGNED naming a submission that is not this recipient's", async () => {
+      // The four-column foreign key. Not "rejected by a check" - the row has
+      // no referent, so PostgreSQL refuses it however the application behaved.
+      await expect(app.db.transaction().execute(async trx => {
+        await sql`select set_config('lagda.workspace_id', ${WS_A}, true)`.execute(trx);
+        await sql`
+          insert into signing_request_recipient_activation (workspace_id,
+            signing_request_id, request_recipient_id, recipient_state,
+            activated_at, signed_at, submission_id, created_at)
+          values (${WS_A}, ${requestOf(WS_A)}, ${recipientOf(WS_A)}, 'signed',
+            now(), now(), 'sub_does_not_exist', now())
+        `.execute(trx);
+      })).rejects.toThrow(/foreign key|violates/i);
     });
   });
 

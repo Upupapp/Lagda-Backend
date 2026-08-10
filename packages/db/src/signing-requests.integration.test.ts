@@ -141,6 +141,8 @@ suite("signing requests (RLS, runtime role)", () => {
         sourcePreparationId: over.preparationId ?? PREP_A,
         sourcePreparationRevision: 2,
         state: "draft",
+        completionReadyAt: null, terminatedAt: null,
+        terminationReason: null, cancellationNote: null,
         documentTitle: "Office Lease",
         createdByUserId: USER,
         createdAt: AT,

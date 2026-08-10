@@ -103,6 +103,8 @@ suite("signature submission (RLS, constraints, runtime role)", () => {
           sourceArtifactId: "art_ss" as ArtifactId,
           sourcePreparationId: "prep_ss" as PreparationId,
           sourcePreparationRevision: 1, state: "draft",
+          completionReadyAt: null, terminatedAt: null,
+          terminationReason: null, cancellationNote: null,
           documentTitle: "Lease", createdByUserId: USER,
           createdAt: AT, updatedAt: AT,
         },

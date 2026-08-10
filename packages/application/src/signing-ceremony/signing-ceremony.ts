@@ -285,7 +285,7 @@ async function buildCeremonyView(
 
   const access = assessCeremonyAccess({
     requestState: request.state,
-    activationState,
+    recipientState: activationState,
     recipientType: recipient.type,
     consentAccepted: matching !== null,
   });

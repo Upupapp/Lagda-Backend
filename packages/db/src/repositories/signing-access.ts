@@ -6,6 +6,7 @@
 
 import type { Transaction } from "kysely";
 import type { WorkspaceId } from "@lagda/contracts";
+import { RECIPIENT_WORKFLOW_STATES } from "@lagda/contracts";
 import type {
   ScopedSigningAccessRepository, NewSigningAccessGrant, NewDeliveryIntent,
   RecipientActivationState,
@@ -16,7 +17,11 @@ import type { Database } from "../schema/index.js";
 import { PersistenceMappingError } from "../mapping/index.js";
 import { WorkspaceScopeMismatchError, translatePersistenceError } from "../errors.js";
 
-const ACTIVATION_STATES: readonly RecipientActivationState[] = ["waiting", "active"];
+// The canonical four. Imported rather than restated: a second list here would
+// be a second answer to "which states exist", and this one decides whether a
+// persisted row is readable at all.
+const ACTIVATION_STATES: readonly RecipientActivationState[] =
+  RECIPIENT_WORKFLOW_STATES;
 
 export function createScopedSigningAccessRepository(
   trx: Transaction<Database>,
@@ -86,7 +91,7 @@ export function createScopedSigningAccessRepository(
             workspace_id: scope,
             signing_request_id: input.signingRequestId,
             request_recipient_id: activation.recipientId,
-            activation_state: activation.state,
+            recipient_state: activation.state,
             activated_at:
               activation.activatedAt === null ? null : new Date(activation.activatedAt),
             created_at: new Date(input.createdAt),
@@ -110,7 +115,7 @@ export function createScopedSigningAccessRepository(
         // Validated rather than cast. Persisted state is untrusted input, and
         // an unrecognised activation state would decide whether someone can
         // reach a legal document.
-        state: toActivationState(row.activation_state),
+        state: toActivationState(row.recipient_state),
         activatedAt: row.activated_at === null ? null : row.activated_at.getTime(),
       }));
     },
@@ -121,7 +126,7 @@ function toActivationState(value: string): RecipientActivationState {
   const found = ACTIVATION_STATES.find(candidate => candidate === value);
   if (found === undefined) {
     throw new PersistenceMappingError(
-      "signing_request_recipient_activation", "activation_state",
+      "signing_request_recipient_activation", "recipient_state",
       `"${value}" is not an activation state.`);
   }
   return found;

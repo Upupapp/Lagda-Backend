@@ -137,6 +137,8 @@ suite("signing ceremony (RLS, runtime role)", () => {
             sourceArtifactId: `art_${doc}` as ArtifactId,
             sourcePreparationId: `prep_${doc}` as PreparationId,
             sourcePreparationRevision: 1, state: "draft",
+            completionReadyAt: null, terminatedAt: null,
+            terminationReason: null, cancellationNote: null,
             documentTitle: `Lease for ${ws}`, createdByUserId: USER,
             createdAt: AT, updatedAt: AT,
           },

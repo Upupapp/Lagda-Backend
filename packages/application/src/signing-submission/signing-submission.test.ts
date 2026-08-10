@@ -32,6 +32,7 @@ import type { SubmittedValue } from "@lagda/core";
 import {
   FixedClock, SequentialRecipientSessionIds,
   FakeTransactionManager, InMemoryStore,
+  SequentialSigningWorkflowIds, SequentialSigningAccessIds,
 } from "../test-support/fakes.js";
 
 const AT = Date.parse("2026-08-10T14:00:00.000Z");
@@ -126,6 +127,21 @@ function harness(): Harness {
     },
     deps: {
       transactions, clock, sessionTokens: tokens,
+      workflowIds: new SequentialSigningWorkflowIds(),
+      // The provisioning slice the post-commit advance needs. These tests seed
+      // single-cohort requests, so nothing is ever provisioned through them -
+      // they are present because the dependency is required, and a throwing
+      // sealer would be a better assertion than an unused stub if that changed.
+      workflowAccess: {
+        ids: new SequentialSigningAccessIds(),
+        tokens: {
+          issue: () => ({ raw: "raw", digest: "d".repeat(64) as never }),
+          digest: () => null,
+        },
+        sealer: { keyVersion: "v1", seal: (p: string) => p as never },
+        links: { build: (raw: string) => `https://app.lagda.test/sign/${raw}` },
+        policy: { bootstrapLifetimeMs: 7 * 24 * 3_600_000 },
+      },
       ids: {
         nextRecipientSubmissionId: () => next("sub") as RecipientSubmissionId,
         nextSigningFieldValueId: () => next("val") as SigningFieldValueId,
@@ -166,6 +182,8 @@ function seed(h: Harness, fields: readonly FieldSpec[], over: {
     documentId: "doc_1" as DocumentId, sourceArtifactId: "art_1" as ArtifactId,
     sourcePreparationId: "prep_1" as never, sourcePreparationRevision: 1,
     state: over.state ?? "sent", documentTitle: "Office Lease",
+    completionReadyAt: null, terminatedAt: null,
+    terminationReason: null, cancellationNote: null,
     createdByUserId: "usr_1" as UserId, createdAt: AT, updatedAt: AT,
   });
   h.store.signingRequestRecipients.push({
@@ -178,6 +196,8 @@ function seed(h: Harness, fields: readonly FieldSpec[], over: {
   h.store.activations.push({
     recipientId: RECIPIENT, state: "active", activatedAt: AT,
     signingRequestId: String(REQUEST),
+    signedAt: null, submissionId: null,
+    declinedAt: null, declineReason: null,
   });
   h.store.artifacts.push({
     artifactId: "art_1" as ArtifactId, workspaceId: WS,
@@ -571,17 +591,44 @@ describe("concurrency", () => {
 // ── Boundaries ───────────────────────────────────────────────────────────────
 
 describe("what submission does NOT do", () => {
-  it("moves no workflow state and advances no routing", async () => {
+  it("moves the signer's OWN state and nothing about anybody else", async () => {
+    // BACKEND-37 REVERSED HALF OF THIS TEST, deliberately.
+    //
+    // It used to assert that submission moved no workflow state at all, which
+    // was the intermediate state BACKEND-36 documented and this command exists
+    // to close: an accepted signature with a workflow that said nothing had
+    // happened. What must still hold is the SPLIT — the signer's own row moves
+    // in their transaction, and nothing that belongs to another recipient does.
     const h = harness();
     seed(h, [{ id: "f_txt", type: "text" }]);
     const token = await signerSession(h);
     await submit(h, token, [{ fieldId: "f_txt", kind: "text", text: "x" }]);
 
-    expect(h.store.signingRequests[0]?.state).toBe("sent");
+    const activation = h.store.activations[0];
     expect(h.store.activations).toHaveLength(1);
-    expect(h.store.activations[0]?.recipientId).toBe(RECIPIENT);
+    expect(activation?.recipientId).toBe(RECIPIENT);
+    expect(activation?.state).toBe("signed");
+    // THE timestamp, from the submission. Not a second clock reading.
+    expect(activation?.signedAt).toBe(h.store.submissions[0]?.acceptedAt);
+    expect(activation?.submissionId).toBe(h.store.submissions[0]?.submissionId);
+
+    // Still no PDF, no seal, and no delivery: the single signer is the whole
+    // cohort, so the advance had nobody to provision.
     expect(h.store.seals).toHaveLength(0);
     expect(h.store.deliveryIntents).toHaveLength(0);
+  });
+
+  it("makes a single-signer request completion-ready and NEVER completed", async () => {
+    const h = harness();
+    seed(h, [{ id: "f_txt", type: "text" }]);
+    const token = await signerSession(h);
+    await submit(h, token, [{ fieldId: "f_txt", kind: "text", text: "x" }]);
+
+    // The distinction the whole command is built around: every required
+    // obligation is satisfied, and the signed document does not exist.
+    expect(h.store.signingRequests[0]?.state).toBe("completion-ready");
+    expect(h.store.signingRequests[0]?.state).not.toBe("completed");
+    expect(h.store.signingRequests[0]?.completionReadyAt).not.toBeNull();
   });
 
   it("is unaffected by contact and preparation mutation", async () => {

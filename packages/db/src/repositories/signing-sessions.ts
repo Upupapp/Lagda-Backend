@@ -69,7 +69,7 @@ export function createSigningAccessLookupRepository(
           "g.request_recipient_id", "g.expires_at", "g.revoked_at",
           "r.state", "r.document_title",
           "p.name", "p.email",
-          "a.activation_state",
+          "a.recipient_state",
         ])
         .where("g.credential_digest", "=", digest)
         .executeTakeFirst();
@@ -88,11 +88,11 @@ export function createSigningAccessLookupRepository(
         documentTitle: row.document_title,
         recipientName: row.name,
         recipientEmail: row.email,
-        activationState: row.activation_state === null
+        activationState: row.recipient_state === null
           ? null
           : oneOf<RecipientActivationState>(
               ACTIVATION_STATES, "signing_request_recipient_activation",
-              "activation_state", row.activation_state),
+              "recipient_state", row.recipient_state),
       } satisfies ResolvedSigningAccess;
     },
   };

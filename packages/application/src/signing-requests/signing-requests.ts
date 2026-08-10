@@ -461,6 +461,13 @@ async function buildSnapshot(
     // The ONLY state this command can produce. Not from input — no schema
     // accepts one — and not a variable.
     state: "draft",
+    // Nothing has happened to it yet, so every workflow column is null. They
+    // are stated rather than omitted: an optional field is one a future writer
+    // forgets, and these four decide whether a request is finished.
+    completionReadyAt: null,
+    terminatedAt: null,
+    terminationReason: null,
+    cancellationNote: null,
     // The title AS IT IS NOW, which is what makes a later rename harmless.
     documentTitle: document.title,
     // From the session, never from a body field.

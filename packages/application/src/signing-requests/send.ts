@@ -124,16 +124,28 @@ export interface SigningRequestSentView {
   readonly routingShape: "parallel" | "sequential" | "mixed";
 }
 
-export interface SendSigningRequestDependencies {
-  readonly transactions: TransactionManager;
-  readonly clock: Clock;
+/**
+ * Everything the provisioner needs, and nothing else.
+ *
+ * Extracted from `SendSigningRequestDependencies` by BACKEND-37 so the cohort
+ * advance can call the SAME function without dragging in a transaction manager
+ * or an idempotency service it has no use for. §49 and §271 forbid a second
+ * implementation of credential generation, sealing, grant persistence and
+ * delivery-intent creation; sharing the dependency slice is what makes sharing
+ * the function practical rather than merely intended.
+ */
+export interface SigningAccessProvisioningDependencies {
   readonly ids: SigningAccessIdGenerator;
   readonly tokens: SigningAccessTokenFactory;
-  /** Makes the raw credential recoverable by an async renderer. */
   readonly sealer: DeliverySecretSealer;
-  /** Builds the recipient URL from CONFIGURED base. Never a request header. */
   readonly links: SigningLinkBuilder;
   readonly policy: SigningAccessPolicy;
+}
+
+export interface SendSigningRequestDependencies
+  extends SigningAccessProvisioningDependencies {
+  readonly transactions: TransactionManager;
+  readonly clock: Clock;
   readonly idempotency: Omit<IdempotencyDependencies, "repository">;
 }
 
@@ -356,14 +368,14 @@ async function performSend(
  * able to call it: provisioning is a consequence of activation, never
  * something a request asks for.
  */
-async function provisionSigningRecipientAccess(
+export async function provisionSigningRecipientAccess(
   uow: WorkspaceUnitOfWork,
   context: {
     readonly request: SigningRequestRecord;
     readonly recipient: SigningRequestRecipientRecord;
     readonly now: number;
   },
-  deps: SendSigningRequestDependencies,
+  deps: SigningAccessProvisioningDependencies,
 ): Promise<void> {
   const { request, recipient, now } = context;
 

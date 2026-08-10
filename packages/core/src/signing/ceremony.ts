@@ -14,31 +14,23 @@
 import type { SigningRequestState } from "@lagda/contracts";
 import type { RecipientType } from "../recipients/index.js";
 import { canHoldFields } from "../recipients/index.js";
+import {
+  assessSigningEligibility,
+  type RecipientWorkflowState, type SigningBlocker,
+} from "./workflow-state.js";
 
 // ── Signable request states ──────────────────────────────────────────────────
-
-/**
- * The request states in which a recipient may enter the ceremony.
- *
- * ONE today, and the shortness is deliberate rather than unfinished.
- *
- * `partially-completed` is the obvious next member and it is NOT here, because
- * nothing can produce that state yet: BACKEND-36 has not accepted a submission
- * and BACKEND-37 has not written the transition. Listing a state no code can
- * reach would be a permission granted in advance of the thing it permits.
- *
- * The four terminal states — `completed`, `declined`, `cancelled`, `expired` —
- * are excluded by construction rather than by an exclusion list. A closed set
- * of what IS allowed cannot forget to deny a state added later; a list of what
- * is denied can, and that is the failure §13 is pointing at.
- */
-export const CEREMONY_SIGNABLE_REQUEST_STATES: readonly SigningRequestState[] = [
-  "sent",
-];
-
-export function isRequestSignableState(state: SigningRequestState): boolean {
-  return CEREMONY_SIGNABLE_REQUEST_STATES.includes(state);
-}
+//
+// BACKEND-37 REMOVED the list that used to live here.
+//
+// It held one value, `sent`, with a comment explaining that
+// `partially-completed` was omitted because nothing could produce it yet. Both
+// of those are now false: `partially-completed` and `completion-ready` are
+// reachable, and a second list of signable states is exactly the drift §128
+// forbids — three modules each deciding whether a recipient may act, and the
+// loosest one winning because a caller only has to find it.
+//
+// `SIGNABLE_REQUEST_STATES` in `workflow-state.ts` is the one list.
 
 // ── Consent ──────────────────────────────────────────────────────────────────
 
@@ -75,23 +67,25 @@ export function requiresElectronicSignatureConsent(type: RecipientType): boolean
 /**
  * Why a ceremony is not available.
  *
- * A BOUNDED vocabulary, and every value is safe to return to the recipient.
- * These are not collapsed the way BACKEND-34's bootstrap errors are, and the
- * difference is who is asking: a bootstrap caller holds a credential that may
- * be stolen and learns nothing, while a ceremony caller has already
- * authenticated as this recipient. Telling them "the sender cancelled this"
- * discloses nothing they are not entitled to and is the difference between a
- * usable product and a mysterious one.
+ * BACKEND-37 made this an ALIAS of `SigningBlocker` rather than a second
+ * vocabulary. It previously had three members and the canonical policy has
+ * five; two lists meant the ceremony could not say "you already signed", which
+ * is the one answer a returning recipient most needs (§191).
  */
-export type CeremonyBlocker =
-  | "request-not-signable"
-  | "routing-waiting"
-  | "recipient-cannot-act";
+export type CeremonyBlocker = SigningBlocker;
 
 export interface CeremonyAccessInput {
   readonly requestState: SigningRequestState;
-  /** `null` when no activation row exists — treated as not yet activated. */
-  readonly activationState: "waiting" | "active" | null;
+  /**
+   * The recipient's workflow state. `null` when no row exists — treated as not
+   * yet activated.
+   *
+   * Widened by BACKEND-37 from `"waiting" | "active"` to the full four-value
+   * union. A recipient who has signed or declined reaches the ceremony page
+   * again all the time, by reopening the link they were emailed, and the
+   * ceremony has to be able to tell them so.
+   */
+  readonly recipientState: RecipientWorkflowState | null;
   readonly recipientType: RecipientType;
   /** Whether an acceptance of the CURRENTLY required version exists. */
   readonly consentAccepted: boolean;
@@ -137,24 +131,25 @@ export interface CeremonyAccess {
 export function assessCeremonyAccess(input: CeremonyAccessInput): CeremonyAccess {
   const consentRequired = requiresElectronicSignatureConsent(input.recipientType);
 
-  const deny = (blocker: CeremonyBlocker): CeremonyAccess => ({
-    mayEnter: false,
-    mayViewDocument: false,
-    mayViewAssignedFields: false,
-    mayAcceptConsent: false,
-    mayProceedToInput: false,
-    consentRequired,
-    blocker,
+  // THE canonical decision. This function no longer decides whether a recipient
+  // may act — it decides what the ceremony SHOWS them once the policy has
+  // ruled, which is the only part that is genuinely the ceremony's business.
+  const eligibility = assessSigningEligibility({
+    requestState: input.requestState,
+    recipientState: input.recipientState,
+    recipientType: input.recipientType,
   });
 
-  if (!isRequestSignableState(input.requestState)) {
-    return deny("request-not-signable");
-  }
-  // A missing activation row is `waiting`, not an error. BACKEND-33 creates one
-  // per recipient at send; absence means the send predates them or the row was
-  // never written, and either way it is not this recipient's turn.
-  if (input.activationState !== "active") {
-    return deny("routing-waiting");
+  if (!eligibility.mayEnter) {
+    return {
+      mayEnter: false,
+      mayViewDocument: false,
+      mayViewAssignedFields: false,
+      mayAcceptConsent: false,
+      mayProceedToInput: false,
+      consentRequired,
+      blocker: eligibility.blocker,
+    };
   }
 
   const consentSatisfied = !consentRequired || input.consentAccepted;
@@ -168,8 +163,9 @@ export function assessCeremonyAccess(input: CeremonyAccessInput): CeremonyAccess
     // still outstanding. Re-accepting converges anyway, but offering the screen
     // again would tell the recipient the first acceptance did not take.
     mayAcceptConsent: consentRequired && !input.consentAccepted,
-    // A recipient who cannot hold fields has nothing to submit, ever.
-    mayProceedToInput: consentSatisfied && canHoldFields(input.recipientType),
+    // Consent is the ceremony's own extra gate on top of the policy's
+    // `maySubmit`; `canHoldFields` is already inside that answer.
+    mayProceedToInput: consentSatisfied && eligibility.maySubmit,
     consentRequired,
     blocker: null,
   };

@@ -11,6 +11,7 @@
 
 import type { Transaction } from "kysely";
 import type { WorkspaceId } from "@lagda/contracts";
+import { RECIPIENT_WORKFLOW_STATES } from "@lagda/contracts";
 import type {
   RecipientCeremonyRepository, CeremonyArtifactRecord, CeremonyProgressRecord,
   CeremonyConsentRecord, NewCeremonyConsent, RecipientActivationState,
@@ -21,6 +22,7 @@ import type {
   DocumentId, PreparationFieldType, RecipientType, SigningRequestState,
 } from "@lagda/contracts";
 import type { Database } from "../schema/index.js";
+import { PersistenceMappingError } from "../mapping/index.js";
 import type {
   PreparationId, UserId, SigningRequestFieldId,
 } from "@lagda/application";
@@ -54,6 +56,14 @@ export function createRecipientCeremonyRepository(
         sourcePreparationId: row.source_preparation_id as PreparationId,
         sourcePreparationRevision: row.source_preparation_revision,
         state: row.state as SigningRequestState,
+        completionReadyAt:
+          row.completion_ready_at === null ? null : row.completion_ready_at.getTime(),
+        terminatedAt: row.terminated_at === null ? null : row.terminated_at.getTime(),
+        terminationReason: row.termination_reason as "declined" | "cancelled" | null,
+        // NOT projected onward. The ceremony DTO carries no cancellation note -
+        // it is the sender's words about their own document, and a recipient is
+        // told that the request was cancelled, not what the sender wrote.
+        cancellationNote: row.cancellation_note,
         documentTitle: row.document_title,
         createdByUserId: row.created_by_user_id as UserId,
         createdAt: row.created_at.getTime(),
@@ -87,14 +97,23 @@ export function createRecipientCeremonyRepository(
     async getActivationState(): Promise<RecipientActivationState | null> {
       const row = await trx
         .selectFrom("signing_request_recipient_activation")
-        .select("activation_state")
+        .select("recipient_state")
         .where("workspace_id", "=", workspaceId)
         .where("signing_request_id", "=", signingRequestId)
         .where("request_recipient_id", "=", recipientId)
         .executeTakeFirst();
-      return row === undefined
-        ? null
-        : (row.activation_state as RecipientActivationState);
+      if (row === undefined) return null;
+      // Validated, not cast. BACKEND-37 widened this vocabulary from two values
+      // to four, and a blind cast would have carried whatever the column holds
+      // straight into the decision about whether somebody may sign (§187).
+      const state = RECIPIENT_WORKFLOW_STATES.find(
+        candidate => candidate === row.recipient_state);
+      if (state === undefined) {
+        throw new PersistenceMappingError(
+          "signing_request_recipient_activation", "recipient_state",
+          `"${row.recipient_state}" is not a recipient state.`);
+      }
+      return state;
     },
 
     async listAssignedFields(): Promise<readonly SigningRequestFieldRecord[]> {

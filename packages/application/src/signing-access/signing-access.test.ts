@@ -138,6 +138,8 @@ function seed(
     sourcePreparationId: "prep_1" as never,
     sourcePreparationRevision: 2,
     state: over.state ?? "sent",
+    completionReadyAt: null, terminatedAt: null,
+    terminationReason: null, cancellationNote: null,
     documentTitle: "Office Lease",
     createdByUserId: "usr_owner" as UserId,
     createdAt: AT, updatedAt: AT,
@@ -157,6 +159,8 @@ function seed(
       state: activation,
       activatedAt: activation === "active" ? AT : null,
       signingRequestId: String(signingRequestId),
+      signedAt: null, submissionId: null,
+      declinedAt: null, declineReason: null,
     });
   }
   h.store.signingAccessGrants.push({
@@ -487,11 +491,30 @@ describe("authenticating does nothing else", () => {
     seed(h);
     await boot(h);
 
+    // BACKEND-37 NARROWED THIS, and the narrowing is the point. It used to
+    // search a JSON dump for the SUBSTRING "signedAt", which passed only
+    // because no column of that name existed; once the workflow row gained one
+    // it failed while nothing had actually been recorded. A key that is present
+    // and null is not a fact, so the check is now on the VALUES.
+    //
+    // The claim being made is §144 and §251: AUTHENTICATION DOES NOT ADVANCE
+    // ANYTHING. The request keeps its state, and no recipient signs or declines
+    // by having proved who they are.
+    for (const activation of h.store.activations) {
+      expect(activation.state).not.toBe("signed");
+      expect(activation.state).not.toBe("declined");
+      expect(activation.signedAt).toBeNull();
+      expect(activation.declinedAt).toBeNull();
+    }
+    for (const request of h.store.signingRequests) {
+      expect(request.state).toBe("sent");
+      expect(request.completionReadyAt).toBeNull();
+    }
+    expect(h.store.workflowIntents).toHaveLength(0);
+
     const everything = JSON.stringify({
       sessions: h.store.recipientSessions,
-      requests: h.store.signingRequests,
       recipients: h.store.signingRequestRecipients,
-      activations: h.store.activations,
     });
     for (const absent of [
       "viewedAt", "viewed_at", "consentedAt", "signedAt", "declinedAt",

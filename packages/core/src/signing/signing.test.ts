@@ -122,10 +122,16 @@ describe("signing request lifecycle", () => {
     ["ready-to-send", "returnToDraft", "draft"],
     ["ready-to-send", "send", "sent"],
     ["sent", "recordParticipantCompletion", "partially-completed"],
-    ["sent", "complete", "completed"],
+    // BACKEND-37 replaced the direct `complete` edge. The last signature makes
+    // a request COMPLETION-READY, not completed: the signed document does not
+    // exist until the completion pipeline has produced it, and `completed` is
+    // terminal and cannot be walked back if that fails.
+    ["sent", "markCompletionReady", "completion-ready"],
     ["sent", "decline", "declined"],
     ["sent", "expire", "expired"],
-    ["partially-completed", "complete", "completed"],
+    ["partially-completed", "markCompletionReady", "completion-ready"],
+    // The ONLY edge into `completed`, and BACKEND-37 cannot take it.
+    ["completion-ready", "complete", "completed"],
     ["partially-completed", "cancel", "cancelled"],
   ] as const)("allows %s --%s--> %s", (from, action, expected) => {
     expect(transition(from, action)).toBe(expected);

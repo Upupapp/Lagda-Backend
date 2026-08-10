@@ -57,6 +57,14 @@ function toRequest(row: RequestRow): SigningRequestRecord {
     sourcePreparationRevision: row.source_preparation_revision,
     state: oneOf<SigningRequestState>(
       SIGNING_REQUEST_STATES, "signing_requests", "state", row.state),
+    completionReadyAt:
+      row.completion_ready_at === null ? null : row.completion_ready_at.getTime(),
+    terminatedAt: row.terminated_at === null ? null : row.terminated_at.getTime(),
+    // Validated rather than cast, like every other persisted vocabulary here.
+    terminationReason: row.termination_reason === null ? null : oneOf(
+      ["declined", "cancelled"] as const,
+      "signing_requests", "termination_reason", row.termination_reason),
+    cancellationNote: row.cancellation_note,
     documentTitle: row.document_title,
     createdByUserId: row.created_by_user_id as UserId,
     createdAt: row.created_at.getTime(),

@@ -396,14 +396,63 @@ export interface SigningRecipientConsentsTable {
   created_at: Timestamptz;
 }
 
+/**
+ * ONE recipient's position in ONE signing request.
+ *
+ * Renamed in spirit by BACKEND-37: the column was `activation_state` and held
+ * two routing values. It now holds the whole recipient workflow state, because
+ * "whose turn is it" and "what did they do" stop being separate questions the
+ * moment `signed` exists — and two columns that must agree is the shape §15
+ * forbids.
+ */
 export interface SigningRequestRecipientActivationTable {
   workspace_id: string;
   signing_request_id: string;
   request_recipient_id: string;
-  /** `waiting` or `active`. Two values, and neither says anything happened. */
-  activation_state: string;
+  /** `waiting` | `active` | `signed` | `declined`. CHECK-constrained. */
+  recipient_state: string;
   activated_at: ColumnType<Date | null, Date | null, Date | null>;
+  /**
+   * Copied from `recipient_submissions.accepted_at`. Never a second clock
+   * reading — INV-548, and the FK beside it is what makes that checkable.
+   */
+  signed_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
+  submission_id: ColumnType<string | null, string | null | undefined, string | null>;
+  declined_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
+  /** A closed code from the product's five categories. Never free text. */
+  decline_reason: ColumnType<string | null, string | null | undefined, string | null>;
   created_at: Timestamptz;
+}
+
+/**
+ * "This request needs its routing re-evaluated."
+ *
+ * Written inside the recipient's own transaction; applied by a workspace-scoped
+ * evaluation that can see every participant. It exists because migration 022
+ * binds the recipient realm to its OWN recipient row, so the transaction that
+ * accepts a signature structurally cannot read who is next.
+ *
+ * NO row-level security, deliberately, and `idempotency_records` is the
+ * precedent: the reconciler has to find stranded work across tenants and
+ * `BYPASSRLS` is refused (INV-334). What makes that safe is the content —
+ * opaque identifiers and a bounded trigger vocabulary, no name, address, field
+ * value, credential or title.
+ */
+export interface SigningWorkflowAdvanceIntentsTable {
+  intent_id: string;
+  workspace_id: string;
+  signing_request_id: string;
+  request_recipient_id: string;
+  /** `submission` or `decline`. CHECK-constrained. */
+  trigger_kind: string;
+  /** The submission that caused it. NULL for a decline, which has none. */
+  submission_id: ColumnType<string | null, string | null, string | null>;
+  created_at: Timestamptz;
+  /** NULL while outstanding. The partial index is built on this. */
+  applied_at: ColumnType<Date | null, Date | null, Date | null>;
+  attempts: ColumnType<number, number | undefined, number>;
+  /** A BOUNDED code. Never an exception message. */
+  last_failure_code: ColumnType<string | null, string | null, string | null>;
 }
 
 /**
@@ -465,6 +514,21 @@ export interface SigningRequestsTable {
   state: string;
   /** NULL until sent. A CHECK keeps it in step with `state`. */
   sent_at: ColumnType<Date | null, Date | null, Date | null>;
+  /**
+   * When the workflow closed to further signing.
+   *
+   * The backend TRANSITION time, not the last signature's `accepted_at`: they
+   * answer different questions, and collapsing them would reattribute a
+   * scheduling delay to a human act. NOT `completed_at` — the document does not
+   * exist yet, and BACKEND-38 owns that column.
+   */
+  completion_ready_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
+  /** When it ended without completing. */
+  terminated_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
+  /** `declined` or `cancelled`, and it always equals `state`. */
+  termination_reason: ColumnType<string | null, string | null | undefined, string | null>;
+  /** The sender's own words, bounded at 200 as the product bounds them. */
+  cancellation_note: ColumnType<string | null, string | null | undefined, string | null>;
   /** The title AS IT WAS. A rename does not reach a created request. */
   document_title: string;
   created_by_user_id: string;
@@ -919,6 +983,7 @@ export interface Database {
   signing_request_recipients: SigningRequestRecipientsTable;
   signing_request_fields: SigningRequestFieldsTable;
   signing_request_recipient_activation: SigningRequestRecipientActivationTable;
+  signing_workflow_advance_intents: SigningWorkflowAdvanceIntentsTable;
   signing_recipient_progress: SigningRecipientProgressTable;
   signing_recipient_consents: SigningRecipientConsentsTable;
   recipient_submissions: RecipientSubmissionsTable;

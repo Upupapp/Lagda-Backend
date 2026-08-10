@@ -107,6 +107,19 @@ export interface SigningRequestRecord {
   readonly sourcePreparationId: PreparationId;
   readonly sourcePreparationRevision: number;
   readonly state: SigningRequestState;
+  /**
+   * When the workflow closed to further signing (BACKEND-37).
+   *
+   * The backend transition time, NOT the last signature's `acceptedAt`. And
+   * not `completedAt` — the signed document does not exist yet.
+   */
+  readonly completionReadyAt: number | null;
+  /** When it ended without completing. */
+  readonly terminatedAt: number | null;
+  /** `declined` or `cancelled`. Always equal to `state` when set. */
+  readonly terminationReason: "declined" | "cancelled" | null;
+  /** The sender's cancellation reason. Workspace content; never logged. */
+  readonly cancellationNote: string | null;
   /** The title as it WAS. Not the document's current title. */
   readonly documentTitle: string;
   readonly createdByUserId: UserId;

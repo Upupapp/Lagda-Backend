@@ -10,6 +10,14 @@
 //
 // Not exported from the package entry point. Test support is not public API.
 
+import type {
+  RecipientWorkflowRepository, ScopedSigningWorkflowRepository,
+  SigningWorkflowReconciliationRepository, WorkflowAdvanceIntentRef,
+  WorkflowAdvanceTrigger, SigningWorkflowIntentId, SigningWorkflowIdGenerator,
+} from "../common/ports/signing-workflow.js";
+import type {
+  RecipientWorkflowState, SigningDeclineReason,
+} from "@lagda/contracts";
 import type { UserId, WorkspaceId, WorkspaceMemberId } from "@lagda/contracts";
 import type { WorkspaceRole } from "@lagda/core";
 import type { UploadRecord, ScopedUploadRepository } from "../common/ports/upload.js";
@@ -62,7 +70,7 @@ import type {
 import type { SigningAccessDigest } from "../common/ports/signing-access.js";
 import type {
   ScopedSigningAccessRepository, NewSigningAccessGrant, NewDeliveryIntent,
-  RecipientActivationRecord, SigningAccessGrantId, DeliveryIntentId,
+  SigningAccessGrantId, DeliveryIntentId,
   SigningAccessIdGenerator,
 } from "../common/ports/signing-access.js";
 import type {
@@ -121,6 +129,14 @@ implements RecipientSigningSessionIdGenerator {
   private next = 1;
   nextRecipientSigningSessionId(): RecipientSigningSessionId {
     return `rss_${String(this.next++)}` as RecipientSigningSessionId;
+  }
+}
+
+/** Sequential workflow advance-intent ids (BACKEND-37). */
+export class SequentialSigningWorkflowIds implements SigningWorkflowIdGenerator {
+  private next = 1;
+  nextSigningWorkflowIntentId(): SigningWorkflowIntentId {
+    return `swi_${String(this.next++)}` as SigningWorkflowIntentId;
   }
 }
 
@@ -222,6 +238,40 @@ export interface CeremonyConsentRow {
   readonly authenticationMethod: string;
 }
 
+/**
+ * One recipient's workflow row (BACKEND-37).
+ *
+ * MUTABLE in place, unlike almost everything else in this store, because the
+ * real table is the one thing in the signing stack that legitimately changes:
+ * a recipient goes waiting -> active -> signed. Snapshot and restore copy each
+ * ROW rather than the array, so a rolled-back fake transaction really does undo
+ * a state change instead of keeping a shared object's new value.
+ */
+interface ActivationRow {
+  signingRequestId: string;
+  recipientId: SigningRequestRecipientId;
+  state: RecipientWorkflowState;
+  activatedAt: number | null;
+  signedAt: number | null;
+  submissionId: RecipientSubmissionId | null;
+  declinedAt: number | null;
+  declineReason: SigningDeclineReason | null;
+}
+
+/** A durable "this request needs re-evaluating" record. */
+interface WorkflowIntentRow {
+  intentId: SigningWorkflowIntentId;
+  workspaceId: WorkspaceId;
+  signingRequestId: SigningRequestId;
+  recipientId: SigningRequestRecipientId;
+  trigger: WorkflowAdvanceTrigger;
+  submissionId: RecipientSubmissionId | null;
+  createdAt: number;
+  appliedAt: number | null;
+  attempts: number;
+  lastFailureCode: string | null;
+}
+
 interface StoreSnapshot {
   readonly workspaces: Map<string, WorkspaceRecord>;
   readonly memberships: WorkspaceMembershipRecord[];
@@ -237,7 +287,8 @@ interface StoreSnapshot {
   readonly signingRequestFields: SigningRequestFieldRecord[];
   readonly signingAccessGrants: NewSigningAccessGrant[];
   readonly deliveryIntents: NewDeliveryIntent[];
-  readonly activations: (RecipientActivationRecord & { signingRequestId: string })[];
+  readonly activations: ActivationRow[];
+  readonly workflowIntents: WorkflowIntentRow[];
   readonly recipientSessions: NewRecipientSigningSession[];
   readonly ceremonyProgress: CeremonyProgressRow[];
   readonly ceremonyConsents: CeremonyConsentRow[];
@@ -273,7 +324,8 @@ export class InMemoryStore {
   signingRequestFields: SigningRequestFieldRecord[] = [];
   signingAccessGrants: NewSigningAccessGrant[] = [];
   deliveryIntents: NewDeliveryIntent[] = [];
-  activations: (RecipientActivationRecord & { signingRequestId: string })[] = [];
+  activations: ActivationRow[] = [];
+  workflowIntents: WorkflowIntentRow[] = [];
   recipientSessions: NewRecipientSigningSession[] = [];
   ceremonyProgress: CeremonyProgressRow[] = [];
   ceremonyConsents: CeremonyConsentRow[] = [];
@@ -305,7 +357,8 @@ export class InMemoryStore {
       signingRequestFields: [...this.signingRequestFields],
       signingAccessGrants: [...this.signingAccessGrants],
       deliveryIntents: [...this.deliveryIntents],
-      activations: [...this.activations],
+      activations: this.activations.map(row => ({ ...row })),
+      workflowIntents: this.workflowIntents.map(row => ({ ...row })),
       recipientSessions: [...this.recipientSessions],
       ceremonyProgress: [...this.ceremonyProgress],
       ceremonyConsents: [...this.ceremonyConsents],
@@ -338,7 +391,8 @@ export class InMemoryStore {
     this.signingRequestFields = [...snapshot.signingRequestFields];
     this.signingAccessGrants = [...snapshot.signingAccessGrants];
     this.deliveryIntents = [...snapshot.deliveryIntents];
-    this.activations = [...snapshot.activations];
+    this.activations = snapshot.activations.map(row => ({ ...row }));
+    this.workflowIntents = snapshot.workflowIntents.map(row => ({ ...row }));
     this.recipientSessions = [...snapshot.recipientSessions];
     this.ceremonyProgress = [...snapshot.ceremonyProgress];
     this.ceremonyConsents = [...snapshot.ceremonyConsents];
@@ -904,7 +958,12 @@ function scopedSigningAccess(
     insertActivations: (input) => {
       for (const activation of input.activations) {
         store.activations.push({
-          ...activation, signingRequestId: String(input.signingRequestId),
+          signingRequestId: String(input.signingRequestId),
+          recipientId: activation.recipientId,
+          state: activation.state,
+          activatedAt: activation.activatedAt,
+          signedAt: null, submissionId: null,
+          declinedAt: null, declineReason: null,
         });
       }
       return Promise.resolve();
@@ -916,6 +975,248 @@ function scopedSigningAccess(
         .map(({ recipientId, state, activatedAt }) => ({
           recipientId, state, activatedAt,
         }))),
+  };
+}
+
+
+// -- Signing workflow state (BACKEND-37) -------------------------------------
+
+/** Advanceable request states, matching the repository's own predicate. */
+const FAKE_ADVANCEABLE = ["sent", "partially-completed"];
+
+/**
+ * The recipient's OWN workflow row.
+ *
+ * Every method carries all three scope identifiers, exactly as the real one
+ * does. A fake that ignored them would let a use-case bug reach another
+ * recipient and still pass, which is the failure migration 024's restrictive
+ * policy exists to stop.
+ */
+function recipientWorkflow(
+  store: InMemoryStore,
+  scope: {
+    readonly workspaceId: WorkspaceId;
+    readonly signingRequestId: SigningRequestId;
+    readonly recipientId: SigningRequestRecipientId;
+  },
+): RecipientWorkflowRepository {
+  const own = (): ActivationRow | undefined => store.activations.find(
+    row => row.signingRequestId === String(scope.signingRequestId)
+      && String(row.recipientId) === String(scope.recipientId));
+
+  return {
+    getState: () => Promise.resolve(own()?.state ?? null),
+
+    markSignedFromSubmission: input => {
+      const row = own();
+      // Conditional, like the real UPDATE. A waiting recipient matches nothing
+      // rather than skipping their turn.
+      if (row === undefined || row.state !== "active") return Promise.resolve(false);
+      row.state = "signed";
+      row.signedAt = input.signedAt;
+      row.submissionId = input.submissionId;
+      return Promise.resolve(true);
+    },
+
+    markDeclined: input => {
+      const row = own();
+      if (row === undefined || row.state !== "active") return Promise.resolve(false);
+      row.state = "declined";
+      row.declinedAt = input.declinedAt;
+      row.declineReason = input.reason;
+      return Promise.resolve(true);
+    },
+
+    enqueueAdvance: intent => {
+      // The real unique key is (request, recipient, trigger). Emulated, because
+      // it is the constraint that stops a duplicate delivery activating a
+      // cohort twice - and a fake that admitted the second row would pass a
+      // test the database would fail.
+      const clash = store.workflowIntents.some(
+        row => row.signingRequestId === scope.signingRequestId
+          && row.recipientId === scope.recipientId
+          && row.trigger === intent.trigger);
+      if (clash) return Promise.resolve(false);
+      store.workflowIntents.push({
+        intentId: intent.intentId,
+        workspaceId: scope.workspaceId,
+        signingRequestId: scope.signingRequestId,
+        recipientId: scope.recipientId,
+        trigger: intent.trigger,
+        submissionId: intent.submissionId,
+        createdAt: intent.createdAt,
+        appliedAt: null,
+        attempts: 0,
+        lastFailureCode: null,
+      });
+      return Promise.resolve(true);
+    },
+  };
+}
+
+function scopedSigningWorkflow(
+  store: InMemoryStore, scope: WorkspaceId,
+): ScopedSigningWorkflowRepository {
+  const request = (signingRequestId: SigningRequestId) =>
+    store.signingRequests.find(
+      row => row.workspaceId === scope && row.signingRequestId === signingRequestId);
+
+  const rowsFor = (signingRequestId: SigningRequestId) => store.activations.filter(
+    row => row.signingRequestId === String(signingRequestId));
+
+  const transition = (
+    signingRequestId: SigningRequestId,
+    from: readonly string[],
+    patch: Partial<SigningRequestRecord>,
+  ): Promise<boolean> => {
+    const found = request(signingRequestId);
+    if (found === undefined || !from.includes(found.state)) {
+      return Promise.resolve(false);
+    }
+    const index = store.signingRequests.indexOf(found);
+    store.signingRequests[index] = { ...found, ...patch };
+    return Promise.resolve(true);
+  };
+
+  return {
+    lockRequest: signingRequestId => {
+      const found = request(signingRequestId);
+      return Promise.resolve(found === undefined ? null : {
+        state: found.state, completionReadyAt: found.completionReadyAt,
+      });
+    },
+
+    listRecipientStates: signingRequestId => {
+      // The join to the IMMUTABLE snapshot, as the real query does it. A state
+      // row whose recipient is missing is DROPPED rather than defaulted:
+      // routing must never invent a participant.
+      const joined = rowsFor(signingRequestId).flatMap(row => {
+        const snapshot = store.signingRequestRecipients.find(
+          candidate => String(candidate.recipientId) === String(row.recipientId));
+        if (snapshot === undefined) return [];
+        return [{
+          recipientId: row.recipientId,
+          type: snapshot.type,
+          isRequired: snapshot.isRequired,
+          routingOrder: snapshot.routingOrder,
+          state: row.state,
+          activatedAt: row.activatedAt,
+          signedAt: row.signedAt,
+          submissionId: row.submissionId,
+          declinedAt: row.declinedAt,
+          declineReason: row.declineReason,
+        }];
+      });
+      return Promise.resolve(
+        [...joined].sort((a, b) => a.routingOrder - b.routingOrder
+          || String(a.recipientId).localeCompare(String(b.recipientId))));
+    },
+
+    activateRecipients: input => {
+      const wanted = new Set(input.recipientIds.map(String));
+      let moved = 0;
+      for (const row of rowsFor(input.signingRequestId)) {
+        if (!wanted.has(String(row.recipientId)) || row.state !== "waiting") continue;
+        row.state = "active";
+        row.activatedAt = input.activatedAt;
+        moved++;
+      }
+      return Promise.resolve(moved);
+    },
+
+    markPartiallyCompleted: signingRequestId =>
+      transition(signingRequestId, ["sent"], { state: "partially-completed" }),
+
+    markCompletionReady: input => transition(
+      input.signingRequestId, FAKE_ADVANCEABLE,
+      { state: "completion-ready", completionReadyAt: input.completionReadyAt }),
+
+    markDeclined: input => transition(
+      input.signingRequestId, FAKE_ADVANCEABLE,
+      {
+        state: "declined", terminatedAt: input.terminatedAt,
+        terminationReason: "declined",
+      }),
+
+    markCancelled: input => transition(
+      input.signingRequestId, FAKE_ADVANCEABLE,
+      {
+        state: "cancelled", terminatedAt: input.terminatedAt,
+        terminationReason: "cancelled", cancellationNote: input.note,
+      }),
+
+    revokeActiveGrants: input => {
+      const before = store.signingAccessGrants.length;
+      store.signingAccessGrants = store.signingAccessGrants.filter(
+        grant => !(grant.workspaceId === scope
+          && grant.signingRequestId === input.signingRequestId));
+      return Promise.resolve(before - store.signingAccessGrants.length);
+    },
+
+    revokeRecipientSessions: input => {
+      const before = store.recipientSessions.length;
+      store.recipientSessions = store.recipientSessions.filter(
+        session => !(session.workspaceId === scope
+          && session.signingRequestId === input.signingRequestId));
+      return Promise.resolve(before - store.recipientSessions.length);
+    },
+
+    claimAdvanceIntent: intentId => {
+      const row = store.workflowIntents.find(
+        candidate => candidate.intentId === intentId
+          && candidate.workspaceId === scope && candidate.appliedAt === null);
+      if (row === undefined) return Promise.resolve(null);
+      row.attempts++;
+      return Promise.resolve(toIntentRefRow(row));
+    },
+
+    listOutstandingAdvances: signingRequestId => Promise.resolve(
+      store.workflowIntents
+        .filter(row => row.workspaceId === scope
+          && row.signingRequestId === signingRequestId && row.appliedAt === null)
+        .sort((a, b) => a.createdAt - b.createdAt)
+        .map(toIntentRefRow)),
+
+    markAdvanceApplied: input => {
+      const row = store.workflowIntents.find(
+        candidate => candidate.intentId === input.intentId);
+      if (row !== undefined) {
+        row.appliedAt = input.appliedAt;
+        row.lastFailureCode = null;
+      }
+      return Promise.resolve();
+    },
+
+    recordAdvanceFailure: input => {
+      const row = store.workflowIntents.find(
+        candidate => candidate.intentId === input.intentId);
+      if (row !== undefined) row.lastFailureCode = input.code.slice(0, 64);
+      return Promise.resolve();
+    },
+  };
+}
+
+function toIntentRefRow(row: WorkflowIntentRow): WorkflowAdvanceIntentRef {
+  return {
+    intentId: row.intentId,
+    workspaceId: row.workspaceId,
+    signingRequestId: row.signingRequestId,
+    recipientId: row.recipientId,
+    trigger: row.trigger,
+    attempts: row.attempts,
+  };
+}
+
+function workflowReconciliation(
+  store: InMemoryStore,
+): SigningWorkflowReconciliationRepository {
+  return {
+    listOutstanding: input => Promise.resolve(
+      store.workflowIntents
+        .filter(row => row.appliedAt === null && row.attempts < input.attemptsBelow)
+        .sort((a, b) => a.createdAt - b.createdAt)
+        .slice(0, input.limit)
+        .map(toIntentRefRow)),
   };
 }
 
@@ -1249,6 +1550,7 @@ export class FakeTransactionManager implements TransactionManager {
         recipients: scopedRecipients(this.store, workspaceId),
         signingRequests: scopedSigningRequests(this.store, workspaceId),
         signingAccess: scopedSigningAccess(this.store, workspaceId),
+        signingWorkflow: scopedSigningWorkflow(this.store, workspaceId),
       });
       this.committed++;
       return result;
@@ -1319,6 +1621,7 @@ export class FakeTransactionManager implements TransactionManager {
             recipients: scopedRecipients(store, workspaceId),
             signingRequests: scopedSigningRequests(store, workspaceId),
             signingAccess: scopedSigningAccess(store, workspaceId),
+            signingWorkflow: scopedSigningWorkflow(store, workspaceId),
           });
         },
       });
@@ -1572,6 +1875,9 @@ export class FakeTransactionManager implements TransactionManager {
               return Promise.resolve();
             },
           },
+          // BACKEND-37. The recipient's own state, on the same fake
+          // transaction as their submission.
+          workflow: recipientWorkflow(this.store, scope),
           idempotency: this.idempotency,
         });
       },
@@ -1582,7 +1888,10 @@ export class FakeTransactionManager implements TransactionManager {
     this.scopes.push("global");
     this.started++;
     try {
-      const result = await operation({ scope: "global" });
+      const result = await operation({
+        scope: "global",
+        signingWorkflowReconciliation: workflowReconciliation(this.store),
+      });
       this.committed++;
       return result;
     } catch (error) {

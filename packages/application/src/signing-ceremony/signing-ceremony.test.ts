@@ -168,6 +168,8 @@ function seed(
     sourcePreparationId: "prep_1" as never,
     sourcePreparationRevision: 2,
     state: over.state ?? "sent",
+    completionReadyAt: null, terminatedAt: null,
+    terminationReason: null, cancellationNote: null,
     documentTitle: "Office Lease",
     createdByUserId: "usr_owner" as UserId,
     createdAt: AT, updatedAt: AT,
@@ -187,6 +189,8 @@ function seed(
       recipientId, state: activation,
       activatedAt: activation === "active" ? AT : null,
       signingRequestId: String(signingRequestId),
+      signedAt: null, submissionId: null,
+      declinedAt: null, declineReason: null,
     });
   }
   h.store.signingAccessGrants.push({
@@ -340,6 +344,8 @@ async function sessionForNonSignable(h: Harness, mutation: string): Promise<stri
     h.store.activations.push({
       recipientId: RECIPIENT, state: "active", activatedAt: AT,
       signingRequestId: String(REQUEST),
+      signedAt: null, submissionId: null,
+      declinedAt: null, declineReason: null,
     });
   }
 
@@ -354,6 +360,8 @@ async function sessionForNonSignable(h: Harness, mutation: string): Promise<stri
       h.store.activations.push({
         recipientId: RECIPIENT, state: "waiting", activatedAt: null,
         signingRequestId: String(REQUEST),
+        signedAt: null, submissionId: null,
+        declinedAt: null, declineReason: null,
       });
     }
   } else {

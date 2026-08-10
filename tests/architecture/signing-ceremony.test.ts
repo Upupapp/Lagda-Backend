@@ -18,7 +18,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WORKSPACE_CAPABILITIES, PREPARATION_FIELD_TYPES } from "@lagda/core";
-import { FIELD_INPUT_POLICY, CEREMONY_SIGNABLE_REQUEST_STATES } from "@lagda/core";
+import { FIELD_INPUT_POLICY, SIGNABLE_REQUEST_STATES } from "@lagda/core";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const PACKAGES = path.join(ROOT, "packages");
@@ -421,9 +421,17 @@ describe("the field input policy covers the vocabulary", () => {
     }
   });
 
-  it("permits entry in one request state only", () => {
-    // Widening this is a decision, not a refactor. The four terminal states
-    // are excluded by the set being closed rather than by an exclusion list.
-    expect(CEREMONY_SIGNABLE_REQUEST_STATES).toEqual(["sent"]);
+  it("permits entry in the two ACTIVE request states only", () => {
+    // Widening this is a decision, not a refactor, and BACKEND-37 made it
+    // once: `partially-completed` joined the set because a request some of
+    // whose recipients have signed is still waiting for the rest, and refusing
+    // them entry would have stalled every multi-signer workflow.
+    //
+    // Everything else is excluded by the set being CLOSED rather than by an
+    // exclusion list. That includes `completion-ready`, which is deliberately
+    // absent: every required obligation is satisfied, so the workflow is shut
+    // to further signing even though the document does not exist yet.
+    expect(SIGNABLE_REQUEST_STATES).toEqual(["sent", "partially-completed"]);
+    expect(SIGNABLE_REQUEST_STATES).not.toContain("completion-ready");
   });
 });

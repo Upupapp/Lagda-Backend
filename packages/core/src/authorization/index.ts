@@ -178,6 +178,28 @@ export const WORKSPACE_CAPABILITIES = [
    * rather than a new concept (OD-134).
    */
   "signing-request.send",
+  /**
+   * Cancel a sent signing request, ending it for every recipient.
+   *
+   * ── Read out of the product, including who may do it ───────────────────────
+   *
+   * `transaction-detail.service.ts` computes
+   * `avail("cancel", isActive && canPrepare)` — so cancellation is gated on the
+   * PREPARE authority, not on an administrative one, and it is offered only
+   * while the transaction is active. Both facts are honoured: this capability
+   * is held by exactly the four roles that hold `document.prepare`, and the
+   * lifecycle table admits `cancel` only from `sent` and `partially-completed`.
+   *
+   * Separate from `signing-request.send` because they are opposite risks. Send
+   * is "commit this to counterparties"; cancel is "withdraw it from them", and
+   * the day a deployment wants an assistant who can release a document but not
+   * retract one, that is a one-line change here.
+   *
+   * A recipient's DECLINE is not this capability and never checks one. It comes
+   * from the recipient realm, where there is no workspace role to consult
+   * (§152, §153).
+   */
+  "signing-request.cancel",
 
   /**
    * Hand the workspace to someone else.
@@ -250,6 +272,7 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "signing-request.create",
       "signing-request.view",
       "signing-request.send",
+      "signing-request.cancel",
       "workspace.ownership.transfer",
     ] as const),
 
@@ -281,6 +304,7 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "signing-request.create",
       "signing-request.view",
       "signing-request.send",
+      "signing-request.cancel",
     ] as const),
 
     /**
@@ -330,6 +354,7 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "signing-request.create",
       "signing-request.view",
       "signing-request.send",
+      "signing-request.cancel",
     ] as const),
 
     /**
@@ -352,6 +377,7 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "signing-request.create",
       "signing-request.view",
       "signing-request.send",
+      "signing-request.cancel",
     ] as const),
 
     /**

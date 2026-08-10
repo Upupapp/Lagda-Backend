@@ -611,8 +611,21 @@ describe("send performs no ceremony and contacts no provider", () => {
     const id = await requestWith(h, [{ email: "a@x.com" }]);
     await send(h, id);
 
+      // BACKEND-37 NARROWED THIS ASSERTION, and the narrowing is the point.
+      //
+      // It used to search a JSON dump for the SUBSTRING "signedAt". That
+      // passed only because no column of that name existed; once the workflow
+      // row gained one it failed while nothing had actually been recorded.
+      // A key that is present and null is not a fact. So the check is now on
+      // the VALUES: no recipient has signed, declined, or been delivered to.
+    for (const activation of h.store.activations) {
+      expect(activation.state).not.toBe("signed");
+      expect(activation.state).not.toBe("declined");
+      expect(activation.signedAt).toBeNull();
+      expect(activation.submissionId).toBeNull();
+      expect(activation.declinedAt).toBeNull();
+    }
     const everything = JSON.stringify({
-      activations: h.store.activations,
       grants: h.store.signingAccessGrants,
       intents: h.store.deliveryIntents,
     });

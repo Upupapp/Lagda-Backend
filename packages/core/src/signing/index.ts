@@ -7,6 +7,8 @@ export * from "./snapshot.js";
 
 export * from "./send.js";
 
+export * from "./workflow-state.js";
+
 export * from "./ceremony.js";
 export * from "./field-input-policy.js";
 export * from "./submission.js";

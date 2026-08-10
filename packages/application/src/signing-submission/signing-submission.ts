@@ -43,6 +43,13 @@ import {
   resolveRecipientSession,
   type RecipientSigningContext, type SigningAccessDependencies,
 } from "../signing-access/signing-access.js";
+import {
+  applyRecipientSubmissionToWorkflow, advanceSigningWorkflow,
+} from "../signing-workflow/signing-workflow.js";
+import type {
+  SigningAccessProvisioningDependencies,
+} from "../signing-requests/send.js";
+import type { SigningWorkflowIdGenerator } from "../common/ports/index.js";
 
 // ── Errors ───────────────────────────────────────────────────────────────────
 
@@ -128,6 +135,16 @@ export interface SubmitRecipientSigningResult {
 
 export interface SigningSubmissionDependencies {
   readonly transactions: TransactionManager;
+  /** BACKEND-37. The advance intent needs an identity like anything else. */
+  readonly workflowIds: SigningWorkflowIdGenerator;
+  /**
+   * The BACKEND-33 provisioner's slice, for the advance that follows a commit.
+   *
+   * Present here so the submission route can drive the whole progression
+   * without a second composition root. It is NOT used inside the transaction —
+   * nothing in the recipient realm may provision anybody.
+   */
+  readonly workflowAccess: SigningAccessProvisioningDependencies;
   readonly clock: Clock;
   readonly sessionTokens: RecipientSessionTokenFactory;
   readonly ids: RecipientSubmissionIdGenerator;
@@ -183,7 +200,7 @@ export async function submitRecipientSigning(
       initialsMethod: input.initials?.method ?? null,
     }));
 
-  return deps.transactions.runForRecipientSession(digest, sessionUow =>
+  const accepted = await deps.transactions.runForRecipientSession(digest, sessionUow =>
     sessionUow.enterWorkspace(
       {
         workspaceId: context.workspaceId,
@@ -194,6 +211,39 @@ export async function submitRecipientSigning(
         uow, context, input, deps, now, scope, fingerprint, prepared,
       }),
     ));
+
+  // ── The advance, AFTER the commit ────────────────────────────────────────
+  //
+  // Not part of the transaction above, and the reason is not performance:
+  // activating the next cohort needs to read the NEXT recipient's snapshot and
+  // write their email into a delivery intent, and migration 022 binds this
+  // realm to its own recipient row. See the module comment in
+  // `signing-workflow.ts`.
+  //
+  // Best-effort ON PURPOSE. The durable intent committed with the signature, so
+  // a failure here delays the next invitation and loses nothing — the
+  // reconciler picks it up. Letting this throw would fail a request whose
+  // signature is already accepted and immutable, telling the signer their
+  // signing failed when it did not (§172).
+  try {
+    await advanceSigningWorkflow(
+      {
+        workspaceId: context.workspaceId,
+        signingRequestId: context.signingRequestId,
+      },
+      {
+        transactions: deps.transactions,
+        clock: deps.clock,
+        workflowIds: deps.workflowIds,
+        access: deps.workflowAccess,
+      });
+  } catch {
+    // Swallowed without the error object: an exception message is unbounded
+    // text that may carry a value from the row it failed on, and the recipient
+    // path must not be where that surfaces (§197, §199).
+  }
+
+  return accepted;
 }
 
 interface PreparedRepresentation {
@@ -314,11 +364,17 @@ async function acceptSubmission(args: {
 
   const access = assessCeremonyAccess({
     requestState: request.state,
-    activationState,
+    recipientState: activationState,
     recipientType: recipient.type,
     consentAccepted: matchingConsent !== null,
   });
   if (!access.mayEnter) {
+    // BACKEND-37 gave the canonical policy a state for "this recipient already
+    // signed", and it now fires BEFORE the one-per-recipient constraint would.
+    // Mapped back to the precise error rather than reported as a generic
+    // denial: a client that sent a new key deliberately is owed the true
+    // reason, and `recipient_already_submitted` is what the route maps (§39).
+    if (access.blocker === "already-signed") throw new RecipientAlreadySubmittedError();
     throw new SigningNotPermittedError(access.blocker ?? "not-permitted");
   }
   // Consent is checked from the RECORD, never from a client boolean (§24).
@@ -387,6 +443,20 @@ async function acceptSubmission(args: {
     values,
   });
 
+  // ── The workflow transition, IN THIS TRANSACTION ──────────────────────────
+  //
+  // This is what closes the gap BACKEND-36 documented and deliberately left
+  // open (§23): after this line an accepted submission and the state that says
+  // it happened commit together, or neither does.
+  //
+  // `now` is the submission's own `acceptedAt`, passed through. No second clock
+  // reading exists on this path (INV-548).
+  await applyRecipientSubmissionToWorkflow(uow, {
+    submissionId,
+    acceptedAt: now,
+    intentId: deps.workflowIds.nextSigningWorkflowIntentId(),
+  });
+
   const result = {
     submissionId: String(submissionId),
     acceptedAt: now,
@@ -412,7 +482,10 @@ async function acceptSubmission(args: {
  * **Amendment.** No update path exists, at any layer, and the runtime role
  * holds no UPDATE privilege on the three tables.
  *
- * **Decline.** BACKEND-37.
+ * **Decline.** BACKEND-37, in `signing-workflow.ts`.
+ *
+ * **Routing advancement.** BACKEND-37, and NOT in this transaction — the
+ * recipient realm cannot read the next recipient.
  */
 export type SigningSubmissionOperationsDeferred = never;
 

@@ -19,6 +19,7 @@
 
 import type { WorkspaceId } from "@lagda/contracts";
 import type { RecipientSubmissionRepository } from "./signing-submission.js";
+import type { RecipientWorkflowRepository } from "./signing-workflow.js";
 import type { IdempotencyRepository } from "./idempotency.js";
 import type { ArtifactId } from "./evidence.js";
 import type { StorageObjectKey } from "./storage.js";
@@ -142,6 +143,19 @@ export interface RecipientCeremonyUnitOfWork {
   readonly ceremony: RecipientCeremonyRepository;
   /** BACKEND-36. Reads one accepted submission and writes one, nothing else. */
   readonly submissions: RecipientSubmissionRepository;
+  /**
+   * BACKEND-37. The recipient's OWN workflow row, and the advance intent.
+   *
+   * Added here rather than a new unit of work because the whole point is that
+   * it commits with the submission: a signature that landed without its state
+   * change would be exactly the intermediate state BACKEND-36 documented and
+   * this command exists to close (§23).
+   *
+   * It cannot reach any other recipient. That is not a rule this interface
+   * states — it is what migration 022's restrictive policies enforce, and why
+   * the routing half of the progression lives in the workspace realm instead.
+   */
+  readonly workflow: RecipientWorkflowRepository;
   /**
    * BACKEND-36. The idempotency framework, inside the recipient realm.
    *

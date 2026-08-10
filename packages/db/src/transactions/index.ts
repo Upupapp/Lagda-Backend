@@ -56,6 +56,10 @@ import {
   createSigningAccessLookupRepository, createRecipientSessionLookupRepository,
   createScopedRecipientSessionRepository,
 } from "../repositories/signing-sessions.js";
+import {
+  createRecipientWorkflowRepository, createScopedSigningWorkflowRepository,
+  createSigningWorkflowReconciliationRepository,
+} from "../repositories/signing-workflow.js";
 
 /** The setting names RLS policies read. Must match migrations 002 and 013. */
 const WORKSPACE_SETTING = "lagda.workspace_id";
@@ -96,6 +100,7 @@ function buildUnitOfWork(
     recipients: createScopedRecipientRepository(trx, workspaceId),
     signingRequests: createScopedSigningRequestRepository(trx, workspaceId),
     signingAccess: createScopedSigningAccessRepository(trx, workspaceId),
+    signingWorkflow: createScopedSigningWorkflowRepository(trx, workspaceId),
   };
 }
 
@@ -265,6 +270,10 @@ export function createTransactionManager(db: Kysely<Database>): TransactionManag
               recipientId: scope.recipientId,
               ceremony: createRecipientCeremonyRepository(trx, scope),
               submissions: createRecipientSubmissionRepository(trx, scope),
+              // BACKEND-37. The recipient's OWN state, committing with their
+              // submission. It can reach no other recipient - by migration
+              // 024's restrictive policy and by having no method that could.
+              workflow: createRecipientWorkflowRepository(trx, scope),
               // The idempotency framework, on the SAME transaction. A key
               // completed in a different transaction from the mutation it
               // guards would replay a submission that rolled back.
@@ -276,12 +285,18 @@ export function createTransactionManager(db: Kysely<Database>): TransactionManag
     },
 
     async runGlobal<T>(operation: (uow: GlobalUnitOfWork) => Promise<T>): Promise<T> {
-      return db.transaction().execute(async () => {
+      return db.transaction().execute(async trx => {
         // No tenant context, no user context and no tenant repositories. Under
         // RLS, workspace tables are invisible from here — global mode is for
         // user accounts and system records, and if it strays into tenant data
         // it fails closed rather than seeing everything.
-        return operation({ scope: "global" });
+        return operation({
+          scope: "global",
+          // Identifiers only, from the one table that carries no policy
+          // because a cross-tenant scan cannot have one without BYPASSRLS.
+          signingWorkflowReconciliation:
+            createSigningWorkflowReconciliationRepository(trx),
+        });
       });
     },
   };

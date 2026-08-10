@@ -78,6 +78,10 @@ export function isTerminal(state: SigningRequestState): boolean {
     case "ready-to-send":
     case "sent":
     case "partially-completed":
+    case "completion-ready":
+      // `completion-ready` is NOT terminal. Every required obligation is
+      // satisfied and the completion pipeline has not run; BACKEND-38 still
+      // has to move it, and calling it terminal would make that illegal.
       return false;
     default:
       return assertNever(state, "isTerminal");
@@ -89,7 +93,16 @@ export function isEditable(state: SigningRequestState): boolean {
   return state === "draft" || state === "ready-to-send";
 }
 
-/** Sent and not finished: recipients may act. */
+/**
+ * Sent and still collecting: recipients may act.
+ *
+ * `completion-ready` is excluded deliberately. It is not finished, but nobody
+ * may sign into it — the workflow closed when the last required obligation was
+ * met, and the only thing left is producing the document (§96).
+ *
+ * `SIGNABLE_REQUEST_STATES` in `workflow-state.ts` is the canonical list this
+ * agrees with; a test asserts they cannot drift.
+ */
 export function isActive(state: SigningRequestState): boolean {
   return state === "sent" || state === "partially-completed";
 }
@@ -98,7 +111,7 @@ export function isActive(state: SigningRequestState): boolean {
 
 export const SIGNING_ACTIONS = [
   "markReadyToSend", "returnToDraft", "send", "recordParticipantCompletion",
-  "complete", "decline", "cancel", "expire",
+  "markCompletionReady", "complete", "decline", "cancel", "expire",
 ] as const;
 export type SigningAction = (typeof SIGNING_ACTIONS)[number];
 
@@ -125,19 +138,44 @@ const TRANSITIONS: Record<
   },
   sent: {
     recordParticipantCompletion: "partially-completed",
-    // Direct completion is legitimate: a single-participant request is finished
-    // by one action without ever being partially complete.
-    complete: "completed",
+    // Direct readiness is legitimate: a single-participant request satisfies
+    // every obligation in one action without ever being partially complete.
+    //
+    // BACKEND-37 CHANGED THIS EDGE. It used to read `complete: "completed"`,
+    // which said the last signature finishes the transaction. It does not: PDF
+    // merge, certificate generation and sealing all happen afterwards and all
+    // can fail, and a request that had already claimed `completed` could not be
+    // walked back because `completed` is terminal and legally significant.
+    markCompletionReady: "completion-ready",
     decline: "declined",
     cancel: "cancelled",
     expire: "expired",
   },
   "partially-completed": {
     recordParticipantCompletion: "partially-completed",
-    complete: "completed",
+    markCompletionReady: "completion-ready",
     decline: "declined",
     cancel: "cancelled",
     expire: "expired",
+  },
+  /**
+   * Every required signing obligation is satisfied; the document does not
+   * exist yet.
+   *
+   * ONE action, and BACKEND-37 cannot perform it. `complete` belongs to the
+   * completion pipeline and means "the final artifact is safely persisted".
+   *
+   * `cancel` is deliberately absent, and it is the product's rule rather than
+   * a preference: `transaction-detail.service.ts` offers cancel only while the
+   * transaction is active, and a request whose signatures are all collected is
+   * not active. §95 asks for that decision to be explicit, so it is made here
+   * where the table can be read.
+   *
+   * `expire` is absent for the same reason. A deadline that passes after the
+   * last signature does not un-sign anything.
+   */
+  "completion-ready": {
+    complete: "completed",
   },
   // Terminal. Deliberately empty rather than omitted.
   completed: {},
