@@ -383,9 +383,43 @@ export interface PendingAuthenticationsTable {
   authentication_method: string;
 }
 
+/**
+ * A workspace invitation (BACKEND-26).
+ *
+ * An authorization OFFER, never access. Separate from `workspace_memberships`
+ * on purpose: a pending invitation in the authorization table would make every
+ * authorization query depend on a status filter.
+ *
+ * No `status` column — state is derived from the terminal timestamps plus the
+ * clock, because `expired` is a function of `now()` and a stored copy is wrong
+ * from the moment it lapses.
+ */
+export interface WorkspaceInvitationsTable {
+  invitation_id: string;
+  /** First-class tenant column. */
+  workspace_id: string;
+  /** What the inviter typed. Rendered back to them; never an identity key. */
+  invitee_email: string;
+  /** The identity key. CHECK-constrained to be lower case. */
+  invitee_normalized_email: string;
+  /** CHECK-constrained to the invitable roles. Never `owner`. */
+  requested_role: string;
+  invited_by_user_id: string;
+  /** SHA-256 of the raw token, domain-separated. The raw token is NEVER stored. */
+  token_digest: string;
+  created_at: Timestamptz;
+  expires_at: Timestamptz;
+  accepted_at: ColumnType<Date | null, Date | null, Date | null>;
+  accepted_by_user_id: ColumnType<string | null, string | null, string | null>;
+  revoked_at: ColumnType<Date | null, Date | null, Date | null>;
+  declined_at: ColumnType<Date | null, Date | null, Date | null>;
+  superseded_at: ColumnType<Date | null, Date | null, Date | null>;
+}
+
 export interface Database {
   workspaces: WorkspacesTable;
   workspace_memberships: WorkspaceMembershipsTable;
+  workspace_invitations: WorkspaceInvitationsTable;
   document_artifacts: DocumentArtifactsTable;
   evidence_events: EvidenceEventsTable;
   document_seals: DocumentSealsTable;

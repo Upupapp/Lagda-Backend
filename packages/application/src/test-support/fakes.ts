@@ -24,6 +24,12 @@ import type {
   FinalizationInput, SealRecord,
 } from "../common/ports/index.js";
 import { InMemoryIdempotencyRepository } from "./idempotency-fake.js";
+import type {
+  ScopedInvitationRepository, InvitationCredentialUnitOfWork,
+  InvitationTokenDigest, WorkspaceInvitationRecord, NewWorkspaceInvitation,
+} from "../common/ports/invitations.js";
+import type { WorkspaceInvitationId } from "@lagda/contracts";
+import type { NormalizedEmail } from "../auth/email-identity.js";
 import type { TransactionId, DocumentId } from "@lagda/contracts";
 
 /** A fixed instant, so assertions mean the same thing in any year. */
@@ -60,6 +66,8 @@ export class FakeScopeMismatchError extends Error {
 interface StoreSnapshot {
   readonly workspaces: Map<string, WorkspaceRecord>;
   readonly memberships: WorkspaceMembershipRecord[];
+  readonly invitations: WorkspaceInvitationRecord[];
+  readonly invitationDigests: Map<string, string>;
   readonly evidence: EvidenceEventRecord[];
   readonly artifacts: ArtifactRecord[];
   readonly seals: SealRecord[];
@@ -71,6 +79,16 @@ interface StoreSnapshot {
 export class InMemoryStore {
   readonly workspaces = new Map<string, WorkspaceRecord>();
   readonly memberships: WorkspaceMembershipRecord[] = [];
+  invitations: WorkspaceInvitationRecord[] = [];
+  /**
+   * Canonical address to account, standing in for the `users` table.
+   *
+   * The fake models repositories, not the database. This is the minimum needed
+   * for the one membership query that joins to accounts.
+   */
+  readonly accountEmails = new Map<string, UserId>();
+  /** Digest to invitation id. The real lookup is an RLS policy on a unique column. */
+  readonly invitationDigests = new Map<string, string>();
   readonly evidence: EvidenceEventRecord[] = [];
   readonly artifacts: ArtifactRecord[] = [];
   readonly seals: SealRecord[] = [];
@@ -82,6 +100,8 @@ export class InMemoryStore {
       workspaces: new Map(this.workspaces),
       uploads: new Map(this.uploads),
       memberships: [...this.memberships],
+      invitations: [...this.invitations],
+      invitationDigests: new Map(this.invitationDigests),
       evidence: [...this.evidence],
       artifacts: [...this.artifacts],
       seals: [...this.seals],
@@ -99,6 +119,9 @@ export class InMemoryStore {
     for (const [key, value] of snapshot.workspaces) this.workspaces.set(key, value);
     this.memberships.length = 0;
     this.memberships.push(...snapshot.memberships);
+    this.invitations = [...snapshot.invitations];
+    this.invitationDigests.clear();
+    for (const [k, v] of snapshot.invitationDigests) this.invitationDigests.set(k, v);
     this.evidence.length = 0;
     this.evidence.push(...snapshot.evidence);
     this.artifacts.length = 0;
@@ -176,6 +199,16 @@ function scopedMemberships(store: InMemoryStore, scope: WorkspaceId): ScopedMemb
     findByUser: (userId: UserId) =>
       Promise.resolve(inScope().find(m => m.userId === userId) ?? null),
 
+    // The fake has no accounts table, so the join is against the store's
+    // registered addresses. `InMemoryStore.accountEmails` is what a test seeds
+    // to say "this user's canonical address is X" — the PostgreSQL adapter
+    // reads the real `users` row.
+    findByNormalizedEmail: (email: NormalizedEmail) => {
+      const userId = store.accountEmails.get(email);
+      if (userId === undefined) return Promise.resolve(null);
+      return Promise.resolve(inScope().find(m => m.userId === userId) ?? null);
+    },
+
     list: () => Promise.resolve(inScope()),
 
     countOwners: () => Promise.resolve(inScope().filter(m => m.role === "owner").length),
@@ -214,6 +247,108 @@ function scopedMemberships(store: InMemoryStore, scope: WorkspaceId): ScopedMemb
  * mutation would let a use case be written against behaviour PostgreSQL
  * refuses, and the divergence would only surface in the integration run.
  */
+/**
+ * The "still live" predicate, mirroring the partial unique index exactly.
+ *
+ * A fake that defined "active" differently would let a use case be written
+ * against behaviour PostgreSQL refuses, and only the integration run would say
+ * so.
+ */
+const isLive = (i: WorkspaceInvitationRecord): boolean =>
+  i.acceptedAt === null && i.revokedAt === null
+  && i.declinedAt === null && i.supersededAt === null;
+
+function scopedInvitations(
+  store: InMemoryStore, scope: WorkspaceId,
+): ScopedInvitationRepository {
+  const inScope = () => store.invitations.filter(i => i.workspaceId === scope);
+  const replaceLive = (
+    id: WorkspaceInvitationId,
+    change: (current: WorkspaceInvitationRecord) => WorkspaceInvitationRecord,
+  ): boolean => {
+    const index = store.invitations.findIndex(
+      i => i.workspaceId === scope && i.invitationId === id && isLive(i));
+    const current = index === -1 ? undefined : store.invitations[index];
+    if (current === undefined) return false;
+    store.invitations[index] = change(current);
+    return true;
+  };
+
+  return {
+    insert: (invitation: NewWorkspaceInvitation) => {
+      if (invitation.workspaceId !== scope) {
+        throw new FakeScopeMismatchError(
+          "WorkspaceInvitation", scope, invitation.workspaceId);
+      }
+      // The partial unique index, in memory. Without it a use case could leave
+      // two live invitations for one address and only PostgreSQL would object.
+      const clash = inScope().some(
+        i => i.inviteeNormalizedEmail === invitation.inviteeNormalizedEmail && isLive(i));
+      if (clash) throw new Error("duplicate active invitation");
+      if (store.invitationDigests.has(invitation.tokenDigest)) {
+        throw new Error("duplicate invitation token digest");
+      }
+      store.invitationDigests.set(invitation.tokenDigest, invitation.invitationId);
+      store.invitations.push({
+        invitationId: invitation.invitationId,
+        workspaceId: invitation.workspaceId,
+        inviteeEmail: invitation.inviteeEmail,
+        inviteeNormalizedEmail: invitation.inviteeNormalizedEmail,
+        requestedRole: invitation.requestedRole,
+        invitedByUserId: invitation.invitedByUserId,
+        createdAt: invitation.createdAt,
+        expiresAt: invitation.expiresAt,
+        acceptedAt: null, acceptedByUserId: null,
+        revokedAt: null, declinedAt: null, supersededAt: null,
+      });
+      return Promise.resolve();
+    },
+
+    findById: (invitationId: WorkspaceInvitationId) =>
+      Promise.resolve(inScope().find(i => i.invitationId === invitationId) ?? null),
+
+    findActiveByNormalizedEmail: (email: NormalizedEmail) =>
+      Promise.resolve(
+        inScope().find(i => i.inviteeNormalizedEmail === email && isLive(i)) ?? null),
+
+    list: () => Promise.resolve(
+      [...inScope()].sort((a, b) =>
+        b.createdAt - a.createdAt || a.invitationId.localeCompare(b.invitationId))),
+
+    supersedeActiveForEmail: (input) => {
+      let count = 0;
+      store.invitations = store.invitations.map(i => {
+        if (i.workspaceId !== scope) return i;
+        if (i.inviteeNormalizedEmail !== input.email || !isLive(i)) return i;
+        count += 1;
+        return { ...i, supersededAt: input.now };
+      });
+      return Promise.resolve(count);
+    },
+
+    rotateCredentialIfLive: (input) =>
+      Promise.resolve(replaceLive(input.invitationId, current => {
+        // The old digest stops resolving. That IS the supersession of the old
+        // link, and a fake that left it resolvable would hide the defect.
+        for (const [digest, id] of store.invitationDigests) {
+          if (id === current.invitationId) store.invitationDigests.delete(digest);
+        }
+        store.invitationDigests.set(input.tokenDigest, current.invitationId);
+        return { ...current, expiresAt: input.expiresAt };
+      })),
+
+    revokeIfLive: (input) =>
+      Promise.resolve(replaceLive(input.invitationId, c => ({ ...c, revokedAt: input.now }))),
+
+    acceptIfLive: (input) => Promise.resolve(replaceLive(input.invitationId, c => ({
+      ...c, acceptedAt: input.now, acceptedByUserId: input.acceptedByUserId,
+    }))),
+
+    declineIfLive: (input) =>
+      Promise.resolve(replaceLive(input.invitationId, c => ({ ...c, declinedAt: input.now }))),
+  };
+}
+
 function scopedEvidence(store: InMemoryStore, scope: WorkspaceId): ScopedEvidenceRepository {
   return {
     append: (event: EvidenceEventInput) => {
@@ -309,7 +444,7 @@ export class FakeTransactionManager implements TransactionManager {
   started = 0;
   committed = 0;
   rolledBack = 0;
-  readonly scopes: (WorkspaceId | UserId | "global")[] = [];
+  readonly scopes: string[] = [];
   /**
    * Shared across transactions, like the real table.
    *
@@ -337,6 +472,7 @@ export class FakeTransactionManager implements TransactionManager {
         finalizations: scopedFinalizations(this.store, workspaceId),
         uploads: scopedUploads(this.store, workspaceId),
         idempotency: this.idempotency,
+        invitations: scopedInvitations(this.store, workspaceId),
       });
       this.committed++;
       return result;
@@ -363,6 +499,53 @@ export class FakeTransactionManager implements TransactionManager {
     } catch (error) {
       // No snapshot restore: this scope cannot write. The real one cannot
       // either, because its policies are FOR SELECT.
+      this.rolledBack++;
+      throw error;
+    }
+  }
+
+  async runForInvitationCredential<T>(
+    tokenDigest: InvitationTokenDigest,
+    operation: (uow: InvitationCredentialUnitOfWork) => Promise<T>,
+  ): Promise<T> {
+    this.scopes.push("invitation-credential");
+    this.started++;
+    const snapshot = this.store.snapshot();
+    const store = this.store;
+    try {
+      const result = await operation({
+        invitation: {
+          // Resolves at most ONE invitation, by digest. The real one does it
+          // through an RLS policy on a unique column; the fake mirrors the
+          // outcome so a use case cannot be written against a broader read.
+          find: () => {
+            const id = store.invitationDigests.get(tokenDigest);
+            if (id === undefined) return Promise.resolve(null);
+            return Promise.resolve(
+              store.invitations.find(i => i.invitationId === id) ?? null);
+          },
+        },
+        enterWorkspace: (workspaceId, inner) => {
+          this.scopes.push(workspaceId);
+          return inner({
+            workspaceId,
+            workspaces: scopedWorkspaces(store, workspaceId),
+            memberships: scopedMemberships(store, workspaceId),
+            evidence: scopedEvidence(store, workspaceId),
+            artifacts: scopedArtifacts(store, workspaceId),
+            finalizations: scopedFinalizations(store, workspaceId),
+            uploads: scopedUploads(store, workspaceId),
+            idempotency: this.idempotency,
+            invitations: scopedInvitations(store, workspaceId),
+          });
+        },
+      });
+      this.committed++;
+      return result;
+    } catch (error) {
+      // ONE transaction, so a failure anywhere — including inside
+      // `enterWorkspace` — discards the whole acceptance ceremony.
+      this.store.restore(snapshot);
       this.rolledBack++;
       throw error;
     }
@@ -399,6 +582,13 @@ export class FailingTransactionManager implements TransactionManager {
   runForUser<T>(
     _userId: UserId,
     _operation: (uow: UserUnitOfWork) => Promise<T>,
+  ): Promise<T> {
+    return this.fail();
+  }
+
+  runForInvitationCredential<T>(
+    _tokenDigest: InvitationTokenDigest,
+    _operation: (uow: InvitationCredentialUnitOfWork) => Promise<T>,
   ): Promise<T> {
     return this.fail();
   }

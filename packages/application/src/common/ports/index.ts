@@ -9,10 +9,15 @@
 // field nobody reads.
 import type { ScopedUploadRepository } from "./upload.js";
 import type { IdempotencyRepository } from "./idempotency.js";
+import type {
+  ScopedInvitationRepository, InvitationCredentialUnitOfWork,
+  InvitationTokenDigest,
+} from "./invitations.js";
 
 import type {
   WorkspaceId, WorkspaceMemberId, UserId, WorkspaceRole,
 } from "@lagda/contracts";
+import type { NormalizedEmail } from "../../auth/email-identity.js";
 
 // ── Time ─────────────────────────────────────────────────────────────────────
 
@@ -132,6 +137,24 @@ export interface ScopedMembershipRepository {
 
   findByUser(userId: UserId): Promise<WorkspaceMembershipRecord | null>;
 
+  /**
+   * The membership of whoever owns this email address, if they are in this
+   * workspace (BACKEND-26).
+   *
+   * A JOIN to `users` on the canonical normalized address, inside the tenant
+   * scope. It exists so invitation creation can refuse to email someone who is
+   * already a member, rather than discovering it only when they try to accept.
+   *
+   * Takes an ALREADY-NORMALIZED key. A repository that normalized for itself
+   * would be a second normalization rule, and the two would drift (INV-231).
+   *
+   * Returns null for an address with no account — which is the ordinary case
+   * for an invitation, and is not an error.
+   */
+  findByNormalizedEmail(
+    email: NormalizedEmail,
+  ): Promise<WorkspaceMembershipRecord | null>;
+
   list(): Promise<readonly WorkspaceMembershipRecord[]>;
 
   countOwners(): Promise<number>;
@@ -204,6 +227,14 @@ export interface WorkspaceUnitOfWork {
    * identity.
    */
   readonly idempotency: IdempotencyRepository;
+  /**
+   * Workspace invitations (BACKEND-26).
+   *
+   * On the tenant unit of work like every other workspace-owned repository, so
+   * an invitation and the membership its acceptance creates are written on ONE
+   * transaction with ONE tenant context.
+   */
+  readonly invitations: ScopedInvitationRepository;
 }
 
 /**
@@ -295,6 +326,22 @@ export interface TransactionManager {
     userId: UserId,
     operation: (uow: UserUnitOfWork) => Promise<T>,
   ): Promise<T>;
+
+  /**
+   * A transaction scoped to ONE invitation credential (BACKEND-26).
+   *
+   * The FOURTH named scope, and the narrowest. It establishes no workspace
+   * context and exposes exactly one read: the invitation whose digest was
+   * supplied. Its purpose is the one operation the other three cannot express —
+   * a non-member resolving which tenant they were invited to.
+   *
+   * Tenant context is entered afterwards, from the RESOLVED workspace, through
+   * `enterWorkspace` on the same transaction.
+   */
+  runForInvitationCredential<T>(
+    tokenDigest: InvitationTokenDigest,
+    operation: (uow: InvitationCredentialUnitOfWork) => Promise<T>,
+  ): Promise<T>;
 }
 
 import type {
@@ -315,3 +362,5 @@ export * from "./evidence.js";
 // definition of DocumentSealer in the codebase.
 
 export * from "./sealing.js";
+
+export * from "./invitations.js";

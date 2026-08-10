@@ -68,6 +68,17 @@ export {
   digestSubmittedPreAuthToken, isWellFormedPreAuthToken,
 } from "./security/pre-auth-token.js";
 export {
+  registerInvitationManagementRoutes, registerInvitationPreviewRoute,
+  registerInvitationRedemptionRoutes,
+  CreateInvitationRequestSchema, InvitationSummarySchema,
+  InvitationListResponseSchema, InvitationPreviewResponseSchema,
+  AcceptInvitationResponseSchema, InvitationTokenRequestSchema,
+  type InvitationRouteOptions,
+} from "./workspaces/invitation-routes.js";
+export { createInvitationLinkBuilder } from "./workspaces/invitation-link.js";
+export { createInvitationTokenFactory } from "./security/invitation-token.js";
+
+export {
   registerWorkspaceRoutes, CreateWorkspaceRequestSchema,
   UpdateWorkspaceRequestSchema, WorkspaceResponseSchema,
   WorkspaceListResponseSchema,

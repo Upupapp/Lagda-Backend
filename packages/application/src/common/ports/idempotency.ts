@@ -69,6 +69,16 @@ export const IDEMPOTENT_OPERATIONS = [
    * is claimed, so there is nothing else to scope by.
    */
   "workspace.create",
+  /**
+   * Invitation resend (BACKEND-26).
+   *
+   * `workspace.invitation.create` was already listed from the handoff.
+   * Resend needs its own entry for the reason §43 gives: a NETWORK RETRY of one
+   * resend must not rotate the credential twice — the first rotation already
+   * invalidated the link the recipient holds — while a LATER deliberate resend
+   * must rotate. The client's key is what distinguishes them.
+   */
+  "workspace.invitation.resend",
 ] as const;
 export type IdempotentOperation = (typeof IDEMPOTENT_OPERATIONS)[number];
 

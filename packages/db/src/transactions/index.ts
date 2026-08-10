@@ -22,6 +22,7 @@ import { sql, type Kysely, type Transaction } from "kysely";
 import type { UserId, WorkspaceId } from "@lagda/contracts";
 import type {
   TransactionManager, WorkspaceUnitOfWork, GlobalUnitOfWork, UserUnitOfWork,
+  InvitationCredentialUnitOfWork, InvitationTokenDigest,
 } from "@lagda/application";
 import type { Database } from "../schema/index.js";
 import {
@@ -35,10 +36,14 @@ import {
 } from "../repositories/evidence.js";
 import { createUploadRepository } from "../repositories/uploads.js";
 import { createIdempotencyRepository } from "../repositories/idempotency.js";
+import {
+  createScopedInvitationRepository, createInvitationCredentialLookup,
+} from "../repositories/invitations.js";
 
 /** The setting names RLS policies read. Must match migrations 002 and 013. */
 const WORKSPACE_SETTING = "lagda.workspace_id";
 const USER_SETTING = "lagda.user_id";
+const INVITATION_DIGEST_SETTING = "lagda.invitation_digest";
 
 /**
  * Builds the repository set for one transaction and one workspace.
@@ -63,6 +68,7 @@ function buildUnitOfWork(
     // idempotency guarantee: the claim commits with the mutation or dies with
     // it, so there is no lease, no reclaim job and no poisoned key.
     idempotency: createIdempotencyRepository(trx),
+    invitations: createScopedInvitationRepository(trx, workspaceId),
   };
 }
 
@@ -103,6 +109,44 @@ export function createTransactionManager(db: Kysely<Database>): TransactionManag
         return operation({
           userId,
           memberships: createUserMembershipRepository(trx, userId),
+        });
+      });
+    },
+
+    async runForInvitationCredential<T>(
+      tokenDigest: InvitationTokenDigest,
+      operation: (uow: InvitationCredentialUnitOfWork) => Promise<T>,
+    ): Promise<T> {
+      return db.transaction().execute(async trx => {
+        // CREDENTIAL context and no workspace context. The
+        // `invitation_credential_read` policy (migration 014) matches on
+        // equality against the UNIQUE digest column, so at most one row is
+        // visible — and the policy is FOR SELECT, so this scope cannot write to
+        // the invitations table at all until tenant context is established.
+        await sql`select set_config(${INVITATION_DIGEST_SETTING}, ${tokenDigest}, true)`
+          .execute(trx);
+
+        return operation({
+          invitation: createInvitationCredentialLookup(trx),
+
+          // The tenant transition, on the SAME transaction.
+          //
+          // Two transactions would leave a window in which the invitation is
+          // consumed and the membership is not — or the reverse. Adding tenant
+          // context here means the whole acceptance ceremony commits or rolls
+          // back together.
+          //
+          // The workspace comes from the RESOLVED invitation. There is no
+          // parameter a request body could reach, which is what makes workspace
+          // tampering unexpressible rather than merely rejected.
+          async enterWorkspace<R>(
+            workspaceId: WorkspaceId,
+            inner: (uow: WorkspaceUnitOfWork) => Promise<R>,
+          ): Promise<R> {
+            await sql`select set_config(${WORKSPACE_SETTING}, ${workspaceId}, true)`
+              .execute(trx);
+            return inner(buildUnitOfWork(trx, workspaceId));
+          },
         });
       });
     },

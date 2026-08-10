@@ -12,6 +12,7 @@ import type {
   ScopedWorkspaceRepository, ScopedMembershipRepository,
   UserMembershipQueryRepository,
   WorkspaceRecord, WorkspaceMembershipRecord, UserWorkspaceMembershipRecord,
+  NormalizedEmail,
 } from "@lagda/application";
 import type { Database } from "../schema/index.js";
 import {
@@ -152,6 +153,32 @@ export function createScopedMembershipRepository(
 
     async findByUser(userId: UserId): Promise<WorkspaceMembershipRecord | null> {
       const row = await scoped().where("user_id", "=", userId).executeTakeFirst();
+      return row === undefined ? null : toMembershipRecord(row);
+    },
+
+    async findByNormalizedEmail(
+      email: NormalizedEmail,
+    ): Promise<WorkspaceMembershipRecord | null> {
+      // An INNER JOIN, tenant-scoped on the membership side.
+      //
+      // `users` carries no RLS — it is global by design — so the tenant
+      // predicate has to be on `workspace_memberships`, and it is: the join
+      // starts there and `m.workspace_id = scope` is explicit. Starting from
+      // `users` would have made the tenant filter a property of the join
+      // condition rather than of the query, which is a subtler thing to review.
+      const row = await trx
+        .selectFrom("workspace_memberships as m")
+        .innerJoin("users as u", "u.user_id", "m.user_id")
+        .where("m.workspace_id", "=", scope)
+        .where("u.normalized_email", "=", email)
+        .select([
+          "m.member_id as member_id",
+          "m.workspace_id as workspace_id",
+          "m.user_id as user_id",
+          "m.role as role",
+          "m.created_at as created_at",
+        ])
+        .executeTakeFirst();
       return row === undefined ? null : toMembershipRecord(row);
     },
 

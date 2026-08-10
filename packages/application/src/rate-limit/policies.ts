@@ -309,6 +309,85 @@ export const RATE_LIMIT_POLICIES = {
       + "is rarer than an ordinary write.",
   },
 
+  // ── Workspace invitations (BACKEND-26) ──────────────────────────────────
+  //
+  // Invitation creation and resend are the only endpoints in LAGDA that make
+  // the server send mail to an address the CALLER chose. That makes them an
+  // email-bombing primitive aimed at anyone, and the abuse is free: one
+  // authenticated manager, one victim address, unlimited deliveries.
+  //
+  // TWO scopes on each, and both are load-bearing. Per-user bounds one
+  // compromised or runaway account; per-workspace bounds a team using one
+  // tenant as a relay. Either alone leaves the other route wide open.
+  //
+  // fail-CLOSED on all four. Refusing an invitation during a database blip is
+  // an annoyance; sending unlimited mail during one is a reputation incident
+  // that cannot be undone.
+  "workspace.invitation.create.user": {
+    id: "workspace.invitation.create.user",
+    scopeType: "user",
+    limit: 20,
+    windowMs: 60 * MINUTE,
+    failureMode: "fail-closed",
+    source: "BACKEND-26 - not specified by the handoff. Chosen: onboarding a "
+      + "twenty-person team in one sitting is plausible; doing it every hour "
+      + "forever is not.",
+  },
+  "workspace.invitation.create.workspace": {
+    id: "workspace.invitation.create.workspace",
+    scopeType: "workspace",
+    limit: 50,
+    windowMs: 60 * MINUTE,
+    failureMode: "fail-closed",
+    source: "BACKEND-26 - not specified by the handoff. Deliberately higher "
+      + "than the per-user limit so several managers onboarding together are "
+      + "not blocked by each other, and low enough to bound one tenant.",
+  },
+
+  // Tighter than create, and separate. Resend is the sharper tool: it needs no
+  // new invitation record, leaves no new row in the manager's list, and can be
+  // pointed at one victim repeatedly (§37).
+  "workspace.invitation.resend.user": {
+    id: "workspace.invitation.resend.user",
+    scopeType: "user",
+    limit: 10,
+    windowMs: 60 * MINUTE,
+    failureMode: "fail-closed",
+    source: "BACKEND-26 - not specified by the handoff. Chosen below the create "
+      + "limit because a resend targets someone who has already been mailed, "
+      + "and the legitimate reason to repeat it is rare.",
+  },
+  "workspace.invitation.resend.workspace": {
+    id: "workspace.invitation.resend.workspace",
+    scopeType: "workspace",
+    limit: 25,
+    windowMs: 60 * MINUTE,
+    failureMode: "fail-closed",
+    source: "BACKEND-26 - not specified by the handoff. Half the workspace "
+      + "create allowance, matching the per-user ratio.",
+  },
+
+  // Preview and acceptance, before any account is known.
+  //
+  // IP is the only scope available on the preview path: the caller may have no
+  // account at all. The token carries 256 bits, so this is NOT what makes
+  // guessing infeasible — it bounds volume and gives the attack a signal
+  // (§38, §188).
+  //
+  // fail-OPEN, unlike the outbound policies. Refusing a legitimate invitee
+  // during a limiter outage blocks someone from joining a workspace they were
+  // invited to, and unguessability does not depend on this limit.
+  "workspace.invitation.redeem.ip": {
+    id: "workspace.invitation.redeem.ip",
+    scopeType: "ip",
+    limit: 30,
+    windowMs: MINUTE,
+    failureMode: "fail-open",
+    source: "BACKEND-26 - not specified by the handoff. Sized like the public "
+      + "verification lookup (handoff §317, 20/min), slightly higher because "
+      + "an invitation page previews then accepts from one address.",
+  },
+
   "api.write.user": {
     id: "api.write.user",
     scopeType: "user",

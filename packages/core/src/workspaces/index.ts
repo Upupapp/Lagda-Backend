@@ -11,7 +11,8 @@
 import { InvariantViolationError } from "../common/index.js";
 import {
   WORKSPACE_ROLES, WORKSPACE_NAME_MAX_LENGTH, WORKSPACE_NAME_MIN_LENGTH,
-  type WorkspaceRole,
+  INVITABLE_WORKSPACE_ROLES, INVITATION_TTL_MS,
+  type WorkspaceRole, type InvitableWorkspaceRole, type InvitationState,
 } from "@lagda/contracts";
 
 /**
@@ -22,8 +23,11 @@ import {
  * originate there. Core keeps the export so existing importers do not change,
  * and so there is one list rather than two that agree by convention.
  */
-export { WORKSPACE_ROLES, WORKSPACE_NAME_MAX_LENGTH, WORKSPACE_NAME_MIN_LENGTH };
-export type { WorkspaceRole };
+export {
+  WORKSPACE_ROLES, WORKSPACE_NAME_MAX_LENGTH, WORKSPACE_NAME_MIN_LENGTH,
+  INVITABLE_WORKSPACE_ROLES, INVITATION_TTL_MS,
+};
+export type { WorkspaceRole, InvitableWorkspaceRole, InvitationState };
 
 export interface MembershipView {
   readonly memberId: string;
@@ -178,3 +182,99 @@ export function validateWorkspaceName(raw: string): WorkspaceNameResult {
  */
 export const WORKSPACE_LIFECYCLE_STATES = ["active"] as const;
 export type WorkspaceLifecycleState = (typeof WORKSPACE_LIFECYCLE_STATES)[number];
+
+// ── Invitations (BACKEND-26) ─────────────────────────────────────────────────
+
+/**
+ * Whether a role may create, resend, revoke and list workspace invitations.
+ *
+ * `owner` only, matching `canManageWorkspace` — and it is a SEPARATE function
+ * rather than an alias, because BACKEND-27 will almost certainly separate them:
+ * the product's own table grants `members:invite` to `administrator` while
+ * reserving `workspace:manage` more narrowly. Two names now means that change
+ * is one edit here, not a search for every caller of an overloaded predicate
+ * (§134, §135).
+ */
+export function canManageInvitations(role: WorkspaceRole): boolean {
+  return role === "owner";
+}
+
+/**
+ * Whether an inviter holding `inviterRole` may grant `requestedRole`.
+ *
+ * The privilege-escalation seam. Today it answers one question — an owner may
+ * grant any invitable role — and `owner` is not invitable at all, so no
+ * invitation can ever mint a second owner.
+ *
+ * BACKEND-27 replaces the body with the real grant matrix. The SHAPE is what
+ * matters now: every grant decision goes through one function that takes both
+ * roles, so the rule cannot end up spelled differently in the create path and
+ * the resend path (§15, §305).
+ */
+export function canGrantRole(
+  inviterRole: WorkspaceRole,
+  requestedRole: WorkspaceRole,
+): boolean {
+  if (requestedRole === "owner") return false;
+  return canManageInvitations(inviterRole);
+}
+
+/**
+ * The timestamps an invitation's state is derived from.
+ *
+ * All nullable except the two that always exist. There is deliberately no
+ * `status` field: see `deriveInvitationState`.
+ */
+export interface InvitationTimestamps {
+  readonly expiresAt: number;
+  readonly acceptedAt: number | null;
+  readonly revokedAt: number | null;
+  readonly declinedAt: number | null;
+  readonly supersededAt: number | null;
+}
+
+/**
+ * The invitation's state, computed from its timestamps and the clock.
+ *
+ * ── Why derived and not stored ─────────────────────────────────────────────
+ *
+ * A `status` column and a set of timestamps are two representations of one
+ * fact, and they drift the first time a code path writes one without the other.
+ * `expired` settles it on its own: it is a function of the current time, so a
+ * stored value is wrong from the moment the invitation lapses until whatever
+ * job noticed — and a security decision made against a stale column is the
+ * failure mode worth designing out (§27).
+ *
+ * ── Precedence ─────────────────────────────────────────────────────────────
+ *
+ * Terminal states win over expiry, because they are facts about what happened
+ * rather than about the clock: an invitation that was accepted on Monday is
+ * `accepted` forever, not `expired` next week. Among the terminal states the
+ * order is fixed so two timestamps set by different code paths can never
+ * produce two different answers on two different reads.
+ */
+export function deriveInvitationState(
+  timestamps: InvitationTimestamps,
+  now: number,
+): InvitationState {
+  if (timestamps.acceptedAt !== null) return "accepted";
+  if (timestamps.revokedAt !== null) return "revoked";
+  if (timestamps.declinedAt !== null) return "declined";
+  if (timestamps.supersededAt !== null) return "superseded";
+  if (timestamps.expiresAt <= now) return "expired";
+  return "pending";
+}
+
+/**
+ * Whether this invitation can still be accepted.
+ *
+ * One predicate, used by acceptance, decline and preview alike, so the four
+ * ways an invitation can be dead cannot be checked in three slightly different
+ * combinations.
+ */
+export function isInvitationRedeemable(
+  timestamps: InvitationTimestamps,
+  now: number,
+): boolean {
+  return deriveInvitationState(timestamps, now) === "pending";
+}

@@ -5,7 +5,10 @@
 // races and no cleanup — and it is why importing this package cannot start a
 // server (INV: no listen on import).
 
-import Fastify, { type FastifyError, type FastifyInstance, type FastifyServerOptions } from "fastify";
+import Fastify, {
+  type FastifyError, type FastifyInstance, type FastifyRequest,
+  type FastifyServerOptions,
+} from "fastify";
 import helmet from "@fastify/helmet";
 import cors from "@fastify/cors";
 import swagger from "@fastify/swagger";
@@ -30,6 +33,10 @@ import { registerReadinessRoutes } from "../routes/readiness.js";
 import type { AppDependencies } from "./dependencies.js";
 import { sessionResolution, requireSession } from "../security/session-plugin.js";
 import { registerWorkspaceRoutes } from "../workspaces/workspace-routes.js";
+import {
+  registerInvitationManagementRoutes, registerInvitationPreviewRoute,
+  registerInvitationRedemptionRoutes,
+} from "../workspaces/invitation-routes.js";
 
 export interface CreateAppOptions {
   readonly config: ApiConfig;
@@ -343,8 +350,58 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
         metrics,
       });
 
+      if (workspaces.invitations !== undefined) {
+        const invitations = workspaces.invitations;
+        const invitationOptions = {
+          authenticatedUser: (request: FastifyRequest) => Promise.resolve(
+            request.auth.status === "authenticated"
+              ? {
+                  userId: request.auth.actor.userId,
+                  sessionId: request.auth.actor.sessionId,
+                }
+              : null,
+          ),
+          invitationDependencies: invitations.management,
+          acceptDependencies: invitations.redemption,
+          ...(limiter === undefined ? {} : { rateLimit: { limiter, metrics } }),
+          metrics,
+        };
+
+        registerInvitationManagementRoutes(scope, invitationOptions);
+
+        // Accept and decline live HERE, inside the authenticated scope, and
+        // that placement is the whole of §68/§69/§234: they get a validated
+        // session and a CSRF check because of where they are, so a pre-auth
+        // MFA credential is refused by the scope hook before any invitation is
+        // looked up.
+        registerInvitationRedemptionRoutes(scope, invitationOptions);
+      }
+
       return Promise.resolve();
     });
+
+    // ── The one PUBLIC invitation route ────────────────────────────────────
+    //
+    // Registered on the ROOT instance, outside the authenticated scope, because
+    // the recipient may have no account: the page has to say which workspace
+    // they were invited to before it can ask them to register.
+    //
+    // It reads one invitation resolved by a credential the caller already
+    // holds, creates nothing and consumes nothing. Rate-limited by IP, which is
+    // the only scope that exists before authentication.
+    if (workspaces.invitations !== undefined) {
+      const invitations = workspaces.invitations;
+      registerInvitationPreviewRoute(app, {
+        // Never called on this route — preview takes no actor — but the option
+        // is part of the shared shape. It resolves nothing rather than being
+        // cast away.
+        authenticatedUser: () => Promise.resolve(null),
+        invitationDependencies: invitations.management,
+        acceptDependencies: invitations.redemption,
+        ...(limiter === undefined ? {} : { rateLimit: { limiter, metrics } }),
+        metrics,
+      });
+    }
   }
 
   // Deliberately NOT `await app.ready()`. Readying seals the instance, and a

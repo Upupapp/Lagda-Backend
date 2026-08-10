@@ -259,12 +259,20 @@ describe("hashing is confined to the sealing adapter", () => {
     //                              (BACKEND-23). A seventh. This one carries a
     //                              completed password proof between the two
     //                              login factors.
+    //   api/security/invitation-token — WORKSPACE INVITATION digests
+    //                              (BACKEND-26). An eighth, and the only one
+    //                              that grants access to a TENANT rather than
+    //                              to an account. The
+    //                              `lagda.workspace-invitation:` prefix is what
+    //                              stops any of the other seven resolving an
+    //                              invitation, or the reverse.
     //
     // Each addition is a deliberate entry with a named domain. A caller that
     // appears without one still fails, which is what keeps this from becoming a
     // list that grows whenever it is inconvenient.
     expect(users.sort()).toEqual([
       "packages/api/src/security/crypto.ts",
+      "packages/api/src/security/invitation-token.ts",
       "packages/api/src/security/pre-auth-token.ts",
       "packages/api/src/security/rate-limit-plugin.ts",
       "packages/api/src/security/recovery-codes.ts",

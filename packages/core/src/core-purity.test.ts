@@ -11,7 +11,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   assertExactlyOneOwner, wouldOrphanWorkspace, canReceiveOwnership,
-  WORKSPACE_ROLES, type MembershipView,
+  WORKSPACE_ROLES, INVITABLE_WORKSPACE_ROLES, type MembershipView,
 } from "./workspaces/index.js";
 import { InvariantViolationError, instantFromIso, instantToIso, hasPassed } from "./common/index.js";
 
@@ -54,7 +54,22 @@ describe("workspace ownership", () => {
 
   it("recognises every canonical role", () => {
     expect(WORKSPACE_ROLES).toContain("owner");
-    expect(WORKSPACE_ROLES.length).toBe(6);
+    // `member` joined in BACKEND-26: it is the product's default invited role
+    // (`InvitationsPage.tsx` defaults to `role_member`) and had no backend
+    // equivalent. Asserted by VALUE rather than by count, because a count tells
+    // a future reader nothing about which role changed.
+    expect(WORKSPACE_ROLES).toContain("member");
+    expect([...WORKSPACE_ROLES].sort()).toEqual([
+      "administrator", "auditor", "member", "owner",
+      "reviewer", "sender", "template_administrator",
+    ]);
+  });
+
+  it("never allows an invitation to grant ownership", () => {
+    // Structural, not a check: `owner` is absent from the invitable list, so
+    // the request schema built from it cannot express it.
+    expect(INVITABLE_WORKSPACE_ROLES).not.toContain("owner");
+    expect(INVITABLE_WORKSPACE_ROLES.length).toBe(WORKSPACE_ROLES.length - 1);
   });
 });
 

@@ -11,6 +11,7 @@ import type {
   SessionService, AbuseLimiter,
   CreateWorkspaceDependencies, GetWorkspaceDependencies,
   ListMyWorkspacesDependencies,
+  InvitationDependencies, AcceptInvitationDependencies,
 } from "@lagda/application";
 
 /**
@@ -62,4 +63,17 @@ export interface WorkspaceDependencies {
   readonly create: () => CreateWorkspaceDependencies;
   readonly list: () => ListMyWorkspacesDependencies;
   readonly workspace: () => GetWorkspaceDependencies;
+  /**
+   * Invitations (BACKEND-26).
+   *
+   * Optional as a WHOLE. Present means the four management routes, the public
+   * preview route and the two redemption routes are all registered; absent
+   * means none of them is. There is no state in which the accept route exists
+   * and the management routes do not, which is what stops a partial wiring
+   * producing a surface nobody reviewed as a set.
+   */
+  readonly invitations?: {
+    readonly management: () => InvitationDependencies;
+    readonly redemption: () => AcceptInvitationDependencies;
+  };
 }
