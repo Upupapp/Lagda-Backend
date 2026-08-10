@@ -411,11 +411,16 @@ export const RATE_LIMIT_POLICIES = {
   // signing a document they were asked to sign, and unguessability does not
   // depend on this limit. Note the contrast with the outbound-email policies,
   // which fail closed because their failure mode is sending, not blocking.
+  //
+  // 30/MINUTE, the redeem window exactly. An hour window was written first and
+  // corrected: it claimed the same precedent while being sixty times tighter,
+  // and a corporate NAT whose staff sign routinely would have found the floor
+  // on a limit that was never the control against guessing.
   "signing-access.bootstrap.ip": {
     id: "signing-access.bootstrap.ip",
     scopeType: "ip",
     limit: 30,
-    windowMs: 60 * MINUTE,
+    windowMs: MINUTE,
     failureMode: "fail-open",
     source: "BACKEND-34 - not specified by the handoff. Matched to "
       + "workspace.invitation.redeem.ip: both are public credential redemptions "
