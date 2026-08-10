@@ -295,6 +295,7 @@ describe("hashing is confined to the sealing adapter", () => {
       "packages/api/src/security/recipient-session-token.ts",
       "packages/api/src/security/recovery-codes.ts",
       "packages/api/src/security/reset-token.ts",
+      "packages/api/src/security/signature-image.ts",
       "packages/api/src/security/signing-access-token.ts",
       "packages/api/src/security/verification-token.ts",
       "packages/sealing/src/internal/digest.ts",

@@ -87,7 +87,21 @@ export async function truncateAll(database: LagdaDatabase): Promise<void> {
   // they would not BLOCK a preparation delete - but their own field rows
   // reference their own recipient rows with RESTRICT, so the order within the
   // group is load-bearing.
-  // Send artefacts first. The delivery intent references the grant with
+  // SIGNING VALUES FIRST, and the order inside this group is load-bearing
+  // twice over: a value references its representation, and BOTH reference the
+  // field ASSIGNMENT with the default RESTRICT. A `signing_request_fields`
+  // delete with values still pointing at it fails outright - which is exactly
+  // what the four-column assignment key is for, and exactly why it has to be
+  // unwound in the reverse order it was built (BACKEND-36).
+  await database.db.deleteFrom("signing_field_values").execute();
+  await database.db.deleteFrom("signing_representations").execute();
+  await database.db.deleteFrom("recipient_submissions").execute();
+  // Ceremony progress and consent cascade from the recipient, but delete them
+  // explicitly for the same reason the comment above gives.
+  await database.db.deleteFrom("signing_recipient_consents").execute();
+  await database.db.deleteFrom("signing_recipient_progress").execute();
+  await database.db.deleteFrom("recipient_signing_sessions").execute();
+  // Send artefacts next. The delivery intent references the grant with
   // RESTRICT, so the grant cannot go before it.
   await database.db.deleteFrom("signing_delivery_intents").execute();
   await database.db.deleteFrom("signing_access_grants").execute();

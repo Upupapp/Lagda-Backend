@@ -30,6 +30,7 @@ import * as m019 from "./019_signing_requests.js";
 import * as m020 from "./020_signing_request_send.js";
 import * as m021 from "./021_recipient_signing_access.js";
 import * as m022 from "./022_signing_ceremony.js";
+import * as m023 from "./023_signature_submission.js";
 
 /**
  * Migrations listed explicitly rather than read from disk.
@@ -64,6 +65,7 @@ const MIGRATIONS: Record<string, Migration> = {
   "020_signing_request_send": m020,
   "021_recipient_signing_access": m021,
   "022_signing_ceremony": m022,
+  "023_signature_submission": m023,
 };
 
 class ExplicitMigrationProvider implements MigrationProvider {

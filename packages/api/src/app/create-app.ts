@@ -46,6 +46,7 @@ import { registerSigningRequestRoutes } from "../signing-requests/signing-reques
 import { registerSendRoutes } from "../signing-requests/send-routes.js";
 import { registerSigningAccessRoutes } from "../signing-access/signing-access-routes.js";
 import { registerSigningCeremonyRoutes } from "../signing-ceremony/signing-ceremony-routes.js";
+import { registerSigningSubmissionRoutes } from "../signing-submission/signing-submission-routes.js";
 
 export interface CreateAppOptions {
   readonly config: ApiConfig;
@@ -581,6 +582,20 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
       registerSigningCeremonyRoutes(app, {
         config,
         ceremonyDependencies: ceremony,
+        signingAccessDependencies: signingAccess,
+        ...(signingLimiter === undefined
+          ? {}
+          : { rateLimit: { limiter: signingLimiter, metrics } }),
+        metrics,
+      });
+    }
+
+    // BACKEND-36. Same realm, same CSRF validator, its own dependencies.
+    if (dependencies.signingSubmission !== undefined) {
+      const submission = dependencies.signingSubmission;
+      registerSigningSubmissionRoutes(app, {
+        config,
+        submissionDependencies: submission,
         signingAccessDependencies: signingAccess,
         ...(signingLimiter === undefined
           ? {}

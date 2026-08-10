@@ -16,7 +16,7 @@ import type {
   ContactDependencies, DocumentDependencies, PreparationDependencies,
   RecipientDependencies, SigningRequestDependencies,
   SendSigningRequestDependencies, SigningAccessDependencies,
-  SigningCeremonyDependencies,
+  SigningCeremonyDependencies, SigningSubmissionDependencies,
 } from "@lagda/application";
 
 /**
@@ -54,6 +54,8 @@ export interface AppDependencies {
    * registered, rather than registered and broken.
    */
   readonly signingCeremony?: () => SigningCeremonyDependencies;
+  /** BACKEND-36. Absent in tests that do not exercise submission. */
+  readonly signingSubmission?: () => SigningSubmissionDependencies;
 
   readonly sessions?: SessionService;
   /**

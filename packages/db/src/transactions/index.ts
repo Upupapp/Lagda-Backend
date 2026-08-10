@@ -48,6 +48,7 @@ import { createScopedRecipientRepository } from "../repositories/recipients.js";
 import { createScopedSigningRequestRepository } from "../repositories/signing-requests.js";
 import { createScopedSigningAccessRepository } from "../repositories/signing-access.js";
 import { createRecipientCeremonyRepository } from "../repositories/signing-ceremony.js";
+import { createRecipientSubmissionRepository } from "../repositories/signing-submission.js";
 import type {
   RecipientCeremonyUnitOfWork, SigningRequestId, SigningRequestRecipientId,
 } from "@lagda/application";
@@ -263,6 +264,11 @@ export function createTransactionManager(db: Kysely<Database>): TransactionManag
               signingRequestId: scope.signingRequestId,
               recipientId: scope.recipientId,
               ceremony: createRecipientCeremonyRepository(trx, scope),
+              submissions: createRecipientSubmissionRepository(trx, scope),
+              // The idempotency framework, on the SAME transaction. A key
+              // completed in a different transaction from the mutation it
+              // guards would replay a submission that rolled back.
+              idempotency: createIdempotencyRepository(trx),
             });
           },
         });

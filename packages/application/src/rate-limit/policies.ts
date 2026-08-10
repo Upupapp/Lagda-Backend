@@ -427,6 +427,29 @@ export const RATE_LIMIT_POLICIES = {
   //
   // fail-OPEN, all three. The failure these bound is bandwidth and noise; the
   // failure of refusing is a signer who cannot finish signing.
+  // ── Signature submission (BACKEND-36) ──────────────────────────────────────
+  //
+  // Deliberately GENEROUS, and the reasoning is the opposite of the usual one.
+  //
+  // Idempotency is the duplicate protection for this endpoint: a repeated
+  // submission with the same key replays, and a second deliberate one is
+  // refused by a unique constraint. A limiter tight enough to stop a retry
+  // storm would also stop the retry that recovers a lost response - which is
+  // the failure this whole design exists to survive (§29).
+  //
+  // fail-OPEN. Refusing a signer at the moment they press Finish is worse than
+  // briefly unlimited traffic to an endpoint that cannot double-sign anyway.
+  "signing-submission.ip": {
+    id: "signing-submission.ip",
+    scopeType: "ip",
+    limit: 30,
+    windowMs: MINUTE,
+    failureMode: "fail-open",
+    source: "BACKEND-36 - not specified by the handoff. Bounds volume only; "
+      + "the duplicate protection is idempotency plus a unique constraint, "
+      + "and a signer behind an office NAT must not be blocked from signing.",
+  },
+
   "signing-ceremony.read.ip": {
     id: "signing-ceremony.read.ip",
     scopeType: "ip",

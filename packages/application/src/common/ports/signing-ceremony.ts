@@ -18,6 +18,8 @@
 // still returns nothing.
 
 import type { WorkspaceId } from "@lagda/contracts";
+import type { RecipientSubmissionRepository } from "./signing-submission.js";
+import type { IdempotencyRepository } from "./idempotency.js";
 import type { ArtifactId } from "./evidence.js";
 import type { StorageObjectKey } from "./storage.js";
 import type { RecipientActivationState } from "./signing-access.js";
@@ -138,6 +140,16 @@ export interface RecipientCeremonyUnitOfWork {
   readonly signingRequestId: SigningRequestId;
   readonly recipientId: SigningRequestRecipientId;
   readonly ceremony: RecipientCeremonyRepository;
+  /** BACKEND-36. Reads one accepted submission and writes one, nothing else. */
+  readonly submissions: RecipientSubmissionRepository;
+  /**
+   * BACKEND-36. The idempotency framework, inside the recipient realm.
+   *
+   * Scoped by IDENTITY rather than by RLS - `IdempotencyRepository` is the
+   * documented second exception to the tenancy rule, and every method takes the
+   * full scope, so a recipient cannot ask who else used a key.
+   */
+  readonly idempotency: IdempotencyRepository;
 }
 
 export interface SigningConsentIdGenerator {

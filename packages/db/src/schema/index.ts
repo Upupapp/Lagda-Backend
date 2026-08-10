@@ -273,6 +273,94 @@ export interface RecipientSigningSessionsTable {
  * is, and from `signing_request_recipients`, which is the immutable record of
  * who was asked.
  */
+/**
+ * One accepted signing act by one recipient. BACKEND-36.
+ *
+ * `accepted_at` is THE authoritative signing instant. There is deliberately no
+ * `created_at` beside it: two timestamps for one act is how a later reader ends
+ * up unsure which one the signature happened at. BACKEND-37 must reuse this
+ * value as the recipient's signed-at rather than taking a second clock reading.
+ *
+ * SELECT and INSERT only, and unique per recipient per request - the
+ * no-amendment policy expressed as a constraint rather than a rule.
+ */
+export interface RecipientSubmissionsTable {
+  submission_id: string;
+  workspace_id: string;
+  signing_request_id: string;
+  request_recipient_id: string;
+  accepted_at: Timestamptz;
+  /** Attribution, not a foreign key - evidence outlives operational rows. */
+  signing_session_id: string;
+  authentication_method: string;
+  /** The consent in force. NULL only where the disclosure does not apply. */
+  consent_id: ColumnType<string | null, string | null, string | null>;
+}
+
+/**
+ * An adopted signature or set of initials. BACKEND-36.
+ *
+ * Stored ONCE per purpose per submission and referenced by every field value
+ * that uses it, because the ceremony adopts one signature and applies it to
+ * every signature field.
+ *
+ * Exactly one shape is populated, enforced by a CHECK: typed text plus a
+ * server-known style index, or decoded raster bytes plus their dimensions.
+ * The base64 data URL the browser produces is transport formatting and is
+ * never what is stored.
+ */
+export interface SigningRepresentationsTable {
+  representation_id: string;
+  workspace_id: string;
+  signing_request_id: string;
+  request_recipient_id: string;
+  submission_id: string;
+  /** `signature` or `initials`. */
+  purpose: string;
+  /** `TYPED_SIGNATURE_V1` or `RASTER_SIGNATURE_V1`. Versioned from row one. */
+  representation_type: string;
+  typed_text: ColumnType<string | null, string | null, string | null>;
+  /** 0-3, into the four server-known styles. Never a font name. */
+  typed_style_index: ColumnType<number | null, number | null, number | null>;
+  /** Decoded bytes, bounded at 64 KiB by a CHECK. */
+  raster_bytes: ColumnType<Buffer | null, Buffer | null, Buffer | null>;
+  raster_media_type: ColumnType<string | null, string | null, string | null>;
+  raster_width: ColumnType<number | null, number | null, number | null>;
+  raster_height: ColumnType<number | null, number | null, number | null>;
+  /** SHA-256 over the bytes AS STORED. A client hash is a claim, not this. */
+  digest: string;
+}
+
+/**
+ * One immutable accepted value for one field. BACKEND-36.
+ *
+ * The four-column foreign key to `signing_request_fields` binds the value to an
+ * ASSIGNMENT, so another recipient's field has no referent rather than merely
+ * failing a check.
+ *
+ * Explicit typed columns rather than one JSONB blob: a checkbox that must be a
+ * boolean cannot arrive as the string "yes".
+ */
+export interface SigningFieldValuesTable {
+  value_id: string;
+  workspace_id: string;
+  signing_request_id: string;
+  request_recipient_id: string;
+  submission_id: string;
+  request_field_id: string;
+  /** The type AS IT WAS at acceptance. The snapshot cannot drift. */
+  field_type: string;
+  /** `text` | `boolean` | `instant` | `representation`. */
+  value_kind: string;
+  /** `RECIPIENT_PROVIDED` | `SERVER_DERIVED`. Never accepted from a client. */
+  value_source: string;
+  text_value: ColumnType<string | null, string | null, string | null>;
+  boolean_value: ColumnType<boolean | null, boolean | null, boolean | null>;
+  /** DATE_SIGNED: a UTC instant, never a browser-local date string. */
+  instant_value: ColumnType<Date | null, Date | null, Date | null>;
+  representation_id: ColumnType<string | null, string | null, string | null>;
+}
+
 export interface SigningRecipientProgressTable {
   workspace_id: string;
   signing_request_id: string;
@@ -833,6 +921,9 @@ export interface Database {
   signing_request_recipient_activation: SigningRequestRecipientActivationTable;
   signing_recipient_progress: SigningRecipientProgressTable;
   signing_recipient_consents: SigningRecipientConsentsTable;
+  recipient_submissions: RecipientSubmissionsTable;
+  signing_representations: SigningRepresentationsTable;
+  signing_field_values: SigningFieldValuesTable;
   signing_access_grants: SigningAccessGrantsTable;
   signing_delivery_intents: SigningDeliveryIntentsTable;
   recipient_signing_sessions: RecipientSigningSessionsTable;

@@ -31,6 +31,10 @@ import type {
 import type {
   RecipientCeremonyUnitOfWork, NewCeremonyConsent,
 } from "../common/ports/signing-ceremony.js";
+import type {
+  NewRecipientSubmission, NewSigningRepresentation, NewSigningFieldValue,
+  RecipientSubmissionId,
+} from "../common/ports/signing-submission.js";
 import type { WorkspaceInvitationId } from "@lagda/contracts";
 import type { NormalizedEmail } from "../auth/email-identity.js";
 import type { TransactionId, DocumentId, ContactId } from "@lagda/contracts";
@@ -186,6 +190,18 @@ export class FakeScopeMismatchError extends Error {
   }
 }
 
+/** One accepted signing act. The real table is unique per recipient. */
+export interface SubmissionRow {
+  readonly submissionId: string;
+  readonly workspaceId: string;
+  readonly signingRequestId: string;
+  readonly recipientId: string;
+  readonly acceptedAt: number;
+  readonly valueCount: number;
+  readonly representations: readonly NewSigningRepresentation[];
+  readonly values: readonly NewSigningFieldValue[];
+}
+
 /** A ceremony-entry row. Keyed like the real composite primary key. */
 export interface CeremonyProgressRow {
   readonly workspaceId: string;
@@ -225,6 +241,7 @@ interface StoreSnapshot {
   readonly recipientSessions: NewRecipientSigningSession[];
   readonly ceremonyProgress: CeremonyProgressRow[];
   readonly ceremonyConsents: CeremonyConsentRow[];
+  readonly submissions: SubmissionRow[];
   readonly evidence: EvidenceEventRecord[];
   readonly artifacts: ArtifactRecord[];
   readonly seals: SealRecord[];
@@ -260,6 +277,7 @@ export class InMemoryStore {
   recipientSessions: NewRecipientSigningSession[] = [];
   ceremonyProgress: CeremonyProgressRow[] = [];
   ceremonyConsents: CeremonyConsentRow[] = [];
+  submissions: SubmissionRow[] = [];
   /** Snapshot row to its request. The real tables carry the column. */
   readonly snapshotOwners = new Map<string, SigningRequestId>();
   /** Field id to preparation id. The real table has a column. */
@@ -291,6 +309,7 @@ export class InMemoryStore {
       recipientSessions: [...this.recipientSessions],
       ceremonyProgress: [...this.ceremonyProgress],
       ceremonyConsents: [...this.ceremonyConsents],
+      submissions: [...this.submissions],
       evidence: [...this.evidence],
       artifacts: [...this.artifacts],
       seals: [...this.seals],
@@ -323,6 +342,7 @@ export class InMemoryStore {
     this.recipientSessions = [...snapshot.recipientSessions];
     this.ceremonyProgress = [...snapshot.ceremonyProgress];
     this.ceremonyConsents = [...snapshot.ceremonyConsents];
+    this.submissions = [...snapshot.submissions];
     this.invitationDigests.clear();
     for (const [k, v] of snapshot.invitationDigests) this.invitationDigests.set(k, v);
     this.evidence.length = 0;
@@ -1523,6 +1543,36 @@ export class FakeTransactionManager implements TransactionManager {
               return Promise.resolve(true);
             },
           },
+          submissions: {
+            findAccepted: () => {
+              const row = store.submissions.find(mine);
+              return Promise.resolve(row === undefined ? null : {
+                submissionId: row.submissionId as RecipientSubmissionId,
+                acceptedAt: row.acceptedAt,
+                acceptedFieldCount: row.valueCount,
+              });
+            },
+            create: (submission: NewRecipientSubmission) => {
+              // The real unique constraint: ONE accepted submission per
+              // recipient. A second is a violation, never an overwrite.
+              if (store.submissions.some(mine)) {
+                return Promise.reject(new Error(
+                  "recipient_submissions_one_per_recipient"));
+              }
+              store.submissions.push({
+                submissionId: String(submission.submissionId),
+                workspaceId: scope.workspaceId,
+                signingRequestId: scope.signingRequestId,
+                recipientId: scope.recipientId,
+                acceptedAt: submission.acceptedAt,
+                valueCount: submission.values.length,
+                representations: submission.representations,
+                values: submission.values,
+              });
+              return Promise.resolve();
+            },
+          },
+          idempotency: this.idempotency,
         });
       },
     });

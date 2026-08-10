@@ -525,3 +525,4 @@ export * from "./signing-access.js";
 
 export * from "./signing-sessions.js";
 export * from "./signing-ceremony.js";
+export * from "./signing-submission.js";
