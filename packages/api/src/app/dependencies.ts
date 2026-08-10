@@ -12,6 +12,7 @@ import type {
   CreateWorkspaceDependencies, GetWorkspaceDependencies,
   ListMyWorkspacesDependencies,
   InvitationDependencies, AcceptInvitationDependencies,
+  MemberAdministrationDependencies, WorkspaceAccessDependencies,
 } from "@lagda/application";
 
 /**
@@ -75,5 +76,16 @@ export interface WorkspaceDependencies {
   readonly invitations?: {
     readonly management: () => InvitationDependencies;
     readonly redemption: () => AcceptInvitationDependencies;
+  };
+  /**
+   * Member administration and the capability projection (BACKEND-27).
+   *
+   * Optional as a WHOLE, like invitations. Present means the member list, the
+   * role-change route, the removal route and the access projection are all
+   * registered; absent means none is.
+   */
+  readonly members?: {
+    readonly administration: () => MemberAdministrationDependencies;
+    readonly access: () => WorkspaceAccessDependencies;
   };
 }

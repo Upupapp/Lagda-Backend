@@ -89,24 +89,20 @@ export function canReceiveOwnership(
   return target !== undefined && target.role !== "owner";
 }
 
-// ── Authorization seam ───────────────────────────────────────────────────────
-
-/**
- * Whether a role may change workspace metadata.
- *
- * ONE narrow predicate, deliberately — not the start of a permission engine.
- * BACKEND-27 replaces it with the real policy derived from the product's
- * `ROLE_PERMISSIONS` table, at which point this becomes a call into that policy
- * rather than a comparison.
- *
- * `owner` only. The frontend's own table grants `workspace:manage` to
- * `administrator` too, and that is deliberately NOT honoured here: BACKEND-25
- * cannot produce an administrator membership, so extending the rule to a role
- * no code can create would be an untestable claim (§52, §54).
- */
-export function canManageWorkspace(role: WorkspaceRole): boolean {
-  return role === "owner";
-}
+// ── Authorization ────────────────────────────────────────────────────────────
+//
+// BACKEND-25 and BACKEND-26 each carried a narrow role predicate here —
+// `canManageWorkspace`, `canManageInvitations`, `canGrantRole` — because
+// neither had a role model to consult. All three were `role === "owner"`.
+//
+// **BACKEND-27 removed them.** Authorization now lives in
+// `@lagda/core/authorization` as a capability policy, and reading the product's
+// own `ROLE_PERMISSIONS` table corrected the answer: `administrator` holds
+// `manage_team` and `manage_workspace`, so owner-only was wrong.
+//
+// Nothing in this file compares a role any more. The domain rules below are
+// about OWNERSHIP as a subject — how many owners a workspace has — which is a
+// different question from what a role may do.
 
 // ── Workspace name ───────────────────────────────────────────────────────────
 
@@ -184,40 +180,6 @@ export const WORKSPACE_LIFECYCLE_STATES = ["active"] as const;
 export type WorkspaceLifecycleState = (typeof WORKSPACE_LIFECYCLE_STATES)[number];
 
 // ── Invitations (BACKEND-26) ─────────────────────────────────────────────────
-
-/**
- * Whether a role may create, resend, revoke and list workspace invitations.
- *
- * `owner` only, matching `canManageWorkspace` — and it is a SEPARATE function
- * rather than an alias, because BACKEND-27 will almost certainly separate them:
- * the product's own table grants `members:invite` to `administrator` while
- * reserving `workspace:manage` more narrowly. Two names now means that change
- * is one edit here, not a search for every caller of an overloaded predicate
- * (§134, §135).
- */
-export function canManageInvitations(role: WorkspaceRole): boolean {
-  return role === "owner";
-}
-
-/**
- * Whether an inviter holding `inviterRole` may grant `requestedRole`.
- *
- * The privilege-escalation seam. Today it answers one question — an owner may
- * grant any invitable role — and `owner` is not invitable at all, so no
- * invitation can ever mint a second owner.
- *
- * BACKEND-27 replaces the body with the real grant matrix. The SHAPE is what
- * matters now: every grant decision goes through one function that takes both
- * roles, so the rule cannot end up spelled differently in the create path and
- * the resend path (§15, §305).
- */
-export function canGrantRole(
-  inviterRole: WorkspaceRole,
-  requestedRole: WorkspaceRole,
-): boolean {
-  if (requestedRole === "owner") return false;
-  return canManageInvitations(inviterRole);
-}
 
 /**
  * The timestamps an invitation's state is derived from.

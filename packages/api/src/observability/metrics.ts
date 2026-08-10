@@ -37,6 +37,12 @@ export const METRIC_NAMES = [
   // BACKEND-26. Invitation lifecycle volume — created, resent, revoked,
   // accepted, declined.
   "workspace_invitation_operations_total",
+  // BACKEND-27. Member administration — role changes and removals.
+  "workspace_member_operations_total",
+  // BACKEND-27. Capability denials. Successful checks are NOT counted: one
+  // series per authorized request is noise, and the interesting signal is a
+  // sustained spike in refusals (§183, §186).
+  "authorization_denials_total",
 ] as const;
 export type MetricName = (typeof METRIC_NAMES)[number];
 
@@ -80,6 +86,12 @@ export const METRIC_LABELS = {
   // EMAIL or the token digest: the first three are unbounded, the fourth is
   // personal data, and the fifth is a credential handle (§208, §279).
   workspace_invitation_operations_total: ["operation", "result", "processRole"],
+  workspace_member_operations_total: ["operation", "result", "processRole"],
+  // `capability` is a ten-value closed set defined in code — bounded, and the
+  // most useful dimension a denial has. Deliberately NOT `workspaceId`,
+  // `userId` or `membershipId`: all unbounded, and one series per tenant is how
+  // a metrics backend falls over (§187, §249).
+  authorization_denials_total: ["capability", "processRole"],
 } as const satisfies Record<MetricName, readonly string[]>;
 
 export type LabelsFor<N extends MetricName> = Partial<

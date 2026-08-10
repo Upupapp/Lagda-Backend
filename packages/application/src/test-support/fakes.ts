@@ -211,6 +211,31 @@ function scopedMemberships(store: InMemoryStore, scope: WorkspaceId): ScopedMemb
 
     list: () => Promise.resolve(inScope()),
 
+    listWithAccounts: () => Promise.resolve(
+      [...inScope()]
+        .sort((a, b) => a.createdAt - b.createdAt || a.memberId.localeCompare(b.memberId))
+        .map(m => {
+          // The fake has no accounts table; `accountEmails` is what a test
+          // seeds. An unseeded user gets a placeholder rather than throwing,
+          // so a directory test does not have to register every fixture.
+          let email = `${m.userId}@fixture.invalid`;
+          for (const [address, id] of store.accountEmails) {
+            if (id === m.userId) email = address;
+          }
+          return { ...m, email, displayName: m.userId };
+        })),
+
+    removeIfRole: (input) => {
+      const index = store.memberships.findIndex(
+        m => m.workspaceId === scope
+          && m.memberId === input.memberId
+          && m.role === input.expectedRole,
+      );
+      if (index === -1) return Promise.resolve(false);
+      store.memberships.splice(index, 1);
+      return Promise.resolve(true);
+    },
+
     countOwners: () => Promise.resolve(inScope().filter(m => m.role === "owner").length),
 
     insert: (membership: WorkspaceMembershipRecord) => {

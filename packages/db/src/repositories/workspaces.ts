@@ -192,6 +192,61 @@ export function createScopedMembershipRepository(
       return rows.map(toMembershipRecord);
     },
 
+    async listWithAccounts() {
+      // An INNER JOIN, tenant-scoped on the membership side — the same shape
+      // and the same reasoning as `findByNormalizedEmail`. `users` carries no
+      // RLS, so the tenant predicate has to be on `workspace_memberships`.
+      const rows = await trx
+        .selectFrom("workspace_memberships as m")
+        .innerJoin("users as u", "u.user_id", "m.user_id")
+        .where("m.workspace_id", "=", scope)
+        .select([
+          "m.member_id as member_id",
+          "m.workspace_id as workspace_id",
+          "m.user_id as user_id",
+          "m.role as role",
+          "m.created_at as created_at",
+          // The DISPLAY address, never `normalized_email`, which is an internal
+          // identity key and not something a directory should surface.
+          "u.email as email",
+          "u.display_name as display_name",
+        ])
+        // Deterministic. PostgreSQL guarantees no order without this, and a
+        // member list that reshuffles between reads looks broken.
+        .orderBy("m.created_at", "asc")
+        .orderBy("m.member_id", "asc")
+        .execute();
+
+      return rows.map(row => ({
+        memberId: row.member_id as WorkspaceMemberId,
+        workspaceId: row.workspace_id as WorkspaceId,
+        userId: row.user_id as UserId,
+        role: toMembershipRecord({
+          member_id: row.member_id, workspace_id: row.workspace_id,
+          user_id: row.user_id, role: row.role, created_at: row.created_at,
+        }).role,
+        createdAt: row.created_at.getTime(),
+        email: row.email,
+        displayName: row.display_name,
+      }));
+    },
+
+    async removeIfRole(input: {
+      readonly memberId: WorkspaceMemberId;
+      readonly expectedRole: WorkspaceRole;
+    }): Promise<boolean> {
+      // Conditional on the role, which is what the last-owner check was made
+      // against. A plain delete by id would let a concurrent promotion slip a
+      // new owner into the row this statement is about to remove.
+      const result = await trx
+        .deleteFrom("workspace_memberships")
+        .where("workspace_id", "=", scope)
+        .where("member_id", "=", input.memberId)
+        .where("role", "=", input.expectedRole)
+        .executeTakeFirst();
+      return Number(result.numDeletedRows) === 1;
+    },
+
     async countOwners(): Promise<number> {
       // COUNT in SQL rather than loading rows to measure their length.
       const result = await trx

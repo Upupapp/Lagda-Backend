@@ -37,6 +37,7 @@ import {
   registerInvitationManagementRoutes, registerInvitationPreviewRoute,
   registerInvitationRedemptionRoutes,
 } from "../workspaces/invitation-routes.js";
+import { registerMemberRoutes } from "../workspaces/member-routes.js";
 
 export interface CreateAppOptions {
   readonly config: ApiConfig;
@@ -375,6 +376,23 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
         // MFA credential is refused by the scope hook before any invitation is
         // looked up.
         registerInvitationRedemptionRoutes(scope, invitationOptions);
+      }
+
+      if (workspaces.members !== undefined) {
+        const members = workspaces.members;
+        registerMemberRoutes(scope, {
+          authenticatedUser: (request: FastifyRequest) => Promise.resolve(
+            request.auth.status === "authenticated"
+              ? {
+                  userId: request.auth.actor.userId,
+                  sessionId: request.auth.actor.sessionId,
+                }
+              : null,
+          ),
+          memberDependencies: members.administration,
+          accessDependencies: members.access,
+          metrics,
+        });
       }
 
       return Promise.resolve();

@@ -76,6 +76,11 @@ export {
   type InvitationRouteOptions,
 } from "./workspaces/invitation-routes.js";
 export { createInvitationLinkBuilder } from "./workspaces/invitation-link.js";
+export {
+  registerMemberRoutes, ChangeMemberRoleRequestSchema, WorkspaceMemberSchema,
+  MemberListResponseSchema, WorkspaceAccessResponseSchema,
+  type MemberRouteOptions,
+} from "./workspaces/member-routes.js";
 export { createInvitationTokenFactory } from "./security/invitation-token.js";
 
 export {

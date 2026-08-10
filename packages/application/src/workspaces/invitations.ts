@@ -17,8 +17,7 @@ import type {
 } from "@lagda/contracts";
 import { INVITATION_TTL_MS } from "@lagda/contracts";
 import {
-  canManageInvitations, canGrantRole, deriveInvitationState,
-  isInvitationRedeemable,
+  canGrantInvitationRole, deriveInvitationState, isInvitationRedeemable,
 } from "@lagda/core";
 import { normalizeEmail, type NormalizedEmail } from "../auth/email-identity.js";
 import type {
@@ -34,7 +33,7 @@ import {
   createIdempotencyService, type IdempotencyDependencies,
 } from "../idempotency/service.js";
 import {
-  requireWorkspaceAccess, type WorkspaceAccessDependencies,
+  requireCapability, type WorkspaceAccessDependencies,
 } from "./workspace-access.js";
 
 // ── Errors ───────────────────────────────────────────────────────────────────
@@ -204,15 +203,18 @@ export async function createWorkspaceInvitation(
   input: CreateInvitationInput,
   deps: InvitationDependencies,
 ): Promise<InvitationSummary> {
-  // Authorization FIRST, before the email is even parsed. A caller who is not a
-  // manager of this workspace must not be able to learn whether an address is
-  // well-formed, let alone whether it is already a member.
-  const access = await requireWorkspaceAccess(input.actor.userId, input.workspaceId, deps);
-  if (!canManageInvitations(access.role)) throw new ResourceNotFoundError("Workspace");
+  // Authorization FIRST, before the email is even parsed. A caller without the
+  // capability must not be able to learn whether an address is well-formed, let
+  // alone whether it is already a member.
+  const access = await requireCapability(
+    input.actor.userId, input.workspaceId, "invitation.create", deps);
 
-  // The grant seam. Today: an owner may grant any invitable role, and `owner`
-  // is not invitable. BACKEND-27 replaces the body, not the call site.
-  if (!canGrantRole(access.role, input.role)) throw new InvitationRoleNotAllowedError();
+  // The grant matrix, separate from the capability. Holding
+  // `invitation.create` says you may invite; it does not say which roles you
+  // may hand out, and conflating the two is how an administrator mints an owner.
+  if (!canGrantInvitationRole(access.role, input.role)) {
+    throw new InvitationRoleNotAllowedError();
+  }
 
   // The SAME normalizer registration, login and recovery use. An address that
   // resolves to one account at login and another at invitation would be a way
@@ -344,10 +346,10 @@ export async function listWorkspaceInvitations(
   workspaceId: WorkspaceId,
   deps: InvitationDependencies,
 ): Promise<readonly InvitationSummary[]> {
-  const access = await requireWorkspaceAccess(actor.userId, workspaceId, deps);
   // Ordinary members do not see who has been invited. That is management state
-  // about people who are not yet in the workspace (§91).
-  if (!canManageInvitations(access.role)) throw new ResourceNotFoundError("Workspace");
+  // about people who are not yet in the workspace, and it carries their
+  // addresses.
+  await requireCapability(actor.userId, workspaceId, "invitation.view", deps);
 
   const now = deps.clock.now();
   const records = await deps.transactions.runForWorkspace(
@@ -391,8 +393,8 @@ export async function resendWorkspaceInvitation(
   input: ResendInvitationInput,
   deps: InvitationDependencies,
 ): Promise<InvitationSummary> {
-  const access = await requireWorkspaceAccess(input.actor.userId, input.workspaceId, deps);
-  if (!canManageInvitations(access.role)) throw new ResourceNotFoundError("Workspace");
+  await requireCapability(
+    input.actor.userId, input.workspaceId, "invitation.resend", deps);
 
   const now = deps.clock.now();
   const token = deps.tokens.issue();
@@ -477,8 +479,7 @@ export async function revokeWorkspaceInvitation(
   invitationId: WorkspaceInvitationId,
   deps: InvitationDependencies,
 ): Promise<RevokeInvitationResult> {
-  const access = await requireWorkspaceAccess(actor.userId, workspaceId, deps);
-  if (!canManageInvitations(access.role)) throw new ResourceNotFoundError("Workspace");
+  await requireCapability(actor.userId, workspaceId, "invitation.revoke", deps);
 
   const now = deps.clock.now();
   return deps.transactions.runForWorkspace(workspaceId, async uow => {

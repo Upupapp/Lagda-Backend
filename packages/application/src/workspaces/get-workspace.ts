@@ -10,7 +10,7 @@ import { validateWorkspaceName } from "@lagda/core";
 import type { TransactionManager } from "../common/ports/index.js";
 import { ResourceNotFoundError } from "../common/errors/index.js";
 import {
-  requireWorkspaceAccess, requireWorkspaceManager,
+  requireWorkspaceAccess, requireCapability,
   type WorkspaceAccessDependencies,
 } from "./workspace-access.js";
 
@@ -101,9 +101,10 @@ export async function updateWorkspace(
   input: UpdateWorkspaceInput,
   deps: GetWorkspaceDependencies,
 ): Promise<UpdateWorkspaceResult> {
-  // Owner-only, resolved from the membership row. Never from a client `role`
-  // field — no request schema in this command has one (§53, §240).
-  const access = await requireWorkspaceManager(userId, workspaceId, deps);
+  // The CAPABILITY, named. Which roles hold `workspace.update` is the policy's
+  // question, not this use case's — and BACKEND-27 changed the answer from
+  // "owner" to "owner and administrator" without touching this line.
+  const access = await requireCapability(userId, workspaceId, "workspace.update", deps);
 
   const validated = validateWorkspaceName(input.name);
   if (!validated.ok) return { outcome: "invalid", reason: validated.reason };

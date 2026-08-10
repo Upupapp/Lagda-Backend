@@ -99,6 +99,25 @@ export interface WorkspaceMembershipRecord {
   readonly createdAt: number;
 }
 
+/**
+ * A membership joined to its account, for the member directory (BACKEND-27).
+ *
+ * A JOIN projection, and a DISTINCT type from `WorkspaceMembershipRecord`
+ * rather than an optional email on it. The distinction is the point: this shape
+ * carries personal data, and a type that sometimes has an address and sometimes
+ * does not is one a caller stops thinking about.
+ */
+export interface WorkspaceMemberDirectoryRecord {
+  readonly memberId: WorkspaceMemberId;
+  readonly workspaceId: WorkspaceId;
+  readonly userId: UserId;
+  readonly role: WorkspaceRole;
+  readonly createdAt: number;
+  /** The DISPLAY address. `normalized_email` is internal and never leaves. */
+  readonly email: string;
+  readonly displayName: string;
+}
+
 // ── Scoped repositories ──────────────────────────────────────────────────────
 //
 // Bound to ONE workspace and ONE transaction, obtained from a unit of work.
@@ -157,7 +176,44 @@ export interface ScopedMembershipRepository {
 
   list(): Promise<readonly WorkspaceMembershipRecord[]>;
 
+  /**
+   * The member directory, joined to accounts (BACKEND-27).
+   *
+   * A separate method from `list()` rather than a flag, because it returns
+   * PERSONAL DATA — every member's email address — and a boolean parameter is
+   * how a caller ends up fetching it without meaning to. The capability gate is
+   * `membership.view`; this is the only method that can produce the addresses.
+   */
+  listWithAccounts(): Promise<readonly WorkspaceMemberDirectoryRecord[]>;
+
+  /**
+   * How many owners this workspace currently has.
+   *
+   * Read INSIDE the mutation transaction by anything that could reduce it. A
+   * count read before the transaction is a check against state that may have
+   * changed by the time the write lands (§44, §141).
+   */
   countOwners(): Promise<number>;
+
+  /**
+   * Removes a membership, conditionally on its role being unchanged.
+   *
+   * Conditional for the same reason `changeRoleIfUnchanged` is: two
+   * administrators acting concurrently must not both proceed against state only
+   * one of them saw. The role is the thing the last-owner check was made
+   * against, so it is the thing the delete is conditioned on.
+   *
+   * A hard DELETE. See `removeWorkspaceMember` for why the row is not marked
+   * instead — a `removed_at` column would put non-members in the table that
+   * answers "may this person act here".
+   *
+   * Returns whether it applied. Zero rows is ambiguous — absent, another
+   * tenant, or changed concurrently — and the caller reports none of those.
+   */
+  removeIfRole(input: {
+    readonly memberId: WorkspaceMemberId;
+    readonly expectedRole: WorkspaceRole;
+  }): Promise<boolean>;
 
   /** @throws on workspace mismatch, as above. */
   insert(membership: WorkspaceMembershipRecord): Promise<void>;

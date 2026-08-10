@@ -120,6 +120,49 @@ export const InvitationStateSchema = Type.Union(
 export const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
+ * The capability identifiers a client may receive (BACKEND-27).
+ *
+ * ── Names only, never the policy ───────────────────────────────────────────
+ *
+ * This list exists so a browser can be TOLD which capabilities it holds and
+ * hide controls accordingly. The role-to-capability MAPPING stays in
+ * `@lagda/core/authorization` and is backend-owned.
+ *
+ * A TypeScript monorepo makes it easy to share the policy itself. That is
+ * deliberately not done: a frontend evaluating the policy would be a second
+ * implementation to keep in step, and treating its answer as a security control
+ * would make the browser part of the enforcement path (§127, §128).
+ *
+ * Kept in step with `WORKSPACE_CAPABILITIES` in core by a test that compares
+ * the two lists — a shared name list that drifted from the policy would let a
+ * client branch on a capability the server does not have.
+ */
+export const WORKSPACE_CAPABILITY_NAMES = [
+  "workspace.view",
+  "workspace.update",
+  "membership.view",
+  "membership.role.change",
+  "membership.remove",
+  "invitation.view",
+  "invitation.create",
+  "invitation.resend",
+  "invitation.revoke",
+  "workspace.ownership.transfer",
+] as const;
+
+export type WorkspaceCapabilityName = (typeof WORKSPACE_CAPABILITY_NAMES)[number];
+
+export const WorkspaceCapabilitySchema = Type.Union(
+  WORKSPACE_CAPABILITY_NAMES.map(name => Type.Literal(name)),
+  {
+    title: "WorkspaceCapability",
+    description:
+      "An action the caller may perform. Informational — the backend "
+      + "re-evaluates authorization on every mutation.",
+  },
+);
+
+/**
  * The maximum a workspace name may be, in Unicode code points.
  *
  * Matches the `varchar(200)` column. Stated in code points rather than bytes

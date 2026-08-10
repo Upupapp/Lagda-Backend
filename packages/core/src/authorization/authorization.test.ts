@@ -1,0 +1,218 @@
+// The authorization policy, exhaustively.
+//
+// Table-driven and complete: every role against every capability, every actor
+// role against every target role. 70 + 49 assertions that run with no database,
+// no HTTP and nothing mocked — which is the point of keeping the policy pure.
+//
+// The expectations here are written out by hand ON PURPOSE. A test that derived
+// them from `ROLE_CAPABILITIES` would assert that the policy equals itself and
+// would pass after any change to it. These tables are a second, independent
+// statement of the intended matrix, and the two have to agree.
+
+import { describe, it, expect } from "vitest";
+import type { WorkspaceRole } from "@lagda/contracts";
+import { WORKSPACE_ROLES, INVITABLE_WORKSPACE_ROLES } from "@lagda/contracts";
+import {
+  WORKSPACE_CAPABILITIES, hasCapability, capabilitiesFor,
+  canGrantRole, canGrantInvitationRole,
+  wouldRemoveLastOwner, assertOwnerRemains, OWNERSHIP_MODEL,
+  type WorkspaceCapability,
+} from "./index.js";
+import { InvariantViolationError } from "../common/index.js";
+
+// ── The expected matrix, written independently of the policy ────────────────
+
+const ADMIN_CAPABILITIES: readonly WorkspaceCapability[] = [
+  "workspace.view", "workspace.update",
+  "membership.view", "membership.role.change", "membership.remove",
+  "invitation.view", "invitation.create", "invitation.resend", "invitation.revoke",
+];
+
+const EXPECTED: Readonly<Record<WorkspaceRole, readonly WorkspaceCapability[]>> = {
+  owner: [...ADMIN_CAPABILITIES, "workspace.ownership.transfer"],
+  administrator: ADMIN_CAPABILITIES,
+  member: ["workspace.view"],
+  template_administrator: ["workspace.view"],
+  sender: ["workspace.view"],
+  reviewer: ["workspace.view"],
+  auditor: ["workspace.view"],
+};
+
+describe("the role model", () => {
+  it("contains exactly the roles the product has", () => {
+    // Speculative roles other products ship and LAGDA does not: `super_admin`,
+    // `manager`, `editor`, `contributor`, `viewer`, `billing_admin`,
+    // `security_admin`. The last three appear in the frontend's `PlatformRole`
+    // but have no workspace-membership meaning — see the product inventory.
+    expect([...WORKSPACE_ROLES].sort()).toEqual([
+      "administrator", "auditor", "member", "owner",
+      "reviewer", "sender", "template_administrator",
+    ]);
+  });
+
+  it("uses a single ownership model, stated in code", () => {
+    expect(OWNERSHIP_MODEL).toBe("SINGLE_OWNER");
+  });
+});
+
+// ── The exhaustive capability matrix ─────────────────────────────────────────
+
+describe("role to capability matrix", () => {
+  for (const role of WORKSPACE_ROLES) {
+    for (const capability of WORKSPACE_CAPABILITIES) {
+      const expected = EXPECTED[role].includes(capability);
+      it(`${role} ${expected ? "HAS" : "does NOT have"} ${capability}`, () => {
+        expect(hasCapability(role, capability)).toBe(expected);
+      });
+    }
+  }
+
+  it("covers every role and every capability with no gaps", () => {
+    // Guards the loop above: if a role or capability were added and the
+    // EXPECTED table not updated, this fails rather than the matrix silently
+    // testing fewer combinations.
+    expect(Object.keys(EXPECTED).sort()).toEqual([...WORKSPACE_ROLES].sort());
+    expect(WORKSPACE_CAPABILITIES.length).toBe(10);
+  });
+});
+
+describe("default deny", () => {
+  it("denies a capability that does not exist", () => {
+    expect(hasCapability("owner", "document.delete" as WorkspaceCapability)).toBe(false);
+  });
+
+  it("denies EVERY capability to a role that does not exist", () => {
+    // A value that reached the policy without a mapping is a bug, and the safe
+    // behaviour for a bug inside an authorization function is to refuse.
+    for (const capability of WORKSPACE_CAPABILITIES) {
+      expect(hasCapability("superuser" as WorkspaceRole, capability)).toBe(false);
+    }
+  });
+
+  it("returns no capabilities for an unknown role", () => {
+    expect(capabilitiesFor("superuser" as WorkspaceRole)).toEqual([]);
+  });
+
+  it("never grants a capability through a wildcard or an inherited role", () => {
+    // `member` holds exactly one capability. If a hierarchy or a fallback were
+    // ever introduced, this is where it would show up.
+    expect(capabilitiesFor("member")).toEqual(["workspace.view"]);
+  });
+});
+
+describe("the capability projection", () => {
+  it("returns a COPY that cannot mutate the policy", () => {
+    const first = capabilitiesFor("owner");
+    first.push("document.delete" as WorkspaceCapability);
+    first.length = 0;
+
+    // The next caller is unaffected, and the policy still denies.
+    expect(capabilitiesFor("owner")).toContain("workspace.update");
+    expect(hasCapability("owner", "workspace.update")).toBe(true);
+  });
+
+  it("matches the matrix exactly for every role", () => {
+    for (const role of WORKSPACE_ROLES) {
+      expect([...capabilitiesFor(role)].sort()).toEqual([...EXPECTED[role]].sort());
+    }
+  });
+});
+
+// ── The exhaustive grant matrix ──────────────────────────────────────────────
+
+describe("role grant matrix", () => {
+  /** Roles that may hand out roles at all. */
+  const GRANTORS: readonly WorkspaceRole[] = ["owner", "administrator"];
+
+  for (const actorRole of WORKSPACE_ROLES) {
+    for (const targetRole of WORKSPACE_ROLES) {
+      const expected = targetRole !== "owner" && GRANTORS.includes(actorRole);
+      it(`${actorRole} ${expected ? "MAY" : "may NOT"} grant ${targetRole}`, () => {
+        expect(canGrantRole(actorRole, targetRole)).toBe(expected);
+      });
+    }
+  }
+
+  it("lets NOBODY grant owner — not even the owner", () => {
+    // Ownership moves through a dedicated transfer operation and nothing else.
+    // A role dropdown that could mint an owner would break
+    // `assertExactlyOneOwner` days after anyone reviewed it.
+    for (const actorRole of WORKSPACE_ROLES) {
+      expect(canGrantRole(actorRole, "owner")).toBe(false);
+      expect(canGrantInvitationRole(actorRole, "owner")).toBe(false);
+    }
+  });
+
+  it("lets an administrator create peers but never a superior", () => {
+    expect(canGrantRole("administrator", "administrator")).toBe(true);
+    expect(canGrantRole("administrator", "owner")).toBe(false);
+  });
+
+  it("lets no ordinary role grant anything", () => {
+    for (const actorRole of ["member", "sender", "reviewer", "auditor",
+      "template_administrator"] as const) {
+      for (const targetRole of WORKSPACE_ROLES) {
+        expect(canGrantRole(actorRole, targetRole)).toBe(false);
+      }
+    }
+  });
+});
+
+describe("invitation grant matrix", () => {
+  for (const actorRole of WORKSPACE_ROLES) {
+    for (const targetRole of INVITABLE_WORKSPACE_ROLES) {
+      const expected = hasCapability(actorRole, "invitation.create");
+      it(`${actorRole} ${expected ? "MAY" : "may NOT"} invite as ${targetRole}`, () => {
+        expect(canGrantInvitationRole(actorRole, targetRole)).toBe(expected);
+      });
+    }
+  }
+
+  it("keeps owner out of the invitable set entirely", () => {
+    expect(INVITABLE_WORKSPACE_ROLES).not.toContain("owner");
+  });
+});
+
+// ── Ownership safety ─────────────────────────────────────────────────────────
+
+describe("last-owner protection", () => {
+  it("blocks demoting the only owner", () => {
+    expect(wouldRemoveLastOwner({ currentRole: "owner", ownerCount: 1 })).toBe(true);
+  });
+
+  it("blocks it even if the count is somehow already zero", () => {
+    expect(wouldRemoveLastOwner({ currentRole: "owner", ownerCount: 0 })).toBe(true);
+  });
+
+  it("permits it when another owner remains", () => {
+    // Unreachable under SINGLE_OWNER, and the policy stays honest so a change
+    // to the ownership model does not require rewriting this function.
+    expect(wouldRemoveLastOwner({ currentRole: "owner", ownerCount: 2 })).toBe(false);
+  });
+
+  it("never blocks a non-owner, whatever the count", () => {
+    for (const role of WORKSPACE_ROLES) {
+      if (role === "owner") continue;
+      expect(wouldRemoveLastOwner({ currentRole: role, ownerCount: 1 })).toBe(false);
+    }
+  });
+
+  it("throws when a resulting state would have no owner", () => {
+    expect(() => { assertOwnerRemains(0); }).toThrow(InvariantViolationError);
+    expect(() => { assertOwnerRemains(1); }).not.toThrow();
+  });
+});
+
+// ── Purity ───────────────────────────────────────────────────────────────────
+
+describe("the policy is deterministic", () => {
+  it("returns the same answer for the same inputs, always", () => {
+    for (const role of WORKSPACE_ROLES) {
+      for (const capability of WORKSPACE_CAPABILITIES) {
+        const first = hasCapability(role, capability);
+        expect(hasCapability(role, capability)).toBe(first);
+        expect(hasCapability(role, capability)).toBe(first);
+      }
+    }
+  });
+});

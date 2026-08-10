@@ -19,7 +19,7 @@ import { GetWorkspaceMember } from "./get-workspace-member.js";
 import { listMyWorkspaces } from "./list-my-workspaces.js";
 import { getWorkspace, updateWorkspace } from "./get-workspace.js";
 import {
-  resolveWorkspaceAccess, requireWorkspaceAccess, requireWorkspaceManager,
+  resolveWorkspaceAccess, requireWorkspaceAccess, requireCapability,
   type WorkspaceAccessContext,
 } from "./workspace-access.js";
 import { ApplicationValidationError, ResourceNotFoundError } from "../common/errors/index.js";
@@ -339,7 +339,7 @@ describe("workspace access", () => {
       .toBe((absent as ResourceNotFoundError).message);
   });
 
-  it("refuses a non-owner the manage capability", async () => {
+  it("refuses a non-manager the update capability", async () => {
     const { store, deps } = seeded();
     const reader = "usr_reader" as UserId;
     store.memberships.push({
@@ -349,8 +349,8 @@ describe("workspace access", () => {
 
     // A member, so plain access resolves.
     expect((await requireWorkspaceAccess(reader, WS_A, deps)).role).toBe("reviewer");
-    // But not a manager.
-    await expect(requireWorkspaceManager(reader, WS_A, deps))
+    // But `reviewer` does not hold `workspace.update` — BACKEND-27's policy.
+    await expect(requireCapability(reader, WS_A, "workspace.update", deps))
       .rejects.toBeInstanceOf(ResourceNotFoundError);
   });
 
@@ -367,7 +367,8 @@ describe("workspace access", () => {
     // Promoting the row is the ONLY way the answer changes.
     const row = store.memberships.find(m => m.memberId === "mem_reader");
     store.memberships[store.memberships.indexOf(row!)] = { ...row!, role: "owner" };
-    expect((await requireWorkspaceManager(reader, WS_A, deps)).role).toBe("owner");
+    expect((await requireCapability(reader, WS_A, "workspace.update", deps)).role)
+      .toBe("owner");
   });
 });
 

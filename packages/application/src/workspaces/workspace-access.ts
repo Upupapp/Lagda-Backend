@@ -18,7 +18,7 @@
 // at all. The API may CALL this to decorate a request; it may not BE it (§43).
 
 import type { UserId, WorkspaceId, WorkspaceMemberId, WorkspaceRole } from "@lagda/contracts";
-import { canManageWorkspace } from "@lagda/core";
+import { hasCapability, capabilitiesFor, type WorkspaceCapability } from "@lagda/core";
 import type { TransactionManager } from "../common/ports/index.js";
 import { ResourceNotFoundError } from "../common/errors/index.js";
 
@@ -103,23 +103,70 @@ export async function requireWorkspaceAccess(
 }
 
 /**
- * Requires a role that may change workspace metadata.
+ * Requires a specific CAPABILITY inside a workspace the caller belongs to.
  *
- * Also `ResourceNotFoundError`, and NOT `AccessDeniedError`. The distinction a
- * 403 would draw — "this workspace exists and you are in it, but you are not the
- * owner" — is information a member already has, so hiding it costs nothing;
- * meanwhile one error for both cases means no caller can ever tell the two
- * apart by accident. BACKEND-27 may revisit this once roles other than `owner`
- * can exist and the product decides what a non-owner should be told (§210).
+ * ── The centralization point (BACKEND-27) ──────────────────────────────────
+ *
+ * Every workspace operation in the backend passes through here, naming the
+ * capability it needs. No route and no use case compares a role: the role is
+ * read from the membership row inside this function, handed to the pure policy,
+ * and never inspected again.
+ *
+ * BACKEND-25 and BACKEND-26 had `requireWorkspaceManager`, which was
+ * `role === "owner"` under another name. It is gone.
+ *
+ * ── Why the denial is a hidden 404, not a 403 ──────────────────────────────
+ *
+ * `requireWorkspaceAccess` already answers 404 for a non-member, and using the
+ * SAME error for an under-privileged member means a caller cannot distinguish
+ * "this workspace is not yours" from "this workspace is yours but you may not
+ * do that" — so the endpoint never becomes an oracle for either fact. It also
+ * means no response ever explains the role policy (§77).
+ *
+ * The cost is that a member who genuinely lacks a capability sees a 404 rather
+ * than a 403. That is the deliberate trade: the frontend hides controls using
+ * the capability projection, so a legitimate user should not reach this at all.
  */
-export async function requireWorkspaceManager(
+export async function requireCapability(
   userId: UserId,
   workspaceId: WorkspaceId,
+  capability: WorkspaceCapability,
   deps: WorkspaceAccessDependencies,
 ): Promise<WorkspaceAccessContext> {
   const access = await requireWorkspaceAccess(userId, workspaceId, deps);
-  // The role comes from the membership row that was just read, never from a
-  // client field. There is no `role` on any request schema in this command.
-  if (!canManageWorkspace(access.role)) throw new ResourceNotFoundError("Workspace");
+  assertCapability(access, capability);
   return access;
+}
+
+/**
+ * Asserts a capability against an ALREADY-RESOLVED access context.
+ *
+ * For the path that matters most: a mutation that resolved the actor's
+ * membership inside its own transaction and must not re-read it. Sensitive
+ * administrative operations do exactly that, so the authority they act on
+ * cannot have changed between the check and the write (§149, §150).
+ *
+ * Pure and synchronous — it is a policy lookup, not an I/O call.
+ */
+export function assertCapability(
+  access: WorkspaceAccessContext,
+  capability: WorkspaceCapability,
+): void {
+  // The role comes from a membership row the server read. There is no `role`
+  // field on any request schema anywhere in the backend.
+  if (!hasCapability(access.role, capability)) {
+    throw new ResourceNotFoundError("Workspace");
+  }
+}
+
+/**
+ * The capabilities the caller holds, for a client to hide controls with.
+ *
+ * INFORMATIONAL. The backend re-evaluates on every mutation, so a client that
+ * fabricated this list would change nothing (§17, §18, §128).
+ */
+export function accessCapabilities(
+  access: WorkspaceAccessContext,
+): readonly WorkspaceCapability[] {
+  return capabilitiesFor(access.role);
 }
