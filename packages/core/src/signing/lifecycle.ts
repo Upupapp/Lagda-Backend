@@ -22,6 +22,9 @@
 // as OD-013.
 
 import {
+  SIGNING_REQUEST_STATES, type SigningRequestState,
+} from "@lagda/contracts";
+import {
   InvalidStateTransitionError, hasPassed, assertNever,
   type Instant,
 } from "../common/index.js";
@@ -32,18 +35,13 @@ import {
  * States a signing request can actually be IN, as opposed to things that have
  * happened to it. Every value is drawn from the canonical union; none is
  * invented.
+ *
+ * Declared in `@lagda/contracts` since BACKEND-32 persisted and returned it,
+ * and re-exported here so the transition table below reads as one module. One
+ * declaration, not two that agree by coincidence.
  */
-export const SIGNING_REQUEST_STATES = [
-  "draft",
-  "ready-to-send",
-  "sent",
-  "partially-completed",
-  "completed",
-  "declined",
-  "cancelled",
-  "expired",
-] as const;
-export type SigningRequestState = (typeof SIGNING_REQUEST_STATES)[number];
+export { SIGNING_REQUEST_STATES };
+export type { SigningRequestState };
 
 /**
  * Canonical values deliberately NOT modelled as lifecycle states, with the

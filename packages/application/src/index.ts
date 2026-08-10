@@ -36,3 +36,4 @@ export * from "./contacts/contacts.js";
 export * from "./documents/documents.js";
 export * from "./preparation/preparation.js";
 export * from "./recipients/recipients.js";
+export * from "./signing-requests/signing-requests.js";

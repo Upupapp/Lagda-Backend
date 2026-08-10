@@ -14,7 +14,7 @@ import type {
   InvitationDependencies, AcceptInvitationDependencies,
   MemberAdministrationDependencies, WorkspaceAccessDependencies,
   ContactDependencies, DocumentDependencies, PreparationDependencies,
-  RecipientDependencies,
+  RecipientDependencies, SigningRequestDependencies,
 } from "@lagda/application";
 
 /**
@@ -125,4 +125,13 @@ export interface WorkspaceDependencies {
    * unrepresentable.
    */
   readonly recipients?: () => RecipientDependencies;
+
+  /**
+   * Signing requests (BACKEND-32).
+   *
+   * Optional as a WHOLE. Present means both routes are registered - there is
+   * no configuration in which creating a request is possible and reading it
+   * back is not.
+   */
+  readonly signingRequests?: () => SigningRequestDependencies;
 }

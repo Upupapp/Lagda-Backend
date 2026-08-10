@@ -47,6 +47,8 @@ export const METRIC_NAMES = [
   "document_preparation_operations_total",
   // BACKEND-31. Recipient writes - added, updated, removed, reordered.
   "document_recipient_operations_total",
+  // BACKEND-32. Signing request creation.
+  "signing_request_operations_total",
   // BACKEND-27. Capability denials. Successful checks are NOT counted: one
   // series per authorized request is noise, and the interesting signal is a
   // sustained spike in refusals (§183, §186).
@@ -127,6 +129,15 @@ export const METRIC_LABELS = {
   // better than a counter. It appears in the LOG line, where it is read once
   // and in context.
   document_recipient_operations_total: ["operation", "result", "processRole"],
+  // `operation` is one value today and `result` is an outcome.
+  //
+  // Deliberately NOT `signingRequestId`, `documentId`, `workspaceId`, the
+  // RECIPIENT COUNT or the FIELD COUNT. The first three are unbounded; the
+  // last two are unbounded too and would turn "how many parties does a
+  // typical agreement have" into a new time series per answer. Both counts
+  // are in the log line, where a number is a number rather than a dimension
+  // (§191, §192).
+  signing_request_operations_total: ["operation", "result", "processRole"],
   // `capability` is a ten-value closed set defined in code — bounded, and the
   // most useful dimension a denial has. Deliberately NOT `workspaceId`,
   // `userId` or `membershipId`: all unbounded, and one series per tenant is how

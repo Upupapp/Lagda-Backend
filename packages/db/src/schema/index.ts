@@ -226,6 +226,88 @@ export interface PreparationFieldsTable {
  * `email_sent_at`: a recipient row says where an invitation is INTENDED to go
  * and proves nothing about who controls that mailbox.
  */
+/**
+ * A signing request: an immutable snapshot of one coherent preparation state.
+ *
+ * The row itself is not fully immutable - `state` and `updated_at` change when
+ * BACKEND-33 sends it - but every SNAPSHOT column is. Nothing in the
+ * application can rewrite `document_title`, `source_artifact_id` or the
+ * provenance columns after the insert.
+ */
+export interface SigningRequestsTable {
+  signing_request_id: string;
+  workspace_id: string;
+  document_id: string;
+  /** The EXACT bytes the geometry applies to, not "the current original". */
+  source_artifact_id: string;
+  /** Provenance. Never read to reconstruct the request. */
+  source_preparation_id: string;
+  source_preparation_revision: number;
+  state: string;
+  /** The title AS IT WAS. A rename does not reach a created request. */
+  document_title: string;
+  created_by_user_id: string;
+  created_at: Timestamptz;
+  updated_at: Timestamptz;
+}
+
+/**
+ * A participant, snapshotted onto one signing request.
+ *
+ * `request_recipient_id` is NOT the preparation recipient's id. BACKEND-34
+ * issues access credentials against this one, BACKEND-37 tracks ceremony state
+ * against it, and BACKEND-43 cites it - none of which can be built on an id
+ * whose row a sender may edit or delete.
+ */
+export interface SigningRequestRecipientsTable {
+  request_recipient_id: string;
+  workspace_id: string;
+  signing_request_id: string;
+  /** PROVENANCE. ON DELETE SET NULL, so the mutable side stays editable. */
+  source_preparation_recipient_id: ColumnType<string | null, string | null, string | null>;
+  name: string;
+  /** The delivery address as it was. Unverified. */
+  email: string;
+  /** Internal comparison value. Never projected to a client. */
+  normalized_email: string;
+  organization: ColumnType<string | null, string | null, string | null>;
+  recipient_type: string;
+  is_required: boolean;
+  order_index: number;
+  routing_order: number;
+  created_at: Timestamptz;
+}
+
+/**
+ * A field, snapshotted onto one signing request.
+ *
+ * `request_recipient_id` is NOT NULL here, unlike `preparation_fields`. An
+ * unassigned field is a legitimate authoring state and an impossible workflow
+ * state, so the readiness gate refuses to snapshot one and the column makes
+ * that structural.
+ */
+export interface SigningRequestFieldsTable {
+  request_field_id: string;
+  workspace_id: string;
+  signing_request_id: string;
+  /** PROVENANCE. ON DELETE SET NULL. */
+  source_preparation_field_id: ColumnType<string | null, string | null, string | null>;
+  field_type: string;
+  /** 1-based, matching the canonical coordinate model. */
+  page_number: number;
+  /** Normalized 0-1, top-left origin. Copied exactly, never recomputed. */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  required: boolean;
+  label: string;
+  layer: number;
+  /** A recipient of THIS request. Enforced by a three-column foreign key. */
+  request_recipient_id: string;
+  created_at: Timestamptz;
+}
+
 export interface PreparationRecipientsTable {
   recipient_id: string;
   workspace_id: string;
@@ -612,6 +694,9 @@ export interface Database {
   document_preparations: DocumentPreparationsTable;
   preparation_fields: PreparationFieldsTable;
   preparation_recipients: PreparationRecipientsTable;
+  signing_requests: SigningRequestsTable;
+  signing_request_recipients: SigningRequestRecipientsTable;
+  signing_request_fields: SigningRequestFieldsTable;
   document_artifacts: DocumentArtifactsTable;
   evidence_events: EvidenceEventsTable;
   document_seals: DocumentSealsTable;

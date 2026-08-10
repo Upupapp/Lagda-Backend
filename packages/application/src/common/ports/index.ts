@@ -17,6 +17,7 @@ import type { ScopedContactRepository } from "./contacts.js";
 import type { ScopedDocumentRepository } from "./documents.js";
 import type { ScopedPreparationRepository } from "./preparation.js";
 import type { ScopedRecipientRepository } from "./recipients.js";
+import type { ScopedSigningRequestRepository } from "./signing-requests.js";
 
 import type {
   WorkspaceId, WorkspaceMemberId, UserId, WorkspaceRole,
@@ -331,6 +332,15 @@ export interface WorkspaceUnitOfWork {
    * that a concurrent edit has since changed.
    */
   readonly recipients: ScopedRecipientRepository;
+  /**
+   * Signing requests (BACKEND-32).
+   *
+   * Beside the four repositories a snapshot reads from - documents, artifacts,
+   * preparations, recipients - and the adjacency is the whole point: the
+   * snapshot is taken and written on ONE transaction, so it cannot capture
+   * recipients from one revision and fields from another.
+   */
+  readonly signingRequests: ScopedSigningRequestRepository;
 }
 
 /**
@@ -470,3 +480,5 @@ export * from "./preparation.js";
 // `RecipientId` is declared here and re-exported by `evidence.js`, so it is
 // exported explicitly to tell TypeScript which module owns it.
 export * from "./recipients.js";
+
+export * from "./signing-requests.js";

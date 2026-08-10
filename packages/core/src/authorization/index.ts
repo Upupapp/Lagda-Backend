@@ -136,6 +136,33 @@ export const WORKSPACE_CAPABILITIES = [
    * where its signatures go.
    */
   "document.prepare",
+  /**
+   * Create a signing request: turn one coherent preparation state into an
+   * immutable signing workflow.
+   *
+   * SEPARATE from `document.prepare`, and the separation is about consequence
+   * rather than about the product's permission table. Preparing is reversible:
+   * a sender who places a field badly moves it. Creating a request is not - it
+   * produces a durable record that BACKEND-33 can send to counterparties, that
+   * BACKEND-38 will complete against, and that BACKEND-43 will cite as
+   * evidence.
+   *
+   * The product has no separate permission for it, because the product has no
+   * send flow at all yet - so today the same four roles hold both, and the
+   * matrix looks redundant. It is not: the day a role should draft layouts
+   * without committing anyone to a signature, that is a one-line change here
+   * rather than a new concept (OD-129).
+   */
+  "signing-request.create",
+  /**
+   * Read a signing request and its snapshot.
+   *
+   * Granted alongside `document.view` rather than alongside create, because
+   * reading what was asked of whom is part of reading the document - a
+   * reviewer and an auditor both need it, and an auditor who could not see the
+   * signing configuration could not audit anything that happened to it.
+   */
+  "signing-request.view",
 
   /**
    * Hand the workspace to someone else.
@@ -205,6 +232,8 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "document.create",
       "document.update",
       "document.prepare",
+      "signing-request.create",
+      "signing-request.view",
       "workspace.ownership.transfer",
     ] as const),
 
@@ -233,6 +262,8 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "document.create",
       "document.update",
       "document.prepare",
+      "signing-request.create",
+      "signing-request.view",
     ] as const),
 
     /**
@@ -279,6 +310,8 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "document.create",
       "document.update",
       "document.prepare",
+      "signing-request.create",
+      "signing-request.view",
     ] as const),
 
     /**
@@ -298,6 +331,8 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "document.create",
       "document.update",
       "document.prepare",
+      "signing-request.create",
+      "signing-request.view",
     ] as const),
 
     /**
@@ -313,7 +348,9 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
      * `view_documents` without `prepare_documents`. A reviewer reads documents
      * for a living and creates none.
      */
-    reviewer: Object.freeze(["workspace.view", "document.view"] as const),
+    reviewer: Object.freeze([
+      "workspace.view", "document.view", "signing-request.view",
+    ] as const),
 
     /**
      * Reads audit history. No workspace administration, no contacts.
@@ -322,7 +359,9 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
      * job is reviewing what happened cannot do it without reading the documents
      * it happened to.
      */
-    auditor: Object.freeze(["workspace.view", "document.view"] as const),
+    auditor: Object.freeze([
+      "workspace.view", "document.view", "signing-request.view",
+    ] as const),
   });
 
 /**

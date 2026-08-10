@@ -46,6 +46,12 @@ import type {
   ScopedRecipientRepository, RecipientRecord, NewRecipient,
   RecipientId, RecipientIdGenerator,
 } from "../common/ports/recipients.js";
+import type {
+  ScopedSigningRequestRepository, NewSigningRequestSnapshot,
+  SigningRequestRecord, SigningRequestRecipientRecord, SigningRequestFieldRecord,
+  SigningRequestId, SigningRequestRecipientId, SigningRequestFieldId,
+  SigningRequestIdGenerator,
+} from "../common/ports/signing-requests.js";
 
 /** A fixed instant, so assertions mean the same thing in any year. */
 export class FixedClock implements Clock {
@@ -81,6 +87,28 @@ export class SequentialDocumentIds implements DocumentIdGenerator {
   private next = 1;
   nextDocumentId(): DocumentId {
     return `doc_${String(this.next++)}` as DocumentId;
+  }
+}
+
+/**
+ * Sequential signing-request ids.
+ *
+ * Three counters, not one. A test that accidentally compared a request id to a
+ * recipient id would pass against a shared counter and fail against the real
+ * generators - and telling the three apart is most of what BACKEND-32 is for.
+ */
+export class SequentialSigningRequestIds implements SigningRequestIdGenerator {
+  private request = 1;
+  private recipient = 1;
+  private field = 1;
+  nextSigningRequestId(): SigningRequestId {
+    return `sr_${String(this.request++)}` as SigningRequestId;
+  }
+  nextSigningRequestRecipientId(): SigningRequestRecipientId {
+    return `srr_${String(this.recipient++)}` as SigningRequestRecipientId;
+  }
+  nextSigningRequestFieldId(): SigningRequestFieldId {
+    return `srf_${String(this.field++)}` as SigningRequestFieldId;
   }
 }
 
@@ -127,6 +155,9 @@ interface StoreSnapshot {
   readonly preparations: PreparationRecord[];
   readonly preparationFields: PreparationFieldRecord[];
   readonly recipients: RecipientRecord[];
+  readonly signingRequests: SigningRequestRecord[];
+  readonly signingRequestRecipients: SigningRequestRecipientRecord[];
+  readonly signingRequestFields: SigningRequestFieldRecord[];
   readonly evidence: EvidenceEventRecord[];
   readonly artifacts: ArtifactRecord[];
   readonly seals: SealRecord[];
@@ -153,6 +184,11 @@ export class InMemoryStore {
   preparations: PreparationRecord[] = [];
   preparationFields: PreparationFieldRecord[] = [];
   recipients: RecipientRecord[] = [];
+  signingRequests: SigningRequestRecord[] = [];
+  signingRequestRecipients: SigningRequestRecipientRecord[] = [];
+  signingRequestFields: SigningRequestFieldRecord[] = [];
+  /** Snapshot row to its request. The real tables carry the column. */
+  readonly snapshotOwners = new Map<string, SigningRequestId>();
   /** Field id to preparation id. The real table has a column. */
   readonly fieldOwners = new Map<string, PreparationId>();
   readonly evidence: EvidenceEventRecord[] = [];
@@ -173,6 +209,9 @@ export class InMemoryStore {
       preparations: [...this.preparations],
       preparationFields: [...this.preparationFields],
       recipients: [...this.recipients],
+      signingRequests: [...this.signingRequests],
+      signingRequestRecipients: [...this.signingRequestRecipients],
+      signingRequestFields: [...this.signingRequestFields],
       evidence: [...this.evidence],
       artifacts: [...this.artifacts],
       seals: [...this.seals],
@@ -196,6 +235,9 @@ export class InMemoryStore {
     this.preparations = [...snapshot.preparations];
     this.preparationFields = [...snapshot.preparationFields];
     this.recipients = [...snapshot.recipients];
+    this.signingRequests = [...snapshot.signingRequests];
+    this.signingRequestRecipients = [...snapshot.signingRequestRecipients];
+    this.signingRequestFields = [...snapshot.signingRequestFields];
     this.invitationDigests.clear();
     for (const [k, v] of snapshot.invitationDigests) this.invitationDigests.set(k, v);
     this.evidence.length = 0;
@@ -718,6 +760,73 @@ function scopedPreparations(
 }
 
 /**
+ * The in-memory signing-request store.
+ *
+ * Write-once, like the real one: there is no update method, because the
+ * runtime role holds no UPDATE grant on the two snapshot tables. A use case
+ * that tried to mutate a snapshot would not compile here either.
+ */
+function scopedSigningRequests(
+  store: InMemoryStore, scope: WorkspaceId,
+): ScopedSigningRequestRepository {
+  const owned = (signingRequestId: SigningRequestId) =>
+    store.signingRequests.find(
+      request => request.workspaceId === scope
+        && request.signingRequestId === signingRequestId);
+
+  return {
+    createSnapshot: (snapshot: NewSigningRequestSnapshot) => {
+      const { request, recipients, fields } = snapshot;
+      if (request.workspaceId !== scope) {
+        throw new FakeScopeMismatchError("SigningRequest", scope, request.workspaceId);
+      }
+
+      // The field FK, in memory: a field may only name a recipient of its own
+      // request. Without this the remapping bug the whole command guards
+      // against would pass here and fail only in PostgreSQL.
+      const own = new Set(recipients.map(recipient => String(recipient.recipientId)));
+      for (const field of fields) {
+        if (!own.has(String(field.recipientId))) {
+          throw new Error("field assigned to a recipient of another request");
+        }
+      }
+
+      store.signingRequests.push(request);
+      for (const recipient of recipients) {
+        store.signingRequestRecipients.push(recipient);
+        store.snapshotOwners.set(String(recipient.recipientId), request.signingRequestId);
+      }
+      for (const field of fields) {
+        store.signingRequestFields.push(field);
+        store.snapshotOwners.set(String(field.fieldId), request.signingRequestId);
+      }
+      return Promise.resolve();
+    },
+
+    find: (signingRequestId) => Promise.resolve(owned(signingRequestId) ?? null),
+
+    listRecipients: (signingRequestId) => Promise.resolve(
+      store.signingRequestRecipients
+        .filter(recipient =>
+          owned(signingRequestId) !== undefined
+          && store.snapshotOwners.get(String(recipient.recipientId)) === signingRequestId)
+        .sort((a, b) =>
+          a.orderIndex - b.orderIndex
+          || String(a.recipientId).localeCompare(String(b.recipientId)))),
+
+    listFields: (signingRequestId) => Promise.resolve(
+      store.signingRequestFields
+        .filter(field =>
+          owned(signingRequestId) !== undefined
+          && store.snapshotOwners.get(String(field.fieldId)) === signingRequestId)
+        .sort((a, b) =>
+          a.pageNumber - b.pageNumber
+          || a.layer - b.layer
+          || String(a.fieldId).localeCompare(String(b.fieldId)))),
+  };
+}
+
+/**
  * The in-memory recipient store.
  *
  * Reproduces the two constraints that carry the rules, rather than leaving them
@@ -964,6 +1073,7 @@ export class FakeTransactionManager implements TransactionManager {
         documents: scopedDocuments(this.store, workspaceId),
         preparations: scopedPreparations(this.store, workspaceId),
         recipients: scopedRecipients(this.store, workspaceId),
+        signingRequests: scopedSigningRequests(this.store, workspaceId),
       });
       this.committed++;
       return result;
@@ -1032,6 +1142,7 @@ export class FakeTransactionManager implements TransactionManager {
             documents: scopedDocuments(store, workspaceId),
             preparations: scopedPreparations(store, workspaceId),
             recipients: scopedRecipients(store, workspaceId),
+            signingRequests: scopedSigningRequests(store, workspaceId),
           });
         },
       });

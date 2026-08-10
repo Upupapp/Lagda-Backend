@@ -41,6 +41,20 @@ const DOCUMENT_WRITE: readonly WorkspaceCapability[] = [
   // writes — and declared separately so the first product change that
   // distinguishes renaming from preparing is a one-line edit.
   "document.prepare",
+  // BACKEND-32. Committing that layout to an immutable workflow. The same four
+  // roles today, and separate for the same reason one step further along:
+  // preparing is reversible and creating a signing request is not.
+  "signing-request.create",
+];
+
+/**
+ * Reading a signing request travels with `document.view`, not with create.
+ *
+ * Six roles, including `reviewer` and `auditor`. An auditor who could not see
+ * what was asked of whom could not audit anything that happened to it.
+ */
+const DOCUMENT_READ: readonly WorkspaceCapability[] = [
+  "document.view", "signing-request.view",
 ];
 
 const ADMIN_CAPABILITIES: readonly WorkspaceCapability[] = [
@@ -52,11 +66,11 @@ const ADMIN_CAPABILITIES: readonly WorkspaceCapability[] = [
 const EXPECTED: Readonly<Record<WorkspaceRole, readonly WorkspaceCapability[]>> = {
   owner: [
     ...ADMIN_CAPABILITIES, ...CONTACT_CAPABILITIES,
-    "document.view", ...DOCUMENT_WRITE, "workspace.ownership.transfer",
+    ...DOCUMENT_READ, ...DOCUMENT_WRITE, "workspace.ownership.transfer",
   ],
   administrator: [
     ...ADMIN_CAPABILITIES, ...CONTACT_CAPABILITIES,
-    "document.view", ...DOCUMENT_WRITE,
+    ...DOCUMENT_READ, ...DOCUMENT_WRITE,
   ],
   // The only role with NOTHING beyond `workspace.view`. Not a PlatformRole, so
   // it holds neither `manage_contacts` nor `view_documents` (OD-100).
@@ -67,10 +81,10 @@ const EXPECTED: Readonly<Record<WorkspaceRole, readonly WorkspaceCapability[]>> 
   // `manage_contacts` is in four roles' permission sets, and `sender` is the
   // role the address book exists for.
   template_administrator: [
-    "workspace.view", ...CONTACT_CAPABILITIES, "document.view", ...DOCUMENT_WRITE,
+    "workspace.view", ...CONTACT_CAPABILITIES, ...DOCUMENT_READ, ...DOCUMENT_WRITE,
   ],
   sender: [
-    "workspace.view", ...CONTACT_CAPABILITIES, "document.view", ...DOCUMENT_WRITE,
+    "workspace.view", ...CONTACT_CAPABILITIES, ...DOCUMENT_READ, ...DOCUMENT_WRITE,
   ],
   // No contact capability at all, INCLUDING view. `manage_contacts` is also the
   // navigation gate on /app/contacts, so these roles cannot reach the address
@@ -79,8 +93,8 @@ const EXPECTED: Readonly<Record<WorkspaceRole, readonly WorkspaceCapability[]>> 
   // could produce, and the product's own answer: `view_documents` without
   // `prepare_documents`. A reviewer reads documents for a living and creates
   // none; an auditor cannot review what happened without reading it.
-  reviewer: ["workspace.view", "document.view"],
-  auditor: ["workspace.view", "document.view"],
+  reviewer: ["workspace.view", ...DOCUMENT_READ],
+  auditor: ["workspace.view", ...DOCUMENT_READ],
 };
 
 describe("the role model", () => {
@@ -117,7 +131,7 @@ describe("role to capability matrix", () => {
     // EXPECTED table not updated, this fails rather than the matrix silently
     // testing fewer combinations.
     expect(Object.keys(EXPECTED).sort()).toEqual([...WORKSPACE_ROLES].sort());
-    expect(WORKSPACE_CAPABILITIES.length).toBe(18);
+    expect(WORKSPACE_CAPABILITIES.length).toBe(20);
   });
 });
 

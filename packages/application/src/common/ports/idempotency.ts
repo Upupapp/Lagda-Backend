@@ -79,6 +79,21 @@ export const IDEMPOTENT_OPERATIONS = [
    * must rotate. The client's key is what distinguishes them.
    */
   "workspace.invitation.resend",
+  /**
+   * Signing request creation (BACKEND-32).
+   *
+   * A lost response is indistinguishable from a failure to the browser that
+   * sent it, and the retry would create a SECOND immutable signing workflow
+   * over the same document. BACKEND-33 could then send both, and one agreement
+   * would reach its counterparties as two sets of invitations with two sets of
+   * signing positions.
+   *
+   * Note the sibling above it: `signingRequest.send` was listed from the
+   * handoff before anything could be sent. This is its counterpart, and the two
+   * are separate operations because a retry of a CREATE must not replay as a
+   * SEND.
+   */
+  "signingRequest.create",
 ] as const;
 export type IdempotentOperation = (typeof IDEMPOTENT_OPERATIONS)[number];
 

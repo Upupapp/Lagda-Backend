@@ -95,6 +95,9 @@ export {
   registerRecipientRoutes, type RecipientRouteOptions,
   type AddRecipientBody, type UpdateRecipientBody, type ReorderRecipientsBody,
 } from "./recipients/recipient-routes.js";
+export {
+  registerSigningRequestRoutes, type SigningRequestRouteOptions,
+} from "./signing-requests/signing-request-routes.js";
 
 export {
   registerWorkspaceRoutes, CreateWorkspaceRequestSchema,

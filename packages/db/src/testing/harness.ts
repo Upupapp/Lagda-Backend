@@ -83,6 +83,13 @@ export async function truncateAll(database: LagdaDatabase): Promise<void> {
   await database.db.deleteFrom("evidence_events").execute();
   // Preparation fields cascade from preparations, but delete both explicitly:
   // the order is load-bearing and an implicit cascade hides it.
+  // Signing-request snapshots first. Their provenance FKs are SET NULL, so
+  // they would not BLOCK a preparation delete - but their own field rows
+  // reference their own recipient rows with RESTRICT, so the order within the
+  // group is load-bearing.
+  await database.db.deleteFrom("signing_request_fields").execute();
+  await database.db.deleteFrom("signing_request_recipients").execute();
+  await database.db.deleteFrom("signing_requests").execute();
   await database.db.deleteFrom("preparation_fields").execute();
   // Recipients after the fields that reference them: the assignment FK is
   // RESTRICT, so a field still pointing at a recipient blocks its deletion.

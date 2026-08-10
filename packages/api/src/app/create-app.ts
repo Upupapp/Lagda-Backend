@@ -42,6 +42,7 @@ import { registerContactRoutes } from "../contacts/contact-routes.js";
 import { registerDocumentRoutes } from "../documents/document-routes.js";
 import { registerPreparationRoutes } from "../preparation/preparation-routes.js";
 import { registerRecipientRoutes } from "../recipients/recipient-routes.js";
+import { registerSigningRequestRoutes } from "../signing-requests/signing-request-routes.js";
 
 export interface CreateAppOptions {
   readonly config: ApiConfig;
@@ -471,6 +472,27 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
               : null,
           ),
           recipientDependencies: recipients,
+          metrics,
+        });
+      }
+
+      // Inside the same scope. A signing request is the parties to a contract
+      // and where each of them signs; there is no version of this surface that
+      // is safe to reach anonymously, and BACKEND-34's recipient path will be a
+      // DIFFERENT surface with its own narrow credential rather than a relaxed
+      // version of this one.
+      if (workspaces.signingRequests !== undefined) {
+        const signingRequests = workspaces.signingRequests;
+        registerSigningRequestRoutes(scope, {
+          authenticatedUser: (request: FastifyRequest) => Promise.resolve(
+            request.auth.status === "authenticated"
+              ? {
+                  userId: request.auth.actor.userId,
+                  sessionId: request.auth.actor.sessionId,
+                }
+              : null,
+          ),
+          signingRequestDependencies: signingRequests,
           metrics,
         });
       }
