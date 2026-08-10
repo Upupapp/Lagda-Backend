@@ -266,6 +266,13 @@ describe("hashing is confined to the sealing adapter", () => {
     //                              `lagda.workspace-invitation:` prefix is what
     //                              stops any of the other seven resolving an
     //                              invitation, or the reverse.
+    //   api/security/signing-access-token — SIGNING BOOTSTRAP digests
+    //                              (BACKEND-33). A ninth, and the only one held
+    //                              by someone with no LAGDA account at all. The
+    //                              `lagda.signing-access-bootstrap:` prefix is
+    //                              what stops an invitation token opening a
+    //                              signing link, which would let a workspace
+    //                              invitee act as a counterparty.
     //
     // Each addition is a deliberate entry with a named domain. A caller that
     // appears without one still fails, which is what keeps this from becoming a
@@ -277,6 +284,7 @@ describe("hashing is confined to the sealing adapter", () => {
       "packages/api/src/security/rate-limit-plugin.ts",
       "packages/api/src/security/recovery-codes.ts",
       "packages/api/src/security/reset-token.ts",
+      "packages/api/src/security/signing-access-token.ts",
       "packages/api/src/security/verification-token.ts",
       "packages/sealing/src/internal/digest.ts",
     ]);

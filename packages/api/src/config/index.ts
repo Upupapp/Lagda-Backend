@@ -71,6 +71,32 @@ export interface ApiConfig {
   readonly mfaSecretKey: string | null;
   /** Which key encrypted a stored secret. Enables rotation without a migration. */
   readonly mfaSecretKeyVersion: string;
+
+  /**
+   * Base64 key for sealing signing-invitation credentials (BACKEND-33).
+   *
+   * A SEPARATE key from `mfaSecretKey`, deliberately. They protect
+   * different things with different blast radii: one compromises second
+   * factors, the other lets an attacker mint signing links for pending
+   * agreements. Sharing a key would mean rotating both to respond to either.
+   *
+   * NULL when unset, and Send then FAILS rather than storing a credential
+   * nobody can render - the same shape MFA enrolment takes.
+   *
+   * Never logged, never persisted, never in a queue payload.
+   */
+  readonly signingDeliveryKey: string | null;
+  readonly signingDeliveryKeyVersion: string;
+
+  /**
+   * How long a signing bootstrap credential stays usable.
+   *
+   * 14 days. Long enough that a counterparty who reads email weekly is not
+   * locked out, short enough that a link forwarded or archived does not
+   * stay live for a year. Request EXPIRATION is a different, later question
+   * (BACKEND-46); this bounds the CREDENTIAL regardless of it.
+   */
+  readonly signingAccessLifetimeMs: number;
 }
 
 export class ApiConfigError extends Error {
@@ -235,6 +261,11 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     // invalidate every enrolled factor.
     mfaSecretKey: env["MFA_SECRET_KEY"] ?? null,
     mfaSecretKeyVersion: env["MFA_SECRET_KEY_VERSION"] ?? "v1",
+    signingDeliveryKey: env["SIGNING_DELIVERY_KEY"] ?? null,
+    signingDeliveryKeyVersion: env["SIGNING_DELIVERY_KEY_VERSION"] ?? "v1",
+    signingAccessLifetimeMs: readInt(
+      env["SIGNING_ACCESS_LIFETIME_MS"], "SIGNING_ACCESS_LIFETIME_MS",
+      14 * 24 * 3_600_000),
   };
 
   assertProductionSafety(config);

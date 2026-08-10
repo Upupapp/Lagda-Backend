@@ -44,6 +44,7 @@ import { createScopedDocumentRepository } from "../repositories/documents.js";
 import { createScopedPreparationRepository } from "../repositories/preparation.js";
 import { createScopedRecipientRepository } from "../repositories/recipients.js";
 import { createScopedSigningRequestRepository } from "../repositories/signing-requests.js";
+import { createScopedSigningAccessRepository } from "../repositories/signing-access.js";
 
 /** The setting names RLS policies read. Must match migrations 002 and 013. */
 const WORKSPACE_SETTING = "lagda.workspace_id";
@@ -79,6 +80,7 @@ function buildUnitOfWork(
     preparations: createScopedPreparationRepository(trx, workspaceId),
     recipients: createScopedRecipientRepository(trx, workspaceId),
     signingRequests: createScopedSigningRequestRepository(trx, workspaceId),
+    signingAccess: createScopedSigningAccessRepository(trx, workspaceId),
   };
 }
 

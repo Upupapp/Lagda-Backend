@@ -49,6 +49,8 @@ export const METRIC_NAMES = [
   "document_recipient_operations_total",
   // BACKEND-32. Signing request creation.
   "signing_request_operations_total",
+  // BACKEND-33. Send transitions.
+  "signing_request_send_results_total",
   // BACKEND-27. Capability denials. Successful checks are NOT counted: one
   // series per authorized request is noise, and the interesting signal is a
   // sustained spike in refusals (§183, §186).
@@ -138,6 +140,17 @@ export const METRIC_LABELS = {
   // are in the log line, where a number is a number rather than a dimension
   // (§191, §192).
   signing_request_operations_total: ["operation", "result", "processRole"],
+  // `result` is an outcome and `routingShape` is a two-value derived label.
+  //
+  // Deliberately NOT the recipient count, the cohort number, the request id
+  // or the workspace id. The first two are unbounded; the last two would
+  // make one time series per document. "How many people did that send
+  // invite" is a product query, and the number is in the log line.
+  //
+  // And emphatically not a credential, a digest or a URL - a metric label
+  // is the single most widely replicated string in an observability stack.
+  signing_request_send_results_total:
+    ["result", "routingShape", "processRole"],
   // `capability` is a ten-value closed set defined in code — bounded, and the
   // most useful dimension a denial has. Deliberately NOT `workspaceId`,
   // `userId` or `membershipId`: all unbounded, and one series per tenant is how

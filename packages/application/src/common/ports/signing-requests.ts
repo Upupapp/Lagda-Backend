@@ -146,6 +146,25 @@ export interface ScopedSigningRequestRepository {
   listFields(
     signingRequestId: SigningRequestId,
   ): Promise<readonly SigningRequestFieldRecord[]>;
+
+  /**
+   * Marks a DRAFT request sent, conditionally.
+   *
+   * The condition is IN the statement, not before it: two sends racing on one
+   * request would otherwise both read `draft` and both proceed, and the second
+   * would mint a second set of bearer credentials for the same people.
+   *
+   * Returns whether it applied. False means the request was not `draft` -
+   * already sent, or absent, or another tenant's - and the caller reports only
+   * what it needs to.
+   *
+   * `sentAt` is set in the same UPDATE. A CHECK constraint refuses the two
+   * columns disagreeing, so a transition that forgot the timestamp fails.
+   */
+  markSentIfDraft(input: {
+    readonly signingRequestId: SigningRequestId;
+    readonly sentAt: number;
+  }): Promise<boolean>;
 }
 
 export interface SigningRequestIdGenerator {

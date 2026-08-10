@@ -198,6 +198,23 @@ export function createScopedSigningRequestRepository(
       return rows.map(toRecipient);
     },
 
+    async markSentIfDraft(input) {
+      try {
+        const claimed = await trx.updateTable("signing_requests")
+          .set({ state: "sent", sent_at: new Date(input.sentAt),
+                 updated_at: new Date(input.sentAt) })
+          .where("workspace_id", "=", scope)
+          .where("signing_request_id", "=", input.signingRequestId)
+          // The whole concurrency control, in one predicate. A second send
+          // matches zero rows rather than sending twice.
+          .where("state", "=", "draft")
+          .executeTakeFirst();
+        return Number(claimed.numUpdatedRows) === 1;
+      } catch (error) {
+        throw translatePersistenceError(error);
+      }
+    },
+
     async listFields(signingRequestId: SigningRequestId) {
       const rows = await trx.selectFrom("signing_request_fields")
         .selectAll()

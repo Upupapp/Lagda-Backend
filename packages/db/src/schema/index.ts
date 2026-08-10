@@ -234,6 +234,64 @@ export interface PreparationFieldsTable {
  * application can rewrite `document_title`, `source_artifact_id` or the
  * provenance columns after the insert.
  */
+/** Routing activation. NOT ceremony state - BACKEND-37 owns its own table. */
+export interface SigningRequestRecipientActivationTable {
+  workspace_id: string;
+  signing_request_id: string;
+  request_recipient_id: string;
+  /** `waiting` or `active`. Two values, and neither says anything happened. */
+  activation_state: string;
+  activated_at: ColumnType<Date | null, Date | null, Date | null>;
+  created_at: Timestamptz;
+}
+
+/**
+ * A signing bootstrap credential's DIGEST, bound to one recipient of one
+ * request.
+ *
+ * The raw credential is never here. It is sealed into the delivery intent and
+ * dropped; this row exists so BACKEND-34 can resolve a submitted link.
+ */
+export interface SigningAccessGrantsTable {
+  grant_id: string;
+  workspace_id: string;
+  signing_request_id: string;
+  request_recipient_id: string;
+  /** SHA-256, 64 lowercase hex, domain-separated. CHECK-constrained. */
+  credential_digest: string;
+  created_at: Timestamptz;
+  /** Always set. A permanent bearer credential is a permanent key. */
+  expires_at: Timestamptz;
+  revoked_at: ColumnType<Date | null, Date | null, Date | null>;
+}
+
+/**
+ * The durable "send this" record.
+ *
+ * Carries a delivery SNAPSHOT so a provider retry hours later renders the same
+ * email, and the sealed raw credential so it can be rendered at all. Every
+ * text column here is PII or business-sensitive and none of it may be logged.
+ */
+export interface SigningDeliveryIntentsTable {
+  delivery_intent_id: string;
+  workspace_id: string;
+  signing_request_id: string;
+  request_recipient_id: string;
+  grant_id: string;
+  purpose: string;
+  recipient_email: string;
+  recipient_name: string;
+  document_title: string;
+  sender_display_name: string;
+  workspace_name: string;
+  /** AES-256-GCM through SecretBox. The raw TOKEN, never the URL. */
+  sealed_credential: string;
+  sealed_key_version: string;
+  created_at: Timestamptz;
+  /** Set by BACKEND-45 when a provider accepts it. NULL means outstanding. */
+  dispatched_at: ColumnType<Date | null, Date | null, Date | null>;
+}
+
 export interface SigningRequestsTable {
   signing_request_id: string;
   workspace_id: string;
@@ -244,6 +302,8 @@ export interface SigningRequestsTable {
   source_preparation_id: string;
   source_preparation_revision: number;
   state: string;
+  /** NULL until sent. A CHECK keeps it in step with `state`. */
+  sent_at: ColumnType<Date | null, Date | null, Date | null>;
   /** The title AS IT WAS. A rename does not reach a created request. */
   document_title: string;
   created_by_user_id: string;
@@ -697,6 +757,9 @@ export interface Database {
   signing_requests: SigningRequestsTable;
   signing_request_recipients: SigningRequestRecipientsTable;
   signing_request_fields: SigningRequestFieldsTable;
+  signing_request_recipient_activation: SigningRequestRecipientActivationTable;
+  signing_access_grants: SigningAccessGrantsTable;
+  signing_delivery_intents: SigningDeliveryIntentsTable;
   document_artifacts: DocumentArtifactsTable;
   evidence_events: EvidenceEventsTable;
   document_seals: DocumentSealsTable;

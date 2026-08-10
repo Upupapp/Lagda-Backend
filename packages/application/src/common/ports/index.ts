@@ -18,6 +18,7 @@ import type { ScopedDocumentRepository } from "./documents.js";
 import type { ScopedPreparationRepository } from "./preparation.js";
 import type { ScopedRecipientRepository } from "./recipients.js";
 import type { ScopedSigningRequestRepository } from "./signing-requests.js";
+import type { ScopedSigningAccessRepository } from "./signing-access.js";
 
 import type {
   WorkspaceId, WorkspaceMemberId, UserId, WorkspaceRole,
@@ -341,6 +342,14 @@ export interface WorkspaceUnitOfWork {
    * recipients from one revision and fields from another.
    */
   readonly signingRequests: ScopedSigningRequestRepository;
+  /**
+   * Signing access provisioning (BACKEND-33).
+   *
+   * Beside `signingRequests`, because the state transition and the credentials
+   * that make it meaningful must commit together: a request marked SENT whose
+   * recipients hold no way in is worse than one that failed to send.
+   */
+  readonly signingAccess: ScopedSigningAccessRepository;
 }
 
 /**
@@ -482,3 +491,5 @@ export * from "./preparation.js";
 export * from "./recipients.js";
 
 export * from "./signing-requests.js";
+
+export * from "./signing-access.js";

@@ -208,10 +208,26 @@ describe("creating a request sends nothing", () => {
   });
 
   it("carries no ceremony or delivery column", () => {
+    // ── Narrowed by BACKEND-33 ──────────────────────────────────────────────
+    //
+    // `sent_at` and `sentAt` were in this list, because in BACKEND-32 nothing
+    // could be sent. Send exists now: migration 020 adds the column and the
+    // port gains `markSentIfDraft({ sentAt })`. Keeping them here would fail
+    // on correct code.
+    //
+    // What the guard still protects is the boundary that has NOT moved. Every
+    // remaining entry is a claim about what a RECIPIENT did, or about what an
+    // email PROVIDER did, and BACKEND-32 and BACKEND-33 make none of them true.
+    // Migration 019 is still checked for all of them, including `sent_at`,
+    // because creation still writes none.
+    for (const forbidden of ["sent_at", "sentAt"]) {
+      expect(code(MIGRATION), `migration 019 declares ${forbidden}`)
+        .not.toContain(forbidden);
+    }
     for (const file of [MIGRATION, PORTS, CONTRACTS]) {
       const source = code(file);
       for (const forbidden of [
-        "sent_at", "sentAt", "delivered_at", "viewed_at", "viewedAt",
+        "delivered_at", "viewed_at", "viewedAt",
         "signed_at", "signedAt", "declined_at", "completed_at", "cancelled_at",
         "expires_at", "expiresAt", "email_sent_at", "delivery_status",
       ]) {
@@ -242,9 +258,20 @@ describe("the snapshot is immutable", () => {
     }
   });
 
-  it("issues no UPDATE statement against either snapshot table", () => {
+  it("issues no UPDATE statement against either SNAPSHOT table", () => {
+    // ── Narrowed by BACKEND-33, and the narrowing is the invariant ──────────
+    //
+    // This forbade `updateTable` outright, which was right while the request
+    // row had nothing to change. BACKEND-33 transitions its STATE, so one
+    // UPDATE now exists — against `signing_requests` and nowhere else.
+    //
+    // The claim was never "this file issues no UPDATE". It was "a snapshot row
+    // cannot be rewritten", and that is still absolute: the runtime role holds
+    // no UPDATE grant on either snapshot table, so even a statement added here
+    // by mistake would be refused by PostgreSQL.
     const repository = code(REPOSITORY);
-    expect(repository).not.toContain("updateTable");
+    const updates = repository.match(/updateTable\("(\w+)"\)/g) ?? [];
+    expect(updates).toEqual(['updateTable("signing_requests")']);
     expect(repository).not.toContain("deleteFrom");
   });
 

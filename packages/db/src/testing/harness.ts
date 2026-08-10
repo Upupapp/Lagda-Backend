@@ -87,6 +87,11 @@ export async function truncateAll(database: LagdaDatabase): Promise<void> {
   // they would not BLOCK a preparation delete - but their own field rows
   // reference their own recipient rows with RESTRICT, so the order within the
   // group is load-bearing.
+  // Send artefacts first. The delivery intent references the grant with
+  // RESTRICT, so the grant cannot go before it.
+  await database.db.deleteFrom("signing_delivery_intents").execute();
+  await database.db.deleteFrom("signing_access_grants").execute();
+  await database.db.deleteFrom("signing_request_recipient_activation").execute();
   await database.db.deleteFrom("signing_request_fields").execute();
   await database.db.deleteFrom("signing_request_recipients").execute();
   await database.db.deleteFrom("signing_requests").execute();

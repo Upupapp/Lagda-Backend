@@ -98,6 +98,16 @@ export {
 export {
   registerSigningRequestRoutes, type SigningRequestRouteOptions,
 } from "./signing-requests/signing-request-routes.js";
+export {
+  registerSendRoutes, type SendRouteOptions,
+} from "./signing-requests/send-routes.js";
+export {
+  createSigningAccessTokenFactory, signingAccessDigestsMatch,
+} from "./security/signing-access-token.js";
+export {
+  createDeliverySecretSealer, createSigningLinkBuilder,
+  DeliverySecretUnavailableError,
+} from "./security/signing-delivery.js";
 
 export {
   registerWorkspaceRoutes, CreateWorkspaceRequestSchema,

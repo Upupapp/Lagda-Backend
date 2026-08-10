@@ -45,6 +45,10 @@ const DOCUMENT_WRITE: readonly WorkspaceCapability[] = [
   // roles today, and separate for the same reason one step further along:
   // preparing is reversible and creating a signing request is not.
   "signing-request.create",
+  // BACKEND-33. Releasing it to counterparties. Same four roles again, and the
+  // one most likely to be split first - assembling a document and releasing it
+  // are different acts with different consequences.
+  "signing-request.send",
 ];
 
 /**
@@ -131,7 +135,7 @@ describe("role to capability matrix", () => {
     // EXPECTED table not updated, this fails rather than the matrix silently
     // testing fewer combinations.
     expect(Object.keys(EXPECTED).sort()).toEqual([...WORKSPACE_ROLES].sort());
-    expect(WORKSPACE_CAPABILITIES.length).toBe(20);
+    expect(WORKSPACE_CAPABILITIES.length).toBe(21);
   });
 });
 

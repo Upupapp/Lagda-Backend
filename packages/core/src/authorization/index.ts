@@ -163,6 +163,21 @@ export const WORKSPACE_CAPABILITIES = [
    * signing configuration could not audit anything that happened to it.
    */
   "signing-request.view",
+  /**
+   * Send a signing request: commit it for recipient delivery.
+   *
+   * The highest-impact capability in the workspace. Creating a request writes
+   * rows nobody outside LAGDA can see; sending it puts a document in front of
+   * counterparties, mints bearer credentials, and cannot be undone.
+   *
+   * Held by the same four roles as create today, because the product has no
+   * send flow at all and therefore no separate permission to read. Declared
+   * separately regardless: create-without-send is the FIRST differentiation a
+   * real deployment is likely to want - an assistant who assembles the
+   * document and a partner who releases it - and it is a one-line change here
+   * rather than a new concept (OD-134).
+   */
+  "signing-request.send",
 
   /**
    * Hand the workspace to someone else.
@@ -234,6 +249,7 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "document.prepare",
       "signing-request.create",
       "signing-request.view",
+      "signing-request.send",
       "workspace.ownership.transfer",
     ] as const),
 
@@ -264,6 +280,7 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "document.prepare",
       "signing-request.create",
       "signing-request.view",
+      "signing-request.send",
     ] as const),
 
     /**
@@ -312,6 +329,7 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "document.prepare",
       "signing-request.create",
       "signing-request.view",
+      "signing-request.send",
     ] as const),
 
     /**
@@ -333,6 +351,7 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "document.prepare",
       "signing-request.create",
       "signing-request.view",
+      "signing-request.send",
     ] as const),
 
     /**

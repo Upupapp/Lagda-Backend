@@ -15,6 +15,7 @@ import type {
   MemberAdministrationDependencies, WorkspaceAccessDependencies,
   ContactDependencies, DocumentDependencies, PreparationDependencies,
   RecipientDependencies, SigningRequestDependencies,
+  SendSigningRequestDependencies,
 } from "@lagda/application";
 
 /**
@@ -134,4 +135,15 @@ export interface WorkspaceDependencies {
    * back is not.
    */
   readonly signingRequests?: () => SigningRequestDependencies;
+
+  /**
+   * Sending a signing request (BACKEND-33).
+   *
+   * Separate from `signingRequests` because it needs strictly more: a
+   * credential factory, a sealer and a link builder, none of which
+   * creation touches. A deployment with no signing-delivery key can wire
+   * creation and get a working authoring surface; Send then fails loudly
+   * at the point of use rather than at boot.
+   */
+  readonly sendSigningRequest?: () => SendSigningRequestDependencies;
 }

@@ -367,6 +367,37 @@ export const RATE_LIMIT_POLICIES = {
       + "create allowance, matching the per-user ratio.",
   },
 
+  // ── Signing request send (BACKEND-33) ──────────────────────────────────────
+  //
+  // Send triggers outbound email, and unlike an invitation it is AMPLIFIED: one
+  // call can produce one invitation per recipient, up to BACKEND-31's ceiling
+  // of 50. So the per-workspace budget is counted in SENDS, and the recipient
+  // ceiling is what bounds the messages each send can produce.
+  //
+  // fail-CLOSED, like every other outbound policy. Refusing a send during a
+  // limiter outage delays a document; failing open during one turns LAGDA into
+  // an email cannon with someone else's reputation attached.
+  "signing-request.send.user": {
+    id: "signing-request.send.user",
+    scopeType: "user",
+    limit: 20,
+    windowMs: 60 * MINUTE,
+    failureMode: "fail-closed",
+    source: "BACKEND-33 - not specified by the handoff. Matched to the "
+      + "invitation-create user allowance: both are deliberate, per-document "
+      + "outbound actions a person performs a handful of times an hour.",
+  },
+  "signing-request.send.workspace": {
+    id: "signing-request.send.workspace",
+    scopeType: "workspace",
+    limit: 50,
+    windowMs: 60 * MINUTE,
+    failureMode: "fail-closed",
+    source: "BACKEND-33 - not specified by the handoff. The same ceiling as "
+      + "invitation creation. NOT a plan quota: entitlements are BACKEND-50, "
+      + "and a security limit that doubles as a pricing tier is neither.",
+  },
+
   // Preview and acceptance, before any account is known.
   //
   // IP is the only scope available on the preview path: the caller may have no

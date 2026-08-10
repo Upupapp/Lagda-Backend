@@ -43,6 +43,7 @@ import { registerDocumentRoutes } from "../documents/document-routes.js";
 import { registerPreparationRoutes } from "../preparation/preparation-routes.js";
 import { registerRecipientRoutes } from "../recipients/recipient-routes.js";
 import { registerSigningRequestRoutes } from "../signing-requests/signing-request-routes.js";
+import { registerSendRoutes } from "../signing-requests/send-routes.js";
 
 export interface CreateAppOptions {
   readonly config: ApiConfig;
@@ -493,6 +494,27 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
               : null,
           ),
           signingRequestDependencies: signingRequests,
+          metrics,
+        });
+      }
+
+      // Inside the same scope. Send is the highest-impact mutation in the
+      // product: it commits a document to counterparties and mints bearer
+      // credentials. It gets session validation, CSRF and rate limiting from
+      // WHERE it is registered, exactly like every other authenticated write.
+      if (workspaces.sendSigningRequest !== undefined) {
+        const send = workspaces.sendSigningRequest;
+        registerSendRoutes(scope, {
+          authenticatedUser: (request: FastifyRequest) => Promise.resolve(
+            request.auth.status === "authenticated"
+              ? {
+                  userId: request.auth.actor.userId,
+                  sessionId: request.auth.actor.sessionId,
+                }
+              : null,
+          ),
+          sendDependencies: send,
+          ...(limiter === undefined ? {} : { rateLimit: { limiter, metrics } }),
           metrics,
         });
       }

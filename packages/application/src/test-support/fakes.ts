@@ -47,6 +47,11 @@ import type {
   RecipientId, RecipientIdGenerator,
 } from "../common/ports/recipients.js";
 import type {
+  ScopedSigningAccessRepository, NewSigningAccessGrant, NewDeliveryIntent,
+  RecipientActivationRecord, SigningAccessGrantId, DeliveryIntentId,
+  SigningAccessIdGenerator,
+} from "../common/ports/signing-access.js";
+import type {
   ScopedSigningRequestRepository, NewSigningRequestSnapshot,
   SigningRequestRecord, SigningRequestRecipientRecord, SigningRequestFieldRecord,
   SigningRequestId, SigningRequestRecipientId, SigningRequestFieldId,
@@ -87,6 +92,23 @@ export class SequentialDocumentIds implements DocumentIdGenerator {
   private next = 1;
   nextDocumentId(): DocumentId {
     return `doc_${String(this.next++)}` as DocumentId;
+  }
+}
+
+/**
+ * Sequential signing-access ids.
+ *
+ * Separate counters again, so a grant id and a delivery-intent id can never
+ * be compared successfully by accident.
+ */
+export class SequentialSigningAccessIds implements SigningAccessIdGenerator {
+  private grant = 1;
+  private intent = 1;
+  nextSigningAccessGrantId(): SigningAccessGrantId {
+    return `sag_${String(this.grant++)}` as SigningAccessGrantId;
+  }
+  nextDeliveryIntentId(): DeliveryIntentId {
+    return `sdi_${String(this.intent++)}` as DeliveryIntentId;
   }
 }
 
@@ -158,6 +180,9 @@ interface StoreSnapshot {
   readonly signingRequests: SigningRequestRecord[];
   readonly signingRequestRecipients: SigningRequestRecipientRecord[];
   readonly signingRequestFields: SigningRequestFieldRecord[];
+  readonly signingAccessGrants: NewSigningAccessGrant[];
+  readonly deliveryIntents: NewDeliveryIntent[];
+  readonly activations: (RecipientActivationRecord & { signingRequestId: string })[];
   readonly evidence: EvidenceEventRecord[];
   readonly artifacts: ArtifactRecord[];
   readonly seals: SealRecord[];
@@ -187,6 +212,9 @@ export class InMemoryStore {
   signingRequests: SigningRequestRecord[] = [];
   signingRequestRecipients: SigningRequestRecipientRecord[] = [];
   signingRequestFields: SigningRequestFieldRecord[] = [];
+  signingAccessGrants: NewSigningAccessGrant[] = [];
+  deliveryIntents: NewDeliveryIntent[] = [];
+  activations: (RecipientActivationRecord & { signingRequestId: string })[] = [];
   /** Snapshot row to its request. The real tables carry the column. */
   readonly snapshotOwners = new Map<string, SigningRequestId>();
   /** Field id to preparation id. The real table has a column. */
@@ -212,6 +240,9 @@ export class InMemoryStore {
       signingRequests: [...this.signingRequests],
       signingRequestRecipients: [...this.signingRequestRecipients],
       signingRequestFields: [...this.signingRequestFields],
+      signingAccessGrants: [...this.signingAccessGrants],
+      deliveryIntents: [...this.deliveryIntents],
+      activations: [...this.activations],
       evidence: [...this.evidence],
       artifacts: [...this.artifacts],
       seals: [...this.seals],
@@ -238,6 +269,9 @@ export class InMemoryStore {
     this.signingRequests = [...snapshot.signingRequests];
     this.signingRequestRecipients = [...snapshot.signingRequestRecipients];
     this.signingRequestFields = [...snapshot.signingRequestFields];
+    this.signingAccessGrants = [...snapshot.signingAccessGrants];
+    this.deliveryIntents = [...snapshot.deliveryIntents];
+    this.activations = [...snapshot.activations];
     this.invitationDigests.clear();
     for (const [k, v] of snapshot.invitationDigests) this.invitationDigests.set(k, v);
     this.evidence.length = 0;
@@ -760,6 +794,61 @@ function scopedPreparations(
 }
 
 /**
+ * The in-memory signing-access store.
+ *
+ * Reproduces the two constraints that carry the rules: ONE active grant per
+ * recipient, and ONE delivery intent per grant. Without them a duplicate-send
+ * bug would pass here and be caught only by PostgreSQL.
+ */
+function scopedSigningAccess(
+  store: InMemoryStore, scope: WorkspaceId,
+): ScopedSigningAccessRepository {
+  return {
+    insertGrant: (grant: NewSigningAccessGrant) => {
+      if (grant.workspaceId !== scope) {
+        throw new FakeScopeMismatchError(
+          "SigningAccessGrant", scope, grant.workspaceId);
+      }
+      const clash = store.signingAccessGrants.some(
+        existing => existing.workspaceId === scope
+          && existing.signingRequestId === grant.signingRequestId
+          && existing.recipientId === grant.recipientId);
+      if (clash) throw new Error("recipient already holds an active grant");
+      store.signingAccessGrants.push(grant);
+      return Promise.resolve();
+    },
+
+    insertDeliveryIntent: (intent: NewDeliveryIntent) => {
+      if (intent.workspaceId !== scope) {
+        throw new FakeScopeMismatchError(
+          "SigningDeliveryIntent", scope, intent.workspaceId);
+      }
+      if (store.deliveryIntents.some(existing => existing.grantId === intent.grantId)) {
+        throw new Error("grant already has a delivery intent");
+      }
+      store.deliveryIntents.push(intent);
+      return Promise.resolve();
+    },
+
+    insertActivations: (input) => {
+      for (const activation of input.activations) {
+        store.activations.push({
+          ...activation, signingRequestId: String(input.signingRequestId),
+        });
+      }
+      return Promise.resolve();
+    },
+
+    listActivations: (signingRequestId) => Promise.resolve(
+      store.activations
+        .filter(a => a.signingRequestId === String(signingRequestId))
+        .map(({ recipientId, state, activatedAt }) => ({
+          recipientId, state, activatedAt,
+        }))),
+  };
+}
+
+/**
  * The in-memory signing-request store.
  *
  * Write-once, like the real one: there is no update method, because the
@@ -804,6 +893,20 @@ function scopedSigningRequests(
     },
 
     find: (signingRequestId) => Promise.resolve(owned(signingRequestId) ?? null),
+
+    markSentIfDraft: (input) => {
+      const index = store.signingRequests.findIndex(
+        request => request.workspaceId === scope
+          && request.signingRequestId === input.signingRequestId
+          // The condition, mirroring the adapter's WHERE clause.
+          && request.state === "draft");
+      const current = index === -1 ? undefined : store.signingRequests[index];
+      if (current === undefined) return Promise.resolve(false);
+      store.signingRequests[index] = {
+        ...current, state: "sent", updatedAt: input.sentAt,
+      };
+      return Promise.resolve(true);
+    },
 
     listRecipients: (signingRequestId) => Promise.resolve(
       store.signingRequestRecipients
@@ -1074,6 +1177,7 @@ export class FakeTransactionManager implements TransactionManager {
         preparations: scopedPreparations(this.store, workspaceId),
         recipients: scopedRecipients(this.store, workspaceId),
         signingRequests: scopedSigningRequests(this.store, workspaceId),
+        signingAccess: scopedSigningAccess(this.store, workspaceId),
       });
       this.committed++;
       return result;
@@ -1143,6 +1247,7 @@ export class FakeTransactionManager implements TransactionManager {
             preparations: scopedPreparations(store, workspaceId),
             recipients: scopedRecipients(store, workspaceId),
             signingRequests: scopedSigningRequests(store, workspaceId),
+            signingAccess: scopedSigningAccess(store, workspaceId),
           });
         },
       });

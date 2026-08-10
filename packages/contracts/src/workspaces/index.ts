@@ -157,6 +157,7 @@ export const WORKSPACE_CAPABILITY_NAMES = [
   "document.prepare",
   "signing-request.create",
   "signing-request.view",
+  "signing-request.send",
   "workspace.ownership.transfer",
 ] as const;
 
