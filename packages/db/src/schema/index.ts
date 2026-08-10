@@ -203,11 +203,55 @@ export interface PreparationFieldsTable {
   /** z-order; higher draws on top. */
   layer: number;
   /**
-   * The editor's participant slot — an opaque label, NOT an identity.
+   * The recipient expected to complete this field (migration 018).
    *
-   * No foreign key: there is no recipient table until BACKEND-31.
+   * Replaced BACKEND-30's opaque `participant_slot`. Constrained by a THREE-
+   * column foreign key `(workspace_id, preparation_id, recipient_id)`, so a
+   * field cannot name a recipient of a different preparation — which tenant
+   * isolation alone would not catch, since both rows are in the same workspace.
+   *
+   * NULL while a layout is being authored; readiness is what requires it.
    */
-  participant_slot: ColumnType<string | null, string | null, string | null>;
+  recipient_id: ColumnType<string | null, string | null, string | null>;
+}
+
+/**
+ * A signing participant, snapshotted onto one preparation (BACKEND-31).
+ *
+ * `name`, `email` and `organization` are COPIES, taken at creation. Nothing
+ * dereferences `source_contact_id` to obtain them — that column is provenance,
+ * and it becomes NULL if the contact is ever deleted.
+ *
+ * No `access_token`, no `otp`, no `authenticated_at`, no `signed_at`, no
+ * `email_sent_at`: a recipient row says where an invitation is INTENDED to go
+ * and proves nothing about who controls that mailbox.
+ */
+export interface PreparationRecipientsTable {
+  recipient_id: string;
+  workspace_id: string;
+  preparation_id: string;
+  /** PROVENANCE only. ON DELETE SET NULL — a deleted contact leaves this standing. */
+  source_contact_id: ColumnType<string | null, string | null, string | null>;
+  name: string;
+  /** The delivery address, exactly as entered. Unverified. */
+  email: string;
+  /**
+   * The folded comparison key, for the preparation-local duplicate rule.
+   *
+   * Named `normalized_recipient_email` rather than `normalized_email` so it can
+   * never be confused at a call site with the account identity on `users`.
+   */
+  normalized_recipient_email: string;
+  organization: ColumnType<string | null, string | null, string | null>;
+  /** CHECK-constrained to the six participant roles. NOT a WorkspaceRole. */
+  recipient_type: string;
+  /** Whether the workflow waits for this participant. Not a field's `required`. */
+  is_required: boolean;
+  order_index: number;
+  /** The routing step. Equal values mean parallel within a step. */
+  routing_order: number;
+  created_at: Timestamptz;
+  updated_at: Timestamptz;
 }
 
 /**
@@ -567,6 +611,7 @@ export interface Database {
   documents: DocumentsTable;
   document_preparations: DocumentPreparationsTable;
   preparation_fields: PreparationFieldsTable;
+  preparation_recipients: PreparationRecipientsTable;
   document_artifacts: DocumentArtifactsTable;
   evidence_events: EvidenceEventsTable;
   document_seals: DocumentSealsTable;

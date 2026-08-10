@@ -32,6 +32,10 @@
       "types": "./dist/preparation/index.d.ts",
       "default": "./dist/preparation/index.js"
     },
+    "./recipients": {
+      "types": "./dist/recipients/index.d.ts",
+      "default": "./dist/recipients/index.js"
+    },
     "./common": {
       "types": "./dist/common/index.d.ts",
       "default": "./dist/common/index.js"

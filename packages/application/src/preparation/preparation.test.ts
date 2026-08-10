@@ -316,18 +316,30 @@ describe("saveDocumentPreparation", () => {
     expect(view.fields.map(f => f.label)).toEqual(["a", "b", "c"]);
   });
 
-  it("stores the participant slot, or null when unassigned", async () => {
+  it("leaves a field unassigned when no recipient is named", async () => {
+    // Permitted while a layout is being built (§114). Assignment to a REAL
+    // recipient, and the refusal of anything else, is exercised in
+    // recipients.test.ts - it needs a recipient to assign to, and creating one
+    // here would make this file depend on BACKEND-31's use cases.
     const h = await harness();
     const view = await saveDocumentPreparation(
       actor(OWNER), h.workspaceId, DOC, {
         expectedRevision: 0,
-        fields: [
-          field({ participantSlot: "P1", label: "a", layer: 0 }),
-          field({ label: "b", layer: 1 }),
-        ],
+        fields: [field({ label: "a", layer: 0 }), field({ label: "b", layer: 1 })],
       }, h.deps);
-    // Unassigned fields are permitted while a layout is being built (§114).
-    expect(view.fields.map(f => f.participantSlot)).toEqual(["P1", null]);
+    expect(view.fields.map(f => f.recipientId)).toEqual([null, null]);
+  });
+
+  it("refuses a recipient id that is not a recipient of this preparation", async () => {
+    // A well-formed id naming nothing. Refused rather than stored: BACKEND-30
+    // accepted any string here because nothing dereferenced it, and that is
+    // exactly what changed (§124).
+    const h = await harness();
+    await expect(saveDocumentPreparation(
+      actor(OWNER), h.workspaceId, DOC, {
+        expectedRevision: 0,
+        fields: [field({ recipientId: "rcp_nope" })],
+      }, h.deps)).rejects.toMatchObject({ code: "validation_failed" });
   });
 });
 
@@ -545,7 +557,12 @@ describe("preparation is not a signing request", () => {
     const serialized = JSON.stringify(view);
     for (const absent of [
       "sentAt", "expiresAt", "completedAt", "signedAt", "declinedAt",
-      "recipientId", "signatureValue", "submittedValue",
+      "signatureValue", "submittedValue",
+      // `recipientId` was in this list until BACKEND-31 and is deliberately
+      // not any more: a field naming who fills it is AUTHORING state, not
+      // ceremony state. What still must not appear is anything about what that
+      // recipient DID - which is why `signedAt` and `declinedAt` stay.
+      "recipientEmail", "recipientName", "accessToken", "authenticatedAt",
       // `"value"` as a property name. `signature` alone is a legitimate field
       // TYPE in this response, so matching the bare word would fail on correct
       // output — the same detector-versus-intent trap BACKEND-29 recorded.

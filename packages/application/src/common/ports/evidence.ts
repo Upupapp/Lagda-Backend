@@ -24,8 +24,16 @@ import type { StorageObjectKey } from "./storage.js";
 export type EvidenceEventId = string & { readonly __brand: "EvidenceEventId" };
 export type ArtifactId = string & { readonly __brand: "ArtifactId" };
 export type SealId = string & { readonly __brand: "SealId" };
-/** A recipient of a signing request. Not a `UserId` — see `ActorType`. */
-export type RecipientId = string & { readonly __brand: "RecipientId" };
+/**
+ * Re-exported, not re-declared.
+ *
+ * BACKEND-10 declared this here speculatively, for an evidence actor whose
+ * table did not exist. BACKEND-31 created recipients, so the canonical
+ * declaration moved to `./recipients.js` and this keeps existing importers
+ * working — one type rather than two that agree by coincidence of brand string.
+ */
+export type { RecipientId } from "./recipients.js";
+import type { RecipientId } from "./recipients.js";
 
 export interface EvidenceEventIdGenerator {
   nextEvidenceEventId(): EvidenceEventId;

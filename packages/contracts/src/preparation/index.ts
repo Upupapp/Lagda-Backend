@@ -88,8 +88,13 @@ export const PREPARATION_FIELD_LABEL_MAX_LENGTH = 200;
  */
 export const PREPARATION_MAX_FIELDS = 500;
 
-/** The editor's participant slot. See `participantSlot` below. */
-export const PREPARATION_PARTICIPANT_SLOT_MAX_LENGTH = 64;
+/**
+ * The recipient id length, matching `recipient_id varchar(64)`.
+ *
+ * Replaced `PREPARATION_PARTICIPANT_SLOT_MAX_LENGTH` in BACKEND-31. The slot it
+ * bounded was an editor-local label; this bounds a server-generated id.
+ */
+export const PREPARATION_RECIPIENT_ID_MAX_LENGTH = 64;
 
 // ── Geometry ─────────────────────────────────────────────────────────────────
 
@@ -145,19 +150,23 @@ export const PreparationFieldSchema = Type.Object(
     /** z-order; higher draws on top. The editor's `layer`. */
     layer: Type.Integer({ minimum: 0 }),
     /**
-     * The editor's participant slot — **not an identity**.
+     * The recipient expected to complete this field.
      *
-     * The product's `FieldDefinition.participantId` is an editor-local label
-     * ("P1", "P2"). It is not a `UserId`, not a `ContactId`, not a
-     * `WorkspaceMemberId` and not a `RecipientId`, because no recipient exists
-     * yet. Nothing dereferences it and it has no foreign key.
+     * BACKEND-30 carried an editor-local slot label here ("P1", "P2") that
+     * nothing dereferenced. BACKEND-31 replaced it with a real reference: a
+     * `recipientId` belonging to THIS preparation, checked by the use case
+     * against the preparation's own recipients and, independently, by a
+     * three-column foreign key.
+     *
+     * Still a plain string on the wire. The brand is a compile-time device and
+     * JSON has no branded types — what makes a wrong value unusable is the
+     * constraint, not the schema.
      *
      * `null` means unassigned, which the editor permits while a layout is being
-     * built. BACKEND-31 replaces this with a real recipient reference —
-     * PREPARATION_RECIPIENT_HANDOFF.md.
+     * built. Readiness for sending is what will require it (§227).
      */
-    participantSlot: Type.Union([
-      Type.String({ minLength: 1, maxLength: PREPARATION_PARTICIPANT_SLOT_MAX_LENGTH }),
+    recipientId: Type.Union([
+      Type.String({ minLength: 1, maxLength: PREPARATION_RECIPIENT_ID_MAX_LENGTH }),
       Type.Null(),
     ]),
   },

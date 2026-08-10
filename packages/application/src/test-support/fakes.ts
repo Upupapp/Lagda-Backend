@@ -42,6 +42,10 @@ import type {
   PreparationFieldRecord, PreparationId, PreparationFieldId,
   PreparationIdGenerator,
 } from "../common/ports/preparation.js";
+import type {
+  ScopedRecipientRepository, RecipientRecord, NewRecipient,
+  RecipientId, RecipientIdGenerator,
+} from "../common/ports/recipients.js";
 
 /** A fixed instant, so assertions mean the same thing in any year. */
 export class FixedClock implements Clock {
@@ -80,6 +84,20 @@ export class SequentialDocumentIds implements DocumentIdGenerator {
   }
 }
 
+/**
+ * Sequential recipient ids.
+ *
+ * `rcp_1`, not the email and not the order index: a test that accidentally
+ * depended on either would pass here and break the moment the real generator
+ * ran (§7).
+ */
+export class SequentialRecipientIds implements RecipientIdGenerator {
+  private next = 1;
+  nextRecipientId(): RecipientId {
+    return `rcp_${String(this.next++)}` as RecipientId;
+  }
+}
+
 export class SequentialPreparationIds implements PreparationIdGenerator {
   private preparation = 1;
   private field = 1;
@@ -108,6 +126,7 @@ interface StoreSnapshot {
   readonly documents: DocumentRecord[];
   readonly preparations: PreparationRecord[];
   readonly preparationFields: PreparationFieldRecord[];
+  readonly recipients: RecipientRecord[];
   readonly evidence: EvidenceEventRecord[];
   readonly artifacts: ArtifactRecord[];
   readonly seals: SealRecord[];
@@ -133,6 +152,7 @@ export class InMemoryStore {
   documents: DocumentRecord[] = [];
   preparations: PreparationRecord[] = [];
   preparationFields: PreparationFieldRecord[] = [];
+  recipients: RecipientRecord[] = [];
   /** Field id to preparation id. The real table has a column. */
   readonly fieldOwners = new Map<string, PreparationId>();
   readonly evidence: EvidenceEventRecord[] = [];
@@ -152,6 +172,7 @@ export class InMemoryStore {
       documents: [...this.documents],
       preparations: [...this.preparations],
       preparationFields: [...this.preparationFields],
+      recipients: [...this.recipients],
       evidence: [...this.evidence],
       artifacts: [...this.artifacts],
       seals: [...this.seals],
@@ -174,6 +195,7 @@ export class InMemoryStore {
     this.documents = [...snapshot.documents];
     this.preparations = [...snapshot.preparations];
     this.preparationFields = [...snapshot.preparationFields];
+    this.recipients = [...snapshot.recipients];
     this.invitationDigests.clear();
     for (const [k, v] of snapshot.invitationDigests) this.invitationDigests.set(k, v);
     this.evidence.length = 0;
@@ -695,6 +717,118 @@ function scopedPreparations(
   };
 }
 
+/**
+ * The in-memory recipient store.
+ *
+ * Reproduces the two constraints that carry the rules, rather than leaving them
+ * to the use case:
+ *
+ *   the preparation-local unique on the folded email, so the duplicate race
+ *   fails here as well as in PostgreSQL;
+ *
+ *   the RESTRICT on deleting an assigned recipient, so a use case that forgot
+ *   to check would not pass the unit suite and then fail in integration.
+ */
+function scopedRecipients(
+  store: InMemoryStore, scope: WorkspaceId,
+): ScopedRecipientRepository {
+  const of = (preparationId: PreparationId) => store.recipients.filter(
+    r => r.workspaceId === scope && r.preparationId === preparationId);
+
+  const assignedCount = (preparationId: PreparationId, recipientId: RecipientId) =>
+    store.preparationFields.filter(
+      f => preparationOf(store, f) === preparationId && f.recipientId === recipientId,
+    ).length;
+
+  return {
+    insert: (recipient: NewRecipient) => {
+      if (recipient.workspaceId !== scope) {
+        throw new FakeScopeMismatchError("Recipient", scope, recipient.workspaceId);
+      }
+      const clash = of(recipient.preparationId).some(
+        r => r.emailKey === recipient.emailKey);
+      if (clash) throw new Error("duplicate recipient email for preparation");
+
+      store.recipients.push({
+        recipientId: recipient.recipientId,
+        workspaceId: recipient.workspaceId,
+        preparationId: recipient.preparationId,
+        sourceContactId: recipient.sourceContactId,
+        name: recipient.name,
+        email: recipient.email,
+        emailKey: recipient.emailKey,
+        organization: recipient.organization,
+        type: recipient.type,
+        isRequired: recipient.isRequired,
+        orderIndex: recipient.orderIndex,
+        routingOrder: recipient.routingOrder,
+        createdAt: recipient.createdAt,
+        updatedAt: recipient.createdAt,
+      });
+      return Promise.resolve();
+    },
+
+    find: (input) => Promise.resolve(
+      of(input.preparationId).find(r => r.recipientId === input.recipientId) ?? null),
+
+    list: (preparationId) => Promise.resolve(
+      [...of(preparationId)].sort((a, b) =>
+        a.orderIndex - b.orderIndex || a.recipientId.localeCompare(b.recipientId))),
+
+    update: (input) => {
+      const index = store.recipients.findIndex(
+        r => r.workspaceId === scope
+          && r.preparationId === input.preparationId
+          && r.recipientId === input.recipientId);
+      const current = index === -1 ? undefined : store.recipients[index];
+      if (current === undefined) return Promise.resolve(false);
+
+      const patch = input.patch;
+      // The unique constraint applies to an update too. Without this, renaming
+      // one recipient onto another address would pass here and violate in
+      // PostgreSQL.
+      if (patch.emailKey !== undefined) {
+        const clash = of(input.preparationId).some(
+          r => r.recipientId !== input.recipientId && r.emailKey === patch.emailKey);
+        if (clash) throw new Error("duplicate recipient email for preparation");
+      }
+
+      store.recipients[index] = {
+        ...current,
+        // Each key applied only when present, mirroring the adapter: an absent
+        // key means leave it, an explicit null on organization means clear it.
+        ...(patch.name === undefined ? {} : { name: patch.name }),
+        ...(patch.email === undefined ? {} : { email: patch.email }),
+        ...(patch.emailKey === undefined ? {} : { emailKey: patch.emailKey }),
+        ...(patch.organization === undefined ? {} : { organization: patch.organization }),
+        ...(patch.type === undefined ? {} : { type: patch.type }),
+        ...(patch.isRequired === undefined ? {} : { isRequired: patch.isRequired }),
+        ...(patch.orderIndex === undefined ? {} : { orderIndex: patch.orderIndex }),
+        ...(patch.routingOrder === undefined ? {} : { routingOrder: patch.routingOrder }),
+        updatedAt: input.now,
+      };
+      return Promise.resolve(true);
+    },
+
+    remove: (input) => {
+      const index = store.recipients.findIndex(
+        r => r.workspaceId === scope
+          && r.preparationId === input.preparationId
+          && r.recipientId === input.recipientId);
+      if (index === -1) return Promise.resolve(false);
+      // ON DELETE RESTRICT, in memory.
+      if (assignedCount(input.preparationId, input.recipientId) > 0) {
+        throw new Error("recipient still has assigned fields");
+      }
+      store.recipients.splice(index, 1);
+      return Promise.resolve(true);
+    },
+
+    countAssignedFields: (input) => Promise.resolve(
+      assignedCount(input.preparationId, input.recipientId)),
+  };
+}
+
 /** Which preparation a fake field belongs to. The real row carries the column. */
 function preparationOf(
   store: InMemoryStore, field: PreparationFieldRecord,
@@ -829,6 +963,7 @@ export class FakeTransactionManager implements TransactionManager {
         contacts: scopedContacts(this.store, workspaceId),
         documents: scopedDocuments(this.store, workspaceId),
         preparations: scopedPreparations(this.store, workspaceId),
+        recipients: scopedRecipients(this.store, workspaceId),
       });
       this.committed++;
       return result;
@@ -896,6 +1031,7 @@ export class FakeTransactionManager implements TransactionManager {
             contacts: scopedContacts(store, workspaceId),
             documents: scopedDocuments(store, workspaceId),
             preparations: scopedPreparations(store, workspaceId),
+            recipients: scopedRecipients(store, workspaceId),
           });
         },
       });

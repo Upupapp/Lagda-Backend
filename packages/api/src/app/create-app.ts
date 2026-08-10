@@ -41,6 +41,7 @@ import { registerMemberRoutes } from "../workspaces/member-routes.js";
 import { registerContactRoutes } from "../contacts/contact-routes.js";
 import { registerDocumentRoutes } from "../documents/document-routes.js";
 import { registerPreparationRoutes } from "../preparation/preparation-routes.js";
+import { registerRecipientRoutes } from "../recipients/recipient-routes.js";
 
 export interface CreateAppOptions {
   readonly config: ApiConfig;
@@ -451,6 +452,25 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
               : null,
           ),
           preparationDependencies: preparation,
+          metrics,
+        });
+      }
+
+      // Inside the same scope. A recipient list is the names and email
+      // addresses of the parties to a contract; there is no version of this
+      // surface that is safe to reach anonymously.
+      if (workspaces.recipients !== undefined) {
+        const recipients = workspaces.recipients;
+        registerRecipientRoutes(scope, {
+          authenticatedUser: (request: FastifyRequest) => Promise.resolve(
+            request.auth.status === "authenticated"
+              ? {
+                  userId: request.auth.actor.userId,
+                  sessionId: request.auth.actor.sessionId,
+                }
+              : null,
+          ),
+          recipientDependencies: recipients,
           metrics,
         });
       }

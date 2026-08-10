@@ -36,6 +36,10 @@
       "types": "./dist/preparation/index.d.ts",
       "default": "./dist/preparation/index.js"
     },
+    "./recipients": {
+      "types": "./dist/recipients/index.d.ts",
+      "default": "./dist/recipients/index.js"
+    },
     "./api": {
       "types": "./dist/api/index.d.ts",
       "default": "./dist/api/index.js"

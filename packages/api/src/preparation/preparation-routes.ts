@@ -32,7 +32,7 @@ import {
 import {
   DocumentPreparationSchema, PreparationFieldTypeSchema, PreparationRectSchema,
   PREPARATION_FIELD_LABEL_MAX_LENGTH, PREPARATION_MAX_FIELDS,
-  PREPARATION_PARTICIPANT_SLOT_MAX_LENGTH,
+  PREPARATION_RECIPIENT_ID_MAX_LENGTH,
   type DocumentId, type WorkspaceId,
 } from "@lagda/contracts";
 import type { MetricsRecorder } from "../observability/metrics.js";
@@ -77,9 +77,13 @@ const FieldInputSchema = Type.Object({
   required: Type.Boolean(),
   label: Type.String({ maxLength: PREPARATION_FIELD_LABEL_MAX_LENGTH }),
   layer: Type.Integer({ minimum: 0 }),
-  /** The editor's participant slot. An opaque label, not an identity. */
-  participantSlot: Type.Optional(Type.Union([
-    Type.String({ minLength: 1, maxLength: PREPARATION_PARTICIPANT_SLOT_MAX_LENGTH }),
+  /**
+   * The recipient expected to complete this field. Optional on the wire so an
+   * editor can place a field before deciding who fills it; the use case checks
+   * any value it does receive against THIS preparation's recipients.
+   */
+  recipientId: Type.Optional(Type.Union([
+    Type.String({ minLength: 1, maxLength: PREPARATION_RECIPIENT_ID_MAX_LENGTH }),
     Type.Null(),
   ])),
 }, { additionalProperties: false });
@@ -143,7 +147,7 @@ const present = (preparation: PreparationView) => ({
     required: field.required,
     label: field.label,
     layer: field.layer,
-    participantSlot: field.participantSlot,
+    recipientId: field.recipientId,
   })),
   createdAt: iso(preparation.createdAt),
   updatedAt: iso(preparation.updatedAt),

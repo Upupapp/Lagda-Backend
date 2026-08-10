@@ -19,11 +19,13 @@
 // no submitted value. BACKEND-32 owns all of them, and it must SNAPSHOT this
 // state rather than reading it live — see PREPARATION_EDITABILITY.md.
 
-import type { DocumentId, WorkspaceId, PreparationFieldType } from "@lagda/contracts";
+import type {
+  DocumentId, WorkspaceId, PreparationFieldType, RecipientType,
+} from "@lagda/contracts";
 import {
   validateRect, roundRect, isValidPageNumber, canPlaceFields,
   validateFieldLabel, effectiveRequired, derivePreparationState,
-  PREPARATION_MAX_FIELDS,
+  canHoldFields, PREPARATION_MAX_FIELDS,
   type PreparationState, type WorkspaceCapability,
 } from "@lagda/core";
 import type {
@@ -91,7 +93,7 @@ export interface PreparationFieldView {
   readonly required: boolean;
   readonly label: string;
   readonly layer: number;
-  readonly participantSlot: string | null;
+  readonly recipientId: string | null;
 }
 
 export interface PreparationView {
@@ -122,7 +124,7 @@ const toFieldView = (field: PreparationFieldRecord): PreparationFieldView => ({
   required: field.required,
   label: field.label,
   layer: field.layer,
-  participantSlot: field.participantSlot,
+  recipientId: field.recipientId,
 });
 
 const toView = (
@@ -266,7 +268,16 @@ export interface FieldInput {
   readonly required: boolean;
   readonly label: string;
   readonly layer: number;
-  readonly participantSlot?: string | null;
+  /**
+   * The recipient expected to complete this field (BACKEND-31).
+   *
+   * Replaced BACKEND-30's opaque slot. Validated against the preparation's OWN
+   * recipients, so a well-formed id from another preparation is refused — and
+   * a three-column foreign key refuses it independently.
+   *
+   * `null` while a layout is being built. Readiness is what requires it.
+   */
+  readonly recipientId?: string | null;
 }
 
 export interface SaveLayoutInput {
@@ -339,7 +350,15 @@ export async function saveDocumentPreparation(
       (await uow.preparations.listFields(preparation.preparationId))
         .map(field => field.fieldId));
 
-    const fields = validateFields(input.fields, pageCount, existing, deps);
+    // The recipients a field may be assigned to: THIS preparation's, and only
+    // those that may hold fields at all. Read inside the transaction, so a
+    // recipient deleted a moment ago cannot be assigned; the three-column
+    // foreign key refuses it independently if one is deleted after this read.
+    const assignable = new Map(
+      (await uow.recipients.list(preparation.preparationId))
+        .map(recipient => [String(recipient.recipientId), recipient.type]));
+
+    const fields = validateFields(input.fields, pageCount, existing, assignable, deps);
 
     const revision = await uow.preparations.replaceLayout({
       preparationId: preparation.preparationId,
@@ -406,6 +425,31 @@ async function ensurePreparation(
 }
 
 /**
+ * Finds or creates a document's preparation, for callers outside this module.
+ *
+ * Exported for BACKEND-31: a recipient cannot exist without a preparation to
+ * hold it, and the first recipient added to a never-prepared document must
+ * create one. Sharing this rather than reimplementing it means the recipient
+ * path inherits the source-artifact resolution, the rotation refusal and the
+ * creation race unchanged — three behaviours a second implementation would get
+ * subtly wrong.
+ *
+ * Note what it does NOT do: it does not touch the revision, and it does not
+ * check editability. The caller decides what a frozen preparation means for the
+ * operation it is performing.
+ */
+export async function ensurePreparationForDocument(
+  uow: WorkspaceUnitOfWork,
+  documentId: DocumentId,
+  deps: PreparationDependencies,
+  now: number,
+): Promise<PreparationRecord> {
+  const source = await resolveSource(uow, documentId);
+  const { preparation } = await ensurePreparation(uow, documentId, source, deps, now);
+  return preparation;
+}
+
+/**
  * Validates every field and returns the records to persist.
  *
  * Reports ALL problems at once, each naming the field's INDEX rather than its
@@ -416,6 +460,7 @@ function validateFields(
   inputs: readonly FieldInput[],
   pageCount: number,
   existingIds: ReadonlySet<string>,
+  assignableRecipients: ReadonlyMap<string, RecipientType>,
   deps: PreparationDependencies,
 ): readonly PreparationFieldRecord[] {
   const issues: string[] = [];
@@ -450,7 +495,28 @@ function validateFields(
     }
     if (fieldId !== undefined) seen.add(fieldId);
 
-    if (!geometry.ok || !label.ok) return;
+    // ── Assignment ────────────────────────────────────────────────────────
+    //
+    // An id that is not a recipient of THIS preparation is refused, whether it
+    // belongs to another document, another tenant, or nothing at all — one
+    // answer, so the endpoint cannot be used to probe which ids exist (§124).
+    let assignmentInvalid = false;
+    const assignedTo = input.recipientId;
+    if (assignedTo !== undefined && assignedTo !== null) {
+      const type = assignableRecipients.get(assignedTo);
+      if (type === undefined) {
+        issues.push(`${at}.recipientId: unknown`);
+        assignmentInvalid = true;
+      } else if (!canHoldFields(type)) {
+        // A viewer or carbon-copy recipient. Refused rather than silently
+        // dropped: a sender who placed a signature on the wrong party must be
+        // told, not quietly given an unassigned field.
+        issues.push(`${at}.recipientId: this recipient cannot be assigned fields`);
+        assignmentInvalid = true;
+      }
+    }
+
+    if (!geometry.ok || !label.ok || assignmentInvalid) return;
 
     records.push({
       fieldId: (fieldId ?? deps.ids.nextPreparationFieldId()) as PreparationFieldRecord["fieldId"],
@@ -464,7 +530,7 @@ function validateFields(
       required: effectiveRequired(input.type, input.required),
       label: label.value,
       layer: input.layer,
-      participantSlot: input.participantSlot ?? null,
+      recipientId: (input.recipientId ?? null) as PreparationFieldRecord["recipientId"],
     });
   });
 

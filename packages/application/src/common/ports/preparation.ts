@@ -24,6 +24,7 @@
 //                                           sender clears one
 
 import type { DocumentId, WorkspaceId, PreparationFieldType } from "@lagda/contracts";
+import type { RecipientId } from "./recipients.js";
 
 /** Opaque, server-generated. Never an array index (§28). */
 export type PreparationId = string & { readonly __brand: "PreparationId" };
@@ -50,11 +51,15 @@ export interface PreparationFieldRecord {
   /** z-order; higher draws on top. */
   readonly layer: number;
   /**
-   * The editor's participant slot. **Not an identity** — see the contract.
+   * The recipient expected to complete this field (BACKEND-31).
    *
-   * No foreign key, because there is nothing to point at until BACKEND-31.
+   * Replaced the opaque `participantSlot`. A three-column foreign key ties it
+   * to a recipient of THIS preparation, so cross-preparation assignment is a
+   * constraint violation rather than an application check.
+   *
+   * NULL while authoring; readiness requires it.
    */
-  readonly participantSlot: string | null;
+  readonly recipientId: RecipientId | null;
 }
 
 export interface PreparationRecord {

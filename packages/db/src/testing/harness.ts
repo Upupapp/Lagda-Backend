@@ -84,6 +84,9 @@ export async function truncateAll(database: LagdaDatabase): Promise<void> {
   // Preparation fields cascade from preparations, but delete both explicitly:
   // the order is load-bearing and an implicit cascade hides it.
   await database.db.deleteFrom("preparation_fields").execute();
+  // Recipients after the fields that reference them: the assignment FK is
+  // RESTRICT, so a field still pointing at a recipient blocks its deletion.
+  await database.db.deleteFrom("preparation_recipients").execute();
   await database.db.deleteFrom("document_preparations").execute();
   await database.db.deleteFrom("document_artifacts").execute();
   // Documents after their artifacts: `document_artifacts` references

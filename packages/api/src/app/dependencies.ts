@@ -14,6 +14,7 @@ import type {
   InvitationDependencies, AcceptInvitationDependencies,
   MemberAdministrationDependencies, WorkspaceAccessDependencies,
   ContactDependencies, DocumentDependencies, PreparationDependencies,
+  RecipientDependencies,
 } from "@lagda/application";
 
 /**
@@ -113,4 +114,15 @@ export interface WorkspaceDependencies {
    * an editor that cannot commit.
    */
   readonly preparation?: () => PreparationDependencies;
+
+  /**
+   * Signing recipients (BACKEND-31).
+   *
+   * Optional as a WHOLE, and separate from `preparation` even though the two
+   * share a capability: a deployment that wires one and not the other gets a
+   * surface where fields can be placed but nobody can be named, which is a
+   * misconfiguration worth being able to observe rather than one to make
+   * unrepresentable.
+   */
+  readonly recipients?: () => RecipientDependencies;
 }

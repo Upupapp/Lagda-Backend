@@ -45,6 +45,8 @@ export const METRIC_NAMES = [
   "document_operations_total",
   // BACKEND-30. Preparation layout saves.
   "document_preparation_operations_total",
+  // BACKEND-31. Recipient writes - added, updated, removed, reordered.
+  "document_recipient_operations_total",
   // BACKEND-27. Capability denials. Successful checks are NOT counted: one
   // series per authorized request is noise, and the interesting signal is a
   // sustained spike in refusals (§183, §186).
@@ -111,6 +113,20 @@ export const METRIC_LABELS = {
   // as a label would be unbounded too, and the layout itself says where every
   // signature on a contract goes (§188, §193, §194).
   document_preparation_operations_total: ["operation", "result", "processRole"],
+  // `operation` is a four-value union and `result` is an outcome.
+  //
+  // Deliberately NOT `recipientId`, `contactId`, the recipient's NAME, EMAIL or
+  // ORGANIZATION, and not the recipient COUNT. The ids are unbounded; the name
+  // and email identify a party to a contract and must never reach a metrics
+  // store, which is typically retained longer and read more widely than a log
+  // (§188, RECIPIENT_DATA_CLASSIFICATION.md).
+  //
+  // `recipientType` is NOT a label either, despite being a bounded six-value
+  // set. Crossed with `operation` and `result` it multiplies the series count
+  // for a question - "do senders use approvers" - that a product query answers
+  // better than a counter. It appears in the LOG line, where it is read once
+  // and in context.
+  document_recipient_operations_total: ["operation", "result", "processRole"],
   // `capability` is a ten-value closed set defined in code — bounded, and the
   // most useful dimension a denial has. Deliberately NOT `workspaceId`,
   // `userId` or `membershipId`: all unbounded, and one series per tenant is how

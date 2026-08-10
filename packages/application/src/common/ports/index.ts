@@ -16,6 +16,7 @@ import type {
 import type { ScopedContactRepository } from "./contacts.js";
 import type { ScopedDocumentRepository } from "./documents.js";
 import type { ScopedPreparationRepository } from "./preparation.js";
+import type { ScopedRecipientRepository } from "./recipients.js";
 
 import type {
   WorkspaceId, WorkspaceMemberId, UserId, WorkspaceRole,
@@ -321,6 +322,15 @@ export interface WorkspaceUnitOfWork {
    * fields on ONE transaction with ONE tenant context.
    */
   readonly preparations: ScopedPreparationRepository;
+  /**
+   * Signing recipients (BACKEND-31).
+   *
+   * Beside `preparations` and `contacts`, and the adjacency is load-bearing:
+   * creating a recipient from a contact reads the contact and writes the
+   * snapshot on ONE transaction, so the copy cannot be taken from a contact
+   * that a concurrent edit has since changed.
+   */
+  readonly recipients: ScopedRecipientRepository;
 }
 
 /**
@@ -456,3 +466,7 @@ export * from "./contacts.js";
 export * from "./documents.js";
 
 export * from "./preparation.js";
+
+// `RecipientId` is declared here and re-exported by `evidence.js`, so it is
+// exported explicitly to tell TypeScript which module owns it.
+export * from "./recipients.js";

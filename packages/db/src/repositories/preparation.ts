@@ -62,7 +62,7 @@ function toField(row: FieldRow): PreparationFieldRecord {
     required: row.required,
     label: row.label,
     layer: row.layer,
-    participantSlot: row.participant_slot,
+    recipientId: row.recipient_id as never,
   };
 }
 
@@ -164,7 +164,7 @@ export function createScopedPreparationRepository(
               required: field.required,
               label: field.label,
               layer: field.layer,
-              participant_slot: field.participantSlot,
+              recipient_id: field.recipientId,
             })),
           ).execute();
         }

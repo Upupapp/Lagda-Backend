@@ -132,10 +132,21 @@ describe("preparation is not a signing request", () => {
     }
   });
 
-  it("references no contact, recipient or template", () => {
+  it("references no contact and no template", () => {
+    // ── Narrowed by BACKEND-31, deliberately ────────────────────────────────
+    //
+    // This forbade `RecipientId` too, because in BACKEND-30 no recipient
+    // existed and an editor slot label was the most a field could carry. A
+    // field now names a real recipient, so that clause would fail on correct
+    // code.
+    //
+    // What it still forbids is the boundary that MATTERS and has not moved:
+    // preparation never reads the address book. A contact becomes a recipient
+    // once, in `addRecipient`, and the layout works from the recipient - so a
+    // later "look the signer up in contacts" fails here before review.
     for (const file of PREPARATION_FILES) {
       const source = code(file);
-      for (const forbidden of ["ContactId", "contacts", "RecipientId", "TemplateId"]) {
+      for (const forbidden of ["ContactId", "uow.contacts", "TemplateId"]) {
         expect(source, `${path.basename(file)} references ${forbidden}`)
           .not.toContain(forbidden);
       }
@@ -342,7 +353,7 @@ describe("layouts and labels stay out of telemetry", () => {
       .exec(routes);
     expect(payload).not.toBeNull();
     const body = payload?.[1] ?? "";
-    for (const forbidden of ["label", "rect", "\\bx\\b", "\\by\\b", "participantSlot", "fields:"]) {
+    for (const forbidden of ["label", "rect", "\\bx\\b", "\\by\\b", "recipientId", "fields:"]) {
       expect(body, `the log payload contains ${forbidden}`)
         .not.toMatch(new RegExp(forbidden));
     }

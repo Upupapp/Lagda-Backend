@@ -91,6 +91,10 @@ export {
 export {
   registerPreparationRoutes, type PreparationRouteOptions, type SaveLayoutBody,
 } from "./preparation/preparation-routes.js";
+export {
+  registerRecipientRoutes, type RecipientRouteOptions,
+  type AddRecipientBody, type UpdateRecipientBody, type ReorderRecipientsBody,
+} from "./recipients/recipient-routes.js";
 
 export {
   registerWorkspaceRoutes, CreateWorkspaceRequestSchema,
