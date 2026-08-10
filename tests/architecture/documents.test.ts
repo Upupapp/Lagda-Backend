@@ -300,12 +300,26 @@ describe("document capabilities", () => {
   });
 
   it("declares no capability for an operation that does not exist", () => {
+    // `document.prepare` was on this list until BACKEND-30, and this guard
+    // failing is what a capability gaining an operation looks like. It is now
+    // asserted the other way round, below.
     for (const absent of [
       "document.delete", "document.archive", "document.download",
-      "document.send", "document.sign", "document.prepare",
+      "document.send", "document.sign",
     ]) {
       expect(WORKSPACE_CAPABILITIES as readonly string[]).not.toContain(absent);
     }
+  });
+
+  it("declares document.prepare, which BACKEND-30 gave an operation", () => {
+    expect(WORKSPACE_CAPABILITIES as readonly string[]).toContain("document.prepare");
+    // Held by the four roles with the product's `prepare_documents`, matching
+    // the other document writes.
+    const preparers = WORKSPACE_ROLES.filter(
+      role => capabilitiesFor(role).includes("document.prepare"));
+    expect([...preparers].sort()).toEqual([
+      "administrator", "owner", "sender", "template_administrator",
+    ]);
   });
 });
 

@@ -71,7 +71,7 @@ async function build(options: {
     inspector: {
       inspect: () => Promise.resolve({
         outcome: "ok", detectedMediaType: "application/pdf",
-        pageCount: 1, pageSizes: [{ width: 612, height: 792 }],
+        pageCount: 1, pageSizes: [{ width: 612, height: 792 }], rotatedPageCount: 0,
       }),
     },
     scanner: {

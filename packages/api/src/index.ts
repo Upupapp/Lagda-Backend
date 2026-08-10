@@ -88,6 +88,9 @@ export {
 export {
   registerDocumentRoutes, type DocumentRouteOptions, type DocumentTitleBody,
 } from "./documents/document-routes.js";
+export {
+  registerPreparationRoutes, type PreparationRouteOptions, type SaveLayoutBody,
+} from "./preparation/preparation-routes.js";
 
 export {
   registerWorkspaceRoutes, CreateWorkspaceRequestSchema,

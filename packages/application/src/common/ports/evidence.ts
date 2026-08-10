@@ -208,6 +208,14 @@ export interface ArtifactRecord {
    * value reaches this field.
    */
   readonly pageCount?: number;
+  /**
+   * Pages carrying a non-zero /Rotate value (BACKEND-30).
+   *
+   * Optional, and ABSENT means unknown rather than zero. Preparation refuses to
+   * place fields when it is unknown, because assuming unrotated would silently
+   * accept the case this exists to catch — see `canPlaceFields`.
+   */
+  readonly rotatedPageCount?: number;
   readonly createdAt: number;
 }
 

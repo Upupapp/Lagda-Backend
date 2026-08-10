@@ -37,6 +37,11 @@ import type {
 import type {
   ScopedDocumentRepository, DocumentRecord, NewDocument, DocumentIdGenerator,
 } from "../common/ports/documents.js";
+import type {
+  ScopedPreparationRepository, PreparationRecord, NewPreparation,
+  PreparationFieldRecord, PreparationId, PreparationFieldId,
+  PreparationIdGenerator,
+} from "../common/ports/preparation.js";
 
 /** A fixed instant, so assertions mean the same thing in any year. */
 export class FixedClock implements Clock {
@@ -75,6 +80,17 @@ export class SequentialDocumentIds implements DocumentIdGenerator {
   }
 }
 
+export class SequentialPreparationIds implements PreparationIdGenerator {
+  private preparation = 1;
+  private field = 1;
+  nextPreparationId(): PreparationId {
+    return `prep_${String(this.preparation++)}` as PreparationId;
+  }
+  nextPreparationFieldId(): PreparationFieldId {
+    return `pf_${String(this.field++)}` as PreparationFieldId;
+  }
+}
+
 /** Mirrors the adapter's mismatch rejection so fakes cannot be more permissive. */
 export class FakeScopeMismatchError extends Error {
   constructor(entity: string, scope: string, actual: string) {
@@ -90,6 +106,8 @@ interface StoreSnapshot {
   readonly invitationDigests: Map<string, string>;
   readonly contacts: ContactRecord[];
   readonly documents: DocumentRecord[];
+  readonly preparations: PreparationRecord[];
+  readonly preparationFields: PreparationFieldRecord[];
   readonly evidence: EvidenceEventRecord[];
   readonly artifacts: ArtifactRecord[];
   readonly seals: SealRecord[];
@@ -113,6 +131,10 @@ export class InMemoryStore {
   readonly invitationDigests = new Map<string, string>();
   contacts: ContactRecord[] = [];
   documents: DocumentRecord[] = [];
+  preparations: PreparationRecord[] = [];
+  preparationFields: PreparationFieldRecord[] = [];
+  /** Field id to preparation id. The real table has a column. */
+  readonly fieldOwners = new Map<string, PreparationId>();
   readonly evidence: EvidenceEventRecord[] = [];
   readonly artifacts: ArtifactRecord[] = [];
   readonly seals: SealRecord[] = [];
@@ -128,6 +150,8 @@ export class InMemoryStore {
       invitationDigests: new Map(this.invitationDigests),
       contacts: [...this.contacts],
       documents: [...this.documents],
+      preparations: [...this.preparations],
+      preparationFields: [...this.preparationFields],
       evidence: [...this.evidence],
       artifacts: [...this.artifacts],
       seals: [...this.seals],
@@ -148,6 +172,8 @@ export class InMemoryStore {
     this.invitations = [...snapshot.invitations];
     this.contacts = [...snapshot.contacts];
     this.documents = [...snapshot.documents];
+    this.preparations = [...snapshot.preparations];
+    this.preparationFields = [...snapshot.preparationFields];
     this.invitationDigests.clear();
     for (const [k, v] of snapshot.invitationDigests) this.invitationDigests.set(k, v);
     this.evidence.length = 0;
@@ -597,6 +623,85 @@ function scopedDocuments(store: InMemoryStore, scope: WorkspaceId): ScopedDocume
   };
 }
 
+/**
+ * The in-memory preparation store.
+ *
+ * Mirrors the adapter's CONDITIONAL replace exactly: the revision and the
+ * editability check happen together, so a use case cannot be written that
+ * passes here and races in PostgreSQL.
+ */
+function scopedPreparations(
+  store: InMemoryStore, scope: WorkspaceId,
+): ScopedPreparationRepository {
+  return {
+    insert: (preparation: NewPreparation) => {
+      if (preparation.workspaceId !== scope) {
+        throw new FakeScopeMismatchError(
+          "DocumentPreparation", scope, preparation.workspaceId);
+      }
+      // The unique constraint, in memory. Without it the creation race would
+      // pass against the fake and converge only in PostgreSQL.
+      const clash = store.preparations.some(
+        p => p.workspaceId === scope && p.documentId === preparation.documentId);
+      if (clash) throw new Error("duplicate preparation for document");
+
+      store.preparations.push({
+        preparationId: preparation.preparationId,
+        workspaceId: preparation.workspaceId,
+        documentId: preparation.documentId,
+        sourceArtifactId: preparation.sourceArtifactId,
+        revision: 1,
+        lockedAt: null,
+        createdAt: preparation.createdAt,
+        updatedAt: preparation.createdAt,
+      });
+      return Promise.resolve();
+    },
+
+    findByDocument: (documentId) => Promise.resolve(
+      store.preparations.find(
+        p => p.workspaceId === scope && p.documentId === documentId) ?? null),
+
+    listFields: (preparationId) => Promise.resolve(
+      store.preparationFields
+        .filter(f => f.fieldId.startsWith("") && preparationOf(store, f) === preparationId)
+        .filter(() => true)
+        // The adapter's order: page, then layer, then id.
+        .sort((a, b) =>
+          a.pageNumber - b.pageNumber
+          || a.layer - b.layer
+          || a.fieldId.localeCompare(b.fieldId))),
+
+    replaceLayout: (input) => {
+      const index = store.preparations.findIndex(
+        p => p.workspaceId === scope
+          && p.preparationId === input.preparationId
+          && p.revision === input.expectedRevision
+          && p.lockedAt === null);
+      const current = index === -1 ? undefined : store.preparations[index];
+      if (current === undefined) return Promise.resolve(null);
+
+      const revision = input.expectedRevision + 1;
+      store.preparations[index] = { ...current, revision, updatedAt: input.now };
+      // Replace, matching the adapter: delete then insert.
+      store.preparationFields = store.preparationFields.filter(
+        f => preparationOf(store, f) !== input.preparationId);
+      for (const field of input.fields) {
+        store.preparationFields.push(field);
+        store.fieldOwners.set(field.fieldId, input.preparationId);
+      }
+      return Promise.resolve(revision);
+    },
+  };
+}
+
+/** Which preparation a fake field belongs to. The real row carries the column. */
+function preparationOf(
+  store: InMemoryStore, field: PreparationFieldRecord,
+): PreparationId | undefined {
+  return store.fieldOwners.get(field.fieldId);
+}
+
 function scopedEvidence(store: InMemoryStore, scope: WorkspaceId): ScopedEvidenceRepository {
   return {
     append: (event: EvidenceEventInput) => {
@@ -723,6 +828,7 @@ export class FakeTransactionManager implements TransactionManager {
         invitations: scopedInvitations(this.store, workspaceId),
         contacts: scopedContacts(this.store, workspaceId),
         documents: scopedDocuments(this.store, workspaceId),
+        preparations: scopedPreparations(this.store, workspaceId),
       });
       this.committed++;
       return result;
@@ -789,6 +895,7 @@ export class FakeTransactionManager implements TransactionManager {
             invitations: scopedInvitations(store, workspaceId),
             contacts: scopedContacts(store, workspaceId),
             documents: scopedDocuments(store, workspaceId),
+            preparations: scopedPreparations(store, workspaceId),
           });
         },
       });

@@ -1,7 +1,7 @@
 // The authorization policy, exhaustively.
 //
 // Table-driven and complete: every role against every capability, every actor
-// role against every target role. 119 + 49 assertions that run with no database,
+// role against every target role. 126 + 49 assertions that run with no database,
 // no HTTP and nothing mocked — which is the point of keeping the policy pure.
 //
 // The expectations here are written out by hand ON PURPOSE. A test that derived
@@ -36,6 +36,11 @@ const CONTACT_CAPABILITIES: readonly WorkspaceCapability[] = [
  */
 const DOCUMENT_WRITE: readonly WorkspaceCapability[] = [
   "document.create", "document.update",
+  // BACKEND-30. Authoring the signing layout is the product's
+  // `prepare_documents`, held by the same four roles as the other document
+  // writes — and declared separately so the first product change that
+  // distinguishes renaming from preparing is a one-line edit.
+  "document.prepare",
 ];
 
 const ADMIN_CAPABILITIES: readonly WorkspaceCapability[] = [
@@ -112,7 +117,7 @@ describe("role to capability matrix", () => {
     // EXPECTED table not updated, this fails rather than the matrix silently
     // testing fewer combinations.
     expect(Object.keys(EXPECTED).sort()).toEqual([...WORKSPACE_ROLES].sort());
-    expect(WORKSPACE_CAPABILITIES.length).toBe(17);
+    expect(WORKSPACE_CAPABILITIES.length).toBe(18);
   });
 });
 

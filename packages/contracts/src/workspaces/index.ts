@@ -154,6 +154,7 @@ export const WORKSPACE_CAPABILITY_NAMES = [
   "document.view",
   "document.create",
   "document.update",
+  "document.prepare",
   "workspace.ownership.transfer",
 ] as const;
 

@@ -13,7 +13,7 @@
 //
 // No Fastify, no PostgreSQL, no clock, no I/O. Every decision is a function of
 // its arguments, which is what makes the exhaustive matrix test possible: 7
-// roles times 17 capabilities is 119 assertions, and they run in microseconds
+// roles times 18 capabilities is 126 assertions, and they run in microseconds
 // with nothing mocked.
 
 import type { WorkspaceRole } from "@lagda/contracts";
@@ -34,15 +34,15 @@ import { InvariantViolationError } from "../common/index.js";
  *
  * ── Only what exists ───────────────────────────────────────────────────────
  *
- * Seventeen capabilities, and every one of them governs an operation that is
+ * Eighteen capabilities, and every one of them governs an operation that is
  * implemented today. There is no `billing.manage` — that arrives with the
  * command that builds the operations it governs (BACKEND-50). A capability with
  * no operation behind it is a promise the policy cannot keep, and this
  * repository has already shipped one contract that nothing consumed.
  *
- * The `contact.*` and `document.*` capabilities were added by BACKEND-28 and
- * BACKEND-29 alongside the operations they govern, which is the intended way to
- * extend this list.
+ * The `contact.*`, `document.*` and `document.prepare` capabilities were added
+ * by BACKEND-28, 29 and 30 alongside the operations they govern, which is the
+ * intended way to extend this list.
  *
  * ── Specific, not one `workspace.admin` ────────────────────────────────────
  *
@@ -122,6 +122,20 @@ export const WORKSPACE_CAPABILITIES = [
   "document.create",
   /** Change a document's title. The only mutable field it has. */
   "document.update",
+  /**
+   * Place, move and remove the fields a future signing ceremony will ask for.
+   *
+   * SEPARATE from `document.update`, and the separation is the product's:
+   * `prepare_documents` is its own permission, distinct from `view_documents`.
+   * Today the same four roles hold both, and they are still declared separately
+   * so the first product change that distinguishes renaming a document from
+   * authoring its signing layout is a one-line edit.
+   *
+   * Reading a preparation needs only `document.view` — the layout is part of
+   * looking at the document, and a reviewer who may read the document may see
+   * where its signatures go.
+   */
+  "document.prepare",
 
   /**
    * Hand the workspace to someone else.
@@ -190,6 +204,7 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "document.view",
       "document.create",
       "document.update",
+      "document.prepare",
       "workspace.ownership.transfer",
     ] as const),
 
@@ -217,6 +232,7 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "document.view",
       "document.create",
       "document.update",
+      "document.prepare",
     ] as const),
 
     /**
@@ -262,6 +278,7 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "document.view",
       "document.create",
       "document.update",
+      "document.prepare",
     ] as const),
 
     /**
@@ -280,6 +297,7 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "document.view",
       "document.create",
       "document.update",
+      "document.prepare",
     ] as const),
 
     /**

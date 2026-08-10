@@ -158,6 +158,9 @@ function toArtifact(row: Selectable<DocumentArtifactsTable>): ArtifactRecord {
     // port declares it optional, and `exactOptionalPropertyTypes` distinguishes
     // "no page count" from "a page count that is null".
     ...(row.page_count === null ? {} : { pageCount: row.page_count }),
+    ...(row.rotated_page_count === null
+      ? {}
+      : { rotatedPageCount: row.rotated_page_count }),
     createdAt: row.created_at.getTime(),
   };
 }
@@ -184,6 +187,7 @@ export function createArtifactRepository(
             digest: artifact.digest,
             source_artifact_id: artifact.sourceArtifactId ?? null,
             page_count: artifact.pageCount ?? null,
+            rotated_page_count: artifact.rotatedPageCount ?? null,
           })
           .execute();
       } catch (error) {

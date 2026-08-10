@@ -47,6 +47,15 @@ export interface InspectionOk {
    * editor's canvas.
    */
   readonly pageSizes: readonly { readonly width: number; readonly height: number }[];
+  /**
+   * How many pages carry a non-zero /Rotate value (BACKEND-30).
+   *
+   * A COUNT, not the per-page angles, because the only decision anything makes
+   * with it today is "may fields be placed on this document at all". Storing
+   * per-page angles would be storing data for a renderer that cannot yet use
+   * them; PREPARATION_COORDINATES.md records what changes when it can.
+   */
+  readonly rotatedPageCount: number;
 }
 
 export interface InspectionRejected {

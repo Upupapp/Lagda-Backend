@@ -24,6 +24,7 @@ import * as m013 from "./013_workspace_lifecycle.js";
 import * as m014 from "./014_workspace_invitations.js";
 import * as m015 from "./015_contacts.js";
 import * as m016 from "./016_documents.js";
+import * as m017 from "./017_document_preparation.js";
 
 /**
  * Migrations listed explicitly rather than read from disk.
@@ -52,6 +53,7 @@ const MIGRATIONS: Record<string, Migration> = {
   "014_workspace_invitations": m014,
   "015_contacts": m015,
   "016_documents": m016,
+  "017_document_preparation": m017,
 };
 
 class ExplicitMigrationProvider implements MigrationProvider {

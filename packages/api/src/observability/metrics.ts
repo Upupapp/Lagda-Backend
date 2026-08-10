@@ -43,6 +43,8 @@ export const METRIC_NAMES = [
   "contact_operations_total",
   // BACKEND-29. Document writes — created, renamed.
   "document_operations_total",
+  // BACKEND-30. Preparation layout saves.
+  "document_preparation_operations_total",
   // BACKEND-27. Capability denials. Successful checks are NOT counted: one
   // series per authorized request is noise, and the interesting signal is a
   // sustained spike in refusals (§183, §186).
@@ -103,6 +105,12 @@ export const METRIC_LABELS = {
   // matter name, which identifies a client and a transaction and must not reach
   // a metrics store (§129, §137).
   document_operations_total: ["operation", "result", "processRole"],
+  // `operation` is a one-value union today and `result` is an outcome.
+  // Deliberately NOT `documentId`, `preparationId`, `fieldId`, the field COUNT,
+  // or anything from the layout. The first three are unbounded; a field count
+  // as a label would be unbounded too, and the layout itself says where every
+  // signature on a contract goes (§188, §193, §194).
+  document_preparation_operations_total: ["operation", "result", "processRole"],
   // `capability` is a ten-value closed set defined in code — bounded, and the
   // most useful dimension a denial has. Deliberately NOT `workspaceId`,
   // `userId` or `membershipId`: all unbounded, and one series per tenant is how

@@ -142,7 +142,72 @@ export interface DocumentArtifactsTable {
    * future artifact type where the question is meaningless.
    */
   page_count: ColumnType<number | null, number | null, number | null>;
+  /**
+   * How many pages carry a non-zero /Rotate value (migration 017).
+   *
+   * NULL for artifacts inspected before rotation was captured. Treated as
+   * unknown-and-refused by preparation, never as zero — assuming unrotated
+   * would silently accept the exact case the column exists to catch.
+   */
+  rotated_page_count: ColumnType<number | null, number | null, number | null>;
   created_at: GeneratedTimestamptz;
+}
+
+/**
+ * Document preparation — authoring state (BACKEND-30).
+ *
+ * Not the document, and NOT a signing request: no `sent_at`, no `expires_at`,
+ * no signing status, no recipient authentication. BACKEND-32 owns those.
+ *
+ * No `state` column — the state is derived from `locked_at`, for the same
+ * reason invitation, contact and document state are derived.
+ */
+export interface DocumentPreparationsTable {
+  preparation_id: string;
+  workspace_id: string;
+  document_id: string;
+  /** The EXACT artifact these coordinates were authored against. */
+  source_artifact_id: string;
+  /** Concurrency metadata for whole-layout saves. Never authorization. */
+  revision: ColumnType<number, number | undefined, number>;
+  /** NULL means editable. Nothing in BACKEND-30 sets it — BACKEND-32 will. */
+  locked_at: ColumnType<Date | null, Date | null, Date | null>;
+  created_at: Timestamptz;
+  updated_at: Timestamptz;
+}
+
+/**
+ * A placed field.
+ *
+ * Coordinates are NORMALIZED 0–1, top-left origin, `y` to the field's TOP edge
+ * — the model BACKEND-09 established. `double precision` because these are
+ * display geometry the renderer multiplies by page dimensions, not money.
+ *
+ * No `value` column of any kind: preparation records the requirement, never
+ * what a signer supplied.
+ */
+export interface PreparationFieldsTable {
+  field_id: string;
+  workspace_id: string;
+  preparation_id: string;
+  /** CHECK-constrained to the nine preparation field types. */
+  field_type: string;
+  /** 1-based, matching the product. Page 0 is refused. */
+  page_number: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  required: boolean;
+  label: string;
+  /** z-order; higher draws on top. */
+  layer: number;
+  /**
+   * The editor's participant slot — an opaque label, NOT an identity.
+   *
+   * No foreign key: there is no recipient table until BACKEND-31.
+   */
+  participant_slot: ColumnType<string | null, string | null, string | null>;
 }
 
 /**
@@ -500,6 +565,8 @@ export interface Database {
   workspace_invitations: WorkspaceInvitationsTable;
   contacts: ContactsTable;
   documents: DocumentsTable;
+  document_preparations: DocumentPreparationsTable;
+  preparation_fields: PreparationFieldsTable;
   document_artifacts: DocumentArtifactsTable;
   evidence_events: EvidenceEventsTable;
   document_seals: DocumentSealsTable;

@@ -28,6 +28,10 @@
       "types": "./dist/documents/index.d.ts",
       "default": "./dist/documents/index.js"
     },
+    "./preparation": {
+      "types": "./dist/preparation/index.d.ts",
+      "default": "./dist/preparation/index.js"
+    },
     "./common": {
       "types": "./dist/common/index.d.ts",
       "default": "./dist/common/index.js"

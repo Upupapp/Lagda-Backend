@@ -112,6 +112,18 @@ export function createPdfInspector(): DocumentInspector {
       // Collected here because the document is already parsed; nothing else is
       // kept "in case it is useful".
       const pageSizes: { width: number; height: number }[] = [];
+      // ROTATION, added by BACKEND-30.
+      //
+      // `page.getSize()` returns the UNROTATED mediabox. A viewer renders the
+      // rotated page. So on a 90-degree page the editor's normalized
+      // coordinates are taken against a landscape view while the renderer
+      // places them into a portrait space, and every field on that page lands
+      // wrong with no error at all.
+      //
+      // Nothing in LAGDA knew a page was rotated before this. Preparation
+      // refuses to place fields on a rotated page rather than misplace them
+      // silently — see PREPARATION_COORDINATES.md.
+      let rotatedPageCount = 0;
       try {
         for (const page of document.getPages()) {
           const { width, height } = page.getSize();
@@ -122,6 +134,15 @@ export function createPdfInspector(): DocumentInspector {
             return { outcome: "rejected", failure: "malformed", detail: "invalid page size" };
           }
           pageSizes.push({ width, height });
+
+          // Normalized to 0/90/180/270. pdf-lib reports the raw /Rotate value,
+          // which may be negative or beyond 360, and a non-multiple of 90 is
+          // malformed per the PDF specification.
+          const degrees = ((page.getRotation().angle % 360) + 360) % 360;
+          if (degrees % 90 !== 0) {
+            return { outcome: "rejected", failure: "malformed", detail: "invalid page rotation" };
+          }
+          if (degrees !== 0) rotatedPageCount += 1;
         }
       } catch {
         return { outcome: "rejected", failure: "malformed", detail: "unreadable pages" };
@@ -132,6 +153,7 @@ export function createPdfInspector(): DocumentInspector {
         detectedMediaType: PDF,
         pageCount,
         pageSizes,
+        rotatedPageCount,
       };
     },
   };

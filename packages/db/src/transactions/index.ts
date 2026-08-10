@@ -41,6 +41,7 @@ import {
 } from "../repositories/invitations.js";
 import { createScopedContactRepository } from "../repositories/contacts.js";
 import { createScopedDocumentRepository } from "../repositories/documents.js";
+import { createScopedPreparationRepository } from "../repositories/preparation.js";
 
 /** The setting names RLS policies read. Must match migrations 002 and 013. */
 const WORKSPACE_SETTING = "lagda.workspace_id";
@@ -73,6 +74,7 @@ function buildUnitOfWork(
     invitations: createScopedInvitationRepository(trx, workspaceId),
     contacts: createScopedContactRepository(trx, workspaceId),
     documents: createScopedDocumentRepository(trx, workspaceId),
+    preparations: createScopedPreparationRepository(trx, workspaceId),
   };
 }
 

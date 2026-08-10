@@ -105,7 +105,7 @@ function harness(overrides: {
         order.push("inspect");
         return Promise.resolve({
           outcome: "ok", detectedMediaType: "application/pdf",
-          pageCount: 1, pageSizes: [{ width: 612, height: 792 }],
+          pageCount: 1, pageSizes: [{ width: 612, height: 792 }], rotatedPageCount: 0,
         });
       }),
     },
@@ -358,7 +358,7 @@ describe("upload pipeline", () => {
     const h = harness({
       inspect: () => Promise.resolve({
         outcome: "ok", detectedMediaType: "application/pdf",
-        pageCount: LIMITS.maxPages + 1, pageSizes: [],
+        pageCount: LIMITS.maxPages + 1, pageSizes: [], rotatedPageCount: 0,
       }),
     });
     expect(await upload(h, PDF)).toMatchObject({ reason: "too-many-pages" });

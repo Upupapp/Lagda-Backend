@@ -40,6 +40,7 @@ import {
 import { registerMemberRoutes } from "../workspaces/member-routes.js";
 import { registerContactRoutes } from "../contacts/contact-routes.js";
 import { registerDocumentRoutes } from "../documents/document-routes.js";
+import { registerPreparationRoutes } from "../preparation/preparation-routes.js";
 
 export interface CreateAppOptions {
   readonly config: ApiConfig;
@@ -432,6 +433,24 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
               : null,
           ),
           documentDependencies: documents,
+          metrics,
+        });
+      }
+
+      // Inside the same scope. A layout says where every signature on a
+      // contract goes and its labels name the parties.
+      if (workspaces.preparation !== undefined) {
+        const preparation = workspaces.preparation;
+        registerPreparationRoutes(scope, {
+          authenticatedUser: (request: FastifyRequest) => Promise.resolve(
+            request.auth.status === "authenticated"
+              ? {
+                  userId: request.auth.actor.userId,
+                  sessionId: request.auth.actor.sessionId,
+                }
+              : null,
+          ),
+          preparationDependencies: preparation,
           metrics,
         });
       }

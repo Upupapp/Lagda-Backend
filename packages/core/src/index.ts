@@ -9,3 +9,4 @@ export * from "./workspaces/index.js";
 export * from "./authorization/index.js";
 export * from "./contacts/index.js";
 export * from "./documents/index.js";
+export * from "./preparation/index.js";

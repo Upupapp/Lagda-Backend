@@ -307,6 +307,7 @@ export async function processDocumentUpload(
         // dropped, leaving the product's page count with no source but a
         // re-parse on every read or a client-supplied value.
         pageCount: inspection.pageCount,
+        rotatedPageCount: inspection.rotatedPageCount,
         createdAt: completedAt,
       },
       uploadId, digest, detectedMediaType: inspection.detectedMediaType,

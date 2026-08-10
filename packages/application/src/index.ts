@@ -34,3 +34,4 @@ export * from "./auth/mfa.js";
 export * from "./account/profile.js";
 export * from "./contacts/contacts.js";
 export * from "./documents/documents.js";
+export * from "./preparation/preparation.js";

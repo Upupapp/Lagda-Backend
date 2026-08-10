@@ -15,6 +15,7 @@ import type {
 } from "./invitations.js";
 import type { ScopedContactRepository } from "./contacts.js";
 import type { ScopedDocumentRepository } from "./documents.js";
+import type { ScopedPreparationRepository } from "./preparation.js";
 
 import type {
   WorkspaceId, WorkspaceMemberId, UserId, WorkspaceRole,
@@ -312,6 +313,14 @@ export interface WorkspaceUnitOfWork {
    * never be paired with bytes from another workspace.
    */
   readonly documents: ScopedDocumentRepository;
+  /**
+   * Document preparation (BACKEND-30).
+   *
+   * Beside `documents` and `artifacts`, and the adjacency matters: a layout
+   * save validates against the source artifact's page count and writes the
+   * fields on ONE transaction with ONE tenant context.
+   */
+  readonly preparations: ScopedPreparationRepository;
 }
 
 /**
@@ -445,3 +454,5 @@ export * from "./invitations.js";
 export * from "./contacts.js";
 
 export * from "./documents.js";
+
+export * from "./preparation.js";

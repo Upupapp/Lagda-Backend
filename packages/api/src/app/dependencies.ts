@@ -13,7 +13,7 @@ import type {
   ListMyWorkspacesDependencies,
   InvitationDependencies, AcceptInvitationDependencies,
   MemberAdministrationDependencies, WorkspaceAccessDependencies,
-  ContactDependencies, DocumentDependencies,
+  ContactDependencies, DocumentDependencies, PreparationDependencies,
 } from "@lagda/application";
 
 /**
@@ -105,4 +105,12 @@ export interface WorkspaceDependencies {
    * document routes are registered; absent means none is.
    */
   readonly documents?: () => DocumentDependencies;
+  /**
+   * Document preparation (BACKEND-30).
+   *
+   * Optional as a WHOLE. Present means both preparation routes are registered;
+   * absent means neither is — and a read route without its save route would be
+   * an editor that cannot commit.
+   */
+  readonly preparation?: () => PreparationDependencies;
 }
