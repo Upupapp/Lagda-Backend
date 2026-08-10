@@ -398,6 +398,31 @@ export const RATE_LIMIT_POLICIES = {
       + "and a security limit that doubles as a pricing tier is neither.",
   },
 
+  // ── Signing access bootstrap (BACKEND-34) ─────────────────────────────────
+  //
+  // A public endpoint with no account and no session, so IP is the only scope
+  // available - exactly the invitation-preview situation.
+  //
+  // The credential carries 256 bits, so this is NOT what makes guessing
+  // infeasible. It bounds volume and gives the attempt a signal.
+  //
+  // fail-OPEN, matching the invitation redeem path and for the same reason:
+  // refusing a legitimate signer during a limiter outage blocks someone from
+  // signing a document they were asked to sign, and unguessability does not
+  // depend on this limit. Note the contrast with the outbound-email policies,
+  // which fail closed because their failure mode is sending, not blocking.
+  "signing-access.bootstrap.ip": {
+    id: "signing-access.bootstrap.ip",
+    scopeType: "ip",
+    limit: 30,
+    windowMs: 60 * MINUTE,
+    failureMode: "fail-open",
+    source: "BACKEND-34 - not specified by the handoff. Matched to "
+      + "workspace.invitation.redeem.ip: both are public credential redemptions "
+      + "by a party with no account, and a household or office behind one NAT "
+      + "may legitimately open several links.",
+  },
+
   // Preview and acceptance, before any account is known.
   //
   // IP is the only scope available on the preview path: the caller may have no

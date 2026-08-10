@@ -15,7 +15,7 @@ import type {
   MemberAdministrationDependencies, WorkspaceAccessDependencies,
   ContactDependencies, DocumentDependencies, PreparationDependencies,
   RecipientDependencies, SigningRequestDependencies,
-  SendSigningRequestDependencies,
+  SendSigningRequestDependencies, SigningAccessDependencies,
 } from "@lagda/application";
 
 /**
@@ -39,6 +39,15 @@ export interface AppDependencies {
    * silently-disabled security control, because with no authenticated scope
    * there is nothing to protect.
    */
+  /**
+   * Recipient signing access (BACKEND-34).
+   *
+   * TOP-LEVEL, not under `workspaces`, and the placement is the architecture: a
+   * recipient has no workspace. Nesting it would put the second authentication
+   * realm inside the first.
+   */
+  readonly signingAccess?: () => SigningAccessDependencies;
+
   readonly sessions?: SessionService;
   /**
    * The workspace surface (BACKEND-25).

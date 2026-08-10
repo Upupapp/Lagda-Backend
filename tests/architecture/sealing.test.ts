@@ -273,6 +273,16 @@ describe("hashing is confined to the sealing adapter", () => {
     //                              what stops an invitation token opening a
     //                              signing link, which would let a workspace
     //                              invitee act as a counterparty.
+    //   api/security/recipient-session-token — RECIPIENT SIGNING SESSION and
+    //                              RECIPIENT CSRF digests (BACKEND-34). A tenth
+    //                              and an eleventh, in ONE file because they are
+    //                              issued together and must never be derived
+    //                              from each other. Two constants, not one:
+    //                              `lagda.recipient-signing-session:` and
+    //                              `lagda.recipient-signing-csrf:`, so the CSRF
+    //                              token — which is readable by design in a
+    //                              double-submit scheme — cannot digest to a
+    //                              value that resolves a session.
     //
     // Each addition is a deliberate entry with a named domain. A caller that
     // appears without one still fails, which is what keeps this from becoming a
@@ -282,6 +292,7 @@ describe("hashing is confined to the sealing adapter", () => {
       "packages/api/src/security/invitation-token.ts",
       "packages/api/src/security/pre-auth-token.ts",
       "packages/api/src/security/rate-limit-plugin.ts",
+      "packages/api/src/security/recipient-session-token.ts",
       "packages/api/src/security/recovery-codes.ts",
       "packages/api/src/security/reset-token.ts",
       "packages/api/src/security/signing-access-token.ts",

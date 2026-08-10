@@ -145,3 +145,94 @@ export function clearPreAuthCookieOptions(config: ApiConfig): CookieSerializeOpt
     expires: new Date(0),
   };
 }
+
+// ── The recipient signing realm (BACKEND-34) ─────────────────────────────────
+//
+// A SECOND authentication realm, with its own names. The separation is not
+// cosmetic: `requireSession` reads `lagda_session`, and a shared name would
+// have it try to resolve a recipient credential as a user session — failing in
+// a way that looks to the user like an expired login for an account they do
+// not have.
+
+/** The recipient's session credential. HttpOnly, never readable by script. */
+export const RECIPIENT_SESSION_COOKIE_NAME = "lagda_signing_session";
+
+/**
+ * The recipient's CSRF token. NOT HttpOnly, by design.
+ *
+ * The same double-submit shape the workspace realm uses: the page must read it
+ * to echo it in a header, and its protection comes from same-origin plus the
+ * fact that a cross-site page cannot read it.
+ */
+export const RECIPIENT_CSRF_COOKIE_NAME = "lagda_signing_csrf";
+
+/**
+ * Path, and why it is not narrower.
+ *
+ * The pre-auth credential gets `Path=/auth`, which is stronger than rejecting
+ * on arrival because the cookie is never TRANSMITTED elsewhere. The same trick
+ * does not fit here: bootstrap lives at `/signing-access/bootstrap` and the
+ * ceremony will live under `/signing`, so a path narrow enough to exclude one
+ * excludes the other.
+ *
+ * Realm separation is therefore carried by the NAMES, which is what actually
+ * prevents resolver confusion. If BACKEND-35 settles every recipient route
+ * under a single prefix, narrowing this is one line and worth doing.
+ */
+const RECIPIENT_PATH = "/";
+
+export function recipientSessionCookieOptions(
+  config: ApiConfig,
+  maxAgeSeconds: number,
+): CookieSerializeOptions {
+  return {
+    ...baseCookie(config),
+    path: RECIPIENT_PATH,
+    httpOnly: true,
+    maxAge: maxAgeSeconds,
+  };
+}
+
+/** The CSRF twin, readable by the page that must echo it. */
+export function recipientCsrfCookieOptions(
+  config: ApiConfig,
+  maxAgeSeconds: number,
+): CookieSerializeOptions {
+  return {
+    ...baseCookie(config),
+    path: RECIPIENT_PATH,
+    // Readable, like the workspace realm's CSRF cookie and for the same reason.
+    httpOnly: false,
+    maxAge: maxAgeSeconds,
+  };
+}
+
+/**
+ * Clearing must mirror the setting options exactly.
+ *
+ * A `clearCookie` whose path or attributes differ writes a SECOND cookie rather
+ * than removing the first, and the browser then sends both.
+ */
+export function clearRecipientSessionCookieOptions(
+  config: ApiConfig,
+): CookieSerializeOptions {
+  return {
+    ...baseCookie(config),
+    path: RECIPIENT_PATH,
+    httpOnly: true,
+    maxAge: 0,
+    expires: new Date(0),
+  };
+}
+
+export function clearRecipientCsrfCookieOptions(
+  config: ApiConfig,
+): CookieSerializeOptions {
+  return {
+    ...baseCookie(config),
+    path: RECIPIENT_PATH,
+    httpOnly: false,
+    maxAge: 0,
+    expires: new Date(0),
+  };
+}

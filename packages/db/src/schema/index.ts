@@ -235,6 +235,33 @@ export interface PreparationFieldsTable {
  * provenance columns after the insert.
  */
 /** Routing activation. NOT ceremony state - BACKEND-37 owns its own table. */
+/**
+ * A recipient's authenticated signing session.
+ *
+ * The second authentication realm. Shaped like `user_sessions` and scoped to
+ * one request recipient rather than to a user, with the grant it came from
+ * recorded so revocation can follow the lineage.
+ */
+export interface RecipientSigningSessionsTable {
+  signing_session_id: string;
+  workspace_id: string;
+  signing_request_id: string;
+  request_recipient_id: string;
+  /** Revocation lineage. Which bootstrap credential produced this session. */
+  source_grant_id: string;
+  /** SHA-256, 64 hex. The raw token exists only in an HttpOnly cookie. */
+  token_digest: string;
+  /** A SECOND credential, distinct from the session token. A CHECK enforces it. */
+  csrf_token_digest: string;
+  /** `link-only` today; `email-otp` is declared and unreachable. */
+  authentication_method: string;
+  authenticated_at: Timestamptz;
+  created_at: Timestamptz;
+  expires_at: Timestamptz;
+  revoked_at: ColumnType<Date | null, Date | null, Date | null>;
+  revocation_reason: ColumnType<string | null, string | null, string | null>;
+}
+
 export interface SigningRequestRecipientActivationTable {
   workspace_id: string;
   signing_request_id: string;
@@ -760,6 +787,7 @@ export interface Database {
   signing_request_recipient_activation: SigningRequestRecipientActivationTable;
   signing_access_grants: SigningAccessGrantsTable;
   signing_delivery_intents: SigningDeliveryIntentsTable;
+  recipient_signing_sessions: RecipientSigningSessionsTable;
   document_artifacts: DocumentArtifactsTable;
   evidence_events: EvidenceEventsTable;
   document_seals: DocumentSealsTable;

@@ -47,6 +47,13 @@ import type {
   RecipientId, RecipientIdGenerator,
 } from "../common/ports/recipients.js";
 import type {
+  SigningCredentialUnitOfWork, RecipientSessionUnitOfWork,
+  RecipientWorkspaceUnitOfWork, ResolvedSigningAccess, ResolvedRecipientSession,
+  NewRecipientSigningSession, RecipientSigningSessionId, RecipientSessionDigest,
+  RecipientSigningSessionIdGenerator,
+} from "../common/ports/signing-sessions.js";
+import type { SigningAccessDigest } from "../common/ports/signing-access.js";
+import type {
   ScopedSigningAccessRepository, NewSigningAccessGrant, NewDeliveryIntent,
   RecipientActivationRecord, SigningAccessGrantId, DeliveryIntentId,
   SigningAccessIdGenerator,
@@ -101,6 +108,15 @@ export class SequentialDocumentIds implements DocumentIdGenerator {
  * Separate counters again, so a grant id and a delivery-intent id can never
  * be compared successfully by accident.
  */
+/** Sequential recipient signing-session ids. */
+export class SequentialRecipientSessionIds
+implements RecipientSigningSessionIdGenerator {
+  private next = 1;
+  nextRecipientSigningSessionId(): RecipientSigningSessionId {
+    return `rss_${String(this.next++)}` as RecipientSigningSessionId;
+  }
+}
+
 export class SequentialSigningAccessIds implements SigningAccessIdGenerator {
   private grant = 1;
   private intent = 1;
@@ -183,6 +199,7 @@ interface StoreSnapshot {
   readonly signingAccessGrants: NewSigningAccessGrant[];
   readonly deliveryIntents: NewDeliveryIntent[];
   readonly activations: (RecipientActivationRecord & { signingRequestId: string })[];
+  readonly recipientSessions: NewRecipientSigningSession[];
   readonly evidence: EvidenceEventRecord[];
   readonly artifacts: ArtifactRecord[];
   readonly seals: SealRecord[];
@@ -215,6 +232,7 @@ export class InMemoryStore {
   signingAccessGrants: NewSigningAccessGrant[] = [];
   deliveryIntents: NewDeliveryIntent[] = [];
   activations: (RecipientActivationRecord & { signingRequestId: string })[] = [];
+  recipientSessions: NewRecipientSigningSession[] = [];
   /** Snapshot row to its request. The real tables carry the column. */
   readonly snapshotOwners = new Map<string, SigningRequestId>();
   /** Field id to preparation id. The real table has a column. */
@@ -243,6 +261,7 @@ export class InMemoryStore {
       signingAccessGrants: [...this.signingAccessGrants],
       deliveryIntents: [...this.deliveryIntents],
       activations: [...this.activations],
+      recipientSessions: [...this.recipientSessions],
       evidence: [...this.evidence],
       artifacts: [...this.artifacts],
       seals: [...this.seals],
@@ -272,6 +291,7 @@ export class InMemoryStore {
     this.signingAccessGrants = [...snapshot.signingAccessGrants];
     this.deliveryIntents = [...snapshot.deliveryIntents];
     this.activations = [...snapshot.activations];
+    this.recipientSessions = [...snapshot.recipientSessions];
     this.invitationDigests.clear();
     for (const [k, v] of snapshot.invitationDigests) this.invitationDigests.set(k, v);
     this.evidence.length = 0;
@@ -1262,6 +1282,112 @@ export class FakeTransactionManager implements TransactionManager {
     }
   }
 
+  /**
+   * The signing-credential scope.
+   *
+   * Mirrors the adapter: the digest resolves at most one grant, and the tenant
+   * transition happens on the same logical transaction. The fake assembles
+   * `ResolvedSigningAccess` from the store the same way the SQL join does, so a
+   * use case that read a field the real query does not select would fail here.
+   */
+  async runForSigningCredential<T>(
+    credentialDigest: SigningAccessDigest,
+    operation: (uow: SigningCredentialUnitOfWork) => Promise<T>,
+  ): Promise<T> {
+    const store = this.store;
+    this.started++;
+    const snapshot = store.snapshot();
+    try {
+      return await operation({
+      access: {
+        findByCredentialDigest: (digest) => {
+          const grant = store.signingAccessGrants.find(
+            candidate => String(candidate.credentialDigest) === String(digest));
+          if (grant === undefined) return Promise.resolve(null);
+
+          const request = store.signingRequests.find(
+            candidate =>
+              candidate.signingRequestId === grant.signingRequestId);
+          const recipient = store.signingRequestRecipients.find(
+            candidate => candidate.recipientId === grant.recipientId);
+          // The real query INNER JOINs both, so a missing row is no row.
+          if (request === undefined || recipient === undefined) {
+            return Promise.resolve(null);
+          }
+          const activation = store.activations.find(
+            candidate =>
+              candidate.signingRequestId === String(grant.signingRequestId)
+              && candidate.recipientId === grant.recipientId);
+
+          return Promise.resolve({
+            grantId: grant.grantId,
+            workspaceId: grant.workspaceId,
+            signingRequestId: grant.signingRequestId,
+            recipientId: grant.recipientId,
+            grantExpiresAt: grant.expiresAt,
+            grantRevokedAt: null,
+            requestState: request.state,
+            documentTitle: request.documentTitle,
+            recipientName: recipient.name,
+            recipientEmail: recipient.email,
+            activationState: activation?.state ?? null,
+          } satisfies ResolvedSigningAccess);
+        },
+      },
+      enterWorkspace: <R,>(
+        workspaceId: WorkspaceId,
+        inner: (uow: RecipientWorkspaceUnitOfWork) => Promise<R>,
+      ) => inner({
+        workspaceId,
+        recipientSessions: {
+          insert: (session: NewRecipientSigningSession) => {
+            if (session.workspaceId !== workspaceId) {
+              throw new FakeScopeMismatchError(
+                "RecipientSigningSession", workspaceId, session.workspaceId);
+            }
+            store.recipientSessions.push(session);
+            return Promise.resolve();
+          },
+          revoke: () => Promise.resolve(false),
+        },
+      }),
+      });
+    } catch (error) {
+      store.restore(snapshot);
+      this.rolledBack++;
+      throw error;
+    }
+  }
+
+  async runForRecipientSession<T>(
+    sessionDigest: RecipientSessionDigest,
+    operation: (uow: RecipientSessionUnitOfWork) => Promise<T>,
+  ): Promise<T> {
+    const store = this.store;
+    this.started++;
+    return operation({
+      session: {
+        findByTokenDigest: (digest) => {
+          const found = store.recipientSessions.find(
+            candidate => String(candidate.tokenDigest) === String(digest));
+          if (found === undefined) return Promise.resolve(null);
+          return Promise.resolve({
+            signingSessionId: found.signingSessionId,
+            workspaceId: found.workspaceId,
+            signingRequestId: found.signingRequestId,
+            recipientId: found.recipientId,
+            sourceGrantId: found.sourceGrantId,
+            csrfTokenDigest: found.csrfTokenDigest,
+            authenticationMethod: found.authenticationMethod,
+            authenticatedAt: found.authenticatedAt,
+            expiresAt: found.expiresAt,
+            revokedAt: null,
+          } satisfies ResolvedRecipientSession);
+        },
+      },
+    });
+  }
+
   async runGlobal<T>(operation: (uow: GlobalUnitOfWork) => Promise<T>): Promise<T> {
     this.scopes.push("global");
     this.started++;
@@ -1286,6 +1412,20 @@ export class FailingTransactionManager implements TransactionManager {
   runForWorkspace<T>(
     _workspaceId: WorkspaceId,
     _operation: (uow: WorkspaceUnitOfWork) => Promise<T>,
+  ): Promise<T> {
+    return this.fail();
+  }
+
+  runForSigningCredential<T>(
+    _credentialDigest: SigningAccessDigest,
+    _operation: (uow: SigningCredentialUnitOfWork) => Promise<T>,
+  ): Promise<T> {
+    return this.fail();
+  }
+
+  runForRecipientSession<T>(
+    _sessionDigest: RecipientSessionDigest,
+    _operation: (uow: RecipientSessionUnitOfWork) => Promise<T>,
   ): Promise<T> {
     return this.fail();
   }

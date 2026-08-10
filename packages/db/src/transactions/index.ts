@@ -23,6 +23,8 @@ import type { UserId, WorkspaceId } from "@lagda/contracts";
 import type {
   TransactionManager, WorkspaceUnitOfWork, GlobalUnitOfWork, UserUnitOfWork,
   InvitationCredentialUnitOfWork, InvitationTokenDigest,
+  SigningCredentialUnitOfWork, RecipientWorkspaceUnitOfWork,
+  RecipientSessionUnitOfWork, SigningAccessDigest, RecipientSessionDigest,
 } from "@lagda/application";
 import type { Database } from "../schema/index.js";
 import {
@@ -45,11 +47,19 @@ import { createScopedPreparationRepository } from "../repositories/preparation.j
 import { createScopedRecipientRepository } from "../repositories/recipients.js";
 import { createScopedSigningRequestRepository } from "../repositories/signing-requests.js";
 import { createScopedSigningAccessRepository } from "../repositories/signing-access.js";
+import {
+  createSigningAccessLookupRepository, createRecipientSessionLookupRepository,
+  createScopedRecipientSessionRepository,
+} from "../repositories/signing-sessions.js";
 
 /** The setting names RLS policies read. Must match migrations 002 and 013. */
 const WORKSPACE_SETTING = "lagda.workspace_id";
 const USER_SETTING = "lagda.user_id";
 const INVITATION_DIGEST_SETTING = "lagda.invitation_digest";
+/** BACKEND-34. A signing bootstrap credential, resolving its own workspace. */
+const SIGNING_ACCESS_DIGEST_SETTING = "lagda.signing_access_digest";
+/** BACKEND-34. An established recipient session cookie. A THIRD realm. */
+const RECIPIENT_SESSION_DIGEST_SETTING = "lagda.recipient_session_digest";
 
 /**
  * Builds the repository set for one transaction and one workspace.
@@ -159,6 +169,72 @@ export function createTransactionManager(db: Kysely<Database>): TransactionManag
               .execute(trx);
             return inner(buildUnitOfWork(trx, workspaceId));
           },
+        });
+      });
+    },
+
+    async runForSigningCredential<T>(
+      credentialDigest: SigningAccessDigest,
+      operation: (uow: SigningCredentialUnitOfWork) => Promise<T>,
+    ): Promise<T> {
+      return db.transaction().execute(async trx => {
+        // The same shape `runForInvitationCredential` established, for the same
+        // reason: a recipient has no workspace context, so the credential must
+        // supply one.
+        //
+        // The `signing_access_credential_read` policy (migration 021) matches
+        // equality on the UNIQUE digest column, so at most one grant is
+        // visible — and the three companion policies show only the request,
+        // the ONE recipient and the ONE activation row that grant names.
+        //
+        // Every policy is FOR SELECT. This scope cannot write anything until
+        // tenant context is established below.
+        await sql`select set_config(${SIGNING_ACCESS_DIGEST_SETTING}, ${credentialDigest}, true)`
+          .execute(trx);
+
+        return operation({
+          access: createSigningAccessLookupRepository(trx),
+
+          // The tenant transition, on the SAME transaction. Two transactions
+          // would leave a window in which a session exists and the grant it
+          // came from has been revoked.
+          //
+          // The workspace comes from the RESOLVED grant. There is no parameter
+          // a request body could reach, which is what makes workspace tampering
+          // unexpressible rather than merely rejected.
+          async enterWorkspace<R>(
+            workspaceId: WorkspaceId,
+            inner: (uow: RecipientWorkspaceUnitOfWork) => Promise<R>,
+          ): Promise<R> {
+            await sql`select set_config(${WORKSPACE_SETTING}, ${workspaceId}, true)`
+              .execute(trx);
+            // A NARROW unit of work. Not `buildUnitOfWork` — a recipient has no
+            // business reaching contacts, documents, memberships or
+            // preparations, and the way to guarantee that is not to hand them
+            // over.
+            return inner({
+              workspaceId,
+              recipientSessions:
+                createScopedRecipientSessionRepository(trx, workspaceId),
+            });
+          },
+        });
+      });
+    },
+
+    async runForRecipientSession<T>(
+      sessionDigest: RecipientSessionDigest,
+      operation: (uow: RecipientSessionUnitOfWork) => Promise<T>,
+    ): Promise<T> {
+      return db.transaction().execute(async trx => {
+        // A THIRD credential realm, with its own setting. A bootstrap
+        // credential and a session cookie must never resolve through the same
+        // door: one travels in an email that may be forwarded, the other is
+        // HttpOnly and same-site.
+        await sql`select set_config(${RECIPIENT_SESSION_DIGEST_SETTING}, ${sessionDigest}, true)`
+          .execute(trx);
+        return operation({
+          session: createRecipientSessionLookupRepository(trx),
         });
       });
     },

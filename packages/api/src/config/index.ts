@@ -97,6 +97,18 @@ export interface ApiConfig {
    * (BACKEND-46); this bounds the CREDENTIAL regardless of it.
    */
   readonly signingAccessLifetimeMs: number;
+
+  /**
+   * How long an authenticated recipient signing session lasts.
+   *
+   * 8 hours, matching the workspace session's idle timeout - long enough
+   * for a signer interrupted by a meeting, short enough that a shared or
+   * abandoned browser does not stay authenticated overnight.
+   *
+   * ABSOLUTE, with no idle timeout. A signing session is short by
+   * construction, and touching a row on every request buys nothing.
+   */
+  readonly recipientSessionLifetimeMs: number;
 }
 
 export class ApiConfigError extends Error {
@@ -266,6 +278,9 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     signingAccessLifetimeMs: readInt(
       env["SIGNING_ACCESS_LIFETIME_MS"], "SIGNING_ACCESS_LIFETIME_MS",
       14 * 24 * 3_600_000),
+    recipientSessionLifetimeMs: readInt(
+      env["RECIPIENT_SESSION_LIFETIME_MS"], "RECIPIENT_SESSION_LIFETIME_MS",
+      8 * 3_600_000),
   };
 
   assertProductionSafety(config);

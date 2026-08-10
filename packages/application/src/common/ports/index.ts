@@ -19,6 +19,11 @@ import type { ScopedPreparationRepository } from "./preparation.js";
 import type { ScopedRecipientRepository } from "./recipients.js";
 import type { ScopedSigningRequestRepository } from "./signing-requests.js";
 import type { ScopedSigningAccessRepository } from "./signing-access.js";
+import type {
+  SigningCredentialUnitOfWork, RecipientSessionUnitOfWork,
+  RecipientSessionDigest,
+} from "./signing-sessions.js";
+import type { SigningAccessDigest } from "./signing-access.js";
 
 import type {
   WorkspaceId, WorkspaceMemberId, UserId, WorkspaceRole,
@@ -457,6 +462,30 @@ export interface TransactionManager {
     tokenDigest: InvitationTokenDigest,
     operation: (uow: InvitationCredentialUnitOfWork) => Promise<T>,
   ): Promise<T>;
+
+  /**
+   * A transaction bound to a signing BOOTSTRAP credential (BACKEND-34).
+   *
+   * The recipient realm's entry point. A recipient has no workspace context, so
+   * the credential establishes it — the same shape invitations use, with its
+   * own setting so the two realms cannot see each other's rows.
+   */
+  runForSigningCredential<T>(
+    credentialDigest: SigningAccessDigest,
+    operation: (uow: SigningCredentialUnitOfWork) => Promise<T>,
+  ): Promise<T>;
+
+  /**
+   * A transaction bound to an established recipient SESSION cookie.
+   *
+   * A third realm. Read-only: resolving a session tells the caller who is
+   * asking, and every write it then performs happens through a scope the
+   * session's own workspace establishes.
+   */
+  runForRecipientSession<T>(
+    sessionDigest: RecipientSessionDigest,
+    operation: (uow: RecipientSessionUnitOfWork) => Promise<T>,
+  ): Promise<T>;
 }
 
 import type {
@@ -493,3 +522,5 @@ export * from "./recipients.js";
 export * from "./signing-requests.js";
 
 export * from "./signing-access.js";
+
+export * from "./signing-sessions.js";

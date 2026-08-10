@@ -51,6 +51,8 @@ export const METRIC_NAMES = [
   "signing_request_operations_total",
   // BACKEND-33. Send transitions.
   "signing_request_send_results_total",
+  // BACKEND-34. Recipient signing access.
+  "signing_access_attempts_total",
   // BACKEND-27. Capability denials. Successful checks are NOT counted: one
   // series per authorized request is noise, and the interesting signal is a
   // sustained spike in refusals (§183, §186).
@@ -151,6 +153,19 @@ export const METRIC_LABELS = {
   // is the single most widely replicated string in an observability stack.
   signing_request_send_results_total:
     ["result", "routingShape", "processRole"],
+  // `operation` is one value today and `result` is a two-value outcome.
+  //
+  // Deliberately NOT the request id, the recipient id, the workspace id,
+  // the IP or any digest. The first three would make one series per
+  // document; an IP is PII; and a digest as a metric label would put a
+  // credential-derived value in the most widely replicated string store in
+  // an observability stack.
+  //
+  // The failure REASON is also absent, deliberately: the public error is
+  // collapsed precisely so a caller cannot distinguish expired from unknown,
+  // and a metric that split them would rebuild the oracle for anyone who can
+  // read a dashboard.
+  signing_access_attempts_total: ["operation", "result", "processRole"],
   // `capability` is a ten-value closed set defined in code — bounded, and the
   // most useful dimension a denial has. Deliberately NOT `workspaceId`,
   // `userId` or `membershipId`: all unbounded, and one series per tenant is how

@@ -44,6 +44,7 @@ import { registerPreparationRoutes } from "../preparation/preparation-routes.js"
 import { registerRecipientRoutes } from "../recipients/recipient-routes.js";
 import { registerSigningRequestRoutes } from "../signing-requests/signing-request-routes.js";
 import { registerSendRoutes } from "../signing-requests/send-routes.js";
+import { registerSigningAccessRoutes } from "../signing-access/signing-access-routes.js";
 
 export interface CreateAppOptions {
   readonly config: ApiConfig;
@@ -544,6 +545,32 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
         metrics,
       });
     }
+  }
+
+  // ── The recipient signing realm (BACKEND-34) ──────────────────────────────
+  //
+  // Registered on the ROOT instance, outside the authenticated scope, because a
+  // signer has no LAGDA account. Inside the scope, `requireSession` would
+  // reject every recipient in the world.
+  //
+  // They are not unprotected: the bootstrap route carries a 256-bit credential
+  // and an IP limiter, and the context route carries an HttpOnly session cookie
+  // in its own realm. What they do not carry is a workspace session, which is
+  // the point.
+  if (dependencies.signingAccess !== undefined) {
+    const signingAccess = dependencies.signingAccess;
+    // `dependencies.limiter` directly: the local `limiter` binding lives inside
+    // the workspace block above, and this registration is deliberately outside
+    // it.
+    const signingLimiter = dependencies.limiter;
+    registerSigningAccessRoutes(app, {
+      config,
+      signingAccessDependencies: signingAccess,
+      ...(signingLimiter === undefined
+        ? {}
+        : { rateLimit: { limiter: signingLimiter, metrics } }),
+      metrics,
+    });
   }
 
   // Deliberately NOT `await app.ready()`. Readying seals the instance, and a
