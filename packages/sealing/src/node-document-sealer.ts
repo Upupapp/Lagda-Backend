@@ -46,29 +46,46 @@ function looksLikePdf(bytes: Uint8Array): boolean {
 
 export class NodeDocumentSealer implements DocumentSealer {
   async seal(request: SealRequest): Promise<SealResult> {
-    const { preparedDocument, verificationId, sealedAt } = request;
+    const { mergedDocument, completionCertificate, verificationId, sealedAt } = request;
 
-    if (preparedDocument.length === 0) {
-      throw new InvalidSealInputError("The prepared document is empty.");
+    if (mergedDocument.length === 0) {
+      throw new InvalidSealInputError("The merged document is empty.");
     }
-    if (!looksLikePdf(preparedDocument)) {
-      throw new InvalidPdfError("The prepared document is not a PDF.");
+    if (!looksLikePdf(mergedDocument)) {
+      throw new InvalidPdfError("The merged document is not a PDF.");
+    }
+    if (completionCertificate.length === 0) {
+      throw new InvalidSealInputError("The completion certificate is empty.");
+    }
+    if (!looksLikePdf(completionCertificate)) {
+      throw new InvalidPdfError("The completion certificate is not a PDF.");
     }
 
     // §97: hash the INPUT before anything can touch it, and the OUTPUT after
     // every byte-changing step. Two artifacts, two digests, named for what they
     // identify. One ambiguous `hash` is how a verification page ends up
     // comparing against the wrong file.
-    const preparedDocumentHash = sha256(preparedDocument);
+    const mergedDocumentHash = sha256(mergedDocument);
 
-    // §96, in order: load → serialize → hash. The certificate is produced
-    // separately and never appended, so the sealed document's page count
-    // matches what the signers saw.
+    // §96, in order: load → compose → serialize → hash.
     //
-    // NO FIELD MERGING. OD-162, closed by BACKEND-39: the `field-merge` step
-    // renders values and hands this method the merged candidate. Rendering them
-    // again here would draw every value twice, one over the other.
-    const pdf = await this.load(preparedDocument);
+    // NO FIELD MERGING and NO CERTIFICATE RENDERING. OD-162 and OD-167: the
+    // field-merge and certificate steps produce those, and this method receives
+    // both as finished bytes. Producing either again would duplicate it.
+    const pdf = await this.load(mergedDocument);
+
+    // ── The composition ────────────────────────────────────────────────────
+    //
+    // Signed pages first, certificate pages last (§18). One downloadable file
+    // that carries its own completion record, which is what a recipient asked
+    // for a copy would otherwise have to assemble themselves.
+    //
+    // Page-level work lives HERE, inside the sealing package, and is reached
+    // through a semantic `completionCertificate` input rather than an
+    // `appendPages()` method on the port — §21 and §22. A remote signer
+    // implementing this seam receives two documents and a instruction to seal
+    // them as one; it is never told how to manipulate pages.
+    await this.appendCertificate(pdf, completionCertificate);
 
     // Pin the document's modification date to the SUPPLIED `sealedAt`.
     //
@@ -84,17 +101,9 @@ export class NodeDocumentSealer implements DocumentSealer {
 
     const sealedDocument = await this.serialize(pdf);
 
-    // NO CERTIFICATE. OD-167, the twin of OD-162.
-    //
-    // `seal()` used to render the completion certificate too. The CERTIFICATE
-    // step produces one now, so a `seal()` that still rendered would give
-    // completion TWO certificates — and BACKEND-41 would compose whichever it
-    // happened to reach for, with no way to tell them apart from the outside.
-    //
-    // Exactly the field-merge double-render, one step later.
     return {
       sealedDocument,
-      preparedDocumentHash,
+      mergedDocumentHash,
       // Computed from the exact bytes returned above — not from an intermediate
       // buffer, and not before serialization.
       signedDocumentHash: sha256(sealedDocument),
@@ -149,6 +158,56 @@ export class NodeDocumentSealer implements DocumentSealer {
     }
 
     return pdf;
+  }
+
+  /**
+   * Appends the certificate's pages to the end of the signed document.
+   *
+   * `copyPages` rather than a page reference: the certificate is a separate
+   * document, and copying brings its resources — the embedded font subset above
+   * all — into the final file. A reference would produce a PDF whose last pages
+   * render blank everywhere except the machine that made it.
+   *
+   * Idempotency is NOT handled here and must not be. §124 forbids appending the
+   * certificate twice on retry, and the control for that is the FINAL_SEAL step
+   * accepting exactly one output — not this method trying to detect whether it
+   * has run before, which it cannot do reliably and which would silently mask a
+   * genuine double-composition bug.
+   */
+  private async appendCertificate(
+    pdf: PDFDocument,
+    certificate: Uint8Array,
+  ): Promise<void> {
+    let source: PDFDocument;
+    try {
+      source = await PDFDocument.load(Uint8Array.from(certificate), {
+        ignoreEncryption: false,
+        throwOnInvalidObject: true,
+      });
+    } catch (cause) {
+      throw new InvalidPdfError("The completion certificate could not be parsed.", cause);
+    }
+
+    let pageCount: number;
+    try {
+      pageCount = source.getPageCount();
+    } catch (cause) {
+      throw new InvalidPdfError(
+        "The completion certificate has no readable page tree.", cause);
+    }
+    if (pageCount === 0) {
+      // A certificate with no pages would seal silently and produce a final
+      // document that simply lacks its completion record.
+      throw new InvalidPdfError("The completion certificate contains no pages.");
+    }
+
+    try {
+      const copied = await pdf.copyPages(source, source.getPageIndices());
+      for (const page of copied) pdf.addPage(page);
+    } catch (cause) {
+      throw new PdfProcessingError(
+        "Failed to append the completion certificate.", cause);
+    }
   }
 
   private async serialize(pdf: PDFDocument): Promise<Uint8Array> {

@@ -29,12 +29,25 @@ async function makePdf(pageCount = 2): Promise<Uint8Array> {
   return pdf.save();
 }
 
+/** A stand-in certificate. ONE page, so composition is countable. */
+async function makeCertificatePdf(): Promise<Uint8Array> {
+  const pdf = await PDFDocument.create();
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const page = pdf.addPage([595.28, 841.89]);
+  page.drawText("Certificate", { x: 50, y: 780, size: 12, font });
+  pdf.setCreationDate(new Date(0));
+  pdf.setModificationDate(new Date(0));
+  return pdf.save();
+}
+
 async function makeRequest(overrides: Partial<SealRequest> = {}): Promise<SealRequest> {
   return {
     workspaceId: "ws_1" as WorkspaceId,
     transactionId: "tx_1" as TransactionId,
     documentId: "doc_1" as DocumentId,
-    preparedDocument: await makePdf(),
+    mergedDocument: await makePdf(),
+    completionCertificate: await makeCertificatePdf(),
+    completionRunId: "crn_1",
     verificationId: "LAGDA-WS1-20260808-7F3A2C" as VerificationId,
     sealedAt: "2026-08-08T04:15:01Z",
     ...overrides,
@@ -93,8 +106,8 @@ describe("NodeDocumentSealer.seal", () => {
     const request = await makeRequest();
     const result = await sealer.seal(request);
 
-    const expected = createHash("sha256").update(request.preparedDocument).digest("hex");
-    expect(result.preparedDocumentHash).toBe(expected);
+    const expected = createHash("sha256").update(request.mergedDocument).digest("hex");
+    expect(result.mergedDocumentHash).toBe(expected);
   });
 
   it("returns a signed hash equal to the digest of the returned bytes", async () => {
@@ -108,26 +121,31 @@ describe("NodeDocumentSealer.seal", () => {
   it("produces a sealed document that differs from the prepared one", async () => {
     const request = await makeRequest();
     const result = await sealer.seal(request);
-    expect(result.signedDocumentHash).not.toBe(result.preparedDocumentHash);
+    expect(result.signedDocumentHash).not.toBe(result.mergedDocumentHash);
   });
 
   it("does not mutate the caller's buffer", async () => {
     const request = await makeRequest();
-    const before = Uint8Array.from(request.preparedDocument);
+    const before = Uint8Array.from(request.mergedDocument);
 
     const result = await sealer.seal(request);
 
-    expect(Array.from(request.preparedDocument)).toEqual(Array.from(before));
+    expect(Array.from(request.mergedDocument)).toEqual(Array.from(before));
     // And the recorded digest still describes the caller's bytes.
-    expect(result.preparedDocumentHash).toBe(sha256(before));
+    expect(result.mergedDocumentHash).toBe(sha256(before));
   });
 
-  it("returns a sealed document that re-parses as a PDF with the same page count", async () => {
+  it("returns a sealed document that re-parses as a PDF", async () => {
     // "It returned bytes" is not evidence. Only re-opening the output proves it
     // is a document rather than a plausible-looking buffer.
+    //
+    // This asserted an UNCHANGED page count until BACKEND-41. It was right then
+    // — nothing was composed — and asserting it now would forbid the
+    // composition the command exists to add. The page count is asserted
+    // exactly, with a positive control, in the composition tests below.
     const result = await sealer.seal(await makeRequest());
     const reopened = await PDFDocument.load(result.sealedDocument);
-    expect(reopened.getPageCount()).toBe(2);
+    expect(reopened.getPageCount()).toBeGreaterThan(0);
   });
 
   it("returns NO certificate — OD-167", async () => {
@@ -139,12 +157,56 @@ describe("NodeDocumentSealer.seal", () => {
     expect("completionCertificate" in result).toBe(false);
   });
 
-  it("does not grow the sealed document — nothing is appended", async () => {
-    // Handoff §15 stores three artifacts as three files. If the certificate
-    // were appended here, the page count would have grown past the source's.
+  it("APPENDS the certificate — signed pages first, certificate last", async () => {
+    // BACKEND-41's composition (§17, §18). The merged fixture is 2 pages and
+    // the certificate is 1, so the final document must be 3.
     const result = await sealer.seal(await makeRequest());
     const reopened = await PDFDocument.load(result.sealedDocument);
-    expect(reopened.getPageCount()).toBe(2);
+    expect(reopened.getPageCount()).toBe(3);
+  });
+
+  it("appends the certificate ONCE per seal", async () => {
+    // §124/§125. Sealing twice from the same inputs must not accumulate pages —
+    // each call composes from the originals rather than from its own output.
+    const request = await makeRequest();
+    const first = await sealer.seal(request);
+    const second = await sealer.seal(request);
+    expect((await PDFDocument.load(first.sealedDocument)).getPageCount()).toBe(3);
+    expect((await PDFDocument.load(second.sealedDocument)).getPageCount()).toBe(3);
+  });
+
+  it("grows with a longer certificate, proving the pages are really copied", async () => {
+    // The positive control for the count above: a page count of 3 could also be
+    // produced by ignoring the certificate and adding a blank page.
+    const threePage = await PDFDocument.create();
+    for (let i = 0; i < 3; i += 1) threePage.addPage([595.28, 841.89]);
+    threePage.setCreationDate(new Date(0));
+    threePage.setModificationDate(new Date(0));
+
+    const result = await sealer.seal(await makeRequest({
+      completionCertificate: await threePage.save(),
+    }));
+    expect((await PDFDocument.load(result.sealedDocument)).getPageCount()).toBe(5);
+  });
+
+  it("refuses a certificate that is not a PDF", async () => {
+    await expect(sealer.seal(await makeRequest({
+      completionCertificate: new TextEncoder().encode("not a pdf"),
+    }))).rejects.toBeInstanceOf(InvalidPdfError);
+  });
+
+  it("refuses an empty certificate", async () => {
+    await expect(sealer.seal(await makeRequest({
+      completionCertificate: new Uint8Array(0),
+    }))).rejects.toBeInstanceOf(InvalidSealInputError);
+  });
+
+  it("refuses a certificate with no pages", async () => {
+    // Would seal silently and produce a final document simply lacking its
+    // completion record.
+    await expect(sealer.seal(await makeRequest({
+      completionCertificate: new TextEncoder().encode("%PDF-1.7\n%%EOF\n"),
+    }))).rejects.toBeInstanceOf(InvalidPdfError);
   });
 
   it("echoes the verification ID rather than generating one", async () => {
@@ -166,8 +228,8 @@ describe("NodeDocumentSealer.seal", () => {
     // No clock, no randomness inside the sealer. pdf-lib stamps no creation
     // date of its own here, so the same request yields the same bytes.
     const prepared = await makePdf();
-    const a = await sealer.seal(await makeRequest({ preparedDocument: prepared }));
-    const b = await sealer.seal(await makeRequest({ preparedDocument: prepared }));
+    const a = await sealer.seal(await makeRequest({ mergedDocument: prepared }));
+    const b = await sealer.seal(await makeRequest({ mergedDocument: prepared }));
     expect(a.signedDocumentHash).toBe(b.signedDocumentHash);
   });
 
@@ -185,8 +247,8 @@ describe("NodeDocumentSealer.seal", () => {
     // it: `seal()` no longer accepts fields at all, so there is nothing to pass.
     // What CAN be shown is that sealing is a function of the document alone.
     const document = await makePdf();
-    const first = await sealer.seal(await makeRequest({ preparedDocument: document }));
-    const second = await sealer.seal(await makeRequest({ preparedDocument: document }));
+    const first = await sealer.seal(await makeRequest({ mergedDocument: document }));
+    const second = await sealer.seal(await makeRequest({ mergedDocument: document }));
 
     expect(first.signedDocumentHash).toBe(second.signedDocumentHash);
     // And the sealer adds no marks of its own: it no longer draws ANY text, so
@@ -207,15 +269,15 @@ describe("NodeDocumentSealer failures", () => {
   const sealer = new NodeDocumentSealer();
 
   it("rejects bytes that are not a PDF", async () => {
-    const preparedDocument = new TextEncoder().encode("this is not a pdf");
-    await expect(sealer.seal(await makeRequest({ preparedDocument }))).rejects.toBeInstanceOf(
+    const mergedDocument = new TextEncoder().encode("this is not a pdf");
+    await expect(sealer.seal(await makeRequest({ mergedDocument }))).rejects.toBeInstanceOf(
       InvalidPdfError,
     );
   });
 
   it("rejects an empty document", async () => {
-    const preparedDocument = new Uint8Array(0);
-    await expect(sealer.seal(await makeRequest({ preparedDocument }))).rejects.toBeInstanceOf(
+    const mergedDocument = new Uint8Array(0);
+    await expect(sealer.seal(await makeRequest({ mergedDocument }))).rejects.toBeInstanceOf(
       InvalidSealInputError,
     );
   });
@@ -224,15 +286,15 @@ describe("NodeDocumentSealer failures", () => {
     // The magic-byte check alone would let this through. Parsing is what
     // actually decides, and the failure still arrives as a LAGDA error.
     const full = await makePdf();
-    const preparedDocument = full.slice(0, 40);
-    await expect(sealer.seal(await makeRequest({ preparedDocument }))).rejects.toBeInstanceOf(
+    const mergedDocument = full.slice(0, 40);
+    await expect(sealer.seal(await makeRequest({ mergedDocument }))).rejects.toBeInstanceOf(
       SealingError,
     );
   });
 
   it("never leaks a pdf-lib error type to the caller", async () => {
-    const preparedDocument = new TextEncoder().encode("%PDF-1.7 garbage");
-    const error = await sealer.seal(await makeRequest({ preparedDocument })).catch((e: unknown) => e);
+    const mergedDocument = new TextEncoder().encode("%PDF-1.7 garbage");
+    const error = await sealer.seal(await makeRequest({ mergedDocument })).catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(SealingError);
     // The library's own error is preserved as `cause` for logs, but the type a
@@ -243,12 +305,12 @@ describe("NodeDocumentSealer failures", () => {
   });
 
   it("classifies failures as retryable or not", async () => {
-    const preparedDocument = new TextEncoder().encode("not a pdf");
+    const mergedDocument = new TextEncoder().encode("not a pdf");
     // Narrowed rather than asserted: `.catch()` widens the result to
     // `SealResult | SealingError`, and casting past that hid a type error from
     // `npm run typecheck` for a whole command.
     const outcome: unknown = await sealer
-      .seal(await makeRequest({ preparedDocument }))
+      .seal(await makeRequest({ mergedDocument }))
       .catch((e: unknown) => e);
 
     expect(outcome).toBeInstanceOf(SealingError);
