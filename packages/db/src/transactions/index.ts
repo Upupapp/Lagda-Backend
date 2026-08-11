@@ -62,6 +62,7 @@ import {
 } from "../repositories/signing-workflow.js";
 import {
   createScopedCompletionRepository, createCompletionReconciliationRepository,
+  createCompletionInputRepository,
 } from "../repositories/completion.js";
 
 /** The setting names RLS policies read. Must match migrations 002 and 013. */
@@ -107,6 +108,7 @@ function buildUnitOfWork(
     completion: createScopedCompletionRepository(trx, workspaceId),
     completionReconciliation:
       createCompletionReconciliationRepository(trx, workspaceId),
+    completionInputs: createCompletionInputRepository(trx, workspaceId),
   };
 }
 

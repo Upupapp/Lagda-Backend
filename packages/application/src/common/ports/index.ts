@@ -24,6 +24,7 @@ import type {
 } from "./signing-workflow.js";
 import type {
   ScopedCompletionRepository, CompletionReconciliationRepository,
+  CompletionInputRepository,
 } from "./completion.js";
 import type {
   SigningCredentialUnitOfWork, RecipientSessionUnitOfWork,
@@ -380,6 +381,8 @@ export interface WorkspaceUnitOfWork {
    */
   readonly completion: ScopedCompletionRepository;
   readonly completionReconciliation: CompletionReconciliationRepository;
+  /** BACKEND-38. Completion's read-only view of accepted signing facts. */
+  readonly completionInputs: CompletionInputRepository;
 }
 
 /**

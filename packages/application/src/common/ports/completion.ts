@@ -196,6 +196,39 @@ export interface CompletionReconciliationRepository {
   listClaimableRuns(limit: number): Promise<readonly CompletionRunId[]>;
 }
 
+/** One accepted field value, as completion needs to see it. */
+export interface AcceptedFieldValueRef {
+  readonly fieldId: string;
+  /** Whose submission produced it. Checked against the field's assignment. */
+  readonly recipientId: string;
+}
+
+/**
+ * The completion pipeline's READ-ONLY view of accepted signing facts.
+ *
+ * Separate from `ScopedCompletionRepository` because it is a different kind of
+ * access: that one owns completion's own state, and this one reads BACKEND-36's
+ * immutable records. Splitting them means the completion repository has no
+ * method that could touch a submission - §36, expressed as an absence rather
+ * than as a rule.
+ *
+ * There is no write method here, and the runtime role holds no UPDATE or DELETE
+ * grant on any of the three submission tables either. Two layers.
+ */
+export interface CompletionInputRepository {
+  /**
+   * Every accepted field value for the request, as identities only.
+   *
+   * NOT the values. Completion eligibility needs to know THAT a value exists
+   * and WHOSE it is; the bytes and the text belong to the sealer, which reads
+   * them when it renders. Returning them here would put every signed field's
+   * content in a use case that only has to count them.
+   */
+  listAcceptedFieldValues(
+    signingRequestId: SigningRequestId,
+  ): Promise<readonly AcceptedFieldValueRef[]>;
+}
+
 export interface CompletionIdGenerator {
   nextCompletionRunId(): CompletionRunId;
   nextCompletionStepId(): CompletionStepId;

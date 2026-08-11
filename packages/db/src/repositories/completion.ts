@@ -18,7 +18,7 @@ import {
 import type {
   ScopedCompletionRepository, CompletionReconciliationRepository,
   CompletionRunRecord, CompletionStepRecord, CompletionRecord,
-  CompletionRunId, CompletionStepId,
+  CompletionRunId, CompletionStepId, CompletionInputRepository,
   SigningRequestId, ArtifactId,
 } from "@lagda/application";
 import type { Database } from "../schema/index.js";
@@ -296,6 +296,34 @@ export function createCompletionReconciliationRepository(
         .limit(limit)
         .execute();
       return rows.map(row => row.completion_run_id as CompletionRunId);
+    },
+  };
+}
+
+/**
+ * Completion's read-only view of accepted signing facts.
+ *
+ * IDENTITIES ONLY. `signing_field_values` holds the text a signer typed and the
+ * representation they adopted, and eligibility needs neither - it needs to know
+ * that a value exists and whose it is. Selecting the value columns would put
+ * every signed field's content into a use case that only counts them.
+ */
+export function createCompletionInputRepository(
+  trx: Transaction<Database>,
+  scope: WorkspaceId,
+): CompletionInputRepository {
+  return {
+    async listAcceptedFieldValues(signingRequestId) {
+      const rows = await trx.selectFrom("signing_field_values")
+        .select(["request_field_id", "request_recipient_id"])
+        .where("workspace_id", "=", scope)
+        .where("signing_request_id", "=", signingRequestId)
+        .orderBy("request_field_id", "asc")
+        .execute();
+      return rows.map(row => ({
+        fieldId: row.request_field_id,
+        recipientId: row.request_recipient_id,
+      }));
     },
   };
 }

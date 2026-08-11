@@ -22,6 +22,7 @@ import type {
 import type {
   ScopedCompletionRepository, CompletionReconciliationRepository,
   CompletionRunRecord, CompletionRunId, CompletionStepId, CompletionIdGenerator,
+  CompletionInputRepository,
 } from "../common/ports/completion.js";
 import type { UserId, WorkspaceId, WorkspaceMemberId } from "@lagda/contracts";
 import type { WorkspaceRole } from "@lagda/core";
@@ -1411,6 +1412,21 @@ function completionReconciliation(
   };
 }
 
+function completionInputs(
+  store: InMemoryStore, scope: WorkspaceId,
+): CompletionInputRepository {
+  return {
+    listAcceptedFieldValues: signingRequestId => Promise.resolve(
+      store.submissions
+        .filter(row => row.workspaceId === scope
+          && row.signingRequestId === signingRequestId)
+        .flatMap(row => row.values.map(value => ({
+          fieldId: String(value.fieldId),
+          recipientId: row.recipientId,
+        })))),
+  };
+}
+
 /** Sequential completion ids (BACKEND-38). */
 export class SequentialCompletionIds implements CompletionIdGenerator {
   private run = 1;
@@ -1757,6 +1773,7 @@ export class FakeTransactionManager implements TransactionManager {
         completion: scopedCompletion(this.store, workspaceId),
         completionReconciliation:
           completionReconciliation(this.store, workspaceId),
+        completionInputs: completionInputs(this.store, workspaceId),
       });
       this.committed++;
       return result;
@@ -1831,6 +1848,7 @@ export class FakeTransactionManager implements TransactionManager {
             completion: scopedCompletion(store, workspaceId),
             completionReconciliation:
               completionReconciliation(store, workspaceId),
+            completionInputs: completionInputs(store, workspaceId),
           });
         },
       });
