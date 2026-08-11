@@ -88,6 +88,24 @@ export const EVIDENCE_EVENT_TYPES = [
   "participant-declined",
   "document-sealed",
   "verification-record-created",
+
+  // ── BACKEND-43 ────────────────────────────────────────────────────────────
+  //
+  // Six authoritative facts the 2026-08-11 gap analysis found with no type to
+  // record them. Kebab-case, continuing the existing vocabulary rather than
+  // starting a second SCREAMING_SNAKE one.
+  //
+  // `submission-accepted` is deliberately NOT folded into `signature-completed`.
+  // They are different facts — the backend accepting an immutable submission
+  // versus the workflow transitioning that recipient to SIGNED — and they share
+  // a timestamp by design, which is why event precedence rather than time is
+  // what orders them for a reader.
+  "recipient-activated",
+  "submission-accepted",
+  "completion-ready",
+  "field-merge-completed",
+  "certificate-generated",
+  "final-seal-completed",
 ] as const;
 export type EvidenceEventType = (typeof EVIDENCE_EVENT_TYPES)[number];
 
