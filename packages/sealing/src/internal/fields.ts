@@ -1,87 +1,45 @@
-// Rendering completed fields onto a PDF.
+// Rendering completed fields onto a PDF — the LEGACY path, inside `seal()`.
 //
-// THE COORDINATE FLIP LIVES HERE AND NOWHERE ELSE.
+// ── Status: superseded, and deliberately still here ────────────────────────
 //
-// The product's fields are normalized 0–1 with the origin at the TOP-LEFT
-// (`src/app/models/field-editor.ts`: "x=0, y=0 is the top-left of the page").
-// PDF's native coordinate space has its origin at the BOTTOM-LEFT. So every
-// field needs its Y axis inverted, and `y` denotes the field's *top* edge while
-// pdf-lib draws from the *bottom* edge.
+// BACKEND-39 built `internal/merge.ts`, which renders the same fields with an
+// embedded Unicode face, real raster signatures and a glyph-coverage guard.
+// This file is what `DocumentSealer.seal()` still calls.
 //
-// Getting this wrong does not crash — it silently places signatures in the
-// wrong half of the page. Doing the conversion in one function is what makes it
-// reviewable.
+// **OD-162.** BACKEND-41 must narrow `seal()` to sealing alone when it wires
+// the `field-merge` step into the pipeline. Until it does, this renderer and
+// `mergeFields` would both draw the same values, and every field would appear
+// twice — which reads as a font-weight bug, not an architecture bug.
+//
+// It is not deleted yet because `seal()` is the only path that renders today
+// and deleting it would leave the sealer producing blank documents. It gains no
+// new capability: the Unicode fix, the raster fix and the coverage guard all
+// live in `merge.ts`, so nothing is tempted to keep this one alive.
+//
+// The coordinate flip it used to own now lives in `geometry.ts`, shared with
+// the new renderer. Two copies is how one path ends up correct and the other
+// upside down.
 
-import { PDFDocument, StandardFonts, rgb, type PDFPage } from "pdf-lib";
+import { PDFDocument, rgb, type PDFPage } from "pdf-lib";
 import type { SealableField } from "@lagda/application";
 import { InvalidFieldPlacementError } from "../errors/index.js";
+import { assertPlaceable, toPdfRect } from "./geometry.js";
+import { embedFaces } from "./fonts.js";
+
+export { toPdfRect };
 
 /** Ink colour for rendered values. Near-black, not pure black, matching print. */
 const INK = rgb(0.07, 0.09, 0.13);
-
-/**
- * A field's rectangle in PDF user space.
- *
- * @param rect normalized, origin top-left
- * @param pageWidth  page width in PDF points
- * @param pageHeight page height in PDF points
- */
-export function toPdfRect(
-  rect: { x: number; y: number; width: number; height: number },
-  pageWidth: number,
-  pageHeight: number,
-): { x: number; y: number; width: number; height: number } {
-  const width = rect.width * pageWidth;
-  const height = rect.height * pageHeight;
-  const x = rect.x * pageWidth;
-
-  // The flip. `rect.y` measures down from the top to the field's TOP edge;
-  // pdf-lib wants the distance up from the bottom to its BOTTOM edge, so the
-  // field's own height is subtracted as well as the offset inverted.
-  const y = pageHeight - (rect.y * pageHeight) - height;
-
-  return { x, y, width, height };
-}
-
-/** Rejects geometry that would produce a corrupt or invisible placement. */
-function assertRenderable(field: SealableField, pageCount: number): void {
-  const { x, y, width, height } = field.rect;
-
-  for (const [name, value] of Object.entries({ x, y, width, height })) {
-    if (!Number.isFinite(value)) {
-      throw new InvalidFieldPlacementError(
-        `Field rect.${name} is not a finite number.`,
-      );
-    }
-  }
-  if (width <= 0 || height <= 0) {
-    throw new InvalidFieldPlacementError("Field width and height must be positive.");
-  }
-  if (x < 0 || y < 0 || x + width > 1 || y + height > 1) {
-    // Rejected rather than clipped. A signature silently cropped at the page
-    // edge is worse than a failed seal — the document would look complete.
-    throw new InvalidFieldPlacementError(
-      "Field extends outside the page. Normalized coordinates must lie within 0–1.",
-    );
-  }
-  // Page numbers are 1-based in the product; pdf-lib indexes from 0.
-  if (!Number.isInteger(field.pageNumber) || field.pageNumber < 1) {
-    throw new InvalidFieldPlacementError(
-      `Field page number must be a positive integer, got ${String(field.pageNumber)}.`,
-    );
-  }
-  if (field.pageNumber > pageCount) {
-    throw new InvalidFieldPlacementError(
-      `Field references page ${String(field.pageNumber)} of a ${String(pageCount)}-page document.`,
-    );
-  }
-}
 
 /** Largest size that fits the box, down to a floor where text stops being legible. */
 function fitFontSize(text: string, boxWidth: number, boxHeight: number): number {
   const MIN = 6;
   const byHeight = boxHeight * 0.7;
-  // 0.5 em average advance is a reasonable approximation for Helvetica.
+  // A 0.5 em average advance, approximated rather than measured. It is wrong
+  // for both narrow and wide strings and wrong for every accented glyph; the
+  // replacement renderer asks the face through `widthOfTextAtSize` instead.
+  // Left as it was because changing the fit here would restyle documents on a
+  // path BACKEND-41 deletes.
   const byWidth = text.length > 0 ? (boxWidth / text.length) / 0.5 : byHeight;
   return Math.max(MIN, Math.min(byHeight, byWidth));
 }
@@ -98,14 +56,32 @@ export async function renderFields(
   // with drawing would leave a document half-rendered when the fourth field is
   // rejected, and it lets an unrelated failure (font embedding) mask a
   // placement error that has a much more specific message.
-  for (const field of fields) {
-    assertRenderable(field, pages.length);
+  for (const [index, field] of fields.entries()) {
+    assertPlaceable(field.rect, field.pageNumber, pages.length, `#${String(index)}`);
   }
 
-  // Standard PDF fonts, embedded by the library. No font files, no reliance on
-  // fonts installed on whatever machine happens to run this.
-  const body = await pdf.embedFont(StandardFonts.Helvetica);
-  const script = await pdf.embedFont(StandardFonts.HelveticaOblique);
+  // The embedded Unicode faces, NOT `StandardFonts.Helvetica`.
+  //
+  // This renderer is superseded and will be deleted by BACKEND-41, but it is
+  // the only path that renders TODAY — `seal()` calls it. Leaving it on WinAnsi
+  // would mean OD-163 was only half closed: the new renderer would accept
+  // "Peñaflor" while the live one still threw on it, and which of the two was
+  // fixed would depend on which command someone happened to read.
+  //
+  // The coverage guard comes with them, so a name this face cannot draw is
+  // refused here too rather than rendered blank.
+  const faces = embedFaces(pdf);
+  const body = await faces.face("regular");
+  const script = await faces.face("italic");
+
+  for (const field of fields) {
+    if (field.value.length > 0) {
+      faces.assertRenderable(
+        field.value,
+        field.type === "signature" || field.type === "initials" ? "italic" : "regular",
+      );
+    }
+  }
 
   for (const field of fields) {
     const page: PDFPage | undefined = pages[field.pageNumber - 1];

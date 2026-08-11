@@ -9,10 +9,11 @@
 // bytes. What it is NOT: a cryptographic attestation. It carries no signature
 // and asserts none. See SEAL_METADATA.md.
 
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import { PDFDocument, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import type { CompletionEvidence } from "@lagda/application";
 import type { Sha256Digest, VerificationId } from "@lagda/contracts";
 import { PdfProcessingError } from "../errors/index.js";
+import { embedFaces } from "./fonts.js";
 
 // A4 portrait in PDF points, matching the frontend's stated page geometry
 // ("A4 portrait (595x842 CSS px at 100% zoom)").
@@ -88,8 +89,27 @@ export async function renderCertificate(input: CertificateInput): Promise<Uint8A
 
   try {
     const pdf = await PDFDocument.create();
-    const body = await pdf.embedFont(StandardFonts.Helvetica);
-    const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+
+    // OD-163 applies HERE TOO, and this half is easy to miss. The certificate
+    // carries every PARTICIPANT'S NAME, so a Helvetica certificate throws on
+    // exactly the names the merged document was fixed to accept — and it throws
+    // AFTER the document has already been rendered, failing the completion at
+    // its last step.
+    const faces = embedFaces(pdf);
+    const body = await faces.face("regular");
+    const bold = await faces.face("bold");
+
+    // Names and the document title arrive from the workspace, not from a
+    // signer's keyboard, but they are still free text and still the thing most
+    // likely to carry a mark outside the face. Checked here so the failure
+    // names the certificate rather than surfacing as a blank line in a
+    // finished PDF.
+    for (const text of [
+      evidence.documentName,
+      ...evidence.participants.flatMap((p) => [p.name, p.action]),
+    ]) {
+      faces.assertRenderable(text, "regular");
+    }
 
     let page: PDFPage = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
     let cursor = PAGE_HEIGHT - MARGIN;

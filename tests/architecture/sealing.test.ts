@@ -86,7 +86,7 @@ describe("PDF libraries are confined to @lagda/sealing", () => {
     expect(found).toBe(true);
   });
 
-  it("only pdf-lib appears in any package manifest, and only in sealing's", () => {
+  it("PDF libraries appear in only one manifest, and it is sealing's", () => {
     const declarations: string[] = [];
     for (const pkg of readdirSync(PACKAGES)) {
       const manifest = path.join(PACKAGES, pkg, "package.json");
@@ -104,7 +104,20 @@ describe("PDF libraries are confined to @lagda/sealing", () => {
         if (PDF_LIBRARIES.test(name)) declarations.push(`${pkg}:${name}`);
       }
     }
-    expect(declarations).toEqual(["sealing:pdf-lib"]);
+    // TWO entries, both in sealing, and the list stays exhaustive rather than
+    // becoming a prefix check that would admit anything.
+    //
+    //   pdf-lib            the PDF library itself
+    //   @pdf-lib/fontkit   its font parser, added by BACKEND-39. Embedding a
+    //                      Unicode face REQUIRES it — `registerFontkit` is how
+    //                      pdf-lib accepts a font that is not one of the 14
+    //                      WinAnsi standard fonts, and WinAnsi is precisely
+    //                      what OD-163 had to escape.
+    //
+    // It matches `PDF_LIBRARIES` deliberately: it is a pdf-lib companion and
+    // belongs behind the same boundary. A package outside sealing declaring it
+    // still fails this test, which is the property worth keeping.
+    expect(declarations.sort()).toEqual(["sealing:@pdf-lib/fontkit", "sealing:pdf-lib"]);
   });
 });
 

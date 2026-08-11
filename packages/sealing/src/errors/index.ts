@@ -46,6 +46,53 @@ export class InvalidSealInputError extends SealingError {
 }
 
 /**
+ * A value contains a character the embedded typeface cannot draw.
+ *
+ * Never retryable: the same value will be missing the same glyph forever.
+ *
+ * This exists because the alternative is SILENCE. pdf-lib's standard fonts
+ * throw on an out-of-range character, but an embedded subset font does not — it
+ * draws nothing and returns a structurally valid PDF. Measured during
+ * BACKEND-39: rendering "田中太郎" through a Latin face produced an empty page
+ * and no error. Without this the pipeline would report success over a document
+ * whose signature field is blank.
+ */
+export class UnrenderableTextError extends SealingError {
+  readonly code = "unrenderable_text" as const;
+  readonly retryable = false;
+}
+
+/**
+ * A signature representation this build cannot render.
+ *
+ * Never retryable — undecodable bytes stay undecodable, and a typed style
+ * outside 0–3 is outside it forever.
+ *
+ * Distinct from `InvalidFieldPlacementError` because it says something
+ * different to an operator: the field is in a sensible place and the SIGNATURE
+ * is the problem. Mapping both onto one code would merge "the geometry is
+ * corrupt" with "someone submitted a JPEG".
+ */
+export class UnsupportedRepresentationError extends SealingError {
+  readonly code = "unsupported_representation" as const;
+  readonly retryable = false;
+}
+
+/**
+ * The embedded typeface could not be loaded at all.
+ *
+ * RETRYABLE, and the distinction from `UnrenderableTextError` is the whole
+ * point: a missing font file is a broken installation, not a broken document.
+ * It fails identically for every document, so classifying it terminally would
+ * permanently fail every request in flight for a fault that a redeploy fixes —
+ * the same reasoning that makes `step-not-implemented` retryable.
+ */
+export class TypefaceUnavailableError extends SealingError {
+  readonly code = "typeface_unavailable" as const;
+  readonly retryable = true;
+}
+
+/**
  * Valid input, but processing failed unexpectedly.
  *
  * Separate from the above because this one MIGHT succeed on retry — it usually

@@ -188,3 +188,123 @@ export interface SealResult {
 export interface DocumentSealer {
   seal(request: SealRequest): Promise<SealResult>;
 }
+
+// ── Field merge (BACKEND-39) ─────────────────────────────────────────────────
+//
+// A SECOND seam, deliberately not a second method on `DocumentSealer`.
+//
+// The completion pipeline's `field-merge` step must produce a durable
+// `merged-candidate` artifact WITHOUT invoking the sealer, and `DocumentSealer`
+// is the one-operation boundary a remote signer replaces wholesale. Hanging
+// `mergeFields` off it would mean a remote signing service had to implement
+// field rendering to satisfy the interface — which is exactly backwards, since
+// merging is the part that stays local.
+//
+// So: one package, two seams, one caller each. An architecture guard asserts
+// `DocumentSealer` still declares exactly one method.
+//
+// **`seal()` still merges fields today (OD-162).** BACKEND-41 must narrow it
+// when it wires this step in, or every field renders twice — and it will look
+// like a font-weight bug rather than an architecture bug.
+
+/**
+ * A typed signature: text the signer entered, in one of FOUR server-known
+ * styles.
+ *
+ * `styleIndex` selects the style. A client cannot name a font, a family or a
+ * stylesheet — §60 — because there is nowhere in this shape to put one.
+ */
+export interface TypedSignatureRepresentation {
+  readonly kind: "typed";
+  readonly text: string;
+  /** 0–3. Any other value is refused by the renderer, not clamped. */
+  readonly styleIndex: number;
+}
+
+/**
+ * A drawn signature: the raster the signer produced on the canvas.
+ *
+ * **This is the case the pre-BACKEND-39 renderer could not draw at all.** It
+ * rendered `signature` fields with `drawText` in an oblique face — a typed
+ * rendering — and a raster has no text to draw, so a drawn signature produced
+ * nothing.
+ *
+ * Bytes are DECODED. Never a data URL and never base64: the
+ * `data:image/png;base64,` prefix is transport formatting and is not evidence
+ * of anything (§199).
+ */
+export interface RasterSignatureRepresentation {
+  readonly kind: "raster";
+  readonly bytes: DocumentBytes;
+  /** `image/png`. The product's canvas emits nothing else, and §52 verifies it. */
+  readonly mediaType: string;
+  /** The raster's own pixel dimensions, used to preserve aspect ratio. */
+  readonly width: number;
+  readonly height: number;
+}
+
+export type SignatureRepresentation =
+  | TypedSignatureRepresentation
+  | RasterSignatureRepresentation;
+
+/**
+ * What a field renders.
+ *
+ * A discriminated union rather than one `value: string`, because a raster
+ * signature is not a string and encoding it as one is how a drawn signature
+ * silently became a typed one. The checkbox carries a `boolean` for the same
+ * reason: `"false"` and `"FALSE"` and `""` are three strings and one intent.
+ */
+export type MergeableFieldValue =
+  | { readonly kind: "text"; readonly text: string }
+  | { readonly kind: "checkbox"; readonly checked: boolean }
+  | { readonly kind: "signature"; readonly representation: SignatureRepresentation };
+
+export interface MergeableField {
+  /**
+   * Identity, carried so rendering order is DETERMINISTIC and so a placement
+   * error can name the field without naming its value.
+   */
+  readonly fieldId: string;
+  /** **1-based**, matching the product. The adapter converts to pdf-lib's index. */
+  readonly pageNumber: number;
+  readonly rect: NormalizedFieldRect;
+  readonly value: MergeableFieldValue;
+}
+
+export interface MergeFieldsRequest {
+  /**
+   * The EXACT bytes the signing request froze — its `sourceArtifactId`, not the
+   * document's current artifact. Supplied by the caller; the merger never
+   * fetches from storage.
+   */
+  readonly sourceDocument: DocumentBytes;
+  readonly fields: readonly MergeableField[];
+  /** Supplied so output is reproducible and never depends on a hidden clock. */
+  readonly mergedAt: string;
+}
+
+export interface MergeFieldsResult {
+  /**
+   * The merged candidate. Fields rendered, NOT sealed.
+   *
+   * Named for what it is — §8 and §81 both forbid calling it final. It becomes
+   * the input to the certificate and final-seal steps.
+   */
+  readonly mergedDocument: DocumentBytes;
+  /** Digest of `sourceDocument` exactly as received, before anything touched it. */
+  readonly sourceDocumentHash: Sha256Digest;
+  /** Digest of `mergedDocument` — computed after every byte-changing step. */
+  readonly mergedDocumentHash: Sha256Digest;
+  /** How many fields were drawn. The caller checks it against what it sent. */
+  readonly renderedFieldCount: number;
+}
+
+/**
+ * Renders accepted values onto the source document.
+ *
+ * Never calls `DocumentSealer`, never touches storage, never reads a clock.
+ */
+export interface FieldMerger {
+  mergeFields(request: MergeFieldsRequest): Promise<MergeFieldsResult>;
+}

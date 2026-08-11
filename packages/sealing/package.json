@@ -19,8 +19,10 @@
     "clean": "tsc --build --clean"
   },
   "dependencies": {
+    "@expo-google-fonts/noto-sans": "0.4.2",
     "@lagda/application": "*",
     "@lagda/contracts": "*",
+    "@pdf-lib/fontkit": "1.1.1",
     "file-type": "22.0.1",
     "pdf-lib": "^1.17.1"
   },
