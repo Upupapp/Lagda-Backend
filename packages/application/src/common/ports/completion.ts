@@ -247,6 +247,61 @@ export interface CompletionInputRepository {
   listRenderableFieldValues(
     signingRequestId: SigningRequestId,
   ): Promise<readonly RenderableFieldRecord[]>;
+
+  /**
+   * The facts the completion certificate certifies, for every SIGNER.
+   *
+   * ── Why one query rather than five reads ───────────────────────────────
+   *
+   * Every fact here must belong to the SAME recipient of the SAME request.
+   * Assembling them from separate reads and correlating in application code is
+   * how a cross-recipient or cross-request fact gets onto a certificate (§144,
+   * §210–§213) — the correlation is written once in a join instead, where the
+   * database enforces it.
+   *
+   * ── The binding, and why it is not "the latest event" ──────────────────
+   *
+   * `recipient_submissions` itself records `authentication_method` and
+   * `consent_id`. So the certificate reports the method used for THE ACCEPTED
+   * SUBMISSION, not the most recent authentication the recipient happened to
+   * perform (§149, §150). A recipient who opened a link, later authenticated
+   * with an OTP, and signed under the first session must be certified as having
+   * signed under the first.
+   *
+   * Only recipients WITH an accepted submission are returned: §49, the
+   * certificate is a record of signing evidence, and a recipient who took no
+   * signing action has none to certify.
+   */
+  listCertifiedParticipants(
+    signingRequestId: SigningRequestId,
+  ): Promise<readonly CertifiedParticipantFacts[]>;
+}
+
+/**
+ * One signer's authoritative facts, straight from immutable records.
+ *
+ * The FULL email is carried here and masked by the builder. The repository
+ * reports what was recorded; deciding what a human-visible document shows is a
+ * policy question, and policy does not belong in a query.
+ */
+export interface CertifiedParticipantFacts {
+  readonly recipientId: string;
+  /** From the request's immutable recipient snapshot. Never a Contact. */
+  readonly name: string;
+  readonly email: string;
+  readonly recipientType: string;
+  readonly routingOrder: number;
+  readonly orderIndex: number;
+  /** THE authoritative signing instant. */
+  readonly signedAt: number;
+  /** As recorded ON THE SUBMISSION, not resolved from a session list. */
+  readonly authenticationMethod: string;
+  /** First ceremony entry, when one was recorded. */
+  readonly firstEnteredAt: number | null;
+  /** The consent bound to this submission, when one exists. */
+  readonly consentType: string | null;
+  readonly consentVersion: string | null;
+  readonly consentAcceptedAt: number | null;
 }
 
 /**

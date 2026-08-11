@@ -220,6 +220,15 @@ export interface SubmissionRow {
   readonly signingRequestId: string;
   readonly recipientId: string;
   readonly acceptedAt: number;
+  /**
+   * Recorded ON the submission, mirroring `recipient_submissions`.
+   *
+   * The real table carries this column, and the certificate binds to it rather
+   * than to a session lookup (§150). A fake without it could not represent that
+   * binding, so a test could not tell a correct implementation from one that
+   * resolved the recipient's latest authentication instead.
+   */
+  readonly authenticationMethod: string;
   readonly valueCount: number;
   readonly representations: readonly NewSigningRepresentation[];
   readonly values: readonly NewSigningFieldValue[];
@@ -1457,6 +1466,39 @@ function completionInputs(
         }))
         .sort((a, b) =>
           a.pageNumber - b.pageNumber || a.fieldId.localeCompare(b.fieldId))),
+
+    // Mirrors the real query: only recipients WITH an accepted submission, and
+    // authentication read off the SUBMISSION rather than a session lookup.
+    listCertifiedParticipants: signingRequestId => Promise.resolve(
+      store.submissions
+        .filter(row => row.workspaceId === scope
+          && row.signingRequestId === signingRequestId)
+        .flatMap(row => {
+          const snapshot = store.signingRequestRecipients.find(
+            candidate => String(candidate.recipientId) === String(row.recipientId));
+          if (snapshot === undefined) return [];
+          const consent = store.ceremonyConsents.find(
+            candidate => String(candidate.recipientId) === String(row.recipientId));
+          const progress = store.ceremonyProgress.find(
+            candidate => String(candidate.recipientId) === String(row.recipientId));
+          return [{
+            recipientId: String(row.recipientId),
+            name: snapshot.name,
+            email: snapshot.email,
+            recipientType: String(snapshot.type),
+            routingOrder: snapshot.routingOrder,
+            orderIndex: snapshot.orderIndex,
+            signedAt: row.acceptedAt,
+            authenticationMethod: String(row.authenticationMethod),
+            firstEnteredAt: progress?.firstEnteredAt ?? null,
+            consentType: consent?.consentType ?? null,
+            consentVersion: consent?.consentVersion ?? null,
+            consentAcceptedAt: consent?.acceptedAt ?? null,
+          }];
+        })
+        .sort((a, b) =>
+          a.routingOrder - b.routingOrder || a.orderIndex - b.orderIndex
+          || a.recipientId.localeCompare(b.recipientId))),
   };
 }
 
@@ -2178,6 +2220,7 @@ export class FakeTransactionManager implements TransactionManager {
                 signingRequestId: scope.signingRequestId,
                 recipientId: scope.recipientId,
                 acceptedAt: submission.acceptedAt,
+                authenticationMethod: String(submission.authenticationMethod),
                 valueCount: submission.values.length,
                 representations: submission.representations,
                 values: submission.values,

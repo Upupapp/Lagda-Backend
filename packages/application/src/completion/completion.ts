@@ -69,7 +69,14 @@ export type CompletionStepRunner = (input: {
   readonly runId: CompletionRunId;
   readonly signingRequestId: SigningRequestId;
 }) => Promise<{
-  readonly outcome: "merged" | "already-merged" | "failed";
+  /**
+   * Anything but `"failed"` means the step's output is accepted and the
+   * pipeline may go on. The successful variants are named per step
+   * (`merged`/`certified`, and their `already-` forms) because a run's history
+   * should say whether work was DONE or REUSED — but the orchestrator only
+   * distinguishes failure from progress.
+   */
+  readonly outcome: string;
   readonly failureCode?: CompletionFailureCode;
 }>;
 
@@ -84,6 +91,7 @@ export type CompletionStepRunner = (input: {
  */
 export interface CompletionStepRunners {
   readonly fieldMerge?: CompletionStepRunner;
+  readonly certificate?: CompletionStepRunner;
 }
 
 export interface CompletionDependencies {
@@ -361,11 +369,26 @@ async function advanceSteps(
   return { runId, outcome: "failed", failureCode: "output-missing", stepsCompleted };
 }
 
+/**
+ * The runner for a step, or `undefined` when this build has none.
+ *
+ * A total switch over the vocabulary rather than a lookup by string: adding a
+ * step without deciding whether it is executable is then a compile error, and
+ * an un-run step parks the run rather than silently never running.
+ */
 function runnerFor(
   step: CompletionStep | null,
   deps: CompletionDependencies,
 ): CompletionStepRunner | undefined {
-  return step === "field-merge" ? deps.steps?.fieldMerge : undefined;
+  switch (step) {
+    case "field-merge": return deps.steps?.fieldMerge;
+    case "certificate": return deps.steps?.certificate;
+    // BACKEND-41's. Until then the run parks with `step-not-implemented`.
+    case "final-seal":
+    case "finalize":
+    case null:
+      return undefined;
+  }
 }
 
 async function parkNotImplemented(

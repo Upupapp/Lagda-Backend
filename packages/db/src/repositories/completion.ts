@@ -369,6 +369,67 @@ export function createCompletionInputRepository(
         value: toRenderableValue(row),
       }));
     },
+
+    async listCertifiedParticipants(signingRequestId) {
+      // ONE query, because every fact must belong to the same recipient of the
+      // same request. Correlating separate reads in application code is how a
+      // cross-recipient fact reaches a certificate (§144, §210-§213).
+      //
+      // The submission join is INNER: only recipients who actually signed are
+      // certified (§49). The consent and progress joins are LEFT, because both
+      // are genuinely optional and an inner join would silently drop every
+      // signer who has no recorded consent - producing a certificate missing
+      // participants rather than an error.
+      //
+      // Authentication comes off the SUBMISSION, not from a session lookup.
+      // That is the binding §150 asks for: the method used for the accepted
+      // submission, never the recipient's most recent authentication.
+      const rows = await trx.selectFrom("signing_request_recipients as r")
+        .innerJoin("recipient_submissions as s", join => join
+          .onRef("s.request_recipient_id", "=", "r.request_recipient_id")
+          .onRef("s.workspace_id", "=", "r.workspace_id")
+          .onRef("s.signing_request_id", "=", "r.signing_request_id"))
+        .leftJoin("signing_recipient_consents as c", join => join
+          .onRef("c.consent_id", "=", "s.consent_id")
+          .onRef("c.workspace_id", "=", "s.workspace_id")
+          .onRef("c.request_recipient_id", "=", "s.request_recipient_id"))
+        .leftJoin("signing_recipient_progress as p", join => join
+          .onRef("p.request_recipient_id", "=", "r.request_recipient_id")
+          .onRef("p.workspace_id", "=", "r.workspace_id")
+          .onRef("p.signing_request_id", "=", "r.signing_request_id"))
+        .select([
+          "r.request_recipient_id", "r.name", "r.email", "r.recipient_type",
+          "r.routing_order", "r.order_index",
+          "s.accepted_at", "s.authentication_method",
+          "c.consent_type", "c.consent_version", "c.accepted_at as consent_accepted_at",
+          "p.first_entered_at",
+        ])
+        .where("r.workspace_id", "=", scope)
+        .where("r.signing_request_id", "=", signingRequestId)
+        // Deterministic, from the request's own immutable ordering (§50).
+        // Never the database's natural order.
+        .orderBy("r.routing_order", "asc")
+        .orderBy("r.order_index", "asc")
+        .orderBy("r.request_recipient_id", "asc")
+        .execute();
+
+      return rows.map(row => ({
+        recipientId: row.request_recipient_id,
+        name: row.name,
+        email: row.email,
+        recipientType: row.recipient_type,
+        routingOrder: row.routing_order,
+        orderIndex: row.order_index,
+        signedAt: row.accepted_at.getTime(),
+        authenticationMethod: row.authentication_method,
+        firstEnteredAt: row.first_entered_at === null
+          ? null : row.first_entered_at.getTime(),
+        consentType: row.consent_type,
+        consentVersion: row.consent_version,
+        consentAcceptedAt: row.consent_accepted_at === null
+          ? null : row.consent_accepted_at.getTime(),
+      }));
+    },
   };
 }
 
