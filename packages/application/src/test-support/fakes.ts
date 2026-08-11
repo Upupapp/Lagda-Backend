@@ -49,6 +49,7 @@ import type {
   NewRecipientSubmission, NewSigningRepresentation, NewSigningFieldValue,
   RecipientSubmissionId,
 } from "../common/ports/signing-submission.js";
+import type { RenderableValue } from "../common/ports/completion.js";
 import type { WorkspaceInvitationId } from "@lagda/contracts";
 import type { NormalizedEmail } from "../auth/email-identity.js";
 import type { TransactionId, DocumentId, ContactId } from "@lagda/contracts";
@@ -1424,7 +1425,89 @@ function completionInputs(
           fieldId: String(value.fieldId),
           recipientId: row.recipientId,
         })))),
+
+    // Joins the submission's values to the request's FIELD SNAPSHOT for
+    // geometry, mirroring the real query. A fake that invented coordinates
+    // would let a test pass against geometry the database could never produce.
+    listRenderableFieldValues: signingRequestId => Promise.resolve(
+      store.submissions
+        .filter(row => row.workspaceId === scope
+          && row.signingRequestId === signingRequestId)
+        .flatMap(row => row.values.flatMap(value => {
+          const field = store.signingRequestFields.find(
+            candidate => String(candidate.fieldId) === String(value.fieldId));
+          // No snapshot row means the value references a field this request
+          // does not have. The real query drops it by inner join; dropping it
+          // here keeps the two consistent.
+          if (field === undefined) return [];
+
+          const representation = value.representationId === null
+            ? undefined
+            : row.representations.find(candidate =>
+              String(candidate.representationId) === String(value.representationId));
+
+          return [{
+            fieldId: String(value.fieldId),
+            recipientId: row.recipientId,
+            fieldType: String(field.type),
+            pageNumber: field.pageNumber,
+            x: field.x, y: field.y, width: field.width, height: field.height,
+            value: fakeRenderableValue(value, representation),
+          }];
+        }))
+        .sort((a, b) =>
+          a.pageNumber - b.pageNumber || a.fieldId.localeCompare(b.fieldId))),
   };
+}
+
+/** Mirrors `toRenderableValue` in the real repository, including its refusals. */
+function fakeRenderableValue(
+  value: NewSigningFieldValue,
+  representation: NewSigningRepresentation | undefined,
+): RenderableValue {
+  switch (value.valueKind) {
+    case "text":
+      if (value.textValue === null) throw new Error("A text field value has no text.");
+      return { kind: "text", text: value.textValue };
+    case "boolean":
+      if (value.booleanValue === null) {
+        throw new Error("A checkbox field value has no boolean.");
+      }
+      return { kind: "checkbox", checked: value.booleanValue };
+    case "instant":
+      if (value.instantValue === null) {
+        throw new Error("A date field value has no instant.");
+      }
+      return { kind: "instant", at: value.instantValue };
+    case "representation": {
+      if (representation === undefined) {
+        throw new Error("A representation value has no representation.");
+      }
+      if (representation.representationType === "TYPED_SIGNATURE_V1") {
+        if (representation.typedText === null || representation.typedStyleIndex === null) {
+          throw new Error("A typed signature has no text or no style.");
+        }
+        return {
+          kind: "typed-signature",
+          text: representation.typedText,
+          styleIndex: representation.typedStyleIndex,
+        };
+      }
+      if (
+        representation.rasterBytes === null || representation.rasterMediaType === null
+        || representation.rasterWidth === null || representation.rasterHeight === null
+      ) {
+        throw new Error("A drawn signature is missing its bytes or dimensions.");
+      }
+      return {
+        kind: "raster-signature",
+        bytes: Uint8Array.from(representation.rasterBytes),
+        mediaType: representation.rasterMediaType,
+        width: representation.rasterWidth,
+        height: representation.rasterHeight,
+      };
+    }
+  }
 }
 
 /** Sequential completion ids (BACKEND-38). */

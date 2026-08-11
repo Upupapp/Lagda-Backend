@@ -227,6 +227,68 @@ export interface CompletionInputRepository {
   listAcceptedFieldValues(
     signingRequestId: SigningRequestId,
   ): Promise<readonly AcceptedFieldValueRef[]>;
+
+  /**
+   * Every accepted field value WITH its content and geometry, for rendering.
+   *
+   * The deliberate counterpart to the method above, and separate from it for
+   * the reason that one's comment gives: eligibility must not be able to read
+   * signer content, so the capability to read it is a different method that a
+   * different caller asks for. `field-merge` is the only caller.
+   *
+   * Geometry comes from `signing_request_fields` — the request's own IMMUTABLE
+   * snapshot, never the preparation. §9: resolving the live preparation here
+   * would render onto coordinates nobody agreed to, and it would drift the
+   * moment someone edited the template.
+   *
+   * Ordered by `(pageNumber, fieldId)` so the caller receives a stable
+   * sequence, though the renderer sorts again rather than trusting it.
+   */
+  listRenderableFieldValues(
+    signingRequestId: SigningRequestId,
+  ): Promise<readonly RenderableFieldRecord[]>;
+}
+
+/**
+ * What a value renders as.
+ *
+ * Mirrors the sealing port's `MergeableFieldValue` with ONE extra case:
+ * `instant`. A `DATE_SIGNED` field stores a UTC instant rather than text, and
+ * turning an instant into characters is a presentation decision the repository
+ * must not make — it has no timezone and no format. The step decides, and
+ * records why.
+ */
+export type RenderableValue =
+  | { readonly kind: "text"; readonly text: string }
+  | { readonly kind: "checkbox"; readonly checked: boolean }
+  | { readonly kind: "instant"; readonly at: number }
+  | {
+    readonly kind: "typed-signature";
+    readonly text: string;
+    readonly styleIndex: number;
+  }
+  | {
+    readonly kind: "raster-signature";
+    /** DECODED bytes, straight from `bytea`. Never a data URL, never base64. */
+    readonly bytes: Uint8Array;
+    readonly mediaType: string;
+    readonly width: number;
+    readonly height: number;
+  };
+
+/** One accepted value, joined to the geometry the request froze. */
+export interface RenderableFieldRecord {
+  readonly fieldId: string;
+  readonly recipientId: string;
+  /** The preparation field type, for provenance. The VALUE decides rendering. */
+  readonly fieldType: string;
+  /** 1-based, matching the product. */
+  readonly pageNumber: number;
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  readonly value: RenderableValue;
 }
 
 export interface CompletionIdGenerator {

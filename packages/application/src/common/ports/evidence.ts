@@ -164,13 +164,28 @@ export interface EvidenceEventRecord extends EvidenceEventInput {
 // ── Artifacts ────────────────────────────────────────────────────────────────
 
 /**
- * Byte-distinct artifact types. Exactly three.
+ * Byte-distinct artifact types. Four.
  *
  * No `prepared`: handoff §8 merges fields AFTER signing, and §9 versions storage
  * as "original + signed final". Preparation produces field metadata, so a
  * `prepared` artifact would describe bytes that never exist.
+ *
+ * `merged-candidate` is BACKEND-39's, and it is NOT a `prepared` artifact by
+ * another name — it is the source with every ACCEPTED value rendered onto it,
+ * which exists only after signing. Named for what it is: a signed-document
+ * candidate that has not been sealed. §8 and §81 both forbid calling it final,
+ * and `sealed` already means something else.
+ *
+ * **Widened late.** Migration 026 added the value to
+ * `document_artifacts_artifact_type_check` and left this union at three, so the
+ * database admitted a kind the type system could not express. That is the same
+ * two-places-one-typechecked gap that left `step-not-implemented` out of the
+ * failure-code CHECK; see the vocabulary guard in
+ * `packages/db/src/completion-vocabulary.integration.test.ts`.
  */
-export const ARTIFACT_TYPES = ["original", "sealed", "completion-certificate"] as const;
+export const ARTIFACT_TYPES = [
+  "original", "sealed", "completion-certificate", "merged-candidate",
+] as const;
 export type ArtifactType = (typeof ARTIFACT_TYPES)[number];
 
 /**

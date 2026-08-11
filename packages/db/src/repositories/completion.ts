@@ -19,7 +19,7 @@ import type {
   ScopedCompletionRepository, CompletionReconciliationRepository,
   CompletionRunRecord, CompletionStepRecord, CompletionRecord,
   CompletionRunId, CompletionStepId, CompletionInputRepository,
-  SigningRequestId, ArtifactId,
+  SigningRequestId, ArtifactId, RenderableValue,
 } from "@lagda/application";
 import type { Database } from "../schema/index.js";
 import { PersistenceMappingError } from "../mapping/index.js";
@@ -325,7 +325,141 @@ export function createCompletionInputRepository(
         recipientId: row.request_recipient_id,
       }));
     },
+
+    async listRenderableFieldValues(signingRequestId) {
+      // The one query in this repository that DOES select content, because
+      // rendering is the one operation that needs it.
+      //
+      // Geometry joins from `signing_request_fields` - the request's IMMUTABLE
+      // snapshot. Joining `preparation_fields` instead would render onto
+      // coordinates nobody agreed to and would drift the moment a template was
+      // edited (§9).
+      //
+      // The representation join is LEFT: a text or checkbox value has no
+      // representation, and an inner join would silently drop every one of
+      // them. That exact mistake hid 40 of 95 rows in another LAGDA service, so
+      // it is called out rather than assumed obvious.
+      const rows = await trx.selectFrom("signing_field_values as v")
+        .innerJoin("signing_request_fields as f", join => join
+          .onRef("f.request_field_id", "=", "v.request_field_id")
+          .onRef("f.workspace_id", "=", "v.workspace_id")
+          .onRef("f.signing_request_id", "=", "v.signing_request_id"))
+        .leftJoin("signing_representations as r", join => join
+          .onRef("r.representation_id", "=", "v.representation_id")
+          .onRef("r.workspace_id", "=", "v.workspace_id"))
+        .select([
+          "v.request_field_id", "v.request_recipient_id", "v.value_kind",
+          "v.text_value", "v.boolean_value", "v.instant_value",
+          "f.field_type", "f.page_number", "f.x", "f.y", "f.width", "f.height",
+          "r.representation_type", "r.typed_text", "r.typed_style_index",
+          "r.raster_bytes", "r.raster_media_type", "r.raster_width", "r.raster_height",
+        ])
+        .where("v.workspace_id", "=", scope)
+        .where("v.signing_request_id", "=", signingRequestId)
+        .orderBy("f.page_number", "asc")
+        .orderBy("v.request_field_id", "asc")
+        .execute();
+
+      return rows.map(row => ({
+        fieldId: row.request_field_id,
+        recipientId: row.request_recipient_id,
+        fieldType: row.field_type,
+        pageNumber: row.page_number,
+        x: row.x, y: row.y, width: row.width, height: row.height,
+        value: toRenderableValue(row),
+      }));
+    },
   };
+}
+
+/** Row shape the projection below reads. Declared so the mapping is checkable. */
+interface RenderableRow {
+  readonly value_kind: string;
+  readonly text_value: string | null;
+  readonly boolean_value: boolean | null;
+  readonly instant_value: Date | null;
+  readonly representation_type: string | null;
+  readonly typed_text: string | null;
+  readonly typed_style_index: number | null;
+  readonly raster_bytes: Buffer | null;
+  readonly raster_media_type: string | null;
+  readonly raster_width: number | null;
+  readonly raster_height: number | null;
+}
+
+/**
+ * One row to one renderable value.
+ *
+ * THROWS rather than returning a default. A value whose columns do not match
+ * its own `value_kind` is corruption, and the honest outcomes are "render the
+ * signer's value" or "fail" — never "render a blank because the shape was
+ * unexpected", which produces a finished document with a missing field.
+ *
+ * The database already forbids most of this: `signing_representations_shape`
+ * asserts exactly one representation shape is populated for the type. This is
+ * the reading half of that constraint, and it exists because a CHECK protects
+ * what is WRITTEN while this protects what is INTERPRETED.
+ */
+function toRenderableValue(row: RenderableRow): RenderableValue {
+  switch (row.value_kind) {
+    case "text":
+      if (row.text_value === null) {
+        throw new Error("A text field value has no text.");
+      }
+      return { kind: "text", text: row.text_value };
+
+    case "boolean":
+      if (row.boolean_value === null) {
+        throw new Error("A checkbox field value has no boolean.");
+      }
+      return { kind: "checkbox", checked: row.boolean_value };
+
+    case "instant": {
+      if (row.instant_value === null) {
+        throw new Error("A date field value has no instant.");
+      }
+      // `timestamptz` arrives as a Date here, unlike the ISO strings some other
+      // LAGDA services produce through global pg type parsers.
+      return { kind: "instant", at: row.instant_value.getTime() };
+    }
+
+    case "representation": {
+      if (row.representation_type === "TYPED_SIGNATURE_V1") {
+        if (row.typed_text === null || row.typed_style_index === null) {
+          throw new Error("A typed signature has no text or no style.");
+        }
+        return {
+          kind: "typed-signature",
+          text: row.typed_text,
+          styleIndex: row.typed_style_index,
+        };
+      }
+      if (row.representation_type === "RASTER_SIGNATURE_V1") {
+        if (
+          row.raster_bytes === null || row.raster_media_type === null ||
+          row.raster_width === null || row.raster_height === null
+        ) {
+          throw new Error("A drawn signature is missing its bytes or dimensions.");
+        }
+        return {
+          kind: "raster-signature",
+          // A copy, so the value does not alias a pooled driver buffer.
+          bytes: Uint8Array.from(row.raster_bytes),
+          mediaType: row.raster_media_type,
+          width: row.raster_width,
+          height: row.raster_height,
+        };
+      }
+      // Includes the null case: a `representation` value whose representation
+      // row is gone. The LEFT join makes that reachable, so it is handled.
+      throw new Error(
+        `Unsupported representation type: ${String(row.representation_type)}.`,
+      );
+    }
+
+    default:
+      throw new Error(`Unsupported value kind: ${row.value_kind}.`);
+  }
 }
 
 /** Unused here; re-exported so the brand has one import site in this package. */
