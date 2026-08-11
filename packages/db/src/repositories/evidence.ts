@@ -341,6 +341,26 @@ export function createPublicVerificationLookup(
             "document_seals.seal_scheme",
             "document_seals.seal_version",
           ])
+          // §21, §23, §121: a verification record is not sufficient on its own.
+          //
+          // The record and the completion are written in the SAME transaction
+          // by BACKEND-41, so today they cannot disagree — but "cannot
+          // disagree because of how the writer happens to work" is not a
+          // guarantee a PUBLIC endpoint should rest on. These joins make the
+          // requirement structural: no successful completion row and no
+          // `completed` request means no public verification, whatever the
+          // verification table says.
+          .innerJoin("signing_request_completions", join => join
+            .onRef("signing_request_completions.signing_request_id", "=",
+              "verification_records.signing_request_id")
+            .onRef("signing_request_completions.workspace_id", "=",
+              "verification_records.workspace_id"))
+          .innerJoin("signing_requests", join => join
+            .onRef("signing_requests.signing_request_id", "=",
+              "verification_records.signing_request_id")
+            .onRef("signing_requests.workspace_id", "=",
+              "verification_records.workspace_id"))
+          .where("signing_requests.state", "=", "completed")
           .where("verification_records.verification_id", "=", verificationId)
           .executeTakeFirst();
 
