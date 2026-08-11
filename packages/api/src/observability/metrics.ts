@@ -64,6 +64,12 @@ export const METRIC_NAMES = [
   // series per authorized request is noise, and the interesting signal is a
   // sustained spike in refusals (§183, §186).
   "authorization_denials_total",
+
+  // Public document verification (BACKEND-42). Bounded labels ONLY: the
+  // verification reference and the document digest are both high-cardinality
+  // and would turn a counter into a per-document index (§112, §253).
+  "public_verification_requests_total",
+  "public_verification_file_checks_total",
 ] as const;
 export type MetricName = (typeof METRIC_NAMES)[number];
 
@@ -196,6 +202,8 @@ export const METRIC_LABELS = {
   // `userId` or `membershipId`: all unbounded, and one series per tenant is how
   // a metrics backend falls over (§187, §249).
   authorization_denials_total: ["capability", "processRole"],
+  public_verification_requests_total: ["result", "mode"],
+  public_verification_file_checks_total: ["result", "mode"],
 } as const satisfies Record<MetricName, readonly string[]>;
 
 export type LabelsFor<N extends MetricName> = Partial<

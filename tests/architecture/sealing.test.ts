@@ -286,6 +286,30 @@ describe("hashing is confined to the sealing adapter", () => {
     //                              what stops an invitation token opening a
     //                              signing link, which would let a workspace
     //                              invitee act as a counterparty.
+    //   api/verification/verification-file — PUBLIC VERIFICATION UPLOAD
+    //                              digests (BACKEND-42). A TWELFTH domain, and
+    //                              the only one that hashes DOCUMENT content
+    //                              outside `@lagda/sealing` — so it is the one
+    //                              entry that needed an argument rather than a
+    //                              label.
+    //
+    //                              It hashes a stranger's uploaded file to
+    //                              compare against `signed_document_hash`, and
+    //                              that comparison is worthless if the two
+    //                              disagree about encoding. It does NOT live in
+    //                              the sealing package because it hashes an
+    //                              HTTP stream that is never a LAGDA artifact:
+    //                              putting it there would give the sealer a
+    //                              reason to know about request bodies, and
+    //                              would put a general-purpose hash one export
+    //                              away from every caller — the thing INV-080
+    //                              exists to prevent.
+    //
+    //                              Both are pinned to the SAME published
+    //                              SHA-256 vectors rather than to each other,
+    //                              so drift in either is caught by its own
+    //                              suite instead of by a comparison that could
+    //                              be wrong in both directions at once.
     //   api/security/recipient-session-token — RECIPIENT SIGNING SESSION and
     //                              RECIPIENT CSRF digests (BACKEND-34). A tenth
     //                              and an eleventh, in ONE file because they are
@@ -311,6 +335,7 @@ describe("hashing is confined to the sealing adapter", () => {
       "packages/api/src/security/signature-image.ts",
       "packages/api/src/security/signing-access-token.ts",
       "packages/api/src/security/verification-token.ts",
+      "packages/api/src/verification/verification-file.ts",
       "packages/sealing/src/internal/digest.ts",
     ]);
   });

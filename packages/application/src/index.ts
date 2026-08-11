@@ -43,3 +43,4 @@ export * from "./signing-ceremony/signing-ceremony.js";
 export * from "./signing-submission/signing-submission.js";
 export * from "./signing-workflow/signing-workflow.js";
 export * from "./completion/completion.js";
+export * from "./verification/public-verification.js";
