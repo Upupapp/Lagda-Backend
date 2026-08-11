@@ -92,6 +92,13 @@ export type CompletionStepRunner = (input: {
 export interface CompletionStepRunners {
   readonly fieldMerge?: CompletionStepRunner;
   readonly certificate?: CompletionStepRunner;
+  /**
+   * BACKEND-41. Unlike the others, this one TRANSITIONS THE REQUEST — it seals,
+   * persists, and marks the request completed inside its own finalization
+   * transaction. The orchestrator does not perform the transition and has no
+   * method that could.
+   */
+  readonly finalSeal?: CompletionStepRunner;
 }
 
 export interface CompletionDependencies {
@@ -383,8 +390,12 @@ function runnerFor(
   switch (step) {
     case "field-merge": return deps.steps?.fieldMerge;
     case "certificate": return deps.steps?.certificate;
-    // BACKEND-41's. Until then the run parks with `step-not-implemented`.
-    case "final-seal":
+    case "final-seal": return deps.steps?.finalSeal;
+    // `finalize` has no separate runner: `final-seal`'s own transaction
+    // performs the finalization, because the request transition and the records
+    // that justify it must commit together or not at all. A second step would
+    // be a window in which a sealed document exists and the request does not
+    // say so.
     case "finalize":
     case null:
       return undefined;

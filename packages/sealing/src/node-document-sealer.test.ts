@@ -8,9 +8,7 @@ import { describe, it, expect } from "vitest";
 import { createHash } from "node:crypto";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import type { SealRequest } from "@lagda/application";
-import type {
-  WorkspaceId, TransactionId, DocumentId, VerificationId,
-} from "@lagda/contracts";
+import type { WorkspaceId, TransactionId, DocumentId } from "@lagda/contracts";
 import { NodeDocumentSealer } from "./node-document-sealer.js";
 import {
   InvalidPdfError, InvalidSealInputError, InvalidFieldPlacementError,
@@ -48,7 +46,6 @@ async function makeRequest(overrides: Partial<SealRequest> = {}): Promise<SealRe
     mergedDocument: await makePdf(),
     completionCertificate: await makeCertificatePdf(),
     completionRunId: "crn_1",
-    verificationId: "LAGDA-WS1-20260808-7F3A2C" as VerificationId,
     sealedAt: "2026-08-08T04:15:01Z",
     ...overrides,
   };
@@ -102,7 +99,7 @@ describe("toPdfRect", () => {
 describe("NodeDocumentSealer.seal", () => {
   const sealer = new NodeDocumentSealer();
 
-  it("hashes the prepared document exactly as received", async () => {
+  it("hashes the merged document exactly as received", async () => {
     const request = await makeRequest();
     const result = await sealer.seal(request);
 
@@ -118,7 +115,7 @@ describe("NodeDocumentSealer.seal", () => {
     expect(result.signedDocumentHash).toBe(actual);
   });
 
-  it("produces a sealed document that differs from the prepared one", async () => {
+  it("produces a sealed document that differs from the merged one", async () => {
     const request = await makeRequest();
     const result = await sealer.seal(request);
     expect(result.signedDocumentHash).not.toBe(result.mergedDocumentHash);
@@ -146,6 +143,18 @@ describe("NodeDocumentSealer.seal", () => {
     const result = await sealer.seal(await makeRequest());
     const reopened = await PDFDocument.load(result.sealedDocument);
     expect(reopened.getPageCount()).toBeGreaterThan(0);
+  });
+
+  it("returns the certificate's digest so the caller can verify it", async () => {
+    // BACKEND-41 §15. The caller compares this against the certificate
+    // artifact's recorded digest, which is how it learns storage returned the
+    // exact accepted bytes. It is returned rather than exposing a general hash
+    // function, because `createHash` is confined to this package.
+    const request = await makeRequest();
+    const result = await sealer.seal(request);
+    const expected = createHash("sha256")
+      .update(request.completionCertificate).digest("hex");
+    expect(result.completionCertificateHash).toBe(expected);
   });
 
   it("returns NO certificate — OD-167", async () => {
@@ -209,11 +218,6 @@ describe("NodeDocumentSealer.seal", () => {
     }))).rejects.toBeInstanceOf(InvalidPdfError);
   });
 
-  it("echoes the verification ID rather than generating one", async () => {
-    const request = await makeRequest();
-    const result = await sealer.seal(request);
-    expect(result.verificationId).toBe(request.verificationId);
-  });
 
   it("records seal metadata exactly", async () => {
     const result = await sealer.seal(await makeRequest());

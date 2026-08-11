@@ -46,7 +46,7 @@ function looksLikePdf(bytes: Uint8Array): boolean {
 
 export class NodeDocumentSealer implements DocumentSealer {
   async seal(request: SealRequest): Promise<SealResult> {
-    const { mergedDocument, completionCertificate, verificationId, sealedAt } = request;
+    const { mergedDocument, completionCertificate, sealedAt } = request;
 
     if (mergedDocument.length === 0) {
       throw new InvalidSealInputError("The merged document is empty.");
@@ -66,6 +66,9 @@ export class NodeDocumentSealer implements DocumentSealer {
     // identify. One ambiguous `hash` is how a verification page ends up
     // comparing against the wrong file.
     const mergedDocumentHash = sha256(mergedDocument);
+    // Hashed here for the same reason, and returned so the caller can check it
+    // against the certificate artifact's recorded digest.
+    const completionCertificateHash = sha256(completionCertificate);
 
     // §96, in order: load → compose → serialize → hash.
     //
@@ -104,10 +107,10 @@ export class NodeDocumentSealer implements DocumentSealer {
     return {
       sealedDocument,
       mergedDocumentHash,
+      completionCertificateHash,
       // Computed from the exact bytes returned above — not from an intermediate
       // buffer, and not before serialization.
       signedDocumentHash: sha256(sealedDocument),
-      verificationId,
       seal: SEAL_METADATA,
     };
   }
