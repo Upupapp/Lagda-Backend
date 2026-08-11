@@ -210,6 +210,27 @@ export interface ScopedSigningWorkflowRepository {
     readonly completionReadyAt: number;
   }): Promise<boolean>;
 
+  /**
+   * `completion-ready -> completed`, conditionally, stamping `completedAt`.
+   *
+   * The condition is IN the statement — `where state = 'completion-ready'` —
+   * exactly like `markCompletionReady`. Two workers finalizing the same run
+   * both call this and exactly one matches a row, so there is one completion
+   * without an application-level check that cannot see the other transaction.
+   *
+   * **The ONE legal path into `completed`** (§146). There is no generic state
+   * setter, and this method takes the timestamp rather than reading a clock so
+   * the caller's finalization transaction owns it.
+   *
+   * Returns false when the request was not `completion-ready` — already
+   * completed, terminated, or another worker got there first. False is not an
+   * error; the caller reconciles.
+   */
+  markCompleted(input: {
+    readonly signingRequestId: SigningRequestId;
+    readonly completedAt: number;
+  }): Promise<boolean>;
+
   /** `sent | partially-completed -> declined`, conditionally. */
   markDeclined(input: {
     readonly signingRequestId: SigningRequestId;

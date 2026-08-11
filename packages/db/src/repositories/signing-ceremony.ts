@@ -56,6 +56,8 @@ export function createRecipientCeremonyRepository(
         sourcePreparationId: row.source_preparation_id as PreparationId,
         sourcePreparationRevision: row.source_preparation_revision,
         state: row.state as SigningRequestState,
+        completedAt:
+          row.completed_at === null ? null : row.completed_at.getTime(),
         completionReadyAt:
           row.completion_ready_at === null ? null : row.completion_ready_at.getTime(),
         terminatedAt: row.terminated_at === null ? null : row.terminated_at.getTime(),

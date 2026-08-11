@@ -57,6 +57,7 @@ function toRequest(row: RequestRow): SigningRequestRecord {
     sourcePreparationRevision: row.source_preparation_revision,
     state: oneOf<SigningRequestState>(
       SIGNING_REQUEST_STATES, "signing_requests", "state", row.state),
+    completedAt: row.completed_at === null ? null : row.completed_at.getTime(),
     completionReadyAt:
       row.completion_ready_at === null ? null : row.completion_ready_at.getTime(),
     terminatedAt: row.terminated_at === null ? null : row.terminated_at.getTime(),

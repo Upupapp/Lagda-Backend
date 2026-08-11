@@ -235,6 +235,52 @@ export function createScopedCompletionRepository(
       return Number(result.numInsertedOrUpdatedRows ?? 0n) === 1;
     },
 
+    async recordCompletion(input) {
+      // `on conflict do nothing` against UNIQUE (signing_request_id). A retry
+      // that lost its response finds the row already there and converges (§109)
+      // rather than violating — and a SECOND completion is impossible by
+      // constraint, not by an application check.
+      try {
+        const result = await trx.insertInto("signing_request_completions")
+          .values({
+            workspace_id: scope,
+            signing_request_id: input.signingRequestId,
+            completion_run_id: input.completionRunId,
+            merged_artifact_id: input.mergedArtifactId,
+            certificate_artifact_id: input.certificateArtifactId,
+            final_artifact_id: input.finalArtifactId,
+            completed_at: new Date(input.completedAt),
+            seal_scheme: input.sealScheme,
+            seal_version: input.sealVersion,
+            digest_algorithm: input.digestAlgorithm,
+            pipeline_version: input.pipelineVersion,
+            created_at: new Date(input.completedAt),
+          })
+          .onConflict(oc => oc.column("signing_request_id").doNothing())
+          .executeTakeFirst();
+        return Number(result.numInsertedOrUpdatedRows ?? 0n) === 1;
+      } catch (error) {
+        throw translatePersistenceError(error);
+      }
+    },
+
+    async markRunSucceeded(input) {
+      const result = await trx.updateTable("signing_request_completion_runs")
+        .set({
+          state: "succeeded",
+          succeeded_at: new Date(input.succeededAt),
+          failure_step: null,
+          failure_code: null,
+        })
+        .where("workspace_id", "=", scope)
+        .where("completion_run_id", "=", input.runId)
+        // Only an attempt in flight may succeed. A run cannot be talked into
+        // success from `waiting-retry` without being claimed first.
+        .where("state", "=", "processing")
+        .executeTakeFirst();
+      return Number(result.numUpdatedRows) === 1;
+    },
+
     async findCompletion(signingRequestId): Promise<CompletionRecord | null> {
       const row = await trx.selectFrom("signing_request_completions")
         .selectAll()

@@ -99,6 +99,7 @@ suite("listCertifiedParticipants (real PostgreSQL)", () => {
           sourcePreparationId: "prep_cp" as PreparationId,
           sourcePreparationRevision: 1, state: "draft",
           completionReadyAt: null, terminatedAt: null,
+          completedAt: null,
           terminationReason: null, cancellationNote: null,
           documentTitle: "Lease", createdByUserId: USER,
           createdAt: AT, updatedAt: AT,

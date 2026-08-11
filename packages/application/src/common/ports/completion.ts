@@ -171,6 +171,37 @@ export interface ScopedCompletionRepository {
   findCompletion(
     signingRequestId: SigningRequestId,
   ): Promise<CompletionRecord | null>;
+
+  /**
+   * Writes the immutable fact that a request completed.
+   *
+   * Written ONCE. `UNIQUE (signing_request_id)` makes a second completion a
+   * constraint violation rather than an application check, and the runtime role
+   * holds no UPDATE or DELETE grant on the table — so a completion cannot be
+   * repointed at a different final artifact after the fact.
+   *
+   * Returns false when one already exists. That is a retry discovering the
+   * previous attempt's work (§109), not an error: the caller reconciles against
+   * it rather than creating a competing record.
+   */
+  recordCompletion(input: {
+    readonly signingRequestId: SigningRequestId;
+    readonly completionRunId: CompletionRunId;
+    readonly mergedArtifactId: ArtifactId;
+    readonly certificateArtifactId: ArtifactId;
+    readonly finalArtifactId: ArtifactId;
+    readonly completedAt: number;
+    readonly sealScheme: string;
+    readonly sealVersion: number;
+    readonly digestAlgorithm: string;
+    readonly pipelineVersion: number;
+  }): Promise<boolean>;
+
+  /** `processing -> succeeded`, conditionally. The run's terminal success. */
+  markRunSucceeded(input: {
+    readonly runId: CompletionRunId;
+    readonly succeededAt: number;
+  }): Promise<boolean>;
 }
 
 /**

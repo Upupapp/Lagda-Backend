@@ -126,6 +126,7 @@ suite("signing workflow concurrency (real PostgreSQL, runtime role)", () => {
           sourcePreparationId: "prep_st" as PreparationId,
           sourcePreparationRevision: 1, state: "draft",
           completionReadyAt: null, terminatedAt: null,
+          completedAt: null,
           terminationReason: null, cancellationNote: null,
           documentTitle: "Lease", createdByUserId: USER,
           createdAt: AT, updatedAt: AT,

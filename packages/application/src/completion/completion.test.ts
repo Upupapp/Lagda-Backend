@@ -43,6 +43,7 @@ function seed(h: Harness, state = "completion-ready"): void {
     sourcePreparationId: "prep_1" as PreparationId, sourcePreparationRevision: 1,
     state: state as never,
     completionReadyAt: state === "completion-ready" ? AT : null,
+    completedAt: null,
     terminatedAt: null, terminationReason: null, cancellationNote: null,
     documentTitle: "Office Lease", createdByUserId: "usr_1" as UserId,
     createdAt: AT, updatedAt: AT,

@@ -112,6 +112,7 @@ function seed(h: Harness): void {
     sourceArtifactId: SOURCE_ART,
     sourcePreparationId: "prep_1" as PreparationId, sourcePreparationRevision: 1,
     state: "completion-ready", completionReadyAt: AT,
+    completedAt: null,
     terminatedAt: null, terminationReason: null, cancellationNote: null,
     documentTitle: "Office Lease", createdByUserId: "usr_1" as UserId,
     createdAt: AT, updatedAt: AT,

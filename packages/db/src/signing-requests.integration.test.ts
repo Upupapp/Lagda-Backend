@@ -142,6 +142,7 @@ suite("signing requests (RLS, runtime role)", () => {
         sourcePreparationRevision: 2,
         state: "draft",
         completionReadyAt: null, terminatedAt: null,
+        completedAt: null,
         terminationReason: null, cancellationNote: null,
         documentTitle: "Office Lease",
         createdByUserId: USER,

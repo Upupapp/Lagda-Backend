@@ -139,6 +139,7 @@ function seed(
     sourcePreparationRevision: 2,
     state: over.state ?? "sent",
     completionReadyAt: null, terminatedAt: null,
+    completedAt: null,
     terminationReason: null, cancellationNote: null,
     documentTitle: "Office Lease",
     createdByUserId: "usr_owner" as UserId,

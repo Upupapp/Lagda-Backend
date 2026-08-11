@@ -114,6 +114,14 @@ export interface SigningRequestRecord {
    * not `completedAt` — the signed document does not exist yet.
    */
   readonly completionReadyAt: number | null;
+  /**
+   * BACKEND-41's finalization time. Non-null exactly when `state` is
+   * `completed`, asserted by a database CHECK in both directions.
+   *
+   * NOT any recipient's signing time — those live on their submissions and are
+   * always earlier.
+   */
+  readonly completedAt: number | null;
   /** When it ended without completing. */
   readonly terminatedAt: number | null;
   /** `declined` or `cancelled`. Always equal to `state` when set. */

@@ -49,7 +49,9 @@ import type {
   NewRecipientSubmission, NewSigningRepresentation, NewSigningFieldValue,
   RecipientSubmissionId,
 } from "../common/ports/signing-submission.js";
-import type { RenderableValue } from "../common/ports/completion.js";
+import type {
+  RenderableValue, CompletionRecord,
+} from "../common/ports/completion.js";
 import type { WorkspaceInvitationId } from "@lagda/contracts";
 import type { NormalizedEmail } from "../auth/email-identity.js";
 import type { TransactionId, DocumentId, ContactId } from "@lagda/contracts";
@@ -234,6 +236,21 @@ export interface SubmissionRow {
   readonly values: readonly NewSigningFieldValue[];
 }
 
+/** The immutable completion fact. Mirrors `signing_request_completions`. */
+export interface CompletionRow {
+  readonly workspaceId: string;
+  readonly signingRequestId: string;
+  readonly completionRunId: string;
+  readonly mergedArtifactId: string;
+  readonly certificateArtifactId: string;
+  readonly finalArtifactId: string;
+  readonly completedAt: number;
+  readonly sealScheme: string;
+  readonly sealVersion: number;
+  readonly digestAlgorithm: string;
+  readonly pipelineVersion: number;
+}
+
 /** A ceremony-entry row. Keyed like the real composite primary key. */
 export interface CeremonyProgressRow {
   readonly workspaceId: string;
@@ -336,6 +353,7 @@ interface StoreSnapshot {
   readonly workflowIntents: WorkflowIntentRow[];
   readonly completionRuns: CompletionRunRow[];
   readonly completionSteps: CompletionStepRow[];
+  readonly completions: CompletionRow[];
   readonly recipientSessions: NewRecipientSigningSession[];
   readonly ceremonyProgress: CeremonyProgressRow[];
   readonly ceremonyConsents: CeremonyConsentRow[];
@@ -375,6 +393,7 @@ export class InMemoryStore {
   workflowIntents: WorkflowIntentRow[] = [];
   completionRuns: CompletionRunRow[] = [];
   completionSteps: CompletionStepRow[] = [];
+  completions: CompletionRow[] = [];
   recipientSessions: NewRecipientSigningSession[] = [];
   ceremonyProgress: CeremonyProgressRow[] = [];
   ceremonyConsents: CeremonyConsentRow[] = [];
@@ -410,6 +429,7 @@ export class InMemoryStore {
       workflowIntents: this.workflowIntents.map(row => ({ ...row })),
       completionRuns: this.completionRuns.map(row => ({ ...row })),
       completionSteps: this.completionSteps.map(row => ({ ...row })),
+      completions: this.completions.map(row => ({ ...row })),
       recipientSessions: [...this.recipientSessions],
       ceremonyProgress: [...this.ceremonyProgress],
       ceremonyConsents: [...this.ceremonyConsents],
@@ -446,6 +466,7 @@ export class InMemoryStore {
     this.workflowIntents = snapshot.workflowIntents.map(row => ({ ...row }));
     this.completionRuns = snapshot.completionRuns.map(row => ({ ...row }));
     this.completionSteps = snapshot.completionSteps.map(row => ({ ...row }));
+    this.completions = snapshot.completions.map(row => ({ ...row }));
     this.recipientSessions = [...snapshot.recipientSessions];
     this.ceremonyProgress = [...snapshot.ceremonyProgress];
     this.ceremonyConsents = [...snapshot.ceremonyConsents];
@@ -1184,6 +1205,11 @@ function scopedSigningWorkflow(
       input.signingRequestId, FAKE_ADVANCEABLE,
       { state: "completion-ready", completionReadyAt: input.completionReadyAt }),
 
+    // The ONE legal path into `completed`, from `completion-ready` ONLY.
+    markCompleted: input => transition(
+      input.signingRequestId, ["completion-ready"],
+      { state: "completed", completedAt: input.completedAt }),
+
     markDeclined: input => transition(
       input.signingRequestId, FAKE_ADVANCEABLE,
       {
@@ -1395,7 +1421,33 @@ function scopedCompletion(
     },
 
     // No completion row can exist yet: BACKEND-41 writes the first one.
-    findCompletion: () => Promise.resolve(null),
+    findCompletion: signingRequestId => Promise.resolve(
+      (store.completions.find(row => row.workspaceId === scope
+        && row.signingRequestId === signingRequestId) ?? null) as
+        CompletionRecord | null),
+
+    recordCompletion: input => {
+      // Mirrors UNIQUE (signing_request_id): a second completion converges on
+      // the first rather than creating a competing record.
+      const existing = store.completions.find(
+        row => row.signingRequestId === input.signingRequestId);
+      if (existing !== undefined) return Promise.resolve(false);
+      store.completions.push({ workspaceId: scope, ...input });
+      return Promise.resolve(true);
+    },
+
+    markRunSucceeded: input => {
+      const run = store.completionRuns.find(
+        row => row.workspaceId === scope && row.completionRunId === input.runId);
+      if (run === undefined || run.state !== "processing") {
+        return Promise.resolve(false);
+      }
+      run.state = "succeeded";
+      run.succeededAt = input.succeededAt;
+      run.failureStep = null;
+      run.failureCode = null;
+      return Promise.resolve(true);
+    },
   };
 }
 

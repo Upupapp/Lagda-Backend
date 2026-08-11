@@ -465,6 +465,7 @@ async function buildSnapshot(
     // are stated rather than omitted: an optional field is one a future writer
     // forgets, and these four decide whether a request is finished.
     completionReadyAt: null,
+    completedAt: null,
     terminatedAt: null,
     terminationReason: null,
     cancellationNote: null,

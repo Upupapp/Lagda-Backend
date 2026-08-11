@@ -279,6 +279,28 @@ export function createScopedSigningWorkflowRepository(
       return Number(result.numUpdatedRows) === 1;
     },
 
+    async markCompleted(input) {
+      // The ONE legal path into `completed`, and the condition is IN the
+      // statement. Two workers finalizing the same run both run this and
+      // exactly one matches a row — the same mechanism `markCompletionReady`
+      // uses, and the reason there is no application-level "is it already
+      // completed?" check, which could not see the other transaction.
+      const result = await trx.updateTable("signing_requests")
+        .set({
+          state: "completed",
+          completed_at: new Date(input.completedAt),
+          updated_at: sql`now()`,
+        })
+        .where("workspace_id", "=", scope)
+        .where("signing_request_id", "=", input.signingRequestId)
+        // From `completion-ready` ONLY. Not from `sent`, not from
+        // `partially-completed`: BACKEND-37 removed that edge deliberately, and
+        // a request that skipped readiness has not had its facts revalidated.
+        .where("state", "=", "completion-ready")
+        .executeTakeFirst();
+      return Number(result.numUpdatedRows) === 1;
+    },
+
     async markDeclined(input) {
       const result = await trx.updateTable("signing_requests")
         .set({

@@ -185,6 +185,7 @@ function seed(h: Harness, fields: readonly FieldSpec[], over: {
     sourcePreparationId: "prep_1" as never, sourcePreparationRevision: 1,
     state: over.state ?? "sent", documentTitle: "Office Lease",
     completionReadyAt: null, terminatedAt: null,
+    completedAt: null,
     terminationReason: null, cancellationNote: null,
     createdByUserId: "usr_1" as UserId, createdAt: AT, updatedAt: AT,
   });

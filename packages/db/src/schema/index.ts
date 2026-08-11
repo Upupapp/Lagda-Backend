@@ -523,6 +523,14 @@ export interface SigningRequestsTable {
    * exist yet, and BACKEND-38 owns that column.
    */
   completion_ready_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
+  /**
+   * BACKEND-41. Set ONLY by the finalization transaction.
+   *
+   * A CHECK asserts this is non-null exactly when `state = 'completed'`, in
+   * both directions — a timestamp on a non-completed request is a half-written
+   * completion.
+   */
+  completed_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
   /** When it ended without completing. */
   terminated_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
   /** `declined` or `cancelled`, and it always equals `state`. */
@@ -1030,6 +1038,8 @@ export interface SigningRequestCompletionsTable {
   signing_request_id: string;
   completion_run_id: string;
   final_artifact_id: string;
+  /** BACKEND-41: the merged candidate this completion was composed from. */
+  merged_artifact_id: string;
   certificate_artifact_id: ColumnType<string | null, string | null | undefined, string | null>;
   /** Backend pipeline-success time. NOT the last recipient's accepted_at. */
   completed_at: Timestamptz;

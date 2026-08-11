@@ -238,6 +238,7 @@ function seed(h: Harness, opts: { mergeSucceeded?: boolean; mergedPresent?: bool
     sourceArtifactId: SOURCE,
     sourcePreparationId: "prep_1" as PreparationId, sourcePreparationRevision: 1,
     state: "completion-ready", completionReadyAt: AT,
+    completedAt: null,
     terminatedAt: null, terminationReason: null, cancellationNote: null,
     documentTitle: "Contract of Lease", createdByUserId: "usr_1" as UserId,
     createdAt: AT, updatedAt: AT,
