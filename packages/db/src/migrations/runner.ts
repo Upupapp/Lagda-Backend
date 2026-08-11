@@ -34,6 +34,7 @@ import * as m023 from "./023_signature_submission.js";
 import * as m024 from "./024_signing_state.js";
 import * as m025 from "./025_completion_pipeline.js";
 import * as m026 from "./026_completion_steps.js";
+import * as m027 from "./027_completion_failure_codes.js";
 
 /**
  * Migrations listed explicitly rather than read from disk.
@@ -72,6 +73,7 @@ const MIGRATIONS: Record<string, Migration> = {
   "024_signing_state": m024,
   "025_completion_pipeline": m025,
   "026_completion_steps": m026,
+  "027_completion_failure_codes": m027,
 };
 
 class ExplicitMigrationProvider implements MigrationProvider {

@@ -141,8 +141,28 @@ export const COMPLETION_FAILURE_CODES = [
   "source-artifact-missing",
   /** A field's persisted geometry cannot be rendered. */
   "invalid-geometry",
-  /** A signature representation version this build cannot interpret. */
+  /**
+   * A signature representation this build cannot render.
+   *
+   * Four causes, one code, because none of them is operationally distinct — an
+   * unknown representation version, an unsupported media type (the canvas emits
+   * PNG and §52 verifies it), bytes that do not decode, and a typed style index
+   * outside 0–3 all mean "this signature cannot be rendered, terminally".
+   */
   "unsupported-representation",
+  /**
+   * A value contains a character the embedded typeface has no glyph for.
+   *
+   * NOT folded into `unsupported-representation`: that one says the signature
+   * is unrenderable, this one says the signature is fine and the TEXT cannot be
+   * drawn. They send an operator to different places.
+   *
+   * It exists at all because an embedded font does not throw on an uncovered
+   * character the way a standard font does — it draws nothing and returns a
+   * valid PDF. Without a code for it, the only honest alternative to failing is
+   * completing a document with a blank field.
+   */
+  "unrenderable-value",
   /** A step says succeeded and its object is not there. */
   "output-missing",
   /** A run started under a pipeline version this build cannot resume. */
@@ -155,6 +175,16 @@ export const COMPLETION_FAILURE_CODES = [
   "sealer-unavailable",
   /** A step this build has no implementation for. Retryable: a later build has. */
   "step-not-implemented",
+  /**
+   * The embedded typeface could not be loaded at all.
+   *
+   * RETRYABLE, and the split from `unrenderable-value` is the decision. A
+   * missing font file is a broken INSTALLATION, not a broken document: it fails
+   * identically for every request, so classifying it terminally would
+   * permanently fail everything in flight over a fault a redeploy fixes. Same
+   * reasoning as `step-not-implemented`.
+   */
+  "typeface-unavailable",
   /** The database dependency failed transiently. */
   "database-unavailable",
   /** The worker died mid-attempt and the lease expired. */
@@ -180,11 +210,13 @@ Readonly<Record<CompletionFailureCode, CompletionFailureClass>> = Object.freeze(
   "source-artifact-missing": "terminal",
   "invalid-geometry": "terminal",
   "unsupported-representation": "terminal",
+  "unrenderable-value": "terminal",
   "output-missing": "terminal",
   "pipeline-version-incompatible": "terminal",
   "storage-unavailable": "retryable",
   "sealer-unavailable": "retryable",
   "step-not-implemented": "retryable",
+  "typeface-unavailable": "retryable",
   "database-unavailable": "retryable",
   "attempt-abandoned": "retryable",
 });
