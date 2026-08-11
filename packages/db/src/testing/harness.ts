@@ -93,6 +93,25 @@ export async function truncateAll(database: LagdaDatabase): Promise<void> {
   // delete with values still pointing at it fails outright - which is exactly
   // what the four-column assignment key is for, and exactly why it has to be
   // unwound in the reverse order it was built (BACKEND-36).
+  // COMPLETION FIRST of all (BACKEND-38). The completion record references the
+  // run, the final artifact and the request - all with RESTRICT - and the run
+  // references the request the same way. So the whole completion group has to
+  // come off before anything it points at, and the order inside it is the
+  // reverse of the order it is built in.
+  await database.db.deleteFrom("signing_request_completions").execute();
+  await database.db.deleteFrom("signing_request_completion_steps").execute();
+  await database.db.deleteFrom("signing_request_completion_runs").execute();
+  // BACKEND-37's advance intents carry no foreign key at all - they hold
+  // identifiers and nothing else - but they are removed here so a truncated
+  // fixture leaves no work behind for a reconciler to pick up.
+  await database.db.deleteFrom("signing_workflow_advance_intents").execute();
+  // ACTIVATION BEFORE SUBMISSIONS (BACKEND-37). The workflow row names the
+  // submission it took its signing timestamp from, through the four-column
+  // foreign key, with the default RESTRICT - so a submission cannot be deleted
+  // while a signed recipient still cites it. The constraint that makes
+  // "signedAt came from THIS submission" checkable is the same one that makes
+  // this ordering load-bearing.
+  await database.db.deleteFrom("signing_request_recipient_activation").execute();
   await database.db.deleteFrom("signing_field_values").execute();
   await database.db.deleteFrom("signing_representations").execute();
   await database.db.deleteFrom("recipient_submissions").execute();
@@ -105,7 +124,6 @@ export async function truncateAll(database: LagdaDatabase): Promise<void> {
   // RESTRICT, so the grant cannot go before it.
   await database.db.deleteFrom("signing_delivery_intents").execute();
   await database.db.deleteFrom("signing_access_grants").execute();
-  await database.db.deleteFrom("signing_request_recipient_activation").execute();
   await database.db.deleteFrom("signing_request_fields").execute();
   await database.db.deleteFrom("signing_request_recipients").execute();
   await database.db.deleteFrom("signing_requests").execute();
