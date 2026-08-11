@@ -49,7 +49,9 @@ import {
 import type {
   SigningAccessProvisioningDependencies,
 } from "../signing-requests/send.js";
-import type { SigningWorkflowIdGenerator } from "../common/ports/index.js";
+import type {
+  SigningWorkflowIdGenerator, CompletionIdGenerator,
+} from "../common/ports/index.js";
 
 // ── Errors ───────────────────────────────────────────────────────────────────
 
@@ -137,6 +139,8 @@ export interface SigningSubmissionDependencies {
   readonly transactions: TransactionManager;
   /** BACKEND-37. The advance intent needs an identity like anything else. */
   readonly workflowIds: SigningWorkflowIdGenerator;
+  /** BACKEND-38. The completion run the advance creates when readiness lands. */
+  readonly completionIds: CompletionIdGenerator;
   /**
    * The BACKEND-33 provisioner's slice, for the advance that follows a commit.
    *
@@ -235,6 +239,7 @@ export async function submitRecipientSigning(
         transactions: deps.transactions,
         clock: deps.clock,
         workflowIds: deps.workflowIds,
+        completionIds: deps.completionIds,
         access: deps.workflowAccess,
       });
   } catch {

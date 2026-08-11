@@ -43,6 +43,7 @@
 // exists so that cannot be the end state.
 
 import type { WorkspaceId, SigningDeclineReason } from "@lagda/contracts";
+import { COMPLETION_PIPELINE_VERSION } from "@lagda/contracts";
 import {
   planWorkflowAdvance, deriveRequestState, assessSigningEligibility,
   isRequestSignableState,
@@ -56,6 +57,7 @@ import type {
   RecipientSessionTokenFactory,
 } from "../common/ports/index.js";
 import type { AuthenticatedActor } from "../common/ports/session.js";
+import type { CompletionIdGenerator } from "../common/ports/completion.js";
 import {
   ApplicationError, ResourceNotFoundError,
 } from "../common/errors/index.js";
@@ -138,6 +140,14 @@ export interface SigningWorkflowDependencies {
   readonly transactions: TransactionManager;
   readonly clock: Clock;
   readonly workflowIds: SigningWorkflowIdGenerator;
+  /**
+   * BACKEND-38. The completion run needs an identity like anything else.
+   *
+   * A REQUIRED dependency, not an optional one. An optional trigger is a
+   * trigger that a future composition root forgets to wire, and the failure
+   * mode is a signed request that silently never produces a document.
+   */
+  readonly completionIds: CompletionIdGenerator;
   /** The BACKEND-33 provisioner's slice. The same code, not a copy. */
   readonly access: SigningAccessProvisioningDependencies;
 }
@@ -469,6 +479,27 @@ async function applyPlan(
     });
     // `moved === false` means another transaction got there first. Exactly one
     // transition, and this one converges rather than erroring (§176, §241).
+
+    // ── THE COMPLETION TRIGGER (BACKEND-38 §49-§55) ─────────────────────────
+    //
+    // In the SAME transaction as the transition, and that is the entire point.
+    // A request that becomes `completion-ready` acquires durable completion
+    // work atomically, so there is no window in which every signature is
+    // collected, the request looks finished, and nothing will ever produce a
+    // document. An event, a best-effort enqueue or "the worker will notice"
+    // would each leave exactly that window, and it fails SILENTLY.
+    //
+    // Called whether or not this transaction won the transition. It is
+    // idempotent by uniqueness, and running it on a request that is already
+    // `completion-ready` is how a request that reached readiness before this
+    // pipeline existed acquires its run.
+    await uow.completion.ensureRun({
+      completionRunId: deps.completionIds.nextCompletionRunId(),
+      signingRequestId,
+      pipelineVersion: COMPLETION_PIPELINE_VERSION,
+      createdAt: now,
+    });
+
     return {
       outcome: moved ? "completion-ready" : "no-change",
       activatedCount, provisionedCount,

@@ -23,6 +23,9 @@ import type {
   ScopedSigningWorkflowRepository, SigningWorkflowReconciliationRepository,
 } from "./signing-workflow.js";
 import type {
+  ScopedCompletionRepository, CompletionReconciliationRepository,
+} from "./completion.js";
+import type {
   SigningCredentialUnitOfWork, RecipientSessionUnitOfWork,
   RecipientSessionDigest,
 } from "./signing-sessions.js";
@@ -367,6 +370,16 @@ export interface WorkspaceUnitOfWork {
    * worse than one that did not activate at all (§53, §54, §167).
    */
   readonly signingWorkflow: ScopedSigningWorkflowRepository;
+  /**
+   * Completion pipeline state (BACKEND-38).
+   *
+   * Beside `signingWorkflow`, and the adjacency is the trigger: the transition
+   * to `completion-ready` and the CompletionRun that acts on it are written in
+   * ONE transaction, so a request cannot reach readiness without acquiring
+   * durable completion work.
+   */
+  readonly completion: ScopedCompletionRepository;
+  readonly completionReconciliation: CompletionReconciliationRepository;
 }
 
 /**
@@ -553,3 +566,4 @@ export * from "./signing-sessions.js";
 export * from "./signing-ceremony.js";
 export * from "./signing-submission.js";
 export * from "./signing-workflow.js";
+export * from "./completion.js";

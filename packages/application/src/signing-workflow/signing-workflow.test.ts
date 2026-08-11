@@ -17,6 +17,7 @@ import type {
 import {
   FixedClock, FakeTransactionManager, InMemoryStore,
   SequentialSigningWorkflowIds, SequentialSigningAccessIds,
+  SequentialCompletionIds,
 } from "../test-support/fakes.js";
 import {
   advanceSigningWorkflow, cancelSigningRequest, reconcileSigningWorkflow,
@@ -44,6 +45,7 @@ function harness(): Harness {
     deps: {
       transactions, clock,
       workflowIds: new SequentialSigningWorkflowIds(),
+      completionIds: new SequentialCompletionIds(),
       access: {
         ids: new SequentialSigningAccessIds(),
         // A recording token factory would add nothing here: what these tests
@@ -416,5 +418,72 @@ describe("sender cancellation", () => {
 
     await expect(cancel()).rejects.toThrow();
     expect(h.store.signingRequests[0]?.state).toBe("sent");
+  });
+});
+
+// ── The completion trigger (BACKEND-38, OD-158) ──────────────────────────────
+
+describe("the completion trigger", () => {
+  it("creates a CompletionRun in the SAME transaction as readiness", async () => {
+    // §49-§55. The window this closes: every signature collected, the request
+    // looking finished, and no completion work in existence. It fails silently,
+    // which is why the trigger cannot be an event or a best-effort enqueue.
+    seed(h, [{ id: "a", order: 1, state: "signed" }]);
+    intent(h, "a", "submission");
+
+    expect(h.store.completionRuns).toHaveLength(0);
+    const result = await advance(h);
+
+    expect(result.outcome).toBe("completion-ready");
+    expect(h.store.completionRuns).toHaveLength(1);
+    const run = h.store.completionRuns[0];
+    expect(run?.signingRequestId).toBe(REQUEST);
+    expect(run?.state).toBe("pending");
+    expect(run?.attemptCount).toBe(0);
+    // The version travels with the RUN, not with the running build.
+    expect(run?.pipelineVersion).toBe(1);
+  });
+
+  it("creates exactly ONE run however many times the advance runs", async () => {
+    // §138, §139, §240. The uniqueness is what makes a duplicate trigger, a
+    // duplicate job and two workers converge rather than fork.
+    seed(h, [{ id: "a", order: 1, state: "signed" }]);
+    intent(h, "a", "submission");
+
+    await advance(h);
+    await advance(h);
+    await advance(h);
+
+    expect(h.store.completionRuns).toHaveLength(1);
+  });
+
+  it("creates NO run while a signature is still outstanding", async () => {
+    seed(h, [
+      { id: "a", order: 1, state: "signed" }, { id: "b", order: 1, state: "active" },
+    ]);
+    intent(h, "a", "submission");
+
+    await advance(h);
+    expect(h.store.completionRuns).toHaveLength(0);
+  });
+
+  it("creates NO run for a declined request", async () => {
+    seed(h, [
+      { id: "a", order: 1, state: "declined" }, { id: "b", order: 1, state: "active" },
+    ]);
+    intent(h, "a", "decline");
+
+    await advance(h);
+    expect(h.store.completionRuns).toHaveLength(0);
+  });
+
+  it("leaves the request completion-ready, never completed", async () => {
+    // The distinction the whole pipeline exists for: the obligations are
+    // satisfied and the document does not exist.
+    seed(h, [{ id: "a", order: 1, state: "signed" }]);
+    intent(h, "a", "submission");
+
+    await advance(h);
+    expect(h.store.signingRequests[0]?.state).toBe("completion-ready");
   });
 });

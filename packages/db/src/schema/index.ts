@@ -970,6 +970,76 @@ export interface ContactsTable {
   archived_at: ColumnType<Date | null, Date | null, Date | null>;
 }
 
+/**
+ * One logical completion operation for one signing request (BACKEND-38).
+ *
+ * OPERATIONAL, and separate from `signing_request_completions` on purpose: a
+ * run is processing state an operator may one day prune, and the completion
+ * record is a legal fact that must outlive it.
+ */
+export interface SigningRequestCompletionRunsTable {
+  completion_run_id: string;
+  workspace_id: string;
+  signing_request_id: string;
+  /** pending | processing | waiting-retry | succeeded | failed-terminal. */
+  state: string;
+  /** The ORCHESTRATION's semantic version, carried by the run rather than
+   * inferred from the running build - which is exactly what changed. */
+  pipeline_version: number;
+  attempt_count: ColumnType<number, number | undefined, number>;
+  created_at: Timestamptz;
+  started_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
+  last_attempt_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
+  succeeded_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
+  /** BOUNDED. Never an exception message - a CHECK enforces the vocabulary. */
+  failure_step: ColumnType<string | null, string | null | undefined, string | null>;
+  failure_code: ColumnType<string | null, string | null | undefined, string | null>;
+}
+
+/**
+ * The step ledger. TYPED and CLOSED - three rows at most, one fixed order.
+ *
+ * `UNIQUE (completion_run_id, step)` is what makes a retry RESUME: a second
+ * accepted output violates rather than overwrites, which matters because a
+ * certificate carrying a backend timestamp can legitimately differ per attempt.
+ */
+export interface SigningRequestCompletionStepsTable {
+  completion_step_id: string;
+  workspace_id: string;
+  completion_run_id: string;
+  /** seal | persist | finalize. */
+  step: string;
+  state: string;
+  /** An artifact id or nothing. NEVER bytes. */
+  output_artifact_id: ColumnType<string | null, string | null | undefined, string | null>;
+  attempt_count: ColumnType<number, number | undefined, number>;
+  created_at: Timestamptz;
+  succeeded_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
+  failure_code: ColumnType<string | null, string | null | undefined, string | null>;
+}
+
+/**
+ * The immutable fact that a request completed.
+ *
+ * INSERT and SELECT only - the runtime role holds no UPDATE grant, so "a
+ * completed request's final artifact cannot be repointed" is a privilege rather
+ * than a rule somebody remembers.
+ */
+export interface SigningRequestCompletionsTable {
+  workspace_id: string;
+  signing_request_id: string;
+  completion_run_id: string;
+  final_artifact_id: string;
+  certificate_artifact_id: ColumnType<string | null, string | null | undefined, string | null>;
+  /** Backend pipeline-success time. NOT the last recipient's accepted_at. */
+  completed_at: Timestamptz;
+  seal_scheme: string;
+  seal_version: number;
+  digest_algorithm: string;
+  pipeline_version: number;
+  created_at: Timestamptz;
+}
+
 export interface Database {
   workspaces: WorkspacesTable;
   workspace_memberships: WorkspaceMembershipsTable;
@@ -984,6 +1054,9 @@ export interface Database {
   signing_request_fields: SigningRequestFieldsTable;
   signing_request_recipient_activation: SigningRequestRecipientActivationTable;
   signing_workflow_advance_intents: SigningWorkflowAdvanceIntentsTable;
+  signing_request_completion_runs: SigningRequestCompletionRunsTable;
+  signing_request_completion_steps: SigningRequestCompletionStepsTable;
+  signing_request_completions: SigningRequestCompletionsTable;
   signing_recipient_progress: SigningRecipientProgressTable;
   signing_recipient_consents: SigningRecipientConsentsTable;
   recipient_submissions: RecipientSubmissionsTable;

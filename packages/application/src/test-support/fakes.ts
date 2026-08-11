@@ -17,7 +17,12 @@ import type {
 } from "../common/ports/signing-workflow.js";
 import type {
   RecipientWorkflowState, SigningDeclineReason,
+  CompletionRunState, CompletionStep, CompletionStepState, CompletionFailureCode,
 } from "@lagda/contracts";
+import type {
+  ScopedCompletionRepository, CompletionReconciliationRepository,
+  CompletionRunRecord, CompletionRunId, CompletionStepId, CompletionIdGenerator,
+} from "../common/ports/completion.js";
 import type { UserId, WorkspaceId, WorkspaceMemberId } from "@lagda/contracts";
 import type { WorkspaceRole } from "@lagda/core";
 import type { UploadRecord, ScopedUploadRepository } from "../common/ports/upload.js";
@@ -272,6 +277,35 @@ interface WorkflowIntentRow {
   lastFailureCode: string | null;
 }
 
+/** A completion run. MUTABLE in place, like the workflow row. */
+interface CompletionRunRow {
+  completionRunId: CompletionRunId;
+  workspaceId: WorkspaceId;
+  signingRequestId: SigningRequestId;
+  state: CompletionRunState;
+  pipelineVersion: number;
+  attemptCount: number;
+  createdAt: number;
+  startedAt: number | null;
+  lastAttemptAt: number | null;
+  succeededAt: number | null;
+  failureStep: CompletionStep | null;
+  failureCode: CompletionFailureCode | null;
+}
+
+/** One accepted step result. The real table admits exactly one per step. */
+interface CompletionStepRow {
+  completionStepId: CompletionStepId;
+  workspaceId: WorkspaceId;
+  completionRunId: CompletionRunId;
+  step: CompletionStep;
+  state: CompletionStepState;
+  outputArtifactId: ArtifactId | null;
+  attemptCount: number;
+  succeededAt: number | null;
+  failureCode: CompletionFailureCode | null;
+}
+
 interface StoreSnapshot {
   readonly workspaces: Map<string, WorkspaceRecord>;
   readonly memberships: WorkspaceMembershipRecord[];
@@ -289,6 +323,8 @@ interface StoreSnapshot {
   readonly deliveryIntents: NewDeliveryIntent[];
   readonly activations: ActivationRow[];
   readonly workflowIntents: WorkflowIntentRow[];
+  readonly completionRuns: CompletionRunRow[];
+  readonly completionSteps: CompletionStepRow[];
   readonly recipientSessions: NewRecipientSigningSession[];
   readonly ceremonyProgress: CeremonyProgressRow[];
   readonly ceremonyConsents: CeremonyConsentRow[];
@@ -326,6 +362,8 @@ export class InMemoryStore {
   deliveryIntents: NewDeliveryIntent[] = [];
   activations: ActivationRow[] = [];
   workflowIntents: WorkflowIntentRow[] = [];
+  completionRuns: CompletionRunRow[] = [];
+  completionSteps: CompletionStepRow[] = [];
   recipientSessions: NewRecipientSigningSession[] = [];
   ceremonyProgress: CeremonyProgressRow[] = [];
   ceremonyConsents: CeremonyConsentRow[] = [];
@@ -359,6 +397,8 @@ export class InMemoryStore {
       deliveryIntents: [...this.deliveryIntents],
       activations: this.activations.map(row => ({ ...row })),
       workflowIntents: this.workflowIntents.map(row => ({ ...row })),
+      completionRuns: this.completionRuns.map(row => ({ ...row })),
+      completionSteps: this.completionSteps.map(row => ({ ...row })),
       recipientSessions: [...this.recipientSessions],
       ceremonyProgress: [...this.ceremonyProgress],
       ceremonyConsents: [...this.ceremonyConsents],
@@ -393,6 +433,8 @@ export class InMemoryStore {
     this.deliveryIntents = [...snapshot.deliveryIntents];
     this.activations = snapshot.activations.map(row => ({ ...row }));
     this.workflowIntents = snapshot.workflowIntents.map(row => ({ ...row }));
+    this.completionRuns = snapshot.completionRuns.map(row => ({ ...row }));
+    this.completionSteps = snapshot.completionSteps.map(row => ({ ...row }));
     this.recipientSessions = [...snapshot.recipientSessions];
     this.ceremonyProgress = [...snapshot.ceremonyProgress];
     this.ceremonyConsents = [...snapshot.ceremonyConsents];
@@ -1220,6 +1262,167 @@ function workflowReconciliation(
   };
 }
 
+
+// -- Completion pipeline (BACKEND-38) ----------------------------------------
+
+/** Mirrors `isCompletionRunClaimable`. */
+const FAKE_CLAIMABLE: readonly string[] = ["pending", "waiting-retry"];
+
+function scopedCompletion(
+  store: InMemoryStore, scope: WorkspaceId,
+): ScopedCompletionRepository {
+  const mine = (): CompletionRunRow[] =>
+    store.completionRuns.filter(row => row.workspaceId === scope);
+
+  const toRecord = (row: CompletionRunRow): CompletionRunRecord => ({ ...row });
+
+  return {
+    ensureRun: input => {
+      // The one-per-request unique key, emulated. A fake that admitted the
+      // second row would pass a test the database would fail - and this is the
+      // constraint the whole trigger design rests on.
+      const existing = mine().find(
+        row => row.signingRequestId === input.signingRequestId);
+      if (existing !== undefined) return Promise.resolve(toRecord(existing));
+
+      const row: CompletionRunRow = {
+        completionRunId: input.completionRunId,
+        workspaceId: scope,
+        signingRequestId: input.signingRequestId,
+        state: "pending",
+        pipelineVersion: input.pipelineVersion,
+        attemptCount: 0,
+        createdAt: input.createdAt,
+        startedAt: null, lastAttemptAt: null, succeededAt: null,
+        failureStep: null, failureCode: null,
+      };
+      store.completionRuns.push(row);
+      return Promise.resolve(toRecord(row));
+    },
+
+    findRun: signingRequestId => Promise.resolve(
+      mine().find(row => row.signingRequestId === signingRequestId
+        ) as CompletionRunRecord | undefined ?? null),
+
+    findRunById: runId => Promise.resolve(
+      mine().find(row => row.completionRunId === runId
+        ) as CompletionRunRecord | undefined ?? null),
+
+    claimRun: input => {
+      const row = mine().find(candidate => candidate.completionRunId === input.runId);
+      // Conditional, like the real UPDATE: two workers handed the same job,
+      // exactly one claim.
+      if (row === undefined || !FAKE_CLAIMABLE.includes(row.state)) {
+        return Promise.resolve(null);
+      }
+      row.state = "processing";
+      row.attemptCount++;
+      row.lastAttemptAt = input.at;
+      row.startedAt = row.startedAt ?? input.at;
+      row.failureStep = null;
+      row.failureCode = null;
+      return Promise.resolve(toRecord(row));
+    },
+
+    recordRunFailure: input => {
+      const row = mine().find(candidate => candidate.completionRunId === input.runId);
+      if (row === undefined || row.state !== "processing") {
+        return Promise.resolve(false);
+      }
+      row.state = input.state;
+      row.failureStep = input.step;
+      row.failureCode = input.code;
+      return Promise.resolve(true);
+    },
+
+    abandonStaleRuns: input => {
+      let moved = 0;
+      for (const row of mine()) {
+        if (row.state !== "processing") continue;
+        if (row.lastAttemptAt === null || row.lastAttemptAt >= input.lastAttemptBefore) {
+          continue;
+        }
+        row.state = "waiting-retry";
+        row.failureStep = "seal";
+        row.failureCode = "attempt-abandoned";
+        moved++;
+      }
+      return Promise.resolve(moved);
+    },
+
+    listSteps: runId => Promise.resolve(
+      store.completionSteps
+        .filter(row => row.workspaceId === scope && row.completionRunId === runId)
+        .map(row => ({
+          completionStepId: row.completionStepId,
+          step: row.step,
+          state: row.state,
+          outputArtifactId: row.outputArtifactId,
+          attemptCount: row.attemptCount,
+          succeededAt: row.succeededAt,
+          failureCode: row.failureCode,
+        }))),
+
+    acceptStep: input => {
+      // One accepted result per logical step. A retry discovers the previous
+      // attempt's output rather than replacing it.
+      const clash = store.completionSteps.some(
+        row => row.completionRunId === input.runId && row.step === input.step);
+      if (clash) return Promise.resolve(false);
+      store.completionSteps.push({
+        completionStepId: input.completionStepId,
+        workspaceId: scope,
+        completionRunId: input.runId,
+        step: input.step,
+        state: "succeeded",
+        outputArtifactId: input.outputArtifactId,
+        attemptCount: 1,
+        succeededAt: input.succeededAt,
+        failureCode: null,
+      });
+      return Promise.resolve(true);
+    },
+
+    // No completion row can exist yet: BACKEND-41 writes the first one.
+    findCompletion: () => Promise.resolve(null),
+  };
+}
+
+function completionReconciliation(
+  store: InMemoryStore, scope: WorkspaceId,
+): CompletionReconciliationRepository {
+  return {
+    listReadyWithoutRun: limit => Promise.resolve(
+      store.signingRequests
+        .filter(request => request.workspaceId === scope
+          && request.state === "completion-ready"
+          && !store.completionRuns.some(
+            run => run.workspaceId === scope
+              && run.signingRequestId === request.signingRequestId))
+        .slice(0, limit)
+        .map(request => request.signingRequestId)),
+
+    listClaimableRuns: limit => Promise.resolve(
+      store.completionRuns
+        .filter(row => row.workspaceId === scope && FAKE_CLAIMABLE.includes(row.state))
+        .sort((a, b) => a.createdAt - b.createdAt)
+        .slice(0, limit)
+        .map(row => row.completionRunId)),
+  };
+}
+
+/** Sequential completion ids (BACKEND-38). */
+export class SequentialCompletionIds implements CompletionIdGenerator {
+  private run = 1;
+  private step = 1;
+  nextCompletionRunId(): CompletionRunId {
+    return `crn_${String(this.run++)}` as CompletionRunId;
+  }
+  nextCompletionStepId(): CompletionStepId {
+    return `cst_${String(this.step++)}` as CompletionStepId;
+  }
+}
+
 /**
  * The in-memory signing-request store.
  *
@@ -1551,6 +1754,9 @@ export class FakeTransactionManager implements TransactionManager {
         signingRequests: scopedSigningRequests(this.store, workspaceId),
         signingAccess: scopedSigningAccess(this.store, workspaceId),
         signingWorkflow: scopedSigningWorkflow(this.store, workspaceId),
+        completion: scopedCompletion(this.store, workspaceId),
+        completionReconciliation:
+          completionReconciliation(this.store, workspaceId),
       });
       this.committed++;
       return result;
@@ -1622,6 +1828,9 @@ export class FakeTransactionManager implements TransactionManager {
             signingRequests: scopedSigningRequests(store, workspaceId),
             signingAccess: scopedSigningAccess(store, workspaceId),
             signingWorkflow: scopedSigningWorkflow(store, workspaceId),
+            completion: scopedCompletion(store, workspaceId),
+            completionReconciliation:
+              completionReconciliation(store, workspaceId),
           });
         },
       });

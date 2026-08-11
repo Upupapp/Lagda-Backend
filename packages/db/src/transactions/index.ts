@@ -60,6 +60,9 @@ import {
   createRecipientWorkflowRepository, createScopedSigningWorkflowRepository,
   createSigningWorkflowReconciliationRepository,
 } from "../repositories/signing-workflow.js";
+import {
+  createScopedCompletionRepository, createCompletionReconciliationRepository,
+} from "../repositories/completion.js";
 
 /** The setting names RLS policies read. Must match migrations 002 and 013. */
 const WORKSPACE_SETTING = "lagda.workspace_id";
@@ -101,6 +104,9 @@ function buildUnitOfWork(
     signingRequests: createScopedSigningRequestRepository(trx, workspaceId),
     signingAccess: createScopedSigningAccessRepository(trx, workspaceId),
     signingWorkflow: createScopedSigningWorkflowRepository(trx, workspaceId),
+    completion: createScopedCompletionRepository(trx, workspaceId),
+    completionReconciliation:
+      createCompletionReconciliationRepository(trx, workspaceId),
   };
 }
 

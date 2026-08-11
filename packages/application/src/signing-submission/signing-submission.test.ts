@@ -33,6 +33,7 @@ import {
   FixedClock, SequentialRecipientSessionIds,
   FakeTransactionManager, InMemoryStore,
   SequentialSigningWorkflowIds, SequentialSigningAccessIds,
+  SequentialCompletionIds,
 } from "../test-support/fakes.js";
 
 const AT = Date.parse("2026-08-10T14:00:00.000Z");
@@ -128,6 +129,7 @@ function harness(): Harness {
     deps: {
       transactions, clock, sessionTokens: tokens,
       workflowIds: new SequentialSigningWorkflowIds(),
+      completionIds: new SequentialCompletionIds(),
       // The provisioning slice the post-commit advance needs. These tests seed
       // single-cohort requests, so nothing is ever provisioned through them -
       // they are present because the dependency is required, and a throwing
