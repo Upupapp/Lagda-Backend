@@ -7,7 +7,7 @@
 import { describe, it, expect } from "vitest";
 import { createHash } from "node:crypto";
 import { PDFDocument, StandardFonts } from "pdf-lib";
-import type { SealRequest, SealableField } from "@lagda/application";
+import type { SealRequest } from "@lagda/application";
 import type {
   WorkspaceId, TransactionId, DocumentId, VerificationId,
 } from "@lagda/contracts";
@@ -17,7 +17,7 @@ import {
   UnsupportedPdfError, SealingError,
 } from "./errors/index.js";
 import { sha256 } from "./internal/digest.js";
-import { toPdfRect } from "./internal/fields.js";
+import { toPdfRect } from "./internal/geometry.js";
 
 async function makePdf(pageCount = 2): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
@@ -29,20 +29,12 @@ async function makePdf(pageCount = 2): Promise<Uint8Array> {
   return pdf.save();
 }
 
-const FIELD: SealableField = {
-  type: "signature",
-  pageNumber: 1,
-  rect: { x: 0.1, y: 0.7, width: 0.3, height: 0.06 },
-  value: "Juan dela Cruz",
-};
-
 async function makeRequest(overrides: Partial<SealRequest> = {}): Promise<SealRequest> {
   return {
     workspaceId: "ws_1" as WorkspaceId,
     transactionId: "tx_1" as TransactionId,
     documentId: "doc_1" as DocumentId,
     preparedDocument: await makePdf(),
-    fields: [FIELD],
     evidence: {
       documentName: "Contract of Lease.pdf",
       completedAt: "2026-08-08T04:15:00Z",
@@ -185,69 +177,42 @@ describe("NodeDocumentSealer.seal", () => {
     expect(a.signedDocumentHash).toBe(b.signedDocumentHash);
   });
 
-  it("renders every supported field type", async () => {
-    const fields: SealableField[] = [
-      { type: "signature", pageNumber: 1, rect: { x: 0.1, y: 0.1, width: 0.3, height: 0.05 }, value: "Ana Reyes" },
-      { type: "initials", pageNumber: 1, rect: { x: 0.5, y: 0.1, width: 0.1, height: 0.05 }, value: "AR" },
-      { type: "text", pageNumber: 2, rect: { x: 0.1, y: 0.2, width: 0.4, height: 0.04 }, value: "Quezon City" },
-      { type: "date", pageNumber: 2, rect: { x: 0.6, y: 0.2, width: 0.25, height: 0.04 }, value: "2026-08-08" },
-      { type: "checkbox", pageNumber: 2, rect: { x: 0.1, y: 0.3, width: 0.03, height: 0.03 }, value: "true" },
-    ];
-    const result = await sealer.seal(await makeRequest({ fields }));
-    await expect(PDFDocument.load(result.sealedDocument)).resolves.toBeDefined();
+  it("does NOT render fields — OD-162", async () => {
+    // The assertion that keeps the double-render from coming back.
+    //
+    // `seal()` used to merge field values. The `field-merge` step does that now
+    // and hands this method the merged candidate, so sealing must add no marks
+    // of its own. If someone reinstates the merge, sealing an EMPTY document and
+    // sealing it again after a real merge would stop being distinguishable in
+    // the way this test measures — and every value in a completed document would
+    // be drawn twice, one over the other, which reads as a font-weight bug.
+    //
+    // Measured as a byte delta rather than by rendering a field and looking for
+    // it: `seal()` no longer accepts fields at all, so there is nothing to pass.
+    // What CAN be shown is that sealing is a function of the document alone.
+    const document = await makePdf();
+    const first = await sealer.seal(await makeRequest({ preparedDocument: document }));
+    const second = await sealer.seal(await makeRequest({ preparedDocument: document }));
+
+    expect(first.signedDocumentHash).toBe(second.signedDocumentHash);
+    // And the sealed bytes carry no font resource the sealer introduced: the
+    // only text it draws is on the certificate, which is a SEPARATE artifact.
+    expect(first.sealedDocument.length).toBeLessThan(
+      first.completionCertificate.length + document.length,
+    );
   });
 
-  it("seals a document with no fields", async () => {
-    // A recipient whose only action is receiving a copy leaves no fields. The
-    // document must still seal, and still hash.
-    const result = await sealer.seal(await makeRequest({ fields: [] }));
+  it("seals a document that carries no values at all", async () => {
+    // A recipient whose only action is receiving a copy leaves no fields, so the
+    // merged candidate is byte-identical to the source. It must still seal, and
+    // still hash.
+    const result = await sealer.seal(await makeRequest());
     expect(result.signedDocumentHash).toMatch(/^[a-f0-9]{64}$/);
   });
 });
 
 describe("NodeDocumentSealer failures", () => {
   const sealer = new NodeDocumentSealer();
-
-  it("rejects a field on a page that does not exist", async () => {
-    const fields: SealableField[] = [{ ...FIELD, pageNumber: 9 }];
-    await expect(sealer.seal(await makeRequest({ fields }))).rejects.toBeInstanceOf(
-      InvalidFieldPlacementError,
-    );
-  });
-
-  it("rejects page number zero, which would be a 0-based caller", async () => {
-    const fields: SealableField[] = [{ ...FIELD, pageNumber: 0 }];
-    await expect(sealer.seal(await makeRequest({ fields }))).rejects.toBeInstanceOf(
-      InvalidFieldPlacementError,
-    );
-  });
-
-  it("rejects a field extending past the page edge rather than clipping it", async () => {
-    const fields: SealableField[] = [
-      { ...FIELD, rect: { x: 0.9, y: 0.1, width: 0.3, height: 0.05 } },
-    ];
-    await expect(sealer.seal(await makeRequest({ fields }))).rejects.toBeInstanceOf(
-      InvalidFieldPlacementError,
-    );
-  });
-
-  it("rejects a zero-area field", async () => {
-    const fields: SealableField[] = [
-      { ...FIELD, rect: { x: 0.1, y: 0.1, width: 0, height: 0.05 } },
-    ];
-    await expect(sealer.seal(await makeRequest({ fields }))).rejects.toBeInstanceOf(
-      InvalidFieldPlacementError,
-    );
-  });
-
-  it("rejects non-finite geometry", async () => {
-    const fields: SealableField[] = [
-      { ...FIELD, rect: { x: Number.NaN, y: 0.1, width: 0.1, height: 0.05 } },
-    ];
-    await expect(sealer.seal(await makeRequest({ fields }))).rejects.toBeInstanceOf(
-      InvalidFieldPlacementError,
-    );
-  });
 
   it("rejects bytes that are not a PDF", async () => {
     const preparedDocument = new TextEncoder().encode("this is not a pdf");

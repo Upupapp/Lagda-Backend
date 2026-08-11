@@ -13,13 +13,11 @@ import type {
   SealMetadata,
 } from "@lagda/application";
 import { sha256 } from "./internal/digest.js";
-import { renderFields } from "./internal/fields.js";
 import { renderCertificate } from "./internal/certificate.js";
 import {
   InvalidPdfError,
   InvalidSealInputError,
   PdfProcessingError,
-  SealingError,
   UnsupportedPdfError,
 } from "./errors/index.js";
 
@@ -49,7 +47,7 @@ function looksLikePdf(bytes: Uint8Array): boolean {
 
 export class NodeDocumentSealer implements DocumentSealer {
   async seal(request: SealRequest): Promise<SealResult> {
-    const { preparedDocument, fields, evidence, verificationId, sealedAt } = request;
+    const { preparedDocument, evidence, verificationId, sealedAt } = request;
 
     if (preparedDocument.length === 0) {
       throw new InvalidSealInputError("The prepared document is empty.");
@@ -64,11 +62,14 @@ export class NodeDocumentSealer implements DocumentSealer {
     // comparing against the wrong file.
     const preparedDocumentHash = sha256(preparedDocument);
 
-    // §96, in order: load → merge fields → serialize → hash. The certificate is
-    // produced separately and never appended, so the sealed document's page
-    // count matches what the signers saw.
+    // §96, in order: load → serialize → hash. The certificate is produced
+    // separately and never appended, so the sealed document's page count
+    // matches what the signers saw.
+    //
+    // NO FIELD MERGING. OD-162, closed by BACKEND-39: the `field-merge` step
+    // renders values and hands this method the merged candidate. Rendering them
+    // again here would draw every value twice, one over the other.
     const pdf = await this.load(preparedDocument);
-    await this.merge(pdf, fields);
 
     // Pin the document's modification date to the SUPPLIED `sealedAt`.
     //
@@ -149,17 +150,6 @@ export class NodeDocumentSealer implements DocumentSealer {
     }
 
     return pdf;
-  }
-
-  private async merge(pdf: PDFDocument, fields: SealRequest["fields"]): Promise<void> {
-    try {
-      await renderFields(pdf, fields);
-    } catch (cause) {
-      // Placement errors are already LAGDA-owned and specific; rewrapping them
-      // as a generic processing failure would lose which field was wrong.
-      if (cause instanceof SealingError) throw cause;
-      throw new PdfProcessingError("Failed to render completed fields.", cause);
-    }
   }
 
   private async serialize(pdf: PDFDocument): Promise<Uint8Array> {

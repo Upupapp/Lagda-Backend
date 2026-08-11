@@ -56,20 +56,23 @@ export interface NormalizedFieldRect {
 }
 
 /**
- * A completed field, ready to render.
+ * `SealableField` is GONE — OD-162, closed by BACKEND-39.
  *
- * The value is authoritative and comes from the completion pipeline. The sealer
- * renders what it is given and never invents an answer — a `date` field shows
- * the value the signer submitted, not today's server date.
+ * `seal()` used to take completed field values and render them. It no longer
+ * does: the `field-merge` step renders them and produces a `merged-candidate`
+ * artifact, and `seal()` receives that already-rendered document.
+ *
+ * Leaving the parameter in place would have been worse than removing it. Once
+ * `field-merge` renders the fields, a `seal()` that still renders them draws
+ * every value a SECOND time, one drawn over the other — and that reads as a
+ * font-weight or double-strike bug, not as an architecture bug. Nobody would
+ * look here.
+ *
+ * The renderable-type vocabulary above stays: `renderTypeFor` in
+ * `@lagda/core` collapses the product's nine preparation field types onto it,
+ * and that mapping is unaffected by which component does the drawing.
  */
-export interface SealableField {
-  readonly type: SealableFieldType;
-  /** **1-based**, matching the product. The adapter converts to pdf-lib's 0-based index. */
-  readonly pageNumber: number;
-  readonly rect: NormalizedFieldRect;
-  /** Rendered text, or the checkbox state as `"true"`/`"false"`. */
-  readonly value: string;
-}
+export type SealableFieldRemoved = never;
 
 // ── Evidence for the completion certificate ──────────────────────────────────
 
@@ -102,13 +105,20 @@ export interface SealRequest {
   readonly documentId: DocumentId;
 
   /**
-   * The prepared document. Supplied by the caller — the sealer never fetches
-   * from object storage, so a future remote signer needs no knowledge of
-   * LAGDA's storage topology.
+   * The document to seal, with every field value ALREADY RENDERED.
+   *
+   * This is the `merged-candidate` the `field-merge` step produced, not the
+   * prepared document. Supplied by the caller — the sealer never fetches from
+   * object storage, so a future remote signer needs no knowledge of LAGDA's
+   * storage topology.
+   *
+   * The name is kept because `preparedDocumentHash` in the result is a
+   * published digest: renaming the field without renaming the hash would make
+   * the pair disagree, and renaming the hash changes what a verification page
+   * compares against.
    */
   readonly preparedDocument: DocumentBytes;
 
-  readonly fields: readonly SealableField[];
   readonly evidence: CompletionEvidence;
 
   /**
