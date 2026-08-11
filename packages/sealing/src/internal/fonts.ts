@@ -37,7 +37,6 @@
 // container that ships no fonts at all — and the sealed document's SHA-256 is
 // its identity.
 
-import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 import fontkit from "@pdf-lib/fontkit";
 import type { PDFDocument, PDFFont } from "pdf-lib";
@@ -54,19 +53,33 @@ import { TypefaceUnavailableError, UnrenderableTextError } from "../errors/index
 export type FaceName = "regular" | "bold" | "italic";
 
 /**
- * Resolved through the package's own name, not by walking `node_modules`.
+ * VENDORED, in `packages/sealing/assets/fonts/`.
  *
- * A relative path from this file would break the moment the package is hoisted
- * differently, and it would break in a way that only appears once the workspace
- * layout changes.
+ * These were an npm dependency (`@expo-google-fonts/noto-sans`) first. That
+ * package ships eighteen faces to deliver the three used here — 14 MB in
+ * `node_modules` and in every deploy image — so the faces are committed
+ * instead: 1.9 MB, and the only bytes present are the ones that get embedded.
+ *
+ * **The full faces, not a subset.** Subsetting would cut ~1.4 MB and would
+ * reintroduce precisely the failure `assertRenderable` exists to catch: a
+ * subset silently loses glyphs, and a lost glyph renders as nothing rather than
+ * throwing. Trading a measured 1.4 MB for an unmeasured correctness risk is the
+ * wrong side of that bargain — see ADR-031, and note that the `latin` subset
+ * this project rejected was missing ₱ in a Philippine product.
+ *
+ * Licensed under the SIL Open Font License 1.1; `OFL.txt` sits beside them,
+ * which is what the licence requires when the fonts are redistributed.
+ *
+ * Resolved relative to THIS MODULE rather than to the process's working
+ * directory, so it does not matter where the server is started from. The path
+ * is identical from `src/internal/` and from `dist/internal/` — both are two
+ * levels below the package root.
  */
-const FACE_SPECIFIERS: Readonly<Record<FaceName, string>> = Object.freeze({
-  regular: "@expo-google-fonts/noto-sans/400Regular/NotoSans_400Regular.ttf",
-  bold: "@expo-google-fonts/noto-sans/700Bold/NotoSans_700Bold.ttf",
-  italic: "@expo-google-fonts/noto-sans/400Regular_Italic/NotoSans_400Regular_Italic.ttf",
+const FACE_FILES: Readonly<Record<FaceName, string>> = Object.freeze({
+  regular: "../../assets/fonts/NotoSans-Regular.ttf",
+  bold: "../../assets/fonts/NotoSans-Bold.ttf",
+  italic: "../../assets/fonts/NotoSans-Italic.ttf",
 });
-
-const require_ = createRequire(import.meta.url);
 
 /**
  * Face bytes, read once per process.
@@ -86,7 +99,7 @@ function faceBytes(name: FaceName): Uint8Array {
 
   let bytes: Uint8Array;
   try {
-    bytes = readFileSync(require_.resolve(FACE_SPECIFIERS[name]));
+    bytes = readFileSync(new URL(FACE_FILES[name], import.meta.url));
   } catch (cause) {
     // A missing font file is an installation fault, not a document fault. It
     // fails the same way for every document, so it must not be reported as a

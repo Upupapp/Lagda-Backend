@@ -12,14 +12,14 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "assets"
   ],
   "scripts": {
     "build": "tsc --build",
     "clean": "tsc --build --clean"
   },
   "dependencies": {
-    "@expo-google-fonts/noto-sans": "0.4.2",
     "@lagda/application": "*",
     "@lagda/contracts": "*",
     "@pdf-lib/fontkit": "1.1.1",
