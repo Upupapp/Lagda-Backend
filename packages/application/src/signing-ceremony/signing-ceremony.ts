@@ -22,7 +22,10 @@
 // It never signs anything. Entering is not viewing, viewing is not consenting,
 // consenting is not signing, and none of them advances routing.
 
-import type { WorkspaceId } from "@lagda/contracts";
+import type { WorkspaceId, TransactionId } from "@lagda/contracts";
+import type { EvidenceEventIdGenerator } from "../common/ports/index.js";
+// BACKEND-43. Factories, never hand-built event literals.
+import { ceremonyEntered, consentAccepted } from "../evidence/events.js";
 import type { PreparationFieldType } from "@lagda/contracts";
 import {
   assessCeremonyAccess, orderCeremonyFields, fieldInputPolicy,
@@ -243,6 +246,8 @@ export interface SigningCeremonyDependencies {
   readonly clock: Clock;
   readonly sessionTokens: RecipientSessionTokenFactory;
   readonly consentIds: SigningConsentIdGenerator;
+  /** BACKEND-43. Evidence ids for the two events this module now appends. */
+  readonly ids: EvidenceEventIdGenerator;
   readonly storage: ObjectStorage;
   readonly policy: CeremonyConsentPolicy;
 }
@@ -447,7 +452,32 @@ export async function enterSigningCeremony(
     // Read it back rather than assuming this call won. Under concurrency the
     // authoritative timestamp may be the other call's.
     const progress = await uow.ceremony.getProgress();
-    return { ...preliminary, firstEnteredAt: progress?.firstEnteredAt ?? now };
+    const firstEnteredAt = progress?.firstEnteredAt ?? now;
+
+    // ── Evidence (BACKEND-43 §151) ────────────────────────────────────────
+    //
+    // Stamped with the AUTHORITATIVE first-entry time, not `now` — under
+    // concurrency the winning timestamp may be another call's, and an event
+    // claiming this call's clock would disagree with the progress row.
+    //
+    // Appended unconditionally: the event is sourced by the recipient, so the
+    // partial unique index refuses every entry after the first. That is what
+    // keeps a reload from filling the timeline (§93) rather than a check here,
+    // which two concurrent entries would both pass.
+    //
+    // A duplicate is therefore EXPECTED on re-entry and must not fail the
+    // request — the recipient did nothing wrong by reloading.
+    try {
+      await uow.evidence.append(ceremonyEntered({
+        newEventId: () => deps.ids.nextEvidenceEventId(),
+        signingRequestId: uow.signingRequestId as unknown as TransactionId,
+        occurredAt: firstEnteredAt,
+      }, uow.recipientId));
+    } catch {
+      // Already recorded. The first entry is the fact and it is already there.
+    }
+
+    return { ...preliminary, firstEnteredAt };
   });
 }
 
@@ -552,8 +582,9 @@ export async function acceptSigningConsent(
     // Returns false when this version was already accepted. That is a retry,
     // not a conflict, and the unique constraint is what makes two concurrent
     // acceptances converge on one row (§137, §139).
-    await uow.ceremony.insertConsent({
-      consentId: deps.consentIds.nextSigningConsentId(),
+    const consentId = deps.consentIds.nextSigningConsentId();
+    const inserted = await uow.ceremony.insertConsent({
+      consentId,
       consentType: CEREMONY_CONSENT_TYPE,
       consentVersion: before.consent.requiredVersion,
       acceptedAt: now,
@@ -561,6 +592,25 @@ export async function acceptSigningConsent(
       authenticationMethod: context.authenticationMethod,
       createdAt: now,
     });
+
+    // ── Evidence (BACKEND-43 §152) ────────────────────────────────────────
+    //
+    // ONLY when this call actually inserted. On a retry `insertConsent` returns
+    // false and the existing row keeps its ORIGINAL consent id — appending here
+    // would mint an event sourced from an id no consent row has, which the
+    // unique index cannot deduplicate against the first. The retry would append
+    // a second consent event every time.
+    //
+    // This is the one place in the command where idempotency cannot be left to
+    // the database, because the source id itself differs between attempts.
+    if (inserted) {
+      await uow.evidence.append(consentAccepted({
+        newEventId: () => deps.ids.nextEvidenceEventId(),
+        signingRequestId: uow.signingRequestId as unknown as TransactionId,
+        occurredAt: now,
+      }, uow.recipientId, consentId,
+      CEREMONY_CONSENT_TYPE, before.consent.requiredVersion));
+    }
 
     // Rebuild: consent changes what may be seen, so the caller gets the
     // document and fields in the same response that accepted the disclosure.

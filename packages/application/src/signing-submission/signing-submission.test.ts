@@ -118,6 +118,8 @@ function harness(): Harness {
     ceremonyDeps: {
       transactions, clock, sessionTokens: tokens,
       consentIds: { nextSigningConsentId: () => next("con") as SigningConsentId },
+      // BACKEND-43. The ceremony appends evidence on entry and consent.
+      ids: { nextEvidenceEventId: () => next("ev") as never },
       storage: {
         putObject: () => Promise.reject(new Error("unused")),
         getObject: () => Promise.resolve(null),

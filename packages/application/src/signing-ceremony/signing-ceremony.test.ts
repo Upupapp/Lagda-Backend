@@ -138,6 +138,12 @@ function harness(consentVersion = CONSENT_VERSION): Harness {
           return `con_${String(consentSeq)}` as SigningConsentId;
         },
       },
+      // BACKEND-43. Ceremony entry and consent each append an evidence event
+      // in their own transaction.
+      ids: (() => {
+        let n = 0;
+        return { nextEvidenceEventId: () => `ev_${String(++n)}` as never };
+      })(),
       storage,
       policy: { consentVersion },
     },
@@ -549,7 +555,10 @@ describe("entry", () => {
     // Routing untouched: still exactly one activation, still this recipient's.
     expect(h.store.activations).toHaveLength(1);
     expect(h.store.activations[0]?.recipientId).toBe(RECIPIENT);
-    expect(h.store.evidence).toHaveLength(0);
+    // BACKEND-43 ended BACKEND-35's deliberate deferral: entry now records ONE
+    // evidence event. It is still not a signature, a consent or a completion —
+    // which is what this test is actually about.
+    expect(h.store.evidence.map(e => e.eventType)).toEqual(["document-viewed"]);
     expect(h.store.seals).toHaveLength(0);
   });
 });
@@ -665,7 +674,46 @@ describe("consent", () => {
     await acceptSigningConsent(raw, { consentVersion: CONSENT_VERSION }, h.deps);
     expect(h.store.signingRequests[0]?.state).toBe("sent");
     expect(h.store.seals).toHaveLength(0);
-    expect(h.store.evidence).toHaveLength(0);
+    // Consent records consent — never a signature. BACKEND-43 adds the event;
+    // the point of this test is that `signature-completed` is not among them.
+    expect(h.store.evidence.map(e => e.eventType))
+      .not.toContain("signature-completed");
+  });
+
+  it("does not append a SECOND consent event when the same version is retried", async () => {
+    // §246, §263. `insertConsent` returns false on a retry and the existing row
+    // keeps its ORIGINAL consent id — so an unconditional append would mint an
+    // event sourced from an id no row has, which the unique index cannot
+    // deduplicate against the first. This is the one place idempotency cannot
+    // be left to the database.
+    const h = harness();
+    seed(h);
+    const raw = await session(h);
+
+    await acceptSigningConsent(raw, { consentVersion: CONSENT_VERSION }, h.deps);
+    const afterFirst = h.store.evidence
+      .filter(e => e.eventType === "consent-accepted").length;
+    await acceptSigningConsent(raw, { consentVersion: CONSENT_VERSION }, h.deps);
+
+    expect(afterFirst).toBe(1);
+    expect(h.store.evidence.filter(e => e.eventType === "consent-accepted"))
+      .toHaveLength(1);
+  });
+
+  it("does not append a SECOND entry event when the recipient reloads", async () => {
+    // §93. The event is sourced by the recipient, so the partial unique index
+    // refuses the second — a check here would be passed by two concurrent
+    // entries. Re-entry must also not fail the request: reloading is not an
+    // error the recipient made.
+    const h = harness();
+    seed(h);
+    const raw = await session(h);
+
+    await enterSigningCeremony(raw, h.deps);
+    await enterSigningCeremony(raw, h.deps);
+
+    expect(h.store.evidence.filter(e => e.eventType === "document-viewed"))
+      .toHaveLength(1);
   });
 });
 

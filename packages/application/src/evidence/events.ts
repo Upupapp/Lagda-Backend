@@ -208,30 +208,36 @@ export function recipientAuthenticated(
 }
 
 /**
- * A recipient entered the signing ceremony (§59).
+ * A recipient entered the signing ceremony for the FIRST time (§59).
  *
  * **Not "read", not "reviewed"** (§173). Entering is what LAGDA observed;
  * whether anyone read anything is not a fact it holds.
  *
- * **No source.** A recipient may enter many times, and no single durable row
- * makes any one entry the fact — so this event is deliberately outside the
- * partial unique index. BACKEND-35's coalescing is what keeps reload traffic
- * from filling the timeline (§93), not a database constraint.
+ * ── Why this is sourced, and why first-entry only ──────────────────────────
+ *
+ * Migration 003 declined a uniqueness constraint on `document-viewed` on the
+ * grounds that a recipient may legitimately view many times. True — but LAGDA
+ * only PERSISTS the first entry (`firstEnteredAt`), so a second view has no
+ * durable record and evidence can only honestly claim what is stored. The gap
+ * analysis reached the same place from the other side: repeat views are
+ * unrecoverable, so they cannot be backfilled either.
+ *
+ * Sourcing it by the recipient therefore makes the event exactly-once per
+ * recipient and matches the fact it reports. It also settles §93 structurally:
+ * a reload cannot fill the timeline with identical entries, because the partial
+ * unique index refuses the second.
+ *
+ * `occurredAt` must be the AUTHORITATIVE `firstEnteredAt`, not the current
+ * call's clock — under concurrency the winning timestamp may be another call's.
  */
 export function ceremonyEntered(
   base: EventBase, recipientId: SigningRequestRecipientId,
   observed?: ObservedRequestContext,
 ): EvidenceEventInput {
-  return {
-    evidenceEventId: base.newEventId(),
-    signingRequestId: base.signingRequestId,
-    eventType: "document-viewed",
-    eventVersion: EVENT_VERSIONS["document-viewed"],
-    actor: { type: "recipient", actorId: recipientId },
-    occurredAt: base.occurredAt,
-    recipientId,
-    ...(observed === undefined ? {} : { observed }),
-  };
+  return build(base, "document-viewed",
+    { type: "recipient", actorId: recipientId },
+    { type: "signing-request-recipient", id: recipientId },
+    { recipientId, ...(observed === undefined ? {} : { observed }) });
 }
 
 /**

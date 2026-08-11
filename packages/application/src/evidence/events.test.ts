@@ -161,17 +161,20 @@ describe("actors are never conflated", () => {
 });
 
 describe("idempotency sources", () => {
-  it("gives every event a source except the one that may legitimately recur", () => {
-    // §305. `document-viewed` is outside the partial unique index on purpose:
-    // a recipient may enter the ceremony many times and no single durable row
-    // makes any one entry the fact.
+  it("gives EVERY event a source", () => {
+    // Including `document-viewed`. Migration 003 declined uniqueness on it
+    // because a recipient may view many times — but LAGDA only persists the
+    // FIRST entry, so that is the only view evidence can honestly claim, and
+    // sourcing it by the recipient settles §93 structurally: a reload cannot
+    // fill the timeline, because the index refuses the second.
     for (const event of all()) {
-      if (event.eventType === "document-viewed") {
-        expect(event.source).toBeUndefined();
-      } else {
-        expect(event.source).toBeDefined();
-      }
+      expect(event.source).toBeDefined();
     }
+  });
+
+  it("makes ceremony entry exactly-once per recipient", () => {
+    const event = events.ceremonyEntered(base(), REC);
+    expect(event.source).toEqual({ type: "signing-request-recipient", id: REC });
   });
 
   it("sources the SIGNED event from the submission, so a retry converges", () => {
