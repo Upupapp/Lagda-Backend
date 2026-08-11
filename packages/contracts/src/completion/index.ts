@@ -50,41 +50,43 @@ export const CompletionRunStateSchema = Type.Union(
 );
 
 /**
- * The completion steps LAGDA actually has.
+ * The completion steps.
  *
- * ── Three, not the five a generic pipeline would have ──────────────────────
+ * ── Four, and BACKEND-39 reversed the earlier three ────────────────────────
  *
- * §70 proposes `FIELD_MERGE`, `CERTIFICATE`, `FINAL_SEAL`, `FINAL_PERSIST`.
- * LAGDA cannot have the first two as durable steps, and the reason is
- * BACKEND-09's seam rather than a shortcut:
+ * Migration 025 declared `seal`, `persist`, `finalize`, because
+ * `DocumentSealer.seal()` is ONE operation that merges fields and renders the
+ * certificate internally — and splitting it would split the seam INV-002
+ * protects.
  *
- * `DocumentSealer.seal()` is ONE operation. `SEALING_ARCHITECTURE.md` §2 —
- * "Not `mergeFields`, `hashDocument`, `renderCertificate`, `appendPage`. Those
- * exist as private collaborators inside the package." One call takes the source
- * bytes and returns BOTH the sealed document and the completion certificate,
- * with both hashes. Splitting them into separately retryable steps would mean
- * splitting that seam — which §24 forbids, INV-002 exists to prevent, and
- * `REMOTE_SIGNER_MIGRATION.md` rejected by name as "the decorative-architecture
- * failure this codebase has already been bitten by once".
+ * BACKEND-39 requires `field-merge` to be a distinct durable step producing a
+ * distinct immutable artifact, AND requires that step not to invoke
+ * `DocumentSealer`. Both together are only satisfiable if merging is separable
+ * from sealing, so it was separated.
  *
- * The database agrees independently: `document_artifacts.artifact_type` has
- * admitted `original`, `sealed` and `completion-certificate` since migration
- * 003, and there is no merged-candidate type. LAGDA has never modelled an
- * intermediate merged PDF as a persisted artifact.
+ * `SEALING_ARCHITECTURE.md` §2 objected that exposing `mergeFields` would give
+ * "twenty callers a reason to reach past the boundary". That holds for twenty
+ * callers and not for one: the completion pipeline is the only caller, and
+ * these are sequential stages of an orchestration that already exists. The PDF
+ * work stays inside `@lagda/sealing`; the package exposes two operations to one
+ * caller instead of one.
  *
- * So the ledger records the steps this architecture HAS, and §81's rule is
- * honoured literally: names must reflect reality.
+ *   field-merge   render accepted values onto the exact source PDF. Produces a
+ *                 `merged-candidate` artifact. NEVER calls the sealer
+ *   certificate   BACKEND-40
+ *   final-seal    BACKEND-41, through `DocumentSealer.seal()` and nothing else
+ *   finalize      verify every output, then transition the request
  *
- *   seal       one `DocumentSealer.seal()` call. Produces the sealed document
- *              AND the certificate, and their digests. BACKEND-41 makes it
- *              executable; BACKEND-39 and BACKEND-40 refine what happens
- *              INSIDE it
- *   persist    upload both objects, then record both artifacts. The step where
- *              PostgreSQL and object storage are not atomic
- *   finalize   verify every output, then transition the request. No object
- *              storage call happens here
+ * **BACKEND-41 must narrow `seal()` to sealing alone**, because it merges
+ * fields today and leaving it would render every field twice.
+ *
+ * `persist` is gone: it existed because one seal call produced two artifacts
+ * stored together, and each step now persists its own output as part of being
+ * that step.
  */
-export const COMPLETION_STEPS = ["seal", "persist", "finalize"] as const;
+export const COMPLETION_STEPS = [
+  "field-merge", "certificate", "final-seal", "finalize",
+] as const;
 
 export type CompletionStep = (typeof COMPLETION_STEPS)[number];
 
@@ -151,6 +153,8 @@ export const COMPLETION_FAILURE_CODES = [
   "storage-unavailable",
   /** The sealer could not be reached or did not answer. */
   "sealer-unavailable",
+  /** A step this build has no implementation for. Retryable: a later build has. */
+  "step-not-implemented",
   /** The database dependency failed transiently. */
   "database-unavailable",
   /** The worker died mid-attempt and the lease expired. */
@@ -180,6 +184,7 @@ Readonly<Record<CompletionFailureCode, CompletionFailureClass>> = Object.freeze(
   "pipeline-version-incompatible": "terminal",
   "storage-unavailable": "retryable",
   "sealer-unavailable": "retryable",
+  "step-not-implemented": "retryable",
   "database-unavailable": "retryable",
   "attempt-abandoned": "retryable",
 });

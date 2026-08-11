@@ -177,7 +177,7 @@ export function createScopedCompletionRepository(
       const result = await trx.updateTable("signing_request_completion_runs")
         .set({
           state: "waiting-retry",
-          failure_step: "seal",
+          failure_step: "field-merge",
           // A bounded code that says what happened: the worker went away.
           failure_code: "attempt-abandoned",
         })

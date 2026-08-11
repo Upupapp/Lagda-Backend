@@ -127,7 +127,7 @@ describe("processing a completion run", () => {
     expect(second.outcome).toBe("not-claimable");
   });
 
-  it("cannot report success, because the seal step has no implementation", async () => {
+  it("cannot report success, because field-merge has no implementation", async () => {
     // §22, §176, §178, §309. A pass-through merger or a no-op sealer would make
     // this succeed and mark a request completed with no document behind it —
     // the one failure that cannot be walked back.
@@ -140,7 +140,7 @@ describe("processing a completion run", () => {
     // And the run went BACK to the claimable pool: this is a build that cannot
     // do the work, not data that cannot be completed.
     expect(h.store.completionRuns[0]?.state).toBe("waiting-retry");
-    expect(h.store.completionRuns[0]?.failureCode).toBe("sealer-unavailable");
+    expect(h.store.completionRuns[0]?.failureCode).toBe("step-not-implemented");
     expect(h.store.completionSteps).toHaveLength(0);
   });
 

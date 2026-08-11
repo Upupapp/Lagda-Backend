@@ -236,8 +236,8 @@ export async function processCompletionRun(
     await uow.completion.recordRunFailure({
       runId: input.runId,
       state: "waiting-retry",
-      step: next ?? "seal",
-      code: "sealer-unavailable",
+      step: next ?? "field-merge",
+      code: "step-not-implemented",
     });
     return {
       runId: input.runId,
@@ -255,7 +255,7 @@ async function fail(
   await uow.completion.recordRunFailure({
     runId,
     state: action === "failRetryable" ? "waiting-retry" : "failed-terminal",
-    step: "seal",
+    step: "field-merge",
     code,
   });
   return { runId, outcome: "failed", failureCode: code };
@@ -378,8 +378,8 @@ export async function verifyCompletionOutputs(
   // A step that SAYS succeeded and names no artifact has not produced one, and
   // §77 forbids trusting the status alone. Verifying the object is actually in
   // storage is BACKEND-41's, because only it knows what was uploaded.
-  const seal = steps.find(step => step.step === "seal");
-  if (seal === undefined || seal.outputArtifactId === null) return null;
+  const sealed = steps.find(step => step.step === "final-seal");
+  if (sealed === undefined || sealed.outputArtifactId === null) return null;
 
   return null;
 }

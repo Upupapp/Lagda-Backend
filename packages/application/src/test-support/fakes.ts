@@ -1344,7 +1344,7 @@ function scopedCompletion(
           continue;
         }
         row.state = "waiting-retry";
-        row.failureStep = "seal";
+        row.failureStep = "field-merge";
         row.failureCode = "attempt-abandoned";
         moved++;
       }

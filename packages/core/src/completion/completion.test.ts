@@ -170,10 +170,12 @@ describe("the completion run state machine", () => {
 
 describe("the completion step order", () => {
   it("is the three steps this architecture has", () => {
-    // NOT field-merge / certificate / seal: `DocumentSealer.seal()` is one
-    // operation producing both the sealed document and the certificate, and
-    // splitting it is what §24 and INV-002 forbid.
-    expect([...COMPLETION_STEPS]).toEqual(["seal", "persist", "finalize"]);
+    // BACKEND-39 REVERSED migration 025's three. `field-merge` has to be a
+    // distinct durable step producing a distinct artifact AND must not invoke
+    // the sealer, and both together are only satisfiable if merging is
+    // separable from sealing. See the vocabulary's own comment.
+    expect([...COMPLETION_STEPS]).toEqual(
+      ["field-merge", "certificate", "final-seal", "finalize"]);
     expect([...COMPLETION_STEP_ORDER]).toEqual([...COMPLETION_STEPS]);
   });
 
@@ -181,24 +183,30 @@ describe("the completion step order", () => {
     // §117, §254. A run whose seal succeeded never invokes the sealer again —
     // which matters because a certificate carrying a backend timestamp would
     // otherwise produce different bytes on every attempt.
-    expect(nextCompletionStep([])).toBe("seal");
-    expect(nextCompletionStep(["seal"])).toBe("persist");
-    expect(nextCompletionStep(["seal", "persist"])).toBe("finalize");
-    expect(nextCompletionStep(["seal", "persist", "finalize"])).toBeNull();
+    expect(nextCompletionStep([])).toBe("field-merge");
+    expect(nextCompletionStep(["field-merge"])).toBe("certificate");
+    expect(nextCompletionStep(["field-merge", "certificate"])).toBe("final-seal");
+    expect(nextCompletionStep(
+      ["field-merge", "certificate", "final-seal"])).toBe("finalize");
+    expect(nextCompletionStep(
+      ["field-merge", "certificate", "final-seal", "finalize"])).toBeNull();
   });
 
   it("refuses a ledger where a later step succeeded before an earlier one", () => {
     // A combination this module cannot produce. Reaching it means the ledger
     // was written by something else, and guessing would be worse than failing.
-    expect(() => nextCompletionStep(["persist"])).toThrow();
+    expect(() => nextCompletionStep(["certificate"])).toThrow();
     expect(() => nextCompletionStep(["finalize"])).toThrow();
   });
 
   it("is satisfied only when every step succeeded", () => {
     expect(isCompletionSatisfied([])).toBe(false);
-    expect(isCompletionSatisfied(["seal"])).toBe(false);
-    expect(isCompletionSatisfied(["seal", "persist"])).toBe(false);
-    expect(isCompletionSatisfied(["seal", "persist", "finalize"])).toBe(true);
+    expect(isCompletionSatisfied(["field-merge"])).toBe(false);
+    expect(isCompletionSatisfied(["field-merge", "certificate"])).toBe(false);
+    expect(isCompletionSatisfied(
+      ["field-merge", "certificate", "final-seal"])).toBe(false);
+    expect(isCompletionSatisfied(
+      ["field-merge", "certificate", "final-seal", "finalize"])).toBe(true);
   });
 });
 

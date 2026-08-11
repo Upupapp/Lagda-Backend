@@ -368,7 +368,7 @@ suite("signing workflow concurrency (real PostgreSQL, runtime role)", () => {
       uow.completion.acceptStep({
         completionStepId: `cst_race_${String(++counter)}` as never,
         runId: run.completionRunId,
-        step: "seal",
+        step: "field-merge",
         outputArtifactId: null,
         succeededAt: AT,
       }));
@@ -380,7 +380,7 @@ suite("signing workflow concurrency (real PostgreSQL, runtime role)", () => {
 
     const rows = await sql<{ n: string }>`
       select count(*)::text as n from signing_request_completion_steps
-       where completion_run_id = ${run.completionRunId} and step = 'seal'
+       where completion_run_id = ${run.completionRunId} and step = 'field-merge'
     `.execute(owner.db);
     expect(rows.rows[0]?.n).toBe("1");
   });

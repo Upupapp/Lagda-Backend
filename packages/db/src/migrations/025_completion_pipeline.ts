@@ -41,7 +41,10 @@ const RUN_STATES = [
   "pending", "processing", "waiting-retry", "succeeded", "failed-terminal",
 ] as const;
 
-/** Mirrors `COMPLETION_STEPS`. Three, because the sealer is one operation. */
+/**
+ * The step vocabulary AS OF 025. Migration 026 replaces it - see the comment
+ * there for why the sealer stopped being one step.
+ */
 const STEPS = ["seal", "persist", "finalize"] as const;
 
 /** Mirrors `COMPLETION_STEP_STATES`. */
