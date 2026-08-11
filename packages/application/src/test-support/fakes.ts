@@ -35,6 +35,7 @@ import type {
   WorkspaceRecord, WorkspaceMembershipRecord,
   ScopedEvidenceRepository, ScopedArtifactRepository, ScopedFinalizationRepository,
   EvidenceEventInput, EvidenceEventRecord, ArtifactRecord, ArtifactId,
+  EvidenceEventId, EvidenceEventIdGenerator,
   FinalizationInput, SealRecord,
 } from "../common/ports/index.js";
 import { InMemoryIdempotencyRepository } from "./idempotency-fake.js";
@@ -1605,14 +1606,34 @@ function fakeRenderableValue(
 }
 
 /** Sequential completion ids (BACKEND-38). */
-export class SequentialCompletionIds implements CompletionIdGenerator {
+export class SequentialCompletionIds
+implements CompletionIdGenerator, EvidenceEventIdGenerator {
   private run = 1;
   private step = 1;
+  private evidence = 1;
   nextCompletionRunId(): CompletionRunId {
     return `crn_${String(this.run++)}` as CompletionRunId;
   }
   nextCompletionStepId(): CompletionStepId {
     return `cst_${String(this.step++)}` as CompletionStepId;
+  }
+
+  /**
+   * BACKEND-43. Every completion transition now appends evidence, so a harness
+   * without this generator makes the append throw — and because the append is
+   * deliberately INSIDE the owning transaction (§160), the throw rolls the whole
+   * transition back and the use case reports a failure.
+   *
+   * That is the invariant working, but it is a confusing way to learn it: three
+   * separate suites failed with "expected failed to be completed" before this
+   * moved here. Supplying it once on the shared fake means a new completion
+   * producer does not re-teach the same lesson.
+   *
+   * Sequential, not constant: a finalization appends four events, and a fixed
+   * id would make three of them primary-key collisions.
+   */
+  nextEvidenceEventId(): EvidenceEventId {
+    return `ev_${String(this.evidence++)}` as EvidenceEventId;
   }
 }
 

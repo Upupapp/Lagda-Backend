@@ -17,7 +17,7 @@
 // It never invokes `DocumentSealer` (§67), never marks the request completed
 // (§268), never creates a verification record (§269), and never sends anything.
 
-import type { WorkspaceId, DocumentId } from "@lagda/contracts";
+import type { WorkspaceId, DocumentId, TransactionId } from "@lagda/contracts";
 import type { CompletionFailureCode } from "@lagda/contracts";
 import type {
   Clock, TransactionManager, WorkspaceUnitOfWork,
@@ -25,7 +25,10 @@ import type {
   CompletionRunId, CompletionIdGenerator,
   SigningRequestId,
   CompletionCertificateGenerator, CompletionCertificateModelV1,
+  EvidenceEventIdGenerator,
 } from "../common/ports/index.js";
+// BACKEND-43. Factory, never a hand-built event literal.
+import { certificateGenerated } from "../evidence/events.js";
 import type {
   ObjectStorage, StorageKeyStrategy, StorageObjectRef,
 } from "../common/ports/storage.js";
@@ -36,7 +39,8 @@ import {
 export interface CertificateStepDependencies {
   readonly transactions: TransactionManager;
   readonly clock: Clock;
-  readonly ids: CompletionIdGenerator & ArtifactIdGenerator;
+  readonly ids: CompletionIdGenerator & ArtifactIdGenerator
+  & EvidenceEventIdGenerator;
   readonly storage: ObjectStorage;
   readonly keys: StorageKeyStrategy;
   /** A PORT. This module never imports `@lagda/sealing`, and a guard asserts it. */
@@ -139,13 +143,22 @@ export async function runCertificateStep(
         createdAt: generatedAt,
       } satisfies ArtifactRecord);
 
+      const stepId = deps.ids.nextCompletionStepId();
       await uow.completion.acceptStep({
-        completionStepId: deps.ids.nextCompletionStepId(),
+        completionStepId: stepId,
         runId: input.runId,
         step: "certificate",
         outputArtifactId: artifactId,
         succeededAt: generatedAt,
       });
+
+      // Same transaction as the step acceptance (§157, §160), sourced by the
+      // step so a retried worker converges (§252, §260).
+      await uow.evidence.append(certificateGenerated({
+        newEventId: () => deps.ids.nextEvidenceEventId(),
+        signingRequestId: input.signingRequestId as unknown as TransactionId,
+        occurredAt: generatedAt,
+      }, stepId));
     });
   } catch {
     // Bytes exist, no row. Recoverable, and deliberately NOT cleaned up here:

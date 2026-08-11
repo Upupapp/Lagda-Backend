@@ -400,3 +400,48 @@ describe("projecting stored values", () => {
       .value).toEqual({ kind: "checkbox", checked: false });
   });
 });
+
+describe("evidence (BACKEND-43)", () => {
+  it("records field-merge-completed in the SAME transaction as the step", async () => {
+    // §156, §251.
+    seed(h);
+    await run(h);
+
+    const events = h.store.evidence;
+    expect(events).toHaveLength(1);
+    expect(events[0]?.eventType).toBe("field-merge-completed");
+    expect(events[0]?.actor).toEqual({ type: "system" });
+  });
+
+  it("stamps the STEP's success time, not a clock read of its own", async () => {
+    // §14. A fresh clock read here would differ from the step row by however
+    // long the transaction ran, and the audit would disagree with the record
+    // it describes.
+    seed(h);
+    await run(h);
+
+    const step = h.store.completionSteps.at(-1);
+    expect(h.store.evidence[0]?.occurredAt).toBe(step?.succeededAt);
+  });
+
+  it("sources the event from the step, so a duplicate worker converges", async () => {
+    // §260. The source is what the partial unique index keys on.
+    seed(h);
+    await run(h);
+
+    const step = h.store.completionSteps.at(-1);
+    expect(h.store.evidence[0]?.source)
+      .toEqual({ type: "completion-step", id: step?.completionStepId });
+  });
+
+  it("writes NO evidence when the step never succeeds", async () => {
+    // §160 inverted. Asserts the FAILED outcome too, so a change that stops
+    // failing the upload cannot make this pass by accident.
+    seed(h);
+    h.objects.failPut = true;
+    const result = await run(h);
+
+    expect(result).toMatchObject({ outcome: "failed" });
+    expect(h.store.evidence).toHaveLength(0);
+  });
+});

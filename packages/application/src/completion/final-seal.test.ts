@@ -109,13 +109,6 @@ function harness(): Harness {
         nextArtifactId: () => "art_final",
         nextSealId: () => "seal_1",
         nextVerificationId: () => "LAGDA-VERIFY-1",
-        // BACKEND-43. Sequential rather than fixed: the finalization appends
-        // four evidence events and a constant id would make three of them
-        // primary-key collisions.
-        nextEvidenceEventId: (() => {
-          let n = 0;
-          return () => `ev_${String(++n)}`;
-        })(),
       }),
       storage: objects,
       keys,

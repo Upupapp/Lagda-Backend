@@ -444,3 +444,47 @@ describe("mapping renderer failures", () => {
     expect(certificateFailureCode(new Error("boom"))).toBe("sealer-unavailable");
   });
 });
+
+describe("evidence (BACKEND-43)", () => {
+  it("records certificate-generated in the SAME transaction as the step", async () => {
+    // §157, §252.
+    seed(h);
+    await run(h);
+
+    expect(h.store.evidence).toHaveLength(1);
+    expect(h.store.evidence[0]?.eventType).toBe("certificate-generated");
+    expect(h.store.evidence[0]?.actor).toEqual({ type: "system" });
+  });
+
+  it("stamps the STEP's success time and sources the event from the step", async () => {
+    // §14 for the time, §260 for the source — the key the partial unique index
+    // uses to make a duplicate worker converge.
+    seed(h);
+    await run(h);
+
+    const step = h.store.completionSteps.at(-1);
+    expect(h.store.evidence[0]?.occurredAt).toBe(step?.succeededAt);
+    expect(h.store.evidence[0]?.source)
+      .toEqual({ type: "completion-step", id: step?.completionStepId });
+  });
+
+  it("carries no certificate content — the event is a fact, not a copy", () => {
+    // §35, §90. The certificate is an artifact; the event says one was made.
+    seed(h);
+    return run(h).then(() => {
+      const wire = JSON.stringify(h.store.evidence[0]).toLowerCase();
+      for (const forbidden of ["%pdf", "certificate of completion", "signature"]) {
+        expect(wire).not.toContain(forbidden);
+      }
+    });
+  });
+
+  it("writes NO evidence when the step never succeeds", async () => {
+    seed(h);
+    h.objects.failPut = true;
+    const result = await run(h);
+
+    expect(result).toMatchObject({ outcome: "failed" });
+    expect(h.store.evidence).toHaveLength(0);
+  });
+});

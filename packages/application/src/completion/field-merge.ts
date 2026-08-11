@@ -26,7 +26,9 @@
 //
 // The reverse ordering has no such recovery, which is why it is not used.
 
-import type { WorkspaceId, DocumentId, Sha256Digest } from "@lagda/contracts";
+import type {
+  WorkspaceId, DocumentId, Sha256Digest, TransactionId,
+} from "@lagda/contracts";
 import type { CompletionFailureCode } from "@lagda/contracts";
 import type {
   Clock, TransactionManager, WorkspaceUnitOfWork,
@@ -34,8 +36,10 @@ import type {
   CompletionRunId, CompletionIdGenerator,
   SigningRequestId,
   FieldMerger, MergeableField, MergeableFieldValue,
-  RenderableFieldRecord,
+  RenderableFieldRecord, EvidenceEventIdGenerator,
 } from "../common/ports/index.js";
+// BACKEND-43. Factory, never a hand-built event literal.
+import { fieldMergeCompleted } from "../evidence/events.js";
 import type {
   ObjectStorage, StorageKeyStrategy, StorageObjectRef,
 } from "../common/ports/storage.js";
@@ -45,7 +49,8 @@ import type {
 export interface FieldMergeDependencies {
   readonly transactions: TransactionManager;
   readonly clock: Clock;
-  readonly ids: CompletionIdGenerator & ArtifactIdGenerator;
+  readonly ids: CompletionIdGenerator & ArtifactIdGenerator
+  & EvidenceEventIdGenerator;
   readonly storage: ObjectStorage;
   readonly keys: StorageKeyStrategy;
   /**
@@ -329,13 +334,26 @@ export async function runFieldMergeStep(
         createdAt: mergedAt,
       } satisfies ArtifactRecord);
 
+      const stepId = deps.ids.nextCompletionStepId();
       await uow.completion.acceptStep({
-        completionStepId: deps.ids.nextCompletionStepId(),
+        completionStepId: stepId,
         runId: input.runId,
         step: "field-merge",
         outputArtifactId: artifactId,
         succeededAt: mergedAt,
       });
+
+      // Evidence, in the SAME transaction as the step acceptance (§156, §160).
+      // Sourced by the STEP, so a duplicate worker converges on the one event
+      // rather than appending a second (§251, §260).
+      //
+      // `occurredAt` is the step's own success time, not a clock read here —
+      // the two would differ by however long the transaction ran.
+      await uow.evidence.append(fieldMergeCompleted({
+        newEventId: () => deps.ids.nextEvidenceEventId(),
+        signingRequestId: input.signingRequestId as unknown as TransactionId,
+        occurredAt: mergedAt,
+      }, stepId));
     });
   } catch {
     // Bytes exist, no row. Recoverable and deliberately NOT cleaned up here:
