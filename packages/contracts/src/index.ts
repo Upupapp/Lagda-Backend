@@ -17,6 +17,7 @@ export * from "./preparation/index.js";
 export * from "./recipients/index.js";
 export * from "./signing-requests/index.js";
 export * from "./signing-submission/index.js";
+export * from "./signing-decline/index.js";
 export * from "./completion/index.js";
 
 // Cross-cutting API conventions — errors, pagination, sorting, headers.

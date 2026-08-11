@@ -57,6 +57,9 @@ export const METRIC_NAMES = [
   "signing_ceremony_results_total",
   // BACKEND-36. Authoritative signature submission.
   "signing_submission_results_total",
+  // BACKEND-37. The recipient's refusal and the sender's withdrawal.
+  "signing_decline_results_total",
+  "signing_request_cancellations_total",
   // BACKEND-27. Capability denials. Successful checks are NOT counted: one
   // series per authorized request is noise, and the interesting signal is a
   // sustained spike in refusals (§183, §186).
@@ -183,6 +186,11 @@ export const METRIC_LABELS = {
   // digest as a label would put a content-derived value in the most widely
   // replicated string store in the stack (§294).
   signing_submission_results_total: ["result", "submissionModel", "processRole"],
+  // `result` only. NOT the decline reason: it is the recipient's own statement
+  // about a document, and a metric label is the most widely replicated string
+  // store in the stack. Not the request id either — unbounded.
+  signing_decline_results_total: ["result", "processRole"],
+  signing_request_cancellations_total: ["result", "processRole"],
   // `capability` is a ten-value closed set defined in code — bounded, and the
   // most useful dimension a denial has. Deliberately NOT `workspaceId`,
   // `userId` or `membershipId`: all unbounded, and one series per tenant is how

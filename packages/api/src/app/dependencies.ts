@@ -17,6 +17,7 @@ import type {
   RecipientDependencies, SigningRequestDependencies,
   SendSigningRequestDependencies, SigningAccessDependencies,
   SigningCeremonyDependencies, SigningSubmissionDependencies,
+  SigningDeclineDependencies, SigningWorkflowDependencies,
 } from "@lagda/application";
 
 /**
@@ -56,6 +57,14 @@ export interface AppDependencies {
   readonly signingCeremony?: () => SigningCeremonyDependencies;
   /** BACKEND-36. Absent in tests that do not exercise submission. */
   readonly signingSubmission?: () => SigningSubmissionDependencies;
+  /**
+   * BACKEND-37, routed by OD-154. The recipient's refusal.
+   *
+   * Same realm and same CSRF validator as submission, its own dependencies:
+   * a decline needs the workflow's clock and id generators and none of the
+   * signature-image machinery.
+   */
+  readonly signingDecline?: () => SigningDeclineDependencies;
 
   readonly sessions?: SessionService;
   /**
@@ -164,4 +173,6 @@ export interface WorkspaceDependencies {
    * at the point of use rather than at boot.
    */
   readonly sendSigningRequest?: () => SendSigningRequestDependencies;
+  /** BACKEND-37, routed by OD-154. The sender's withdrawal. */
+  readonly cancelSigningRequest?: () => SigningWorkflowDependencies;
 }

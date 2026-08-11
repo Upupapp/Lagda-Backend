@@ -47,6 +47,8 @@ import { registerSendRoutes } from "../signing-requests/send-routes.js";
 import { registerSigningAccessRoutes } from "../signing-access/signing-access-routes.js";
 import { registerSigningCeremonyRoutes } from "../signing-ceremony/signing-ceremony-routes.js";
 import { registerSigningSubmissionRoutes } from "../signing-submission/signing-submission-routes.js";
+import { registerSigningDeclineRoutes } from "../signing-decline/signing-decline-routes.js";
+import { registerCancelRoutes } from "../signing-requests/cancel-routes.js";
 
 export interface CreateAppOptions {
   readonly config: ApiConfig;
@@ -505,6 +507,27 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
       // product: it commits a document to counterparties and mints bearer
       // credentials. It gets session validation, CSRF and rate limiting from
       // WHERE it is registered, exactly like every other authenticated write.
+      // Inside the same authenticated scope as Send, and for the same reason:
+      // cancellation gets session validation, CSRF and rate limiting from WHERE
+      // it is registered. Withdrawing a document from counterparties is the
+      // mirror of committing it to them.
+      if (workspaces.cancelSigningRequest !== undefined) {
+        const cancel = workspaces.cancelSigningRequest;
+        registerCancelRoutes(scope, {
+          authenticatedUser: (request: FastifyRequest) => Promise.resolve(
+            request.auth.status === "authenticated"
+              ? {
+                  userId: request.auth.actor.userId,
+                  sessionId: request.auth.actor.sessionId,
+                }
+              : null,
+          ),
+          workflowDependencies: cancel,
+          ...(limiter === undefined ? {} : { rateLimit: { limiter, metrics } }),
+          metrics,
+        });
+      }
+
       if (workspaces.sendSigningRequest !== undefined) {
         const send = workspaces.sendSigningRequest;
         registerSendRoutes(scope, {
@@ -596,6 +619,24 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
       registerSigningSubmissionRoutes(app, {
         config,
         submissionDependencies: submission,
+        signingAccessDependencies: signingAccess,
+        ...(signingLimiter === undefined
+          ? {}
+          : { rateLimit: { limiter: signingLimiter, metrics } }),
+        metrics,
+      });
+    }
+
+    // BACKEND-37's decline, routed by OD-154. Same realm, same CSRF validator.
+    //
+    // No Idempotency-Key, unlike submission: a decline cannot duplicate,
+    // because `markDeclined` is conditional on the recipient being active and
+    // a retry matches zero rows. The convergence is in the database.
+    if (dependencies.signingDecline !== undefined) {
+      const decline = dependencies.signingDecline;
+      registerSigningDeclineRoutes(app, {
+        config,
+        declineDependencies: decline,
         signingAccessDependencies: signingAccess,
         ...(signingLimiter === undefined
           ? {}
