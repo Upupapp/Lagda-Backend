@@ -1,10 +1,10 @@
 // The completion pipeline orchestration (BACKEND-38).
 
 import { describe, it, expect, beforeEach } from "vitest";
-import type { WorkspaceId } from "@lagda/contracts";
+import type { WorkspaceId, DocumentId, UserId } from "@lagda/contracts";
 import type {
   ArtifactId, PreparationId, SigningRequestId, SigningRequestRecipientId,
-  CompletionRunId, UserId, DocumentId,
+  CompletionRunId,
 } from "../common/ports/index.js";
 import {
   FixedClock, FakeTransactionManager, InMemoryStore, SequentialCompletionIds,
