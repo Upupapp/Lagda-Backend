@@ -1819,6 +1819,30 @@ function preparationOf(
 function scopedEvidence(store: InMemoryStore, scope: WorkspaceId): ScopedEvidenceRepository {
   return {
     append: (event: EvidenceEventInput) => {
+      // Migration 029's PARTIAL unique index, in memory.
+      //
+      // Without it every idempotency test in this codebase would pass
+      // vacuously: producers rely on the database refusing a duplicate rather
+      // than checking first, so a fake that accepts everything proves nothing
+      // about retry safety. The integration suite that WOULD catch it needs a
+      // live PostgreSQL and skips without one.
+      //
+      // Partial, exactly as in SQL — an event with no source is unconstrained,
+      // because `document-viewed` may legitimately recur and no single durable
+      // row makes any one of those views the fact.
+      if (event.source !== undefined) {
+        const duplicate = store.evidence.some(
+          e => e.workspaceId === scope
+            && e.eventType === event.eventType
+            && e.source?.type === event.source?.type
+            && e.source?.id === event.source?.id);
+        if (duplicate) {
+          throw new Error(
+            `duplicate evidence event: ${event.eventType} from `
+            + `${event.source.type}:${event.source.id}`);
+        }
+      }
+
       store.evidence.push({
         ...event,
         workspaceId: scope,

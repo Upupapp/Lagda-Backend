@@ -148,6 +148,42 @@ export interface ObservedRequestContext {
   readonly clientUserAgent?: string;
 }
 
+/**
+ * The durable records an evidence event may be derived from.
+ *
+ * Closed, and small on purpose. A source is not "anything with an id" — it is
+ * the specific immutable row whose existence makes the event a fact. That is
+ * what lets uniqueness on it mean "this fact has already been recorded" rather
+ * than "something with this id was seen".
+ */
+export const EVIDENCE_SOURCE_TYPES = [
+  "signing-request", "signing-request-recipient", "recipient-submission",
+  "recipient-consent", "recipient-session", "completion-run",
+  "completion-step", "signing-request-completion", "document-seal",
+  "verification-record",
+] as const;
+
+export type EvidenceSourceType = (typeof EVIDENCE_SOURCE_TYPES)[number];
+
+/**
+ * Where an event's authority comes from, and the key its idempotency rests on.
+ *
+ * ONE object rather than two optional fields, so "both or neither" is a type
+ * guarantee rather than a convention. The database enforces the same thing with
+ * a biconditional CHECK — a source type with no id identifies nothing, and an id
+ * with no type is ambiguous across tables. Either half alone would leave the
+ * unique index inert while the row looked fully populated.
+ *
+ * An event with NO source is legitimate: `document-viewed` may recur, and there
+ * is no single durable row that makes any one of those views the fact. The
+ * unique index excludes those rows by construction.
+ */
+export interface EvidenceSource {
+  readonly type: EvidenceSourceType;
+  /** The id of the authoritative row. Opaque here; typed at each producer. */
+  readonly id: string;
+}
+
 /** Event-specific detail. Validated per event type before it is written. */
 export interface EvidenceDetails {
   readonly version: number;
@@ -167,9 +203,30 @@ export interface EvidenceEventInput {
   readonly documentId?: DocumentId;
   readonly recipientId?: RecipientId;
   readonly eventType: EvidenceEventType;
+  /**
+   * The semantic version of THIS EVENT TYPE. Mandatory — every row carries one.
+   *
+   * Not `details.version`, which versions the payload blob and is absent
+   * whenever the payload is. Most evidence events have no payload, because their
+   * facts are typed columns; they still need to say which reading of
+   * `transaction-sent` they were written under.
+   *
+   * A projection must branch on this rather than assume the current shape. An
+   * unrecognised version is displayed generically, never reinterpreted.
+   */
+  readonly eventVersion: number;
   readonly actor: EvidenceActor;
   readonly occurredAt: number;
   readonly observed?: ObservedRequestContext;
+  /**
+   * The authoritative record this event was derived from.
+   *
+   * Absent only for events with no single durable source. Present, it is the
+   * idempotency key: a partial unique index over
+   * `(workspace, type, sourceType, sourceId)` makes a duplicate a database
+   * error rather than something a producer has to check for first.
+   */
+  readonly source?: EvidenceSource;
   readonly details?: EvidenceDetails;
 }
 

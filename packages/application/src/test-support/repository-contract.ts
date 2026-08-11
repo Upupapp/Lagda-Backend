@@ -367,6 +367,7 @@ export function runRepositoryContract(
           evidenceEventId: "ev_1" as EvidenceEventId,
           signingRequestId: REQ,
           eventType: "transaction-created",
+          eventVersion: 1,
           actor: { type: "workspace-user", actorId: USER_A },
           occurredAt: AT,
         }));
@@ -393,6 +394,7 @@ export function runRepositoryContract(
             evidenceEventId: id as EvidenceEventId,
             signingRequestId: REQ,
             eventType: "document-viewed",
+            eventVersion: 1,
             actor: { type: "system" },
             occurredAt: AT,
           });
@@ -413,6 +415,7 @@ export function runRepositoryContract(
           evidenceEventId: "ev_1" as EvidenceEventId,
           signingRequestId: REQ,
           eventType: "transaction-created",
+          eventVersion: 1,
           actor: { type: "system" },
           occurredAt: AT,
         }));

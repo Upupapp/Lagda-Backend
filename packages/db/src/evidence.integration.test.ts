@@ -61,6 +61,7 @@ const event = (over: Partial<EvidenceEventInput> = {}): EvidenceEventInput => ({
   evidenceEventId: "ev_1" as EvidenceEventId,
   signingRequestId: REQ,
   eventType: "transaction-created",
+  eventVersion: 1,
   actor: { type: "workspace-user", actorId: "usr_1" },
   occurredAt: Date.parse("2026-08-09T10:00:00Z"),
   ...over,

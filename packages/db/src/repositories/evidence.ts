@@ -12,7 +12,7 @@ import type {
 } from "@lagda/contracts";
 import type {
   ScopedEvidenceRepository, ScopedArtifactRepository, ScopedFinalizationRepository,
-  PublicVerificationLookup, PublicVerificationProjection,
+  PublicVerificationLookup, PublicVerificationProjection, EvidenceSourceType,
   EvidenceEventInput, EvidenceEventRecord, EvidenceActor, EvidenceEventType,
   EvidenceEventId, ArtifactId, ArtifactRecord, ArtifactType, SealId, SealRecord,
   FinalizationInput, RecipientId,
@@ -59,12 +59,17 @@ export function createEvidenceRepository(
             document_id: event.documentId ?? null,
             recipient_id: event.recipientId ?? null,
             event_type: event.eventType,
+            event_version: event.eventVersion,
             actor_type: event.actor.type,
             actor_id: actorId,
             occurred_at: new Date(event.occurredAt),
             // recorded_at is NOT supplied. The database stamps it, because
             // "when this row was durably written" is not something the caller
             // can honestly claim to know.
+            // Both or neither, mirroring the biconditional CHECK. Read from one
+            // optional object so the pair cannot be split here either.
+            source_type: event.source?.type ?? null,
+            source_id: event.source?.id ?? null,
             client_ip: event.observed?.clientIp ?? null,
             client_user_agent: event.observed?.clientUserAgent ?? null,
             details: event.details ? JSON.stringify(event.details.payload) : null,
@@ -108,7 +113,21 @@ export function createEvidenceRepository(
           ...(row.document_id === null ? {} : { documentId: row.document_id as DocumentId }),
           ...(row.recipient_id === null ? {} : { recipientId: row.recipient_id as RecipientId }),
           eventType: row.event_type as EvidenceEventType,
+          eventVersion: row.event_version,
           actor,
+          // Read back as the same paired object it was written from. The
+          // biconditional CHECK guarantees the halves agree, so testing one is
+          // testing both — but the pair is reconstructed whole rather than as
+          // two independently-optional fields, which is what keeps a projection
+          // from ever seeing a type without an id.
+          ...(row.source_type === null || row.source_id === null
+            ? {}
+            : {
+                source: {
+                  type: row.source_type as EvidenceSourceType,
+                  id: row.source_id,
+                },
+              }),
           occurredAt: row.occurred_at.getTime(),
           recordedAt: row.recorded_at.getTime(),
           ...(row.client_ip === null && row.client_user_agent === null

@@ -643,6 +643,12 @@ export interface EvidenceEventsTable {
   document_id: string | null;
   recipient_id: string | null;
   event_type: string;
+  /**
+   * The semantic version of the event TYPE (migration 029). Mandatory on every
+   * row — distinct from `details_version`, which versions the payload blob and
+   * is NULL whenever the payload is.
+   */
+  event_version: number;
   /** workspace-user | recipient | system. A recipient is not a UserId. */
   actor_type: string;
   /** NULL exactly when the actor is `system`. */
@@ -652,6 +658,15 @@ export interface EvidenceEventsTable {
   /** When the row was durably inserted. Defaulted by the database. */
   recorded_at: GeneratedTimestamptz;
   /** Server-observed. NULL until BACKEND-11/56 establishes proxy trust. */
+  /**
+   * The authoritative record this event was derived from (migration 029).
+   *
+   * NULL together or set together — a biconditional CHECK enforces it — and a
+   * partial unique index over (workspace, type, source_type, source_id) makes a
+   * duplicate a database error rather than a check-then-insert race.
+   */
+  source_type: string | null;
+  source_id: string | null;
   client_ip: string | null;
   client_user_agent: string | null;
   details: ColumnType<unknown, string | null, never> | null;
