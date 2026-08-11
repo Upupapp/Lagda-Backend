@@ -14,7 +14,8 @@
 
 import type { WorkspaceId } from "@lagda/contracts";
 import {
-  COMPLETION_PIPELINE_VERSION, type CompletionFailureCode,
+  COMPLETION_PIPELINE_VERSION, COMPLETION_STEPS,
+  type CompletionFailureCode, type CompletionStep,
 } from "@lagda/contracts";
 import {
   assessCompletionEligibility, isCompletionSatisfied, nextCompletionStep,
@@ -56,6 +57,35 @@ export class CompletionStepUnavailableError extends ApplicationError {
 
 // ── Dependencies ─────────────────────────────────────────────────────────────
 
+/**
+ * A step this build can actually execute.
+ *
+ * Returns its own outcome and records its OWN failure with a bounded code,
+ * because only the step knows which of its phases failed. The orchestrator does
+ * not second-guess that.
+ */
+export type CompletionStepRunner = (input: {
+  readonly workspaceId: WorkspaceId;
+  readonly runId: CompletionRunId;
+  readonly signingRequestId: SigningRequestId;
+}) => Promise<{
+  readonly outcome: "merged" | "already-merged" | "failed";
+  readonly failureCode?: CompletionFailureCode;
+}>;
+
+/**
+ * The executable steps, by name.
+ *
+ * OPTIONAL, and absent means "this build cannot run it" rather than "it
+ * failed". A caller that wires nothing gets exactly the pre-BACKEND-39
+ * behaviour: the run parks itself with `step-not-implemented` and returns to
+ * the claimable pool. That is what keeps a worker deployment that has not been
+ * updated from failing requests terminally.
+ */
+export interface CompletionStepRunners {
+  readonly fieldMerge?: CompletionStepRunner;
+}
+
 export interface CompletionDependencies {
   readonly transactions: TransactionManager;
   readonly clock: Clock;
@@ -65,6 +95,7 @@ export interface CompletionDependencies {
     readonly staleAttemptMs: number;
     readonly reconcileBatchSize: number;
   };
+  readonly steps?: CompletionStepRunners;
 }
 
 // ── Ensuring a run ───────────────────────────────────────────────────────────
@@ -166,6 +197,8 @@ export interface ProcessCompletionRunResult {
   readonly runId: CompletionRunId;
   readonly outcome: "claimed-and-blocked" | "not-claimable" | "failed";
   readonly failureCode?: CompletionFailureCode;
+  /** How many steps this attempt carried out. Absent before a claim. */
+  readonly stepsCompleted?: number;
 }
 
 /**
@@ -197,53 +230,154 @@ export async function processCompletionRun(
 ): Promise<ProcessCompletionRunResult> {
   const now = deps.clock.now();
 
-  return deps.transactions.runForWorkspace(input.workspaceId, async uow => {
-    // Conditional on the run being claimable. Two workers handed the same job
-    // both call this and exactly one matches a row (§63, §241).
-    const claimed = await uow.completion.claimRun({ runId: input.runId, at: now });
-    if (claimed === null) {
-      return { runId: input.runId, outcome: "not-claimable" as const };
-    }
+  // ── Phase 1: claim and validate, in ONE transaction ───────────────────────
+  //
+  // The claim MUST stay here and must stay conditional. `claimRun` is an UPDATE
+  // with `where state in ('pending','waiting-retry')` in the statement itself,
+  // so two workers handed the same job both run it and exactly one matches a
+  // row (§63, §241). OD-155 proved that against real PostgreSQL rather than
+  // against a fake, precisely because a fake runs both "concurrent" calls on one
+  // thread and cannot show it.
+  //
+  // Moving the claim outside a transaction, or making it conditional in
+  // application code instead of in the statement, breaks that silently — both
+  // workers proceed and the second undoes the first's assumptions.
+  const claim = await deps.transactions.runForWorkspace(input.workspaceId,
+    async (uow): Promise<ClaimOutcome> => {
+      const claimed = await uow.completion.claimRun({ runId: input.runId, at: now });
+      if (claimed === null) return { kind: "not-claimable" };
 
-    // A run started under a version this build cannot read must not be
-    // reinterpreted (§212, §213). Failing safely beats silently reading old
-    // step rows under new semantics.
-    if (claimed.pipelineVersion !== COMPLETION_PIPELINE_VERSION) {
-      return fail(uow, input.runId, "pipeline-version-incompatible");
-    }
+      // A run started under a version this build cannot read must not be
+      // reinterpreted (§212, §213). Failing safely beats silently reading old
+      // step rows under new semantics.
+      if (claimed.pipelineVersion !== COMPLETION_PIPELINE_VERSION) {
+        return {
+          kind: "failed",
+          result: await fail(uow, input.runId, "pipeline-version-incompatible"),
+        };
+      }
 
-    const eligibility =
-      await assessRequestCompletionEligibility(uow, claimed.signingRequestId);
-    if (!eligibility.eligible) {
-      return fail(uow, input.runId, blockerToFailureCode(eligibility.blocker));
-    }
+      const eligibility =
+        await assessRequestCompletionEligibility(uow, claimed.signingRequestId);
+      if (!eligibility.eligible) {
+        return {
+          kind: "failed",
+          result: await fail(uow, input.runId, blockerToFailureCode(eligibility.blocker)),
+        };
+      }
 
-    const steps = await uow.completion.listSteps(input.runId);
-    const succeeded = steps
-      .filter(step => step.state === "succeeded")
-      .map(step => step.step);
+      return { kind: "claimed", signingRequestId: claimed.signingRequestId };
+    });
+
+  if (claim.kind === "not-claimable") {
+    return { runId: input.runId, outcome: "not-claimable" };
+  }
+  if (claim.kind === "failed") return claim.result;
+
+  // ── Phase 2: run steps, OUTSIDE the claim transaction ─────────────────────
+  //
+  // A step downloads an object, renders a PDF and uploads the result. Holding
+  // the claim transaction open across that would pin a connection for the
+  // duration of the slowest thing in the pipeline — and it would not make the
+  // storage work transactional anyway, because object storage cannot enrol in
+  // one.
+  //
+  // The run is already `processing` and claimed, so no other worker can take it
+  // while this happens. That is what makes leaving the transaction safe.
+  return advanceSteps(input.runId, claim.signingRequestId, input.workspaceId, deps);
+}
+
+type ClaimOutcome =
+  | { readonly kind: "not-claimable" }
+  | { readonly kind: "failed"; readonly result: ProcessCompletionRunResult }
+  | { readonly kind: "claimed"; readonly signingRequestId: SigningRequestId };
+
+/**
+ * Runs as many steps as this build can, then parks the run.
+ *
+ * Every exit leaves the run OUT of `processing`, which matters more than it
+ * looks: `processing` means "a worker is on it", and a run left there is
+ * invisible to every other worker until the stale-attempt reconciler notices
+ * (§133). The only paths out are a step's own recorded failure, or the
+ * `step-not-implemented` park below.
+ */
+async function advanceSteps(
+  runId: CompletionRunId,
+  signingRequestId: SigningRequestId,
+  workspaceId: WorkspaceId,
+  deps: CompletionDependencies,
+): Promise<ProcessCompletionRunResult> {
+  let stepsCompleted = 0;
+
+  // BOUNDED, one iteration per declared step plus one.
+  //
+  // Not a `while (true)`. A runner that reports success without ACCEPTING its
+  // step leaves `nextCompletionStep` returning the same step forever, and an
+  // unbounded loop would re-download, re-render and re-upload on every pass —
+  // a runaway that looks like a hung worker rather than a bug.
+  for (let pass = 0; pass <= COMPLETION_STEPS.length; pass += 1) {
+    const succeeded = await deps.transactions.runForWorkspace(workspaceId, async uow => {
+      const steps = await uow.completion.listSteps(runId);
+      return steps.filter(step => step.state === "succeeded").map(step => step.step);
+    });
 
     const next = nextCompletionStep(succeeded);
     if (next === null && isCompletionSatisfied(succeeded)) {
-      // Every step accepted. The finalization guard is BACKEND-41's, because
-      // it needs a `VerifiedCompletionResult` and nothing can produce one yet.
-      return { runId: input.runId, outcome: "claimed-and-blocked" as const };
+      // Every step accepted. The finalization guard is BACKEND-41's, because it
+      // needs a `VerifiedCompletionResult` and nothing can produce one yet.
+      return { runId, outcome: "claimed-and-blocked", stepsCompleted };
     }
 
-    // The step exists in the domain and has no executable implementation. The
-    // run goes back to the claimable pool rather than failing terminally: this
-    // is a build that cannot do the work, not data that cannot be completed.
-    await uow.completion.recordRunFailure({
-      runId: input.runId,
-      state: "waiting-retry",
-      step: next ?? "field-merge",
-      code: "step-not-implemented",
-    });
-    return {
-      runId: input.runId,
-      outcome: "claimed-and-blocked" as const,
-    };
-  });
+    const runner = runnerFor(next, deps);
+    if (runner === undefined) {
+      // The step exists in the domain and has no executable implementation. The
+      // run goes back to the claimable pool rather than failing terminally:
+      // this is a build that cannot do the work, not data that cannot be
+      // completed.
+      await parkNotImplemented(runId, next ?? "field-merge", workspaceId, deps);
+      return { runId, outcome: "claimed-and-blocked", stepsCompleted };
+    }
+
+    const outcome = await runner({ workspaceId, runId, signingRequestId });
+    if (outcome.outcome === "failed") {
+      // The step recorded its own failure with a bounded code, inside its own
+      // transaction. Re-recording here would overwrite a specific cause with a
+      // general one.
+      return {
+        runId, outcome: "failed", stepsCompleted,
+        ...(outcome.failureCode === undefined ? {} : { failureCode: outcome.failureCode }),
+      };
+    }
+    stepsCompleted += 1;
+  }
+
+  // The bound tripped: a runner keeps reporting success without its step
+  // becoming `succeeded`. `output-missing` is the honest code — a step said it
+  // succeeded and the durable evidence of that is not there.
+  await deps.transactions.runForWorkspace(workspaceId, uow =>
+    uow.completion.recordRunFailure({
+      runId, state: "failed-terminal", step: "field-merge", code: "output-missing",
+    }));
+  return { runId, outcome: "failed", failureCode: "output-missing", stepsCompleted };
+}
+
+function runnerFor(
+  step: CompletionStep | null,
+  deps: CompletionDependencies,
+): CompletionStepRunner | undefined {
+  return step === "field-merge" ? deps.steps?.fieldMerge : undefined;
+}
+
+async function parkNotImplemented(
+  runId: CompletionRunId,
+  step: CompletionStep,
+  workspaceId: WorkspaceId,
+  deps: CompletionDependencies,
+): Promise<void> {
+  await deps.transactions.runForWorkspace(workspaceId, uow =>
+    uow.completion.recordRunFailure({
+      runId, state: "waiting-retry", step, code: "step-not-implemented",
+    }));
 }
 
 async function fail(

@@ -1,6 +1,6 @@
 // The completion pipeline orchestration (BACKEND-38).
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { WorkspaceId, DocumentId, UserId } from "@lagda/contracts";
 import type {
   ArtifactId, PreparationId, SigningRequestId, SigningRequestRecipientId,
@@ -254,5 +254,138 @@ describe("completion reconciliation", () => {
     const result = await reconcileCompletionRuns(WS, h.deps);
     expect(result.runsAbandoned).toBe(0);
     expect(h.store.completionRuns[0]?.state).toBe("processing");
+  });
+});
+
+// ── Executable steps (BACKEND-39, OD-164) ────────────────────────────────────
+
+describe("running a step that this build CAN execute", () => {
+  const runId = (): CompletionRunId => {
+    const run = h.store.completionRuns[0];
+    if (run === undefined) throw new Error("no run");
+    return run.completionRunId;
+  };
+
+  /** A runner that reports success and accepts its step, as a real one does. */
+  function acceptingRunner(store: InMemoryStore, calls: string[]) {
+    return vi.fn((input: { runId: CompletionRunId }) => {
+      calls.push("field-merge");
+      store.completionSteps.push({
+        completionStepId: "cst_fm" as never,
+        completionRunId: input.runId,
+        workspaceId: WS,
+        step: "field-merge",
+        state: "succeeded",
+        outputArtifactId: "art_merged" as ArtifactId,
+        attemptCount: 1,
+        succeededAt: AT,
+        failureCode: null,
+      } as never);
+      return Promise.resolve({ outcome: "merged" as const });
+    });
+  }
+
+  it("runs the step, then parks on the NEXT unimplemented one", async () => {
+    seed(h);
+    const calls: string[] = [];
+    const fieldMerge = acceptingRunner(h.store, calls);
+    const deps = { ...h.deps, steps: { fieldMerge } };
+    await ensureCompletionRun({ workspaceId: WS, signingRequestId: REQUEST }, deps);
+
+    const result = await processCompletionRun(
+      { workspaceId: WS, runId: runId() }, deps);
+
+    expect(calls).toEqual(["field-merge"]);
+    expect(result.stepsCompleted).toBe(1);
+    expect(result.outcome).toBe("claimed-and-blocked");
+
+    // The run left `processing`. A run stranded there is invisible to every
+    // other worker until the stale-attempt reconciler notices.
+    const run = h.store.completionRuns[0];
+    expect(run?.state).toBe("waiting-retry");
+    // Parked on `certificate`, which is BACKEND-40's — NOT on field-merge,
+    // which just succeeded.
+    expect(run?.failureStep).toBe("certificate");
+    expect(run?.failureCode).toBe("step-not-implemented");
+  });
+
+  it("does not re-run a step whose output is already accepted", async () => {
+    seed(h);
+    const calls: string[] = [];
+    const fieldMerge = acceptingRunner(h.store, calls);
+    const deps = { ...h.deps, steps: { fieldMerge } };
+    await ensureCompletionRun({ workspaceId: WS, signingRequestId: REQUEST }, deps);
+
+    await processCompletionRun({ workspaceId: WS, runId: runId() }, deps);
+    // Second attempt: the run is claimable again, and field-merge is done.
+    await processCompletionRun({ workspaceId: WS, runId: runId() }, deps);
+
+    expect(calls).toEqual(["field-merge"]);
+  });
+
+  it("reports the step's OWN failure code rather than a general one", async () => {
+    seed(h);
+    const fieldMerge = vi.fn(() => Promise.resolve({
+      outcome: "failed" as const, failureCode: "unrenderable-value" as const,
+    }));
+    const deps = { ...h.deps, steps: { fieldMerge } };
+    await ensureCompletionRun({ workspaceId: WS, signingRequestId: REQUEST }, deps);
+
+    const result = await processCompletionRun(
+      { workspaceId: WS, runId: runId() }, deps);
+
+    expect(result).toMatchObject({
+      outcome: "failed", failureCode: "unrenderable-value", stepsCompleted: 0,
+    });
+  });
+
+  it("never invokes a runner for a run it could not claim", async () => {
+    // The concurrency property, at this layer: work happens only behind a
+    // successful conditional claim. OD-155 proved the claim itself against real
+    // PostgreSQL; this asserts nothing runs when it fails.
+    seed(h);
+    const fieldMerge = vi.fn(() => Promise.resolve({ outcome: "merged" as const }));
+    const deps = { ...h.deps, steps: { fieldMerge } };
+    await ensureCompletionRun({ workspaceId: WS, signingRequestId: REQUEST }, deps);
+    const run = h.store.completionRuns[0];
+    if (run !== undefined) run.state = "processing";
+
+    const result = await processCompletionRun(
+      { workspaceId: WS, runId: runId() }, deps);
+
+    expect(result.outcome).toBe("not-claimable");
+    expect(fieldMerge).not.toHaveBeenCalled();
+  });
+
+  it("bounds a runner that reports success without accepting its step", async () => {
+    // The runaway guard. Without the bound, `nextCompletionStep` keeps
+    // returning field-merge and the loop re-downloads, re-renders and
+    // re-uploads forever — which presents as a hung worker, not as a bug.
+    seed(h);
+    const fieldMerge = vi.fn(() => Promise.resolve({ outcome: "merged" as const }));
+    const deps = { ...h.deps, steps: { fieldMerge } };
+    await ensureCompletionRun({ workspaceId: WS, signingRequestId: REQUEST }, deps);
+
+    const result = await processCompletionRun(
+      { workspaceId: WS, runId: runId() }, deps);
+
+    expect(result).toMatchObject({ outcome: "failed", failureCode: "output-missing" });
+    expect(h.store.completionRuns[0]?.state).toBe("failed-terminal");
+    // Bounded, not unbounded: one pass per declared step plus one.
+    expect(fieldMerge.mock.calls.length).toBeLessThanOrEqual(5);
+  });
+
+  it("still parks when no runner is wired at all — an un-updated worker", async () => {
+    // A deployment that has not been updated must park the run, not fail the
+    // request terminally.
+    seed(h);
+    await ensureCompletionRun({ workspaceId: WS, signingRequestId: REQUEST }, h.deps);
+
+    const result = await processCompletionRun(
+      { workspaceId: WS, runId: runId() }, h.deps);
+
+    expect(result.outcome).toBe("claimed-and-blocked");
+    expect(h.store.completionRuns[0]?.failureCode).toBe("step-not-implemented");
+    expect(h.store.completionRuns[0]?.failureStep).toBe("field-merge");
   });
 });

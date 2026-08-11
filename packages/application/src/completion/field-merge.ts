@@ -119,23 +119,41 @@ export function failureCodeForSealingError(error: unknown): CompletionFailureCod
 /**
  * How a `DATE_SIGNED` instant becomes characters.
  *
- * **UTC, ISO-8601 date.** Recorded as a decision because it is visible on a
- * legal document and it is not obviously right: LAGDA is a Philippine product,
- * PHT is UTC+8, and a signature accepted at 07:00 on the 12th in Manila is
- * 23:00 on the 11th in UTC — so this renders the previous day for any signing
- * before 08:00 local.
+ * **ISO-8601 date, explicitly LABELLED `UTC`** — `2026-08-11 (UTC)`.
  *
- * It is done this way because the backend has NO timezone model: no workspace
- * locale, no recipient timezone, nothing on the signing request. Inventing
- * `Asia/Manila` here would hard-code one jurisdiction into the renderer and be
- * wrong the first time a document is signed anywhere else, and it would be
- * invisible — a date is plausible whichever day it says.
+ * ── Why the label, and why not a local date ────────────────────────────────
  *
- * OD-166 carries the product decision. Until it is made, this is the choice
- * that is at least uniform and auditable against the stored instant.
+ * The product is NOT Philippine-only (owner, 2026-08-11), so the renderer must
+ * not assume a jurisdiction. Two consequences, and the label is what resolves
+ * the second:
+ *
+ *   - `Asia/Manila` is ruled out. Hard-coding it would be wrong the first time
+ *     a document is signed elsewhere, and wrong INVISIBLY, because a date looks
+ *     plausible whichever day it says.
+ *   - A bare UTC date is also wrong, quietly. PHT is UTC+8, so a signature
+ *     accepted at 07:00 in Manila renders as the PREVIOUS day, and a reader has
+ *     no way to tell that from a signature genuinely made the day before.
+ *
+ * Labelling it makes the frame of reference part of the document. The date may
+ * differ from the signer's local calendar day, but it can no longer be
+ * MISREAD — and on a legal instrument that is the difference that matters.
+ *
+ * ── The trap for whoever implements the real fix ───────────────────────────
+ *
+ * There IS a validated IANA timezone in this codebase — `users.timezone`, with
+ * `looksLikeIanaZone` and `isKnownTimezone` in `account/profile.ts`. **It is the
+ * wrong one.** That is a workspace ACCOUNT HOLDER's display preference, and the
+ * person whose date this is signs through a link with no LAGDA account at all
+ * (BACKEND-33). Dating a counterparty's signature by the sender's preference
+ * would be worse than UTC, because it would look local and be someone else's
+ * local.
+ *
+ * The real fix is to capture the SIGNER's zone during the ceremony and persist
+ * it with the submission. OD-166 carries it; the validation helpers above are
+ * reusable when it happens.
  */
 function renderInstant(at: number): string {
-  return new Date(at).toISOString().slice(0, 10);
+  return `${new Date(at).toISOString().slice(0, 10)} (UTC)`;
 }
 
 /** One stored value to one renderable field. */

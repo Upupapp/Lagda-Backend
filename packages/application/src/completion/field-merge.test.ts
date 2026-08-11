@@ -371,16 +371,27 @@ describe("projecting stored values", () => {
     });
   });
 
-  it("renders a DATE_SIGNED instant as a UTC ISO date — OD-166", () => {
-    // Recorded rather than assumed: PHT is UTC+8, so a signature accepted at
-    // 07:00 in Manila renders the PREVIOUS day. The backend has no timezone
-    // model to do better, and inventing Asia/Manila would hard-code one
-    // jurisdiction invisibly.
+  it("renders a DATE_SIGNED instant as a LABELLED UTC date — OD-166", () => {
+    // The product is not Philippine-only, so the renderer assumes no
+    // jurisdiction. The label is what stops the remaining ambiguity from being
+    // silent: this instant is 07:00 on the 12th in Manila and renders as the
+    // 11th, which a reader can only reconcile because the frame is stated.
     const field = toMergeableField({
       ...base,
       value: { kind: "instant", at: Date.parse("2026-08-11T23:00:00.000Z") },
     });
-    expect(field.value).toEqual({ kind: "text", text: "2026-08-11" });
+    expect(field.value).toEqual({ kind: "text", text: "2026-08-11 (UTC)" });
+  });
+
+  it("never renders a bare date that could be read as local", () => {
+    // The regression guard for the above. A future simplification back to
+    // `.slice(0, 10)` would look tidier and would silently reintroduce a date
+    // that is off by one for every signer east of UTC.
+    const field = toMergeableField({
+      ...base,
+      value: { kind: "instant", at: Date.parse("2026-01-01T00:00:00.000Z") },
+    });
+    expect((field.value as { text: string }).text).toMatch(/\(UTC\)$/);
   });
 
   it("maps a checkbox to a boolean, not a string", () => {
