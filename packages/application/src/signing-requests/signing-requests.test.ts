@@ -713,14 +713,26 @@ describe("getSigningRequest", () => {
 // ── Side effects ─────────────────────────────────────────────────────────────
 
 describe("creating a request sends nothing", () => {
-  it("writes no evidence event", async () => {
+  it("records the creation and NOTHING about a recipient", async () => {
+    // ── Rewritten by BACKEND-43 ─────────────────────────────────────────────
+    //
+    // This asserted no evidence at all, because configuring a workflow is not
+    // evidence anything happened to a recipient. The second half is still the
+    // point; the first no longer holds. Creation IS a fact — an authorized
+    // actor committed an immutable snapshot — and BACKEND-43 records it.
+    //
+    // What must stay absent is any claim about a signer.
     const h = await harness();
     await ready(h);
     await createSigningRequest(
       { actor: actor(OWNER), workspaceId: h.workspaceId, documentId: DOC }, h.deps);
-    // Configuring a workflow is not evidence that anything happened to a
-    // recipient. BACKEND-43 owns signing evidence.
-    expect(h.store.evidence).toHaveLength(0);
+
+    expect(h.store.evidence.map(e => e.eventType)).toEqual(["transaction-created"]);
+    expect(h.store.evidence[0]?.actor).toEqual({
+      type: "workspace-user", actorId: OWNER,
+    });
+    // No recipient is named: nothing has happened to one yet.
+    expect(h.store.evidence[0]?.recipientId).toBeUndefined();
   });
 
   it("creates no artifact and no seal", async () => {

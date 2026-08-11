@@ -22,6 +22,7 @@ import type {
 import type {
   ArtifactId, PreparationId, PreparationFieldId, PreparationFieldRecord,
   RecipientId, SigningRequestId, SigningRequestRecipientId, SigningRequestFieldId,
+  EvidenceEventId,
   NewSigningRequestSnapshot,
 } from "@lagda/application";
 import { createSigningRequest } from "@lagda/application";
@@ -500,5 +501,9 @@ function freshIds() {
       `srr_i${String(base)}_${String(++n)}` as SigningRequestRecipientId,
     nextSigningRequestFieldId: () =>
       `srf_i${String(base)}_${String(++n)}` as SigningRequestFieldId,
+    // BACKEND-43. Creation appends `transaction-created` in the same
+    // transaction, against real PostgreSQL here.
+    nextEvidenceEventId: () =>
+      `ev_i${String(base)}_${String(++n)}` as EvidenceEventId,
   };
 }

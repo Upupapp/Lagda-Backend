@@ -150,9 +150,16 @@ export class SequentialSigningWorkflowIds implements SigningWorkflowIdGenerator 
   }
 }
 
-export class SequentialSigningAccessIds implements SigningAccessIdGenerator {
+export class SequentialSigningAccessIds
+implements SigningAccessIdGenerator, EvidenceEventIdGenerator {
   private grant = 1;
   private intent = 1;
+  private evidence = 1;
+
+  /** BACKEND-43. Send appends `transaction-sent` and one event per activation. */
+  nextEvidenceEventId(): EvidenceEventId {
+    return `ev_${String(this.evidence++)}` as EvidenceEventId;
+  }
   nextSigningAccessGrantId(): SigningAccessGrantId {
     return `sag_${String(this.grant++)}` as SigningAccessGrantId;
   }
@@ -168,10 +175,23 @@ export class SequentialSigningAccessIds implements SigningAccessIdGenerator {
  * recipient id would pass against a shared counter and fail against the real
  * generators - and telling the three apart is most of what BACKEND-32 is for.
  */
-export class SequentialSigningRequestIds implements SigningRequestIdGenerator {
+export class SequentialSigningRequestIds
+implements SigningRequestIdGenerator, EvidenceEventIdGenerator {
   private request = 1;
   private recipient = 1;
   private field = 1;
+  private evidence = 1;
+
+  /**
+   * BACKEND-43. Creation appends `transaction-created`.
+   *
+   * A FOURTH counter, for the same reason the class already has three: a test
+   * that accidentally compared an event id to a request id would pass against a
+   * shared counter and fail against the real generators.
+   */
+  nextEvidenceEventId(): EvidenceEventId {
+    return `ev_${String(this.evidence++)}` as EvidenceEventId;
+  }
   nextSigningRequestId(): SigningRequestId {
     return `sr_${String(this.request++)}` as SigningRequestId;
   }

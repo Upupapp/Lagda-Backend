@@ -130,10 +130,30 @@ describe("send contacts no provider and performs no ceremony", () => {
   });
 
   it("writes no signing evidence and no ceremony state", () => {
+    // ── Narrowed by BACKEND-43 ──────────────────────────────────────────────
+    //
+    // The USE CASE now appends evidence: sending is an authorized actor
+    // committing the request for recipient access, which is exactly the kind of
+    // fact this evidence store exists to hold. What it still must not do is
+    // claim a recipient DID anything — no view, no signature, no delivery — and
+    // the forbidden-column sweep below is what holds that line.
+    //
+    // The ROUTE and the MIGRATION keep the original rule. An HTTP layer
+    // appending to a legal record puts event semantics one refactor away from a
+    // controller, and a migration has no business writing events at all.
+    for (const file of [ROUTES, MIGRATION]) {
+      expect(code(file), `${path.basename(file)} writes evidence`)
+        .not.toMatch(/uow\.evidence|evidence\.append/);
+    }
+
+    // The use case appends only through factories — never a literal, so type,
+    // version, source and actor cannot drift apart.
+    const useCase = code(USE_CASE);
+    expect(useCase).toMatch(/uow\.evidence\.append\(requestSent\(/);
+    expect(useCase).not.toMatch(/evidence\.append\(\s*\{/);
+
     for (const file of [USE_CASE, ROUTES, MIGRATION]) {
       const source = code(file);
-      expect(source, `${path.basename(file)} writes evidence`)
-        .not.toMatch(/uow\.evidence|evidence\.append/);
       for (const forbidden of [
         "viewed_at", "viewedAt", "signed_at", "signedAt", "declined_at",
         "authenticated_at", "authenticatedAt", "completed_at",

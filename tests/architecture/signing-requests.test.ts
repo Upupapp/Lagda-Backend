@@ -198,13 +198,28 @@ describe("creating a request sends nothing", () => {
     }
   });
 
-  it("writes no signing evidence", () => {
-    // Configuring a workflow is not evidence that anything happened to a
-    // recipient. BACKEND-43 owns signing evidence.
-    for (const file of [USE_CASES, ROUTES]) {
-      expect(code(file), `${path.basename(file)} writes evidence`)
-        .not.toMatch(/uow\.evidence|evidence\.append/);
-    }
+  it("writes evidence ONLY through a factory, and only from the use case", () => {
+    // ── Rewritten by BACKEND-43 ─────────────────────────────────────────────
+    //
+    // This asserted that creation writes NO evidence, on the grounds that
+    // configuring a workflow is not evidence anything happened to a recipient.
+    // The second half still holds and the first no longer does: BACKEND-43 is
+    // the command that owns signing evidence, and it records the CREATION —
+    // an authorized actor committing an immutable snapshot — which is a fact
+    // about the request, not a claim about a recipient.
+    //
+    // What must stay true is the shape. The ROUTE writes no evidence, because
+    // an HTTP layer appending to a legal record would put event semantics one
+    // refactor away from a controller. And the use case builds no event
+    // literal of its own — it calls a factory, so type, version, source and
+    // actor cannot drift apart.
+    expect(code(ROUTES), "the route writes evidence")
+      .not.toMatch(/uow\.evidence|evidence\.append/);
+
+    const useCases = code(USE_CASES);
+    expect(useCases).toMatch(/uow\.evidence\.append\(requestCreated\(/);
+    // No hand-built literal: every append's argument is a factory call.
+    expect(useCases).not.toMatch(/evidence\.append\(\s*\{/);
   });
 
   it("carries no ceremony or delivery column", () => {

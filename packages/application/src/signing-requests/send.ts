@@ -29,7 +29,11 @@
 // asserts it. A contact renamed after creation changes nothing about what is
 // sent.
 
-import type { WorkspaceId, IdempotencyKey } from "@lagda/contracts";
+import type {
+  WorkspaceId, IdempotencyKey, TransactionId,
+} from "@lagda/contracts";
+// BACKEND-43. Factories, never hand-built event literals.
+import { requestSent, recipientActivated } from "../evidence/events.js";
 import {
   assessSendEligibility, describeSendBlocker, planActivation, routingShape,
   needsSigningAccess,
@@ -39,6 +43,7 @@ import type {
   Clock, TransactionManager, WorkspaceUnitOfWork,
   SigningRequestId, SigningRequestRecord, SigningRequestRecipientRecord,
   SigningAccessTokenFactory, DeliverySecretSealer, SigningLinkBuilder,
+  EvidenceEventIdGenerator,
   SigningAccessIdGenerator, RecipientActivationRecord,
 } from "../common/ports/index.js";
 import type { AuthenticatedActor } from "../common/ports/session.js";
@@ -135,7 +140,7 @@ export interface SigningRequestSentView {
  * the function practical rather than merely intended.
  */
 export interface SigningAccessProvisioningDependencies {
-  readonly ids: SigningAccessIdGenerator;
+  readonly ids: SigningAccessIdGenerator & EvidenceEventIdGenerator;
   readonly tokens: SigningAccessTokenFactory;
   readonly sealer: DeliverySecretSealer;
   readonly links: SigningLinkBuilder;
@@ -341,6 +346,38 @@ async function performSend(
     // back is correct: the other transaction did the whole job, and this one's
     // grants and intents must not survive alongside it.
     throw new ResourceConflictError("This request was sent by another request.");
+  }
+
+  // ── Evidence (BACKEND-43 §148, §149) ──────────────────────────────────────
+  //
+  // AFTER the transition, deliberately — unlike the completion pipeline, where
+  // evidence precedes the state change. The difference is what each guards
+  // against. Completion's transition is the last durable act, so its evidence
+  // must already exist; here the transition is the CONDITIONAL one, and writing
+  // evidence before it would append events for a send that the `where state =
+  // 'draft'` predicate is about to refuse. Both orderings put evidence and fact
+  // in the same transaction, which is what §50 asks.
+  //
+  // `transaction-sent` says a workspace actor committed the request for
+  // recipient access. It does NOT say an email was delivered (§55, §172) —
+  // nothing here knows that, and BACKEND-45 owns the fact that will.
+  const evidenceBase = {
+    newEventId: () => deps.ids.nextEvidenceEventId(),
+    signingRequestId: signingRequestId as unknown as TransactionId,
+    occurredAt: now,
+  };
+  await uow.evidence.append(requestSent(evidenceBase, input.actor.userId));
+
+  // One activation event per ACTIVE recipient. A waiting recipient has not
+  // become eligible for anything, so an event saying so would be false — and
+  // the cohort advance that later activates them appends its own.
+  // Iterated from `activations` rather than `plan.active`: the activation rows
+  // carry the branded recipient id, and they are the same rows just written, so
+  // the events cannot disagree with what was persisted.
+  for (const activation of activations) {
+    if (activation.state !== "active") continue;
+    await uow.evidence.append(
+      recipientActivated(evidenceBase, activation.recipientId));
   }
 
   return {

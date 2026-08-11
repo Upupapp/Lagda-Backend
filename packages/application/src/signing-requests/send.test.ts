@@ -587,7 +587,19 @@ describe("send performs no ceremony and contacts no provider", () => {
     const artifactsBefore = h.store.artifacts.length;
     await send(h, id);
 
-    expect(h.store.evidence).toHaveLength(0);
+    // BACKEND-43: send now records that it was sent and who became eligible.
+    // It still claims NOTHING a recipient did — no view, no signature, no
+    // delivery — which is what this test is really about.
+    // Three: the harness CREATES the request before sending it, so
+    // `transaction-created` is already there. Asserting the whole set rather
+    // than only send's own is deliberate — it pins that send adds exactly two.
+    expect(h.store.evidence.map(e => e.eventType).sort())
+      .toEqual(["recipient-activated", "transaction-created", "transaction-sent"]);
+    for (const forbidden of [
+      "document-viewed", "signature-completed", "authentication-completed",
+    ]) {
+      expect(h.store.evidence.map(e => e.eventType)).not.toContain(forbidden);
+    }
     expect(h.store.artifacts).toHaveLength(artifactsBefore);
     expect(h.store.seals).toHaveLength(0);
   });

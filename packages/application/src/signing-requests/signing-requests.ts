@@ -28,7 +28,12 @@
 // transaction — because a client that could send its own recipient array could
 // create a signing workflow that does not match the document anyone reviewed.
 
-import type { DocumentId, WorkspaceId, IdempotencyKey } from "@lagda/contracts";
+import type {
+  DocumentId, WorkspaceId, IdempotencyKey, TransactionId,
+} from "@lagda/contracts";
+import type { EvidenceEventIdGenerator } from "../common/ports/index.js";
+// BACKEND-43. Factory, never a hand-built event literal.
+import { requestCreated } from "../evidence/events.js";
 import type { SigningRequestState } from "@lagda/contracts";
 import {
   assessSnapshotReadiness, describeBlocker, canPlaceFields,
@@ -194,7 +199,7 @@ const toFieldView = (record: SigningRequestFieldRecord): SigningRequestFieldView
 export interface SigningRequestDependencies {
   readonly transactions: TransactionManager;
   readonly clock: Clock;
-  readonly ids: SigningRequestIdGenerator;
+  readonly ids: SigningRequestIdGenerator & EvidenceEventIdGenerator;
   /**
    * Everything the idempotency service needs EXCEPT the repository, which comes
    * from the unit of work so the claim commits with the snapshot.
@@ -288,6 +293,23 @@ export async function createSigningRequest(
       const now = deps.clock.now();
       const snapshot = await buildSnapshot(uow, input, deps, now);
       await uow.signingRequests.createSnapshot(snapshot);
+
+      // ── Evidence (BACKEND-43 §147) ──────────────────────────────────────
+      //
+      // Same transaction as the snapshot. `occurredAt` is the snapshot's OWN
+      // createdAt rather than `now` — they are the same value here, and reading
+      // it from the record is what keeps them the same if the snapshot ever
+      // stamps its own.
+      //
+      // Inside the idempotent `write`, so a replayed creation reproduces the
+      // original response without appending a second event: the replay does not
+      // call this at all.
+      await uow.evidence.append(requestCreated({
+        newEventId: () => deps.ids.nextEvidenceEventId(),
+        signingRequestId:
+          snapshot.request.signingRequestId as unknown as TransactionId,
+        occurredAt: snapshot.request.createdAt,
+      }, input.actor.userId, snapshot.request.documentId));
       created = {
         signingRequestId: snapshot.request.signingRequestId,
         documentId: snapshot.request.documentId,
