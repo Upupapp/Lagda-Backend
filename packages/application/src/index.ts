@@ -44,3 +44,7 @@ export * from "./signing-submission/signing-submission.js";
 export * from "./signing-workflow/signing-workflow.js";
 export * from "./completion/completion.js";
 export * from "./verification/public-verification.js";
+// BACKEND-43. The ONE way to construct an evidence event: producers call a
+// factory rather than building a literal, so type, version, source and actor
+// cannot drift apart.
+export * from "./evidence/events.js";
