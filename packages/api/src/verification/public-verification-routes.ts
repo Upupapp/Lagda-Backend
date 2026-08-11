@@ -91,7 +91,15 @@ const NOT_FOUND = {
 export interface PublicVerificationRouteOptions {
   readonly deps: PublicVerificationDependencies;
   readonly metrics: MetricsRecorder;
-  readonly rateLimit: RateLimitOptions;
+  /**
+   * OPTIONAL, matching every other route module here.
+   *
+   * Absent means no limiter is configured at all — the same posture the
+   * signing-access routes take. It must not mean "call an undefined limiter",
+   * which is what the first version of this file did: it crashed with a 500 on
+   * every request in any app built without one, including the route tests.
+   */
+  readonly rateLimit?: RateLimitOptions;
 }
 
 function limits(
@@ -101,6 +109,8 @@ function limits(
 ): Promise<void> {
   // IP is the only scope available: there is no account, no session and no
   // credential to scope by.
+  if (options.rateLimit === undefined) return Promise.resolve();
+
   const checks: RateLimitCheck[] = [{
     policy: policyById(policy),
     scope: { type: "ip", ipAddress: request.ip },
@@ -112,6 +122,39 @@ export function registerPublicVerificationRoutes(
   app: FastifyInstance,
   options: PublicVerificationRouteOptions,
 ): void {
+  // Registered inside a PLUGIN SCOPE, and that is not stylistic.
+  //
+  // The wildcard content-type parser below must not reach the rest of the app.
+  // Fastify encapsulates parsers per plugin, so registering it on the root
+  // instance would change how EVERY other route treats an unrecognised body —
+  // a side effect from a route module onto forty endpoints it has no business
+  // touching. Inside `register`, it applies to these two routes and stops.
+  void app.register((scope, _opts, done) => {
+    // The uploaded file must reach the handler as a RAW STREAM.
+    //
+    // Fastify answers 415 for a content type it has no parser for, and every
+    // built-in parser BUFFERS the whole body before the handler runs — which
+    // would load a 25 MB PDF into memory before anything checked its size, and
+    // would defeat the streaming bound entirely.
+    //
+    // The parser is therefore a no-op that hands the request through
+    // untouched; `hashStream` consumes `request.raw` itself. A wildcard is
+    // right because this surface accepts exactly one thing — bytes — and
+    // inspecting the declared type would be trusting the caller about content
+    // anyway (§79).
+    scope.addContentTypeParser("*", (_request, payload, parsed) => {
+      parsed(null, payload);
+    });
+    registerRoutes(scope, options);
+    done();
+  });
+}
+
+function registerRoutes(
+  app: FastifyInstance,
+  options: PublicVerificationRouteOptions,
+): void {
+
   // ── ID lookup ─────────────────────────────────────────────────────────────
   app.get<{ Params: { verificationId: string } }>(
     "/public/verifications/:verificationId",

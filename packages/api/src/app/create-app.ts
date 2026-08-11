@@ -49,6 +49,9 @@ import { registerSigningCeremonyRoutes } from "../signing-ceremony/signing-cerem
 import { registerSigningSubmissionRoutes } from "../signing-submission/signing-submission-routes.js";
 import { registerSigningDeclineRoutes } from "../signing-decline/signing-decline-routes.js";
 import { registerCancelRoutes } from "../signing-requests/cancel-routes.js";
+import {
+  registerPublicVerificationRoutes,
+} from "../verification/public-verification-routes.js";
 
 export interface CreateAppOptions {
   readonly config: ApiConfig;
@@ -582,6 +585,30 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
   // and an IP limiter, and the context route carries an HttpOnly session cookie
   // in its own realm. What they do not carry is a workspace session, which is
   // the point.
+  // ── Public document verification (BACKEND-42) ────────────────────────────
+  //
+  // Registered OUTSIDE every authenticated scope, and outside the recipient
+  // realm too. These are the only routes in LAGDA that carry NO credential:
+  // not a workspace session, not a signing link, not an invitation token.
+  //
+  // What protects them is not authentication but shape — an opaque ~58-bit
+  // identifier, a curated projection, a fail-closed IP limiter, and the fact
+  // that neither route can return a document.
+  if (dependencies.publicVerification !== undefined) {
+    const publicVerification = dependencies.publicVerification();
+    const publicLimiter = dependencies.limiter;
+    registerPublicVerificationRoutes(app, {
+      deps: publicVerification,
+      metrics,
+      // Spread rather than `rateLimit: undefined`, so "no limiter configured"
+      // is an ABSENT key under `exactOptionalPropertyTypes` rather than a
+      // present one holding undefined.
+      ...(publicLimiter === undefined
+        ? {}
+        : { rateLimit: { limiter: publicLimiter, metrics } }),
+    });
+  }
+
   if (dependencies.signingAccess !== undefined) {
     const signingAccess = dependencies.signingAccess;
     // `dependencies.limiter` directly: the local `limiter` binding lives inside
