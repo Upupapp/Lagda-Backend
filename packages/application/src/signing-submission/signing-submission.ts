@@ -50,7 +50,7 @@ import type {
   SigningAccessProvisioningDependencies,
 } from "../signing-requests/send.js";
 import type {
-  SigningWorkflowIdGenerator, CompletionIdGenerator,
+  SigningWorkflowIdGenerator, CompletionIdGenerator, EvidenceEventIdGenerator,
 } from "../common/ports/index.js";
 
 // ── Errors ───────────────────────────────────────────────────────────────────
@@ -151,7 +151,7 @@ export interface SigningSubmissionDependencies {
   readonly workflowAccess: SigningAccessProvisioningDependencies;
   readonly clock: Clock;
   readonly sessionTokens: RecipientSessionTokenFactory;
-  readonly ids: RecipientSubmissionIdGenerator;
+  readonly ids: RecipientSubmissionIdGenerator & EvidenceEventIdGenerator;
   readonly idempotencyKeys: IdempotencyKeyDigester;
   readonly idempotencyIds: IdempotencyRecordIdGenerator;
   readonly signatureImages: SignatureImageValidator;
@@ -460,6 +460,9 @@ async function acceptSubmission(args: {
     submissionId,
     acceptedAt: now,
     intentId: deps.workflowIds.nextSigningWorkflowIntentId(),
+    // BACKEND-43. The two evidence events for this signature are appended by
+    // the workflow application, inside this same transaction.
+    newEvidenceEventId: () => deps.ids.nextEvidenceEventId(),
   });
 
   const result = {

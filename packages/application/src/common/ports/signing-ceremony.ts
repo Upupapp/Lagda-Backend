@@ -21,7 +21,7 @@ import type { WorkspaceId } from "@lagda/contracts";
 import type { RecipientSubmissionRepository } from "./signing-submission.js";
 import type { RecipientWorkflowRepository } from "./signing-workflow.js";
 import type { IdempotencyRepository } from "./idempotency.js";
-import type { ArtifactId } from "./evidence.js";
+import type { ArtifactId, ScopedEvidenceRepository } from "./evidence.js";
 import type { StorageObjectKey } from "./storage.js";
 import type { RecipientActivationState } from "./signing-access.js";
 import type {
@@ -164,6 +164,33 @@ export interface RecipientCeremonyUnitOfWork {
    * full scope, so a recipient cannot ask who else used a key.
    */
   readonly idempotency: IdempotencyRepository;
+  /**
+   * BACKEND-43. Evidence for recipient acts, on the SAME transaction.
+   *
+   * §50, §153 and §154 all require the event to commit with the fact it
+   * records. A submission accepted in one transaction and its evidence written
+   * in another is precisely the evidence-less critical transition §160 forbids.
+   *
+   * ── Why this does not widen the recipient realm ──────────────────────────
+   *
+   * There is only ONE runtime database role, `lagda_app`. The "recipient realm"
+   * is not a second role — it is this transaction setting the workspace RLS
+   * variable plus migrations 022/024's restrictive policies on the recipient's
+   * own rows. `lagda_app` has held INSERT on `evidence_events` since migration
+   * 003, with UPDATE and DELETE explicitly revoked, so appending here adds no
+   * privilege that did not already exist.
+   *
+   * What it does add is reach: this unit of work can now write one more table.
+   * The repository is append-only by construction — it has no update or delete
+   * method — and the events it can write are constrained to this signing
+   * request by the factories, which take the request id from the scope.
+   *
+   * **UNVERIFIED:** that `evidence_events`' `tenant_isolation` policy admits an
+   * INSERT under recipient-realm session variables. The transaction sets the
+   * same workspace setting the policy reads, so it should — but no PostgreSQL
+   * was reachable to prove it, and the integration suite skips. See OD-172.
+   */
+  readonly evidence: ScopedEvidenceRepository;
 }
 
 export interface SigningConsentIdGenerator {

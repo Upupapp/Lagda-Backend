@@ -148,6 +148,10 @@ function harness(): Harness {
         nextRecipientSubmissionId: () => next("sub") as RecipientSubmissionId,
         nextSigningFieldValueId: () => next("val") as SigningFieldValueId,
         nextSigningRepresentationId: () => next("rep") as SigningRepresentationId,
+        // BACKEND-43. The workflow application appends two evidence events in
+        // this transaction; without a generator the append throws and rolls the
+        // accepted submission back with it.
+        nextEvidenceEventId: () => next("ev") as never,
       },
       idempotencyKeys: {
         digestKey: (k: string) => `k${k}`.padStart(64, "0") as never,

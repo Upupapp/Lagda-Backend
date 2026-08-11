@@ -42,7 +42,9 @@
 // changes nothing; never running it is the only failure, and the reconciler
 // exists so that cannot be the end state.
 
-import type { WorkspaceId, SigningDeclineReason } from "@lagda/contracts";
+import type {
+  WorkspaceId, SigningDeclineReason, TransactionId,
+} from "@lagda/contracts";
 import { COMPLETION_PIPELINE_VERSION } from "@lagda/contracts";
 import {
   planWorkflowAdvance, deriveRequestState, assessSigningEligibility,
@@ -54,8 +56,10 @@ import type {
   RecipientCeremonyUnitOfWork, RecipientSubmissionId,
   SigningRequestId, SigningRequestRecipientId, SigningRequestRecord,
   SigningWorkflowIdGenerator,
-  RecipientSessionTokenFactory,
+  RecipientSessionTokenFactory, EvidenceEventId,
 } from "../common/ports/index.js";
+// BACKEND-43. Factories, never hand-built event literals.
+import { submissionAccepted, recipientSigned } from "../evidence/events.js";
 import type { AuthenticatedActor } from "../common/ports/session.js";
 import type { CompletionIdGenerator } from "../common/ports/completion.js";
 import {
@@ -177,6 +181,12 @@ export async function applyRecipientSubmissionToWorkflow(
     readonly submissionId: RecipientSubmissionId;
     readonly acceptedAt: number;
     readonly intentId: ReturnType<SigningWorkflowIdGenerator["nextSigningWorkflowIntentId"]>;
+    /**
+     * BACKEND-43. Passed in rather than taken from a generator on the uow,
+     * because this function receives a unit of work and not a dependency set —
+     * and the caller already holds the generator.
+     */
+    readonly newEvidenceEventId: () => EvidenceEventId;
   },
 ): Promise<void> {
   const moved = await uow.workflow.markSignedFromSubmission({
@@ -206,6 +216,32 @@ export async function applyRecipientSubmissionToWorkflow(
     submissionId: input.submissionId,
     createdAt: input.acceptedAt,
   });
+
+  // ── Evidence (BACKEND-43) ──────────────────────────────────────────────────
+  //
+  // TWO events from one submission, and they are not redundant. §62 is the
+  // backend ACCEPTING an immutable submission; §63 is the workflow TRANSITIONING
+  // this recipient to SIGNED. A reader wants the second; an investigator wants
+  // both, because they can in principle disagree — the transition above is
+  // conditional and can refuse.
+  //
+  // Both carry `acceptedAt`. §17 makes that mandatory for the signed event and
+  // §248 requires the pair to share it: they describe one instant from two
+  // angles, so event precedence rather than the clock is what orders them.
+  //
+  // Both are sourced from the submission, so re-applying the same submission
+  // converges rather than appending again (§49, §261). The partial unique index
+  // includes `event_type`, which is exactly what lets both exist under one
+  // source — a test in `evidence/events.test.ts` pins that.
+  const evidenceBase = {
+    newEventId: () => input.newEvidenceEventId(),
+    signingRequestId: uow.signingRequestId as unknown as TransactionId,
+    occurredAt: input.acceptedAt,
+  };
+  await uow.evidence.append(
+    submissionAccepted(evidenceBase, uow.recipientId, input.submissionId));
+  await uow.evidence.append(
+    recipientSigned(evidenceBase, uow.recipientId, input.submissionId));
 }
 
 // ── Decline ──────────────────────────────────────────────────────────────────

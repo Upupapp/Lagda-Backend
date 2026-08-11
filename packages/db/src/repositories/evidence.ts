@@ -15,7 +15,7 @@ import type {
   PublicVerificationLookup, PublicVerificationProjection, EvidenceSourceType,
   EvidenceEventInput, EvidenceEventRecord, EvidenceActor, EvidenceEventType,
   EvidenceEventId, ArtifactId, ArtifactRecord, ArtifactType, SealId, SealRecord,
-  FinalizationInput, RecipientId,
+  FinalizationInput, SigningRequestRecipientId,
 } from "@lagda/application";
 import { toStorageObjectKey } from "@lagda/application";
 import type { Database, DocumentArtifactsTable } from "../schema/index.js";
@@ -103,7 +103,12 @@ export function createEvidenceRepository(
           row.actor_type === "system"
             ? { type: "system" }
             : row.actor_type === "recipient"
-              ? { type: "recipient", actorId: (row.actor_id ?? "") as RecipientId }
+              ? {
+                type: "recipient",
+                // The IMMUTABLE signing-request recipient, not the mutable
+                // preparation one — see the note on the port.
+                actorId: (row.actor_id ?? "") as SigningRequestRecipientId,
+              }
               : { type: "workspace-user", actorId: row.actor_id ?? "" };
 
         return {
@@ -111,7 +116,9 @@ export function createEvidenceRepository(
           workspaceId: row.workspace_id as WorkspaceId,
           signingRequestId: row.signing_request_id as TransactionId,
           ...(row.document_id === null ? {} : { documentId: row.document_id as DocumentId }),
-          ...(row.recipient_id === null ? {} : { recipientId: row.recipient_id as RecipientId }),
+          ...(row.recipient_id === null
+            ? {}
+            : { recipientId: row.recipient_id as SigningRequestRecipientId }),
           eventType: row.event_type as EvidenceEventType,
           eventVersion: row.event_version,
           actor,

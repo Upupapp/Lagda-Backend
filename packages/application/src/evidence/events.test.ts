@@ -7,7 +7,7 @@
 import { describe, it, expect } from "vitest";
 import { EVIDENCE_EVENT_TYPES } from "../common/ports/evidence.js";
 import type {
-  EvidenceEventId, EvidenceEventInput, RecipientId,
+  EvidenceEventId, EvidenceEventInput, SigningRequestRecipientId,
 } from "../common/ports/evidence.js";
 import type { TransactionId, UserId, DocumentId } from "@lagda/contracts";
 import * as events from "./events.js";
@@ -15,7 +15,9 @@ import * as events from "./events.js";
 const REQ = "req_1" as TransactionId;
 const USER = "usr_1" as UserId;
 const DOC = "doc_1" as DocumentId;
-const REC = "rcp_1" as RecipientId;
+// The IMMUTABLE signing-request recipient. Evidence never cites the mutable
+// preparation recipient — see the note on the port.
+const REC = "srr_1" as SigningRequestRecipientId;
 const AT = Date.parse("2026-08-11T10:00:00.000Z");
 
 let minted = 0;

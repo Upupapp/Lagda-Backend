@@ -32,8 +32,25 @@ export type SealId = string & { readonly __brand: "SealId" };
  * declaration moved to `./recipients.js` and this keeps existing importers
  * working — one type rather than two that agree by coincidence of brand string.
  */
-export type { RecipientId } from "./recipients.js";
-import type { RecipientId } from "./recipients.js";
+/**
+ * ── BACKEND-43 corrected this ──────────────────────────────────────────────
+ *
+ * Evidence cites the IMMUTABLE signing-request recipient, never the mutable
+ * preparation recipient.
+ *
+ * This port was written in BACKEND-10, before signing requests existed, so it
+ * reached for the only recipient id there was — `RecipientId`, which identifies
+ * a PREPARATION recipient that "can be edited, deleted or reused by a second
+ * request". Citing it in evidence would mean a mutable row could rewrite who a
+ * historical event was about, which §21, §27, §166 and §321 all forbid.
+ *
+ * `SigningRequestRecipientId`'s own documentation has said so all along:
+ * "BACKEND-43 cites it as evidence." Nothing had ever appended an event, so the
+ * mismatch had no runtime consequence — the compiler found it the moment the
+ * first recipient producer was wired.
+ */
+export type { SigningRequestRecipientId } from "./signing-requests.js";
+import type { SigningRequestRecipientId } from "./signing-requests.js";
 
 export interface EvidenceEventIdGenerator {
   nextEvidenceEventId(): EvidenceEventId;
@@ -128,7 +145,7 @@ export type ActorType = (typeof ACTOR_TYPES)[number];
  */
 export type EvidenceActor =
   | { readonly type: "workspace-user"; readonly actorId: string }
-  | { readonly type: "recipient"; readonly actorId: RecipientId }
+  | { readonly type: "recipient"; readonly actorId: SigningRequestRecipientId }
   | { readonly type: "system" };
 
 /**
@@ -201,7 +218,7 @@ export interface EvidenceEventInput {
   readonly evidenceEventId: EvidenceEventId;
   readonly signingRequestId: TransactionId;
   readonly documentId?: DocumentId;
-  readonly recipientId?: RecipientId;
+  readonly recipientId?: SigningRequestRecipientId;
   readonly eventType: EvidenceEventType;
   /**
    * The semantic version of THIS EVENT TYPE. Mandatory — every row carries one.

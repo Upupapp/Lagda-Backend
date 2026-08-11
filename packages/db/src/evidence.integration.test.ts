@@ -12,7 +12,7 @@ import type {
 } from "@lagda/contracts";
 import type {
   ArtifactId, ArtifactRecord, EvidenceEventId, EvidenceEventInput,
-  SealId, SealRecord, VerificationRecord, RecipientId,
+  SealId, SealRecord, VerificationRecord, SigningRequestRecipientId,
 } from "@lagda/application";
 import type { LagdaDatabase } from "./client/index.js";
 import { createTransactionManager } from "./transactions/index.js";
@@ -38,6 +38,7 @@ const DOC_B = "doc_b1" as DocumentId;
 const documentFor = (workspaceId: WorkspaceId): DocumentId =>
   workspaceId === WS_B ? DOC_B : DOC;
 const REQ = "txn_1" as TransactionId;
+const SRR = "srr_1" as SigningRequestRecipientId;
 const HASH_A = "a".repeat(64) as Sha256Digest;
 const HASH_B = "b".repeat(64) as Sha256Digest;
 
@@ -213,8 +214,8 @@ describe.skipIf(!hasIntegrationDatabase())("evidence persistence on PostgreSQL",
     await transactions.runForWorkspace(WS_A, (uow) =>
       uow.evidence.append(event({
         eventType: "document-viewed",
-        actor: { type: "recipient", actorId: "rcp_1" as RecipientId },
-        recipientId: "rcp_1" as RecipientId,
+        actor: { type: "recipient", actorId: SRR },
+        recipientId: SRR,
       })));
 
     const [found] = await transactions.runForWorkspace(WS_A, (uow) =>

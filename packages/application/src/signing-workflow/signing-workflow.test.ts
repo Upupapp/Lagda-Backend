@@ -322,6 +322,10 @@ describe("integrity failures", () => {
       submissionId: "sub_1" as RecipientSubmissionId,
       acceptedAt: AT,
       intentId: "swi_1" as SigningWorkflowIntentId,
+      newEvidenceEventId: (() => {
+        let n = 0;
+        return () => `ev_${String(++n)}` as never;
+      })(),
     })).rejects.toBeInstanceOf(SigningWorkflowIntegrityError);
   });
 });

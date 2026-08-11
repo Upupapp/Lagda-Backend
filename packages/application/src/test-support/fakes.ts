@@ -2213,6 +2213,10 @@ export class FakeTransactionManager implements TransactionManager {
           workspaceId: scope.workspaceId,
           signingRequestId: scope.signingRequestId,
           recipientId: scope.recipientId,
+          // BACKEND-43. The SAME scoped repository the workspace realm gets,
+          // including its in-memory partial unique index — so a recipient-realm
+          // idempotency test is exercising the same rule PostgreSQL will.
+          evidence: scopedEvidence(store, scope.workspaceId),
           ceremony: {
             getRequest: () => Promise.resolve(
               store.signingRequests.find(

@@ -286,6 +286,10 @@ export function createTransactionManager(db: Kysely<Database>): TransactionManag
               // completed in a different transaction from the mutation it
               // guards would replay a submission that rolled back.
               idempotency: createIdempotencyRepository(trx),
+              // BACKEND-43. Evidence commits with the recipient act it records
+              // (§50). Scoped to the workspace this transaction already set as
+              // the RLS variable — the same one `tenant_isolation` reads.
+              evidence: createEvidenceRepository(trx, scope.workspaceId),
             });
           },
         });

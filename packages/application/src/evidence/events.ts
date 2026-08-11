@@ -30,7 +30,7 @@
 
 import type {
   EvidenceEventId, EvidenceEventInput, EvidenceEventType, EvidenceSource,
-  EvidenceActor, ObservedRequestContext, RecipientId,
+  EvidenceActor, ObservedRequestContext, SigningRequestRecipientId,
 } from "../common/ports/evidence.js";
 import type { TransactionId, UserId, DocumentId } from "@lagda/contracts";
 
@@ -92,7 +92,7 @@ function build(
   source: EvidenceSource,
   extra: {
     readonly documentId?: DocumentId;
-    readonly recipientId?: RecipientId;
+    readonly recipientId?: SigningRequestRecipientId;
     readonly observed?: ObservedRequestContext;
     readonly details?: EvidenceEventInput["details"];
   } = {},
@@ -178,7 +178,7 @@ export function requestCompleted(
  * fact about the request, which is why the actor is `system`.
  */
 export function recipientActivated(
-  base: EventBase, recipientId: RecipientId,
+  base: EventBase, recipientId: SigningRequestRecipientId,
 ): EvidenceEventInput {
   return build(base, "recipient-activated", { type: "system" },
     // The recipient row is the source: one activation per recipient, and the
@@ -199,7 +199,7 @@ export function recipientActivated(
  * a repeat the product allows.
  */
 export function recipientAuthenticated(
-  base: EventBase, recipientId: RecipientId, sessionId: string, method: string,
+  base: EventBase, recipientId: SigningRequestRecipientId, sessionId: string, method: string,
 ): EvidenceEventInput {
   return build(base, "authentication-completed",
     { type: "recipient", actorId: recipientId },
@@ -219,7 +219,7 @@ export function recipientAuthenticated(
  * from filling the timeline (§93), not a database constraint.
  */
 export function ceremonyEntered(
-  base: EventBase, recipientId: RecipientId,
+  base: EventBase, recipientId: SigningRequestRecipientId,
   observed?: ObservedRequestContext,
 ): EvidenceEventInput {
   return {
@@ -241,7 +241,7 @@ export function ceremonyEntered(
  * record and would blow past the 8 KB payload cap besides.
  */
 export function consentAccepted(
-  base: EventBase, recipientId: RecipientId, consentId: string,
+  base: EventBase, recipientId: SigningRequestRecipientId, consentId: string,
   consentType: string, consentVersion: string,
 ): EvidenceEventInput {
   return build(base, "consent-accepted",
@@ -262,7 +262,7 @@ export function consentAccepted(
  * precedence is what orders them for a reader rather than the clock.
  */
 export function submissionAccepted(
-  base: EventBase, recipientId: RecipientId, submissionId: string,
+  base: EventBase, recipientId: SigningRequestRecipientId, submissionId: string,
 ): EvidenceEventInput {
   return build(base, "submission-accepted",
     { type: "recipient", actorId: recipientId },
@@ -281,7 +281,7 @@ export function submissionAccepted(
  * one event rather than appending a second (§49, §261).
  */
 export function recipientSigned(
-  base: EventBase, recipientId: RecipientId, submissionId: string,
+  base: EventBase, recipientId: SigningRequestRecipientId, submissionId: string,
 ): EvidenceEventInput {
   return build(base, "signature-completed",
     { type: "recipient", actorId: recipientId },
@@ -291,7 +291,7 @@ export function recipientSigned(
 
 /** A recipient declined to sign (§72). Only where the product has the state. */
 export function participantDeclined(
-  base: EventBase, recipientId: RecipientId,
+  base: EventBase, recipientId: SigningRequestRecipientId,
 ): EvidenceEventInput {
   return build(base, "participant-declined",
     { type: "recipient", actorId: recipientId },
