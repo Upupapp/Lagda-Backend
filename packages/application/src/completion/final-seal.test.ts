@@ -109,6 +109,13 @@ function harness(): Harness {
         nextArtifactId: () => "art_final",
         nextSealId: () => "seal_1",
         nextVerificationId: () => "LAGDA-VERIFY-1",
+        // BACKEND-43. Sequential rather than fixed: the finalization appends
+        // four evidence events and a constant id would make three of them
+        // primary-key collisions.
+        nextEvidenceEventId: (() => {
+          let n = 0;
+          return () => `ev_${String(++n)}`;
+        })(),
       }),
       storage: objects,
       keys,
@@ -452,5 +459,78 @@ describe("mapping sealer failures", () => {
 
   it("treats a non-sealing throw as the sealer being unreachable", () => {
     expect(sealFailureCode(new Error("boom"))).toBe("sealer-unavailable");
+  });
+});
+
+describe("evidence (BACKEND-43)", () => {
+  const typesOf = (h: ReturnType<typeof harness>) =>
+    h.store.evidence.map(e => e.eventType).sort();
+
+  it("records the four completion facts, each exactly once", () => {
+    // §251-§254. Four distinct facts, and the pipeline steps are deliberately
+    // separate from the request completing -- §68 is explicit that the final
+    // seal succeeding and the request being completed are different moments.
+    seed(h);
+    return run(h).then(() => {
+      expect(typesOf(h)).toEqual([
+        "document-sealed", "final-seal-completed", "transaction-completed",
+        "verification-record-created",
+      ]);
+    });
+  });
+
+  it("stamps transaction-completed with SigningRequest.completedAt", async () => {
+    // §18, §255, §317. Mandatory: the audit's completion time is the
+    // finalization clock, not a time the audit layer invented later.
+    seed(h);
+    const result = await run(h);
+    const completed = h.store.evidence.find(
+      e => e.eventType === "transaction-completed");
+
+    expect(completed?.occurredAt).toBe(result.completedAt);
+  });
+
+  it("attributes completion to the SYSTEM, inventing no user", async () => {
+    // §22, §84. The pipeline completed this, not a person.
+    seed(h);
+    await run(h);
+    for (const event of h.store.evidence) {
+      expect(event.actor).toEqual({ type: "system" });
+    }
+  });
+
+  it("gives every event a version and a source", async () => {
+    // §12 and §118. Without both, the projection cannot branch safely and the
+    // unique index cannot deduplicate.
+    seed(h);
+    await run(h);
+    for (const event of h.store.evidence) {
+      expect(event.eventVersion).toBeGreaterThan(0);
+      expect(event.source).toBeDefined();
+    }
+  });
+
+  it("does NOT duplicate events when a second worker runs the same completion", async () => {
+    // §260, and the reason the fake enforces the partial unique index: the
+    // second worker is stopped by `recordCompletion` returning false, but if it
+    // were not, the index would refuse its events. Both layers, neither relied
+    // upon alone.
+    seed(h);
+    await run(h);
+    const afterFirst = h.store.evidence.length;
+
+    await run(h);
+    expect(h.store.evidence.length).toBe(afterFirst);
+  });
+
+  it("writes NO evidence when the completion never happens", async () => {
+    // §160 inverted: evidence records what occurred. A run that fails before
+    // finalization must leave no trace claiming it succeeded.
+    seed(h);
+    h.objects.failPut = true;
+    const result = await run(h);
+
+    expect(result).toMatchObject({ outcome: "failed" });
+    expect(h.store.evidence).toHaveLength(0);
   });
 });

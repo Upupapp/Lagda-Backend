@@ -36,8 +36,13 @@ import type {
   ArtifactId, ArtifactIdGenerator, ArtifactRecord,
   CompletionRunId, CompletionIdGenerator,
   SigningRequestId, DocumentSealer, SealResult,
-  SealId, SealIdGenerator, VerificationIdGenerator,
+  SealId, SealIdGenerator, VerificationIdGenerator, EvidenceEventIdGenerator,
 } from "../common/ports/index.js";
+// BACKEND-43. The factories, never a hand-built event literal — see the note in
+// `evidence/events.ts` on why the four coupled fields cannot be assembled here.
+import {
+  finalSealCompleted, documentSealed, verificationRecordCreated, requestCompleted,
+} from "../evidence/events.js";
 import type {
   ObjectStorage, StorageKeyStrategy, StorageObjectRef,
 } from "../common/ports/storage.js";
@@ -46,7 +51,7 @@ export interface FinalSealDependencies {
   readonly transactions: TransactionManager;
   readonly clock: Clock;
   readonly ids: CompletionIdGenerator & ArtifactIdGenerator
-  & SealIdGenerator & VerificationIdGenerator;
+  & SealIdGenerator & VerificationIdGenerator & EvidenceEventIdGenerator;
   readonly storage: ObjectStorage;
   readonly keys: StorageKeyStrategy;
   /**
@@ -282,8 +287,9 @@ async function finalize(
           },
         });
 
+        const finalSealStepId = deps.ids.nextCompletionStepId();
         await uow.completion.acceptStep({
-          completionStepId: deps.ids.nextCompletionStepId(),
+          completionStepId: finalSealStepId,
           runId: input.runId,
           step: "final-seal",
           outputArtifactId: finalArtifactId,
@@ -322,6 +328,39 @@ async function finalize(
         });
 
         await uow.completion.markRunSucceeded({ runId: input.runId, succeededAt: at });
+
+        // ── Evidence (BACKEND-43) ─────────────────────────────────────────
+        //
+        // INSIDE the transaction, deliberately. §160: a critical transition may
+        // not be evidence-less, so a failure to record the history must roll
+        // back the fact rather than leave a completed request nothing can
+        // explain. That is only defensible because these appends are pure
+        // inserts against a table this transaction already owns.
+        //
+        // Before `markCompleted`, so the evidence exists by the time anything
+        // observes the completed state.
+        //
+        // Idempotency comes from the partial unique index on the event source,
+        // not from a check here — two workers reaching this point both insert
+        // and the second is refused by PostgreSQL (§46). The `recordCompletion`
+        // guard above already returned for the loser, so in practice this is a
+        // second line rather than the first.
+        const evidenceBase = {
+          newEventId: () => deps.ids.nextEvidenceEventId(),
+          signingRequestId: input.signingRequestId as unknown as TransactionId,
+          occurredAt: at,
+        };
+
+        await uow.evidence.append(finalSealCompleted(evidenceBase, finalSealStepId));
+        await uow.evidence.append(documentSealed(
+          evidenceBase, sealId, sealed.seal.digestAlgorithm));
+        await uow.evidence.append(
+          verificationRecordCreated(evidenceBase, verificationId));
+        // The completion record is UNIQUE per signing request, so the request id
+        // IS that record's durable identity (§120). No separate completion id
+        // exists to reference.
+        await uow.evidence.append(requestCompleted(
+          evidenceBase, input.signingRequestId));
 
         // LAST. Everything the completed state asserts now exists.
         const transitioned = await uow.signingWorkflow.markCompleted({
