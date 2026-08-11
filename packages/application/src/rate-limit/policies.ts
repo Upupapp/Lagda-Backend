@@ -506,6 +506,45 @@ export const RATE_LIMIT_POLICIES = {
   // fail-OPEN, unlike the outbound policies. Refusing a legitimate invitee
   // during a limiter outage blocks someone from joining a workspace they were
   // invited to, and unguessability does not depend on this limit.
+  // ── Public document verification (BACKEND-42) ────────────────────────────
+  //
+  // The only endpoints in LAGDA reachable with NO credential of any kind — not
+  // an account, not an invitation, not a signing link. So IP is the only scope
+  // available, and these are the two policies where a wrong number is felt by
+  // strangers rather than by users.
+  "public-verification.lookup.ip": {
+    id: "public-verification.lookup.ip",
+    scopeType: "ip",
+    limit: 60,
+    windowMs: MINUTE,
+    // FAIL-CLOSED, unlike its neighbours. The others fail open because locking
+    // a legitimate signer out of their own document is worse than admitting
+    // some abuse. Here the opposite holds: verification is a read of other
+    // people's completion records, nobody is blocked from anything they own,
+    // and an unmetered public lookup is exactly what an enumeration attempt
+    // needs.
+    failureMode: "fail-closed",
+    source: "BACKEND-42 - not specified by the handoff. Set above a human "
+      + "pace (a person checks one or two documents) and far below an "
+      + "enumeration pace. Identifiers carry ~58 bits, so the limit is defence "
+      + "in depth rather than the control; it exists so that a scripted sweep "
+      + "is visibly slow rather than free.",
+  },
+
+  "public-verification.file-check.ip": {
+    id: "public-verification.file-check.ip",
+    scopeType: "ip",
+    // A TENTH of the lookup limit: this one reads a body and hashes it, so an
+    // attacker gets bandwidth and CPU rather than a row lookup. §102.
+    limit: 6,
+    windowMs: MINUTE,
+    failureMode: "fail-closed",
+    source: "BACKEND-42 - not specified by the handoff. Deliberately far "
+      + "stricter than the lookup: a human comparing a file does it once or "
+      + "twice, and each attempt costs a bounded upload plus a full-file "
+      + "SHA-256.",
+  },
+
   "workspace.invitation.redeem.ip": {
     id: "workspace.invitation.redeem.ip",
     scopeType: "ip",
