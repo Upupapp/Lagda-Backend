@@ -7,6 +7,7 @@
 // Routes receive the specific capability they need, never this whole object,
 // so a route cannot reach a dependency it was not given.
 
+import type { PublicVerificationDependencies } from "@lagda/application";
 import type {
   SessionService, AbuseLimiter,
   CreateWorkspaceDependencies, GetWorkspaceDependencies,
@@ -49,6 +50,19 @@ export interface AppDependencies {
    * realm inside the first.
    */
   readonly signingAccess?: () => SigningAccessDependencies;
+  /**
+   * Public document verification (BACKEND-42).
+   *
+   * TOP-LEVEL for the same reason `signingAccess` is, one step further: the
+   * caller has no workspace AND no credential of any kind. Nesting it under
+   * workspaces would put a completely anonymous surface inside the
+   * authenticated realm.
+   *
+   * Optional, so an app that does not want a public surface simply does not
+   * register one — absent means the routes do not exist, never that they exist
+   * unprotected.
+   */
+  readonly publicVerification?: () => PublicVerificationDependencies;
   /**
    * BACKEND-35. Absent in tests that do not exercise the ceremony, exactly as
    * `signingAccess` is - an undefined dependency means the routes are never
