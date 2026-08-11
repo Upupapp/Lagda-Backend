@@ -13,7 +13,6 @@ import type {
   SealMetadata,
 } from "@lagda/application";
 import { sha256 } from "./internal/digest.js";
-import { renderCertificate } from "./internal/certificate.js";
 import {
   InvalidPdfError,
   InvalidSealInputError,
@@ -47,7 +46,7 @@ function looksLikePdf(bytes: Uint8Array): boolean {
 
 export class NodeDocumentSealer implements DocumentSealer {
   async seal(request: SealRequest): Promise<SealResult> {
-    const { preparedDocument, evidence, verificationId, sealedAt } = request;
+    const { preparedDocument, verificationId, sealedAt } = request;
 
     if (preparedDocument.length === 0) {
       throw new InvalidSealInputError("The prepared document is empty.");
@@ -85,16 +84,16 @@ export class NodeDocumentSealer implements DocumentSealer {
 
     const sealedDocument = await this.serialize(pdf);
 
-    const completionCertificate = await renderCertificate({
-      evidence,
-      verificationId,
-      preparedDocumentHash,
-      sealedAt,
-    });
-
+    // NO CERTIFICATE. OD-167, the twin of OD-162.
+    //
+    // `seal()` used to render the completion certificate too. The CERTIFICATE
+    // step produces one now, so a `seal()` that still rendered would give
+    // completion TWO certificates — and BACKEND-41 would compose whichever it
+    // happened to reach for, with no way to tell them apart from the outside.
+    //
+    // Exactly the field-merge double-render, one step later.
     return {
       sealedDocument,
-      completionCertificate,
       preparedDocumentHash,
       // Computed from the exact bytes returned above — not from an intermediate
       // buffer, and not before serialization.

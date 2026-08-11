@@ -19,6 +19,16 @@ export { NodeDocumentSealer } from "./node-document-sealer.js";
 // it, or merge one without hashing it.
 export { NodeFieldMerger } from "./node-field-merger.js";
 
+// The THIRD operation, added by BACKEND-40 for the `certificate` step.
+//
+// Three exported operations, one caller each — all three in the completion
+// pipeline. `internal/` remains private: the renderer, the merger internals and
+// `sha256` are still collaborators, and exporting them would give callers a way
+// to hash without producing an artifact, or render without hashing.
+export {
+  NodeCompletionCertificateGenerator,
+} from "./node-completion-certificate-generator.js";
+
 export {
   SealingError,
   InvalidPdfError,

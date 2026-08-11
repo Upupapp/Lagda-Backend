@@ -570,3 +570,4 @@ export * from "./signing-ceremony.js";
 export * from "./signing-submission.js";
 export * from "./signing-workflow.js";
 export * from "./completion.js";
+export * from "./completion-certificate.js";

@@ -35,14 +35,6 @@ async function makeRequest(overrides: Partial<SealRequest> = {}): Promise<SealRe
     transactionId: "tx_1" as TransactionId,
     documentId: "doc_1" as DocumentId,
     preparedDocument: await makePdf(),
-    evidence: {
-      documentName: "Contract of Lease.pdf",
-      completedAt: "2026-08-08T04:15:00Z",
-      participants: [
-        { name: "Juan dela Cruz", action: "Signed", completedAt: "2026-08-08T04:14:12Z" },
-        { name: "Maria Santos", action: "Received a copy", completedAt: "2026-08-08T04:15:00Z" },
-      ],
-    },
     verificationId: "LAGDA-WS1-20260808-7F3A2C" as VerificationId,
     sealedAt: "2026-08-08T04:15:01Z",
     ...overrides,
@@ -138,17 +130,19 @@ describe("NodeDocumentSealer.seal", () => {
     expect(reopened.getPageCount()).toBe(2);
   });
 
-  it("returns a completion certificate that re-parses as its own PDF", async () => {
+  it("returns NO certificate — OD-167", async () => {
+    // The twin of OD-162. `seal()` used to render the certificate too; the
+    // CERTIFICATE step owns it now, and a `seal()` that still produced one
+    // would hand completion two certificates with no way to tell which was
+    // authoritative.
     const result = await sealer.seal(await makeRequest());
-    const certificate = await PDFDocument.load(result.completionCertificate);
-    expect(certificate.getPageCount()).toBeGreaterThanOrEqual(1);
+    expect("completionCertificate" in result).toBe(false);
   });
 
-  it("keeps the certificate separate from the sealed document", async () => {
-    // Handoff §15 stores three artifacts. If the certificate were appended, the
-    // sealed document's page count would have grown past the source's.
+  it("does not grow the sealed document — nothing is appended", async () => {
+    // Handoff §15 stores three artifacts as three files. If the certificate
+    // were appended here, the page count would have grown past the source's.
     const result = await sealer.seal(await makeRequest());
-    expect(result.sealedDocument).not.toEqual(result.completionCertificate);
     const reopened = await PDFDocument.load(result.sealedDocument);
     expect(reopened.getPageCount()).toBe(2);
   });
@@ -195,11 +189,9 @@ describe("NodeDocumentSealer.seal", () => {
     const second = await sealer.seal(await makeRequest({ preparedDocument: document }));
 
     expect(first.signedDocumentHash).toBe(second.signedDocumentHash);
-    // And the sealed bytes carry no font resource the sealer introduced: the
-    // only text it draws is on the certificate, which is a SEPARATE artifact.
-    expect(first.sealedDocument.length).toBeLessThan(
-      first.completionCertificate.length + document.length,
-    );
+    // And the sealer adds no marks of its own: it no longer draws ANY text, so
+    // the sealed bytes stay close to the document it was handed.
+    expect(first.sealedDocument.length).toBeLessThan(document.length * 2);
   });
 
   it("seals a document that carries no values at all", async () => {
