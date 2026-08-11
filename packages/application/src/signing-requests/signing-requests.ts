@@ -209,7 +209,14 @@ export interface SigningRequestDependencies {
 
 // ── Shared resolution ────────────────────────────────────────────────────────
 
-async function authorize(
+/**
+ * Exported for BACKEND-43's audit trail rather than copied.
+ *
+ * The membership read happens INSIDE the caller's transaction so a demotion
+ * mid-request cannot commit under authority just lost. Duplicating that into a
+ * second module would give the copy a chance to drift from it.
+ */
+export async function authorize(
   uow: WorkspaceUnitOfWork,
   actor: AuthenticatedActor,
   capability: WorkspaceCapability,

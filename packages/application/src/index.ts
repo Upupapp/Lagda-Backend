@@ -48,3 +48,6 @@ export * from "./verification/public-verification.js";
 // factory rather than building a literal, so type, version, source and actor
 // cannot drift apart.
 export * from "./evidence/events.js";
+// BACKEND-43. The private audit trail projection — computed at read time
+// from evidence events, never materialized and never from logs.
+export * from "./audit/audit-trail.js";
