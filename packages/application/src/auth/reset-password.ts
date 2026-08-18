@@ -85,7 +85,46 @@ export interface PasswordResetChallengeRepository {
     readonly tokenDigest: ResetTokenDigest;
     readonly createdAt: number;
     readonly expiresAt: number;
+    /**
+     * The raw token, sealed, so the reset EMAIL can carry it (OD-184).
+     *
+     * Optional, and absent is a working state rather than a broken one: a
+     * deployment with no sealing key creates the challenge and cannot mail it,
+     * which is visible as a SUPPRESSED delivery rather than as a silent
+     * failure.
+     *
+     * Both fields or neither — a CHECK constraint enforces it, because a
+     * ciphertext with no key version cannot be opened after a rotation.
+     */
+    readonly sealedSecret?: string;
+    readonly sealedKeyVersion?: string;
   }) => Promise<void>;
+
+  /**
+   * Reads back the sealed token for a challenge that is STILL usable.
+   *
+   * Null for unknown, consumed, superseded or expired — one answer, because
+   * the caller's next move is the same for all four: suppress the message. The
+   * lifecycle check lives here rather than in transport, since this row is
+   * what knows it (S74).
+   */
+  readonly findSealedIfActive: (input: {
+    readonly challengeId: PasswordResetChallengeId;
+    readonly now: number;
+  }) => Promise<{ readonly sealed: string; readonly keyVersion: string } | null>;
+
+  /**
+   * Clears ciphertext from challenges that expired without being used.
+   *
+   * Consume and supersede clear it as part of their own transitions; expiry is
+   * the path with no write, so without this a token that nobody ever clicked
+   * would keep an openable credential indefinitely — the exact thing OD-184
+   * chose this table to avoid. Returns how many were scrubbed.
+   */
+  readonly scrubExpiredSecrets: (input: {
+    readonly now: number;
+    readonly limit: number;
+  }) => Promise<number>;
 }
 
 /** The revocation capability reset needs. Not the whole session repository. */

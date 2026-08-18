@@ -53,7 +53,15 @@ export function createPasswordResetRepository(
       // was live when the request started does not die mid-transaction because
       // the database clock moved.
       const result = await db.updateTable("password_reset_challenges")
-        .set({ consumed_at: new Date(input.now) })
+        // The ciphertext goes with the transition. A consumed challenge that
+        // still carried an openable token would be a spent credential left
+        // recoverable, and the CHECK constraint added in migration 035 rejects
+        // the row outright rather than trusting this line to be remembered.
+        .set({
+          consumed_at: new Date(input.now),
+          sealed_secret: null,
+          sealed_key_version: null,
+        })
         .where("challenge_id", "=", input.challengeId)
         .where("consumed_at", "is", null)
         .where("superseded_at", "is", null)
@@ -67,7 +75,11 @@ export function createPasswordResetRepository(
       // state — the CHECK constraint forbids carrying both, and overwriting
       // would destroy the record that this token once changed a password.
       const result = await db.updateTable("password_reset_challenges")
-        .set({ superseded_at: new Date(input.now) })
+        .set({
+          superseded_at: new Date(input.now),
+          sealed_secret: null,
+          sealed_key_version: null,
+        })
         .where("user_id", "=", input.userId)
         .where("consumed_at", "is", null)
         .where("superseded_at", "is", null)
@@ -84,7 +96,49 @@ export function createPasswordResetRepository(
         expires_at: new Date(input.expiresAt),
         consumed_at: null,
         superseded_at: null,
+        sealed_secret: input.sealedSecret ?? null,
+        sealed_key_version: input.sealedKeyVersion ?? null,
       }).execute();
+    },
+
+    async findSealedIfActive(input) {
+      // The four refusals collapse into one null: unknown, consumed,
+      // superseded, expired. The caller suppresses the message in every case,
+      // and splitting them here would leak a challenge's lifecycle to a
+      // renderer that has no use for it.
+      const row = await db.selectFrom("password_reset_challenges")
+        .select(["sealed_secret", "sealed_key_version"])
+        .where("challenge_id", "=", input.challengeId)
+        .where("consumed_at", "is", null)
+        .where("superseded_at", "is", null)
+        .where("expires_at", ">", new Date(input.now))
+        .executeTakeFirst();
+
+      if (row === undefined
+        || row.sealed_secret === null
+        || row.sealed_key_version === null) {
+        return null;
+      }
+      return { sealed: row.sealed_secret, keyVersion: row.sealed_key_version };
+    },
+
+    async scrubExpiredSecrets(input) {
+      // Bounded, and driven off the partial index. Expiry is the one path that
+      // performs no write of its own, so without this a token nobody clicked
+      // would keep an openable credential forever -- the exact outcome OD-184
+      // chose this table to avoid.
+      const result = await db.updateTable("password_reset_challenges")
+        .set({ sealed_secret: null, sealed_key_version: null })
+        .where("sealed_secret", "is not", null)
+        .where("expires_at", "<=", new Date(input.now))
+        .where("challenge_id", "in", eb => eb
+          .selectFrom("password_reset_challenges")
+          .select("challenge_id")
+          .where("sealed_secret", "is not", null)
+          .where("expires_at", "<=", new Date(input.now))
+          .limit(input.limit))
+        .executeTakeFirst();
+      return Number(result.numUpdatedRows);
     },
   };
 }

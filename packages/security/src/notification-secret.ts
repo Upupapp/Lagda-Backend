@@ -108,3 +108,102 @@ export function createSealedSecretResolver(
     },
   };
 }
+
+// ── CHALLENGE, resolved (OD-184) ────────────────────────────────────────────
+
+/**
+ * Reads back a credential the owning auth domain sealed when it minted it.
+ *
+ * One method, returning null for unknown, consumed, superseded and expired
+ * alike. The four collapse deliberately: the caller suppresses the message in
+ * every case, and distinguishing them would hand a renderer a challenge's
+ * lifecycle it has no use for.
+ */
+export interface ChallengeCredentialLookup {
+  findSealedIfActive(
+    sourceId: string,
+    now: number,
+  ): Promise<{ readonly sealed: string; readonly keyVersion: string } | null>;
+}
+
+/**
+ * Resolves CHALLENGE references by asking the domain that owns the credential.
+ *
+ * ── Why the lookup is a port and not a branch ──────────────────────────────
+ *
+ * Verification, reset, OTP and invitation each know what expiry, consumption
+ * and supersession mean for their own credential, and each stores its
+ * ciphertext in its own table beside its own lifecycle columns. A resolver that
+ * knew all four would be a resolver that had to be edited whenever any of them
+ * changed.
+ *
+ * ── Why an unopenable ciphertext is UNUSABLE, not an error ─────────────────
+ *
+ * It means the key rotated without re-sealing, or the row is corrupt. Neither
+ * is fixed by retrying, and both should stop the send rather than crash a
+ * worker into a retry loop against a row that will never open.
+ */
+export function createChallengeSecretResolver(
+  key: string | null,
+  keyVersion: string,
+  lookup: ChallengeCredentialLookup,
+  clock: { now(): number },
+): NotificationSecretResolver {
+  const box = key === null ? null : createSecretBox({ keyBase64: key, keyVersion });
+
+  return {
+    async resolve(
+      secretRef: NotificationSecretRef,
+    ): Promise<NotificationSecretResolution> {
+      if (secretRef.kind !== "CHALLENGE") {
+        return { status: "UNUSABLE", reason: "SECRET_REVOKED" };
+      }
+      if (box === null) {
+        // Unavailable rather than silently degraded, matching the sealer: a
+        // deployment that cannot open credentials must not quietly deliver
+        // messages without them.
+        return { status: "UNUSABLE", reason: "SECRET_REVOKED" };
+      }
+
+      const found = await lookup.findSealedIfActive(
+        secretRef.challengeId, clock.now());
+      if (found === null) {
+        // Expired is the likely case and the one worth naming: a reset link
+        // that died while the message sat in a queue must not be delivered.
+        return { status: "UNUSABLE", reason: "SECRET_EXPIRED" };
+      }
+
+      try {
+        return { status: "AVAILABLE", secret: box.open(found.sealed) };
+      } catch (error) {
+        if (error instanceof SecretBoxError) {
+          return { status: "UNUSABLE", reason: "SECRET_EXPIRED" };
+        }
+        throw error;
+      }
+    },
+  };
+}
+
+/**
+ * Dispatches on how the credential is referenced.
+ *
+ * The composition root holds both resolvers because a worker delivers both
+ * kinds of message, and neither resolver should learn that the other exists.
+ * Written as a table lookup rather than an if-chain for the usual reason: a
+ * third reference kind becomes a compile error here instead of a silent fall
+ * through to "unusable".
+ */
+export function createNotificationSecretResolver(
+  bySealed: NotificationSecretResolver,
+  byChallenge: NotificationSecretResolver,
+): NotificationSecretResolver {
+  const RESOLVERS: Record<NotificationSecretRef["kind"], NotificationSecretResolver> = {
+    SEALED: bySealed,
+    CHALLENGE: byChallenge,
+  };
+  return {
+    resolve: (secretRef, source, transaction) =>
+      RESOLVERS[secretRef.kind].resolve(secretRef, source, transaction),
+  };
+}

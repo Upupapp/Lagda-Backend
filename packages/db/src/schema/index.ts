@@ -975,6 +975,18 @@ export interface PasswordResetChallengesTable {
   consumed_at: ColumnType<Date | null, Date | null, Date | null>;
   /** Set when a later request rotated it, or a successful reset retired it. */
   superseded_at: ColumnType<Date | null, Date | null, Date | null>;
+  /**
+   * AES-256-GCM ciphertext of the raw token (OD-184, migration 035).
+   *
+   * Present only while the challenge is ACTIVE — a CHECK constraint forbids
+   * carrying one alongside `consumed_at` or `superseded_at`, so its life is
+   * bounded by the credential's own life rather than by a retention policy.
+   *
+   * Never a lookup key. `token_digest` remains the only column any query
+   * matches on, so the raw value still never reaches a statement log.
+   */
+  sealed_secret: ColumnType<string | null, string | null, string | null>;
+  sealed_key_version: ColumnType<string | null, string | null, string | null>;
 }
 
 export interface MfaFactorsTable {

@@ -20,5 +20,7 @@ export {
   type SecretBox, type SealedSecret,
 } from "./secret-box.js";
 export {
-  createSealedSecretResolver, type CredentialValidityCheck,
+  createSealedSecretResolver, createChallengeSecretResolver,
+  createNotificationSecretResolver,
+  type CredentialValidityCheck, type ChallengeCredentialLookup,
 } from "./notification-secret.js";

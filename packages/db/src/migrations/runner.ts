@@ -42,6 +42,7 @@ import * as m031 from "./031_retire_signing_delivery_intents.js";
 import * as m032 from "./032_notification_audience_integrity.js";
 import * as m033 from "./033_notification_delivery_attempts.js";
 import * as m034 from "./034_notification_dispatch_index.js";
+import * as m035 from "./035_password_reset_sealed_credential.js";
 
 /**
  * Migrations listed explicitly rather than read from disk.
@@ -88,6 +89,7 @@ const MIGRATIONS: Record<string, Migration> = {
   "032_notification_audience_integrity": m032,
   "033_notification_delivery_attempts": m033,
   "034_notification_dispatch_index": m034,
+  "035_password_reset_sealed_credential": m035,
 };
 
 class ExplicitMigrationProvider implements MigrationProvider {

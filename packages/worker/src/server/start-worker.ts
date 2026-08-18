@@ -9,7 +9,8 @@ import { PgBoss } from "pg-boss";
 import type { JobWithMetadata } from "pg-boss";
 import {
   createDatabase, loadDatabaseConfig, createIdempotencyRepository,
-  createRateLimitCounterRepository, type LagdaDatabase,
+  createRateLimitCounterRepository, createPasswordResetRepository,
+  type LagdaDatabase,
 } from "@lagda/db";
 import {
   IdempotencyCleanupJob, RateLimitCleanupJob, NotificationDeliveryJob,
@@ -23,7 +24,10 @@ import {
 } from "@lagda/application";
 import { createTransactionManager } from "@lagda/db";
 import { loadPostmarkConfig, createPostmarkEmailProvider, EmailConfigError } from "@lagda/email";
-import { createSealedSecretResolver } from "@lagda/security";
+import {
+  createSealedSecretResolver, createChallengeSecretResolver,
+  createNotificationSecretResolver,
+} from "@lagda/security";
 import { randomUUID } from "node:crypto";
 import { createJobScheduler } from "../queue/scheduler.js";
 import {
@@ -163,6 +167,21 @@ export async function startWorker(): Promise<StartedWorker> {
     }
 
     const provider = createPostmarkEmailProvider(postmark);
+
+    // CHALLENGE credentials live in the domain that minted them (OD-184), and
+    // password_reset_challenges carries no tenant column -- an account security
+    // record belongs to a person, not a workspace -- so it is read on the plain
+    // connection rather than through a scoped unit of work.
+    const passwordResets = createPasswordResetRepository(database.db);
+    const challengeSecrets = createChallengeSecretResolver(
+      config.signingDeliveryKey, config.signingDeliveryKeyVersion,
+      {
+        findSealedIfActive: (sourceId, now) => passwordResets.findSealedIfActive({
+          challengeId: sourceId as never, now,
+        }),
+      },
+      clock,
+    );
     const templates = createTemplateRegistry(ALL_TEMPLATES);
     const links = createNotificationLinkBuilder(config.appBaseUrl);
 
@@ -196,8 +215,13 @@ export async function startWorker(): Promise<StartedWorker> {
       return {
         transport: delegatingTransport,
         templates,
-        secrets: createSealedSecretResolver(
-          config.signingDeliveryKey, config.signingDeliveryKeyVersion, validity),
+        // Both reference kinds, dispatched by a table rather than an if-chain
+        // so a third kind becomes a compile error instead of a silent fall
+        // through to "unusable".
+        secrets: createNotificationSecretResolver(
+          createSealedSecretResolver(
+            config.signingDeliveryKey, config.signingDeliveryKeyVersion, validity),
+          challengeSecrets),
         links,
         provider,
         ids: {

@@ -83,6 +83,8 @@ async function build(options: {
         findByTokenDigest: () => Promise.resolve(null),
         consumeIfActive: () => Promise.resolve(false),
         supersedeActiveForUser: () => Promise.resolve(0),
+      findSealedIfActive: () => Promise.resolve(null),
+      scrubExpiredSecrets: () => Promise.resolve(0),
         create() { created.push("created"); return Promise.resolve(); },
       },
       users: {
@@ -121,6 +123,8 @@ async function build(options: {
           return Promise.resolve(options.consumeWins !== false);
         },
         supersedeActiveForUser: () => Promise.resolve(0),
+      findSealedIfActive: () => Promise.resolve(null),
+      scrubExpiredSecrets: () => Promise.resolve(0),
         create: () => Promise.resolve(),
       },
       users: {
