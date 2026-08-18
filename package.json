@@ -2,7 +2,7 @@
   "name": "@lagda/backend",
   "private": true,
   "version": "0.0.0",
-  "description": "LAGDA eSignature backend — modular monolith. Foundation stage.",
+  "description": "LAGDA eSignature backend \u2014 modular monolith. Foundation stage.",
   "type": "module",
   "engines": {
     "node": ">=24 <25"
@@ -30,7 +30,8 @@
     "dev:api": "tsx watch packages/api/src/server/main.ts",
     "start:api": "node packages/api/dist/server/main.js",
     "dev:worker": "tsx watch packages/worker/src/server/main.ts",
-    "start:worker": "node packages/worker/dist/server/main.js"
+    "start:worker": "node packages/worker/dist/server/main.js",
+    "preflight": "node infra/preflight.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
