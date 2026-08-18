@@ -62,6 +62,8 @@ function harness(over: {
   send?: EmailDeliveryResult;
   secret?: NotificationSecretResolution;
   maxAttempts?: number;
+  /** Phase 3 fails: the provider answered and the database did not hear it. */
+  completeFails?: boolean;
 } = {}): Harness {
   const completions: CompleteAttemptInput[] = [];
   const sent: EmailMessage[] = [];
@@ -79,6 +81,9 @@ function harness(over: {
         completeAttempt: (input: CompleteAttemptInput) => {
           order.push("complete");
           completions.push(input);
+          if (over.completeFails === true) {
+            return Promise.reject(new Error("connection terminated"));
+          }
           return Promise.resolve(true);
         },
         reclaimExpiredLeases: () => Promise.resolve([]),
@@ -230,5 +235,75 @@ describe("acceptance", () => {
     // The fake throws if `createIfAbsent` is reached.
     const h = harness({ send: { outcome: "FAILED_RETRYABLE" } });
     await expect(deliverNotification(h.deps)(DELIVERY)).resolves.toBeDefined();
+  });
+});
+
+describe("the crash window", () => {
+  it("does not swallow a phase-3 failure into a successful outcome", async () => {
+    // S112, S236. The provider accepted and the database did not hear it. This
+    // is the ambiguity the whole design admits to rather than hides, and the
+    // one shape that must never happen is a resolved DeliveryRunOutcome: the
+    // caller would record a send that LAGDA has no durable record of, and the
+    // delivery would sit in PROCESSING with nothing coming back for it.
+    const h = harness({ completeFails: true });
+
+    await expect(deliverNotification(h.deps)(DELIVERY)).rejects.toThrow();
+
+    // The send DID happen. That is the point -- the message is out.
+    expect(h.sent).toHaveLength(1);
+    expect(h.order).toEqual(["claim", "send", "complete"]);
+  });
+
+  it("sends exactly once even though the outcome is unrecorded", async () => {
+    // S111. The recovery path is the lease, not a retry inside this call. A
+    // second send here would turn one unrecorded delivery into two real ones,
+    // which is the duplicate the claim exists to prevent.
+    const h = harness({ completeFails: true });
+
+    await expect(deliverNotification(h.deps)(DELIVERY)).rejects.toThrow();
+
+    expect(h.sent).toHaveLength(1);
+    expect(h.order.filter(step => step === "send")).toHaveLength(1);
+  });
+
+  it("burns the attempt at claim time, so the crash costs budget", async () => {
+    // S110, S237. attempt_count increments in the claim statement, so the
+    // attempt this call was on is already spent when it dies. Counting only
+    // completed attempts would retry forever against a provider that keeps
+    // failing after acceptance.
+    const h = harness({ completeFails: true, claim: claimedAt(3), maxAttempts: 3 });
+
+    await expect(deliverNotification(h.deps)(DELIVERY)).rejects.toThrow();
+
+    // The claim reported attempt 3 of 3. Nothing in this call can lower it.
+    expect(h.completions[0]?.attemptId).toBe("nda_1");
+  });
+});
+
+describe("credential refusal", () => {
+  it("distinguishes a revoked credential from an expired one", async () => {
+    // S60, S61. Both suppress, and the reason is recorded rather than
+    // collapsed: an expired token means the user waited too long, a revoked
+    // one means somebody acted. The remedy differs, and so does what an
+    // operator should be told.
+    const h = harness({ secret: { status: "UNUSABLE", reason: "SECRET_REVOKED" } });
+
+    const outcome = await deliverNotification(h.deps)(DELIVERY);
+
+    expect(outcome).toEqual({ result: "SUPPRESSED", reason: "SECRET_REVOKED" });
+    expect(h.sent).toHaveLength(0);
+    expect(h.completions[0]?.nextState).toBe("SUPPRESSED");
+  });
+
+  it("suppresses without consuming a retry, because a retry cannot help", async () => {
+    // A revoked grant does not become valid on a retry. Scheduling one would
+    // burn the budget of a delivery that must never go out, and would keep a
+    // dead credential in the queue where an operator reads it as pending work.
+    const h = harness({ secret: { status: "UNUSABLE", reason: "SECRET_EXPIRED" } });
+
+    await deliverNotification(h.deps)(DELIVERY);
+
+    expect(h.completions[0]?.nextAttemptAt).toBeUndefined();
+    expect(h.completions[0]?.outcome).toBe("TERMINAL");
   });
 });
