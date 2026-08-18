@@ -22,6 +22,7 @@ import { sql, type Kysely, type Transaction } from "kysely";
 import type { UserId, WorkspaceId } from "@lagda/contracts";
 import type {
   TransactionManager, WorkspaceUnitOfWork, GlobalUnitOfWork, UserUnitOfWork,
+  NotificationDeliveryUnitOfWork, NotificationScope,
   InvitationCredentialUnitOfWork, InvitationTokenDigest,
   SigningCredentialUnitOfWork, RecipientWorkspaceUnitOfWork,
   RecipientSessionUnitOfWork, SigningAccessDigest, RecipientSessionDigest,
@@ -136,6 +137,35 @@ export function createTransactionManager(db: Kysely<Database>): TransactionManag
         // never be concatenated into SQL, which `SET LOCAL x = '...'` cannot do.
         await sql`select set_config(${WORKSPACE_SETTING}, ${workspaceId}, true)`.execute(trx);
         return operation(buildUnitOfWork(trx, workspaceId));
+      });
+    },
+
+    async runForNotificationDelivery<T>(
+      scope: NotificationScope,
+      operation: (uow: NotificationDeliveryUnitOfWork) => Promise<T>,
+    ): Promise<T> {
+      return db.transaction().execute(async trx => {
+        // ONE of the two settings, never both. A transaction carrying a
+        // workspace AND a user would satisfy both arms of the notification
+        // policy at once, which is a wider grant than either scope means on its
+        // own — and the delivery row's own CHECK constraint says exactly one is
+        // real.
+        if (scope.kind === "WORKSPACE") {
+          await sql`select set_config(${WORKSPACE_SETTING}, ${scope.workspaceId}, true)`
+            .execute(trx);
+        } else {
+          await sql`select set_config(${USER_SETTING}, ${scope.userId}, true)`
+            .execute(trx);
+        }
+
+        // Two repositories and nothing else. This transaction is incapable of
+        // reading a signing request or writing an evidence event, by having
+        // nothing that could -- the structural version of S37 and S38.
+        return operation({
+          scope,
+          notifications: createNotificationRepository(trx),
+          notificationTransport: createNotificationTransportRepository(trx),
+        });
       });
     },
 

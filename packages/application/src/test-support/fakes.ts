@@ -29,6 +29,7 @@ import type { WorkspaceRole } from "@lagda/core";
 import type { UploadRecord, ScopedUploadRepository } from "../common/ports/upload.js";
 import type {
   Clock, TransactionManager, WorkspaceUnitOfWork, GlobalUnitOfWork, UserUnitOfWork,
+  NotificationDeliveryUnitOfWork,
   ScopedWorkspaceRepository, ScopedMembershipRepository,
   UserMembershipQueryRepository, UserWorkspaceMembershipRecord,
   WorkspaceIdGenerator, WorkspaceMemberIdGenerator,
@@ -91,7 +92,7 @@ import type {
 } from "../common/ports/signing-requests.js";
 import type {
   NotificationRepository, NewNotificationIntent, NotificationIntentRecord,
-  NotificationDispatchRepository,
+  NotificationDispatchRepository, NotificationScope,
   NotificationDeliveryRecord, NotificationIntentId, NotificationDeliveryId,
   NotificationIntentIdGenerator, NotificationDeliveryIdGenerator,
   NotificationTransportRepository,
@@ -2406,6 +2407,24 @@ export class FakeTransactionManager implements TransactionManager {
     });
   }
 
+  /**
+   * A delivery-scoped transaction, which this store cannot model.
+   *
+   * Throws for the same reason `dispatchIndex()` does: no notification
+   * deliveries live in the in-memory store, so a transaction over them would be
+   * a transaction over nothing, and a caller passing against it would prove
+   * nothing about the scope it ran in -- which is the only interesting property
+   * this unit of work has.
+   */
+  runForNotificationDelivery<T>(
+    _scope: NotificationScope,
+    _operation: (uow: NotificationDeliveryUnitOfWork) => Promise<T>,
+  ): Promise<T> {
+    throw new Error(
+      "The in-memory store does not model notification deliveries. "
+      + "Delivery scoping is integration-tested against PostgreSQL.");
+  }
+
   async runGlobal<T>(operation: (uow: GlobalUnitOfWork) => Promise<T>): Promise<T> {
     this.scopes.push("global");
     this.started++;
@@ -2434,6 +2453,13 @@ export class FailingTransactionManager implements TransactionManager {
   runForWorkspace<T>(
     _workspaceId: WorkspaceId,
     _operation: (uow: WorkspaceUnitOfWork) => Promise<T>,
+  ): Promise<T> {
+    return this.fail();
+  }
+
+  runForNotificationDelivery<T>(
+    _scope: NotificationScope,
+    _operation: (uow: NotificationDeliveryUnitOfWork) => Promise<T>,
   ): Promise<T> {
     return this.fail();
   }

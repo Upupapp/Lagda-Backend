@@ -38,7 +38,7 @@ import type {
 import type { NormalizedEmail } from "../../auth/email-identity.js";
 import type {
   NotificationRepository, NotificationTransportRepository,
-  NotificationDispatchRepository,
+  NotificationDispatchRepository, NotificationScope,
 } from "./notifications.js";
 
 // ── Time ─────────────────────────────────────────────────────────────────────
@@ -486,6 +486,29 @@ export interface UserUnitOfWork {
   readonly memberships: UserMembershipQueryRepository;
 }
 
+/**
+ * A transaction bound to ONE delivery's own scope (BACKEND-45).
+ *
+ * ── Why transport needs its own unit of work ──────────────────────────────
+ *
+ * A notification is workspace-scoped or global-user-scoped, and only the row
+ * knows which. `runForWorkspace` cannot reach an account security message, and
+ * `runForUser` is read-only by policy and carries no transport repository —
+ * so between them a password reset could be created and never delivered.
+ *
+ * ── Why it is narrow ──────────────────────────────────────────────────────
+ *
+ * Two repositories. It cannot read a signing request, a recipient, an evidence
+ * event or a document, because it holds nothing that could — the same
+ * structural argument the webhook module makes, applied to the transaction
+ * rather than to the imports.
+ */
+export interface NotificationDeliveryUnitOfWork {
+  readonly scope: NotificationScope;
+  readonly notifications: NotificationRepository;
+  readonly notificationTransport: NotificationTransportRepository;
+}
+
 export interface TransactionManager {
   /**
    * A transaction bound to ONE workspace. The ordinary path.
@@ -497,6 +520,18 @@ export interface TransactionManager {
   runForWorkspace<T>(
     workspaceId: WorkspaceId,
     operation: (uow: WorkspaceUnitOfWork) => Promise<T>,
+  ): Promise<T>;
+
+  /**
+   * A transaction in ONE delivery's own scope, workspace or global-user.
+   *
+   * The scope is READ FROM THE DISPATCH INDEX, never taken from a queue
+   * payload. A job that could name its own tenant would be a job an operator
+   * could hand-write into another workspace's data.
+   */
+  runForNotificationDelivery<T>(
+    scope: NotificationScope,
+    operation: (uow: NotificationDeliveryUnitOfWork) => Promise<T>,
   ): Promise<T>;
 
   /**
