@@ -275,21 +275,49 @@ describe("no delivery is claimed without a provider", () => {
     expect(inserted).toEqual(["PENDING"]);
   });
 
-  it("never names a provider state as a value anywhere in the substrate", () => {
-    // Declaring the vocabulary is fine; producing it is not. The only files
-    // permitted to mention these are the state machine, the port and the
-    // migration -- all of which DECLARE rather than write.
-    const writers = notificationSources.filter(file =>
-      !file.endsWith("delivery-state.ts")
-      && !file.endsWith("notifications.ts")
-      && !file.endsWith("030_notifications.ts"));
+  it("never names a provider state on the intent-creation path", () => {
+    // ── Narrowed by BACKEND-45, and this is the part worth reading ──────────
+    //
+    // BACKEND-44 wrote this as "nowhere in the substrate", which was right
+    // while nothing could produce a provider state. Transport now legitimately
+    // does, so the blanket ban would have to be answered with an ever-growing
+    // allowlist -- and an allowlist that grows whenever it fires stops being a
+    // check and becomes a record of who edited what.
+    //
+    // So the rule is restated as the thing that must actually stay true: the
+    // path that CREATES a notification cannot fabricate a provider's
+    // observation. Deciding what to send, choosing a template and rendering a
+    // body all happen before any provider exists, and none of them may name a
+    // state only a provider can establish.
+    //
+    // Transport is checked by its own rules elsewhere: the confirmer's
+    // vocabulary is asserted to be exactly DELIVERED and BOUNCED, and the
+    // transition table forbids every regression.
+    const CREATION_PATH = [
+      ["application", "src", "notifications", "create-intent.ts"],
+      ["application", "src", "notifications", "policy.ts"],
+      ["application", "src", "notifications", "templates.ts"],
+      ["application", "src", "notifications", "rendering.ts"],
+      ["application", "src", "notifications", "template-registry.ts"],
+    ];
 
-    for (const file of writers) {
-      const source = read(file);
+    for (const segments of CREATION_PATH) {
+      const file = path.join(PACKAGES, ...segments);
+      const source = code(file);
       for (const state of ["PROVIDER_ACCEPTED", "DELIVERED", "BOUNCED"]) {
-        expect(source).not.toContain(`"${state}"`);
+        expect({ file: segments.join("/"), state, named: source.includes(`"${state}"`) })
+          .toEqual({ file: segments.join("/"), state, named: false });
       }
     }
+  });
+
+  it("still inserts only PENDING, whatever transport later does", () => {
+    // The other half of S267 and S312, and the one that cannot be relaxed. A
+    // delivery is born PENDING; every richer state is earned by something
+    // happening.
+    const repository = read(path.join(
+      PACKAGES, "db", "src", "repositories", "notifications.ts"));
+    expect(repository).not.toMatch(/state:\s*"(PROVIDER_ACCEPTED|DELIVERED|BOUNCED)"/u);
   });
 });
 

@@ -174,6 +174,33 @@ export function createNotificationTransportRepository(
       }
     },
 
+    async applyConfirmedProviderEvent(input) {
+      // One conditional UPDATE, guarded on the states the transition table
+      // permits. PROVIDER_ACCEPTED is the only origin for either edge: a
+      // callback about a delivery that was never accepted, or that already
+      // reached a terminal state, matches zero rows and moves nothing.
+      //
+      // This is where duplicate, out-of-order and late callbacks all become
+      // no-ops without a dedupe table -- the state machine already forbids
+      // every regression they could cause.
+      const moved = await trx.updateTable("notification_deliveries")
+        .set({
+          state: input.state,
+          // The lease is released. A delivery that reached a terminal state
+          // while a claim was somehow outstanding must not keep one, or the
+          // reclaim sweep would resurrect it.
+          processing_started_at: null,
+          claim_expires_at: null,
+          next_attempt_at: null,
+        })
+        .where("notification_delivery_id", "=", input.notificationDeliveryId as string)
+        .where("state", "=", "PROVIDER_ACCEPTED")
+        .returning("notification_delivery_id")
+        .executeTakeFirst();
+
+      return moved !== undefined;
+    },
+
     async reclaimExpiredLeases(now, limit) {
       // Back to FAILED_RETRYABLE rather than PENDING: the attempt was made and
       // its budget consumed, and calling it pending again would present a

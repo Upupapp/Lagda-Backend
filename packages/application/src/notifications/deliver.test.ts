@@ -91,6 +91,9 @@ function harness(over: {
         },
         reclaimExpiredLeases: () => Promise.resolve([]),
         listAttempts: () => Promise.resolve([]),
+        applyConfirmedProviderEvent: () => {
+          throw new Error("delivery must not apply a provider event");
+        },
       },
       templates: createTemplateRegistry(ALL_TEMPLATES),
       secrets: {

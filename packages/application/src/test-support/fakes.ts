@@ -2660,5 +2660,8 @@ export function fakeNotificationTransport(): NotificationTransportRepository {
     completeAttempt: () => Promise.resolve(false),
     reclaimExpiredLeases: () => Promise.resolve([]),
     listAttempts: () => Promise.resolve([]),
+    // False, like the claim: nothing moved. A fake that reported a delivery
+    // transitioned would let a webhook test pass without a state machine.
+    applyConfirmedProviderEvent: () => Promise.resolve(false),
   };
 }

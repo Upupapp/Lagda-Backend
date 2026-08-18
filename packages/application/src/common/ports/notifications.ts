@@ -796,4 +796,28 @@ export interface NotificationTransportRepository {
     notificationDeliveryId: NotificationDeliveryId,
     transaction?: unknown,
   ): Promise<readonly NotificationDeliveryAttemptRecord[]>;
+
+  /**
+   * Applies a CONFIRMED provider event to one delivery.
+   *
+   * Confirmed means checked against the provider's own API, never taken from a
+   * callback body (S31). This method exists at the end of that pipeline and
+   * assumes nothing about how the caller learned the state.
+   *
+   * Guarded on the current state by the same transition table the rest of
+   * transport obeys, in one conditional UPDATE — so a duplicate callback, an
+   * out-of-order one, and one arriving after the delivery reached a terminal
+   * state all match zero rows (S41, S42, S44, S45).
+   *
+   * Returns whether anything moved. False is ordinary, not an error.
+   */
+  applyConfirmedProviderEvent(
+    input: {
+      readonly notificationDeliveryId: NotificationDeliveryId;
+      /** Only these two. A callback may not establish PROVIDER_ACCEPTED. */
+      readonly state: "DELIVERED" | "BOUNCED";
+      readonly now: number;
+    },
+    transaction: unknown,
+  ): Promise<boolean>;
 }

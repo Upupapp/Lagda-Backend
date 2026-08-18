@@ -436,4 +436,7 @@ const delegatingTransport: NotificationTransportRepository = {
   listAttempts: (id, transaction: unknown) =>
     (transaction as NotificationDeliveryUnitOfWork)
       .notificationTransport.listAttempts(id, transaction),
+  applyConfirmedProviderEvent: (input, transaction: unknown) =>
+    (transaction as NotificationDeliveryUnitOfWork)
+      .notificationTransport.applyConfirmedProviderEvent(input, transaction),
 };
