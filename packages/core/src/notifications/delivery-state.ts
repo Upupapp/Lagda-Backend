@@ -202,3 +202,122 @@ export function applyDeliveryAction(
 ): DeliveryState | null {
   return TRANSITIONS[state][action] ?? null;
 }
+
+// ── Monotonicity ─────────────────────────────────────────────────────────────
+
+/**
+ * How far along the transport lifecycle a state sits.
+ *
+ * ── The problem this solves ────────────────────────────────────────────────
+ *
+ * Provider webhooks arrive out of order (S42). A `delivered` event and a
+ * `processed` event for one message can cross in flight, and the transition
+ * table alone would happily apply whichever landed last — walking a delivery
+ * from `DELIVERED` back to `PROVIDER_ACCEPTED` and making a UI that read it
+ * report less than it knew a moment earlier (S45).
+ *
+ * So webhook-driven transitions are additionally gated on rank: a late event
+ * that would move backwards is discarded rather than applied. The table still
+ * governs which transitions are legal at all; this governs which are progress.
+ */
+const STATE_RANK: Record<DeliveryState, number> = {
+  PENDING: 0,
+  PROCESSING: 1,
+  FAILED_RETRYABLE: 1,
+  PROVIDER_ACCEPTED: 2,
+  // Terminal outcomes all outrank acceptance.
+  DELIVERED: 3,
+  BOUNCED: 3,
+  FAILED_TERMINAL: 3,
+  SUPPRESSED: 3,
+  CANCELLED: 3,
+};
+
+/**
+ * Whether a provider event may move a delivery from `from` to `to`.
+ *
+ * Requires the transition to be legal AND not backwards. Equal rank is refused
+ * too — a duplicate webhook (S41) is not progress, and applying it twice would
+ * write a second identical state change for one provider event.
+ *
+ * ── The case deliberately NOT handled ──────────────────────────────────────
+ *
+ * Some providers report a hard bounce AFTER a delivery event, and S46 asks for
+ * an exact transition based on that provider's documentation. No provider has
+ * been selected, so there is no documentation to base one on — and inventing
+ * `DELIVERED → BOUNCED` would be guessing at semantics that differ per vendor.
+ *
+ * `DELIVERED` is therefore terminal like every other terminal state, and a late
+ * bounce is refused. When a provider is chosen, its ADR decides whether that
+ * edge exists; adding it then is one table entry and one rank change.
+ */
+export function canApplyProviderEvent(
+  from: DeliveryState,
+  to: DeliveryState,
+): boolean {
+  if (!applyDeliveryActionTo(from, to)) return false;
+  return STATE_RANK[to] > STATE_RANK[from];
+}
+
+/** Whether some action in the table maps `from` to `to`. */
+function applyDeliveryActionTo(from: DeliveryState, to: DeliveryState): boolean {
+  return DELIVERY_ACTIONS.some(action => applyDeliveryAction(from, action) === to);
+}
+
+// ── Provider failure classification ──────────────────────────────────────────
+
+/**
+ * What one transport attempt concluded, in LAGDA's own terms.
+ *
+ * Vendor error taxonomies disagree about which failures are transient, so
+ * binding to one would make the next provider's codes a domain change (S47).
+ *
+ * `AMBIGUOUS` is the class a naive design omits, and it is the one that
+ * matters. A connection that drops after the request leaves and before the
+ * response arrives leaves LAGDA genuinely unable to say whether the provider
+ * took the message (S50). Calling it a failure invites a retry that
+ * duplicates; calling it success loses a security email silently. It is
+ * neither, so it is its own class.
+ */
+export const ATTEMPT_OUTCOMES = [
+  "ACCEPTED", "RETRYABLE", "TERMINAL", "AMBIGUOUS",
+] as const;
+export type AttemptOutcome = (typeof ATTEMPT_OUTCOMES)[number];
+
+/**
+ * The delivery state an attempt outcome implies.
+ *
+ * `AMBIGUOUS` maps to `FAILED_RETRYABLE` — LAGDA retries rather than abandons.
+ *
+ * That is a deliberate policy choice for THIS product (S55, S56): every message
+ * LAGDA sends carries a credential a person is waiting for, and a retry cannot
+ * rotate it, because the credential belongs to the owning domain and the
+ * retry reuses the same intent. So the worst case of retrying is that somebody
+ * receives the same working link twice; the worst case of not retrying is a
+ * password reset that silently never arrives.
+ *
+ * It is bounded by the attempt budget, so an ambiguous outcome cannot loop.
+ */
+export function deliveryStateForOutcome(outcome: AttemptOutcome): DeliveryState {
+  switch (outcome) {
+    case "ACCEPTED": return "PROVIDER_ACCEPTED";
+    case "RETRYABLE": return "FAILED_RETRYABLE";
+    case "AMBIGUOUS": return "FAILED_RETRYABLE";
+    case "TERMINAL": return "FAILED_TERMINAL";
+    default: return assertNever(outcome, "deliveryStateForOutcome");
+  }
+}
+
+/**
+ * Exponential backoff with a ceiling, in milliseconds.
+ *
+ * Bounded above because a security credential expires while a retry waits
+ * (S106): a backoff that reached hours would schedule a send of a token that
+ * will be dead on arrival, and the suppression check would then discard it
+ * having burned the budget.
+ */
+export function retryDelayMs(attemptNumber: number): number {
+  const base = 60_000;
+  const ceiling = 15 * 60_000;
+  return Math.min(base * 2 ** Math.max(0, attemptNumber - 1), ceiling);
+}

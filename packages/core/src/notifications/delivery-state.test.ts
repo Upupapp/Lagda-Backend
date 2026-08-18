@@ -5,6 +5,8 @@ import {
   DELIVERY_STATES, INITIAL_DELIVERY_STATE, PRODUCIBLE_BY_BACKEND_44,
   DELIVERY_ACTIONS, isDeliveryTerminal, isDeliverySendable,
   canApplyDeliveryAction, availableDeliveryActions, applyDeliveryAction,
+  canApplyProviderEvent, deliveryStateForOutcome, retryDelayMs,
+  ATTEMPT_OUTCOMES,
   type DeliveryState,
 } from "./delivery-state.js";
 
@@ -111,5 +113,84 @@ describe("transitions", () => {
     for (const state of DELIVERY_STATES.filter(s => s !== INITIAL_DELIVERY_STATE)) {
       expect(reachable.has(state)).toBe(true);
     }
+  });
+});
+
+describe("provider event monotonicity", () => {
+  it("refuses to walk a delivered message back to accepted", () => {
+    // S45. Out-of-order webhooks are normal; a UI that read this must not
+    // report less than it knew a moment earlier.
+    expect(canApplyProviderEvent("DELIVERED", "PROVIDER_ACCEPTED")).toBe(false);
+  });
+
+  it("refuses a bounce after a delivery report, having chosen no provider", () => {
+    // S46 asks for an exact transition based on the chosen provider's docs.
+    // None is chosen, so inventing DELIVERED -> BOUNCED would be guessing at
+    // semantics that differ per vendor. Its ADR decides.
+    expect(canApplyProviderEvent("DELIVERED", "BOUNCED")).toBe(false);
+  });
+
+  it("refuses a duplicate event that would rewrite the same state", () => {
+    // S41. Applying it twice writes a second state change for one event.
+    for (const state of DELIVERY_STATES) {
+      expect(canApplyProviderEvent(state, state)).toBe(false);
+    }
+  });
+
+  it("allows forward progress through the provider lifecycle", () => {
+    expect(canApplyProviderEvent("PROCESSING", "PROVIDER_ACCEPTED")).toBe(true);
+    expect(canApplyProviderEvent("PROVIDER_ACCEPTED", "DELIVERED")).toBe(true);
+    expect(canApplyProviderEvent("PROVIDER_ACCEPTED", "BOUNCED")).toBe(true);
+  });
+
+  it("refuses an event the transition table forbids, however forward", () => {
+    // Rank alone is not authority: PENDING to DELIVERED skips the machine.
+    expect(canApplyProviderEvent("PENDING", "DELIVERED")).toBe(false);
+  });
+
+  it("refuses every event out of a terminal state", () => {
+    for (const from of DELIVERY_STATES.filter(isDeliveryTerminal)) {
+      for (const to of DELIVERY_STATES) {
+        expect(canApplyProviderEvent(from, to)).toBe(false);
+      }
+    }
+  });
+});
+
+describe("attempt outcomes", () => {
+  it("retries an ambiguous outcome rather than abandoning it", () => {
+    // S50, S55. Every LAGDA message carries a credential somebody is waiting
+    // for, and a retry cannot rotate it -- so a duplicate working link beats a
+    // password reset that silently never arrives.
+    expect(deliveryStateForOutcome("AMBIGUOUS")).toBe("FAILED_RETRYABLE");
+  });
+
+  it("maps every outcome to a state the machine declares", () => {
+    for (const outcome of ATTEMPT_OUTCOMES) {
+      expect(DELIVERY_STATES as readonly string[])
+        .toContain(deliveryStateForOutcome(outcome));
+    }
+  });
+
+  it("never maps an outcome to DELIVERED", () => {
+    // Only a provider's own delivery event may produce it -- an accepted send
+    // is acceptance, not receipt.
+    for (const outcome of ATTEMPT_OUTCOMES) {
+      expect(deliveryStateForOutcome(outcome)).not.toBe("DELIVERED");
+    }
+  });
+});
+
+describe("retry backoff", () => {
+  it("grows exponentially and then stops", () => {
+    expect(retryDelayMs(1)).toBe(60_000);
+    expect(retryDelayMs(2)).toBe(120_000);
+    expect(retryDelayMs(3)).toBe(240_000);
+  });
+
+  it("is bounded, because a credential expires while a retry waits", () => {
+    // S106. A backoff reaching hours would schedule a send of a token dead on
+    // arrival, having burned the attempt budget to do it.
+    expect(retryDelayMs(50)).toBe(15 * 60_000);
   });
 });

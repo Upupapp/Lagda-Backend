@@ -534,6 +534,38 @@ export interface NotificationDeliveriesTable {
   state: ColumnType<string, string, string>;
   failure_code: ColumnType<string | null, string | null, string | null>;
   created_at: Timestamptz;
+  /** Monotonic per delivery. Not gapless: a gap means a claim was lost. */
+  attempt_count: ColumnType<number, number | undefined, number>;
+  processing_started_at: ColumnType<Date | null, Date | null, Date | null>;
+  /** The lease. A dead worker leaves this in the past for a reclaim sweep. */
+  claim_expires_at: ColumnType<Date | null, Date | null, Date | null>;
+  next_attempt_at: ColumnType<Date | null, Date | null, Date | null>;
+  /** Provider-neutral operational metadata. Never evidence, never a receipt. */
+  provider_message_reference: ColumnType<string | null, string | null, string | null>;
+}
+
+/**
+ * One transport attempt against a provider.
+ *
+ * Deliberately thin: no response blob, no rendered body, no secret. A raw
+ * provider payload is unbounded, vendor-shaped, and routinely contains the
+ * recipient address the attempt failed to reach.
+ *
+ * Written before the provider call and completed after it, which is why
+ * `completed_at` and `outcome` are nullable and arrive together.
+ */
+export interface NotificationDeliveryAttemptsTable {
+  notification_delivery_attempt_id: string;
+  notification_delivery_id: string;
+  workspace_id: ColumnType<string | null, string | null, never>;
+  user_id: ColumnType<string | null, string | null, never>;
+  attempt_number: number;
+  started_at: Timestamptz;
+  completed_at: ColumnType<Date | null, Date | null, Date | null>;
+  /** ACCEPTED | RETRYABLE | TERMINAL | AMBIGUOUS. NULL while in flight. */
+  outcome: ColumnType<string | null, string | null, string | null>;
+  failure_code: ColumnType<string | null, string | null, string | null>;
+  provider_message_reference: ColumnType<string | null, string | null, string | null>;
 }
 
 export interface SigningRequestsTable {
@@ -1124,6 +1156,7 @@ export interface Database {
   signing_access_grants: SigningAccessGrantsTable;
   notification_intents: NotificationIntentsTable;
   notification_deliveries: NotificationDeliveriesTable;
+  notification_delivery_attempts: NotificationDeliveryAttemptsTable;
   recipient_signing_sessions: RecipientSigningSessionsTable;
   document_artifacts: DocumentArtifactsTable;
   evidence_events: EvidenceEventsTable;

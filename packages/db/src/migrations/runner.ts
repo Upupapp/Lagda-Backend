@@ -40,6 +40,7 @@ import * as m029 from "./029_evidence_event_provenance.js";
 import * as m030 from "./030_notifications.js";
 import * as m031 from "./031_retire_signing_delivery_intents.js";
 import * as m032 from "./032_notification_audience_integrity.js";
+import * as m033 from "./033_notification_delivery_attempts.js";
 
 /**
  * Migrations listed explicitly rather than read from disk.
@@ -84,6 +85,7 @@ const MIGRATIONS: Record<string, Migration> = {
   "030_notifications": m030,
   "031_retire_signing_delivery_intents": m031,
   "032_notification_audience_integrity": m032,
+  "033_notification_delivery_attempts": m033,
 };
 
 class ExplicitMigrationProvider implements MigrationProvider {
