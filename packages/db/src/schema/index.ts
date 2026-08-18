@@ -502,6 +502,66 @@ export interface SigningDeliveryIntentsTable {
   dispatched_at: ColumnType<Date | null, Date | null, Date | null>;
 }
 
+/**
+ * The durable decision to communicate. Immutable once written.
+ *
+ * No state column: an intent exists or it does not, and the transport status of
+ * the work it spawned lives on `notification_deliveries`. Exactly one of
+ * `workspace_id` / `user_id` is set — a password reset belongs to an account,
+ * not to a fabricated tenant.
+ *
+ * `template_input` holds the frozen NON-SECRET variables. The credential a
+ * message carries is referenced, never stored: `sealed_secret` is a ciphertext
+ * and `challenge_id` is only a pointer to the flow that owns one.
+ */
+export interface NotificationIntentsTable {
+  notification_intent_id: string;
+  workspace_id: ColumnType<string | null, string | null, never>;
+  user_id: ColumnType<string | null, string | null, never>;
+  notification_type: string;
+  source_kind: string;
+  source_id: string;
+  audience_kind: string;
+  audience_user_id: ColumnType<string | null, string | null, never>;
+  audience_recipient_id: ColumnType<string | null, string | null, never>;
+  audience_invitation_id: ColumnType<string | null, string | null, never>;
+  template_key: string;
+  template_version: number;
+  locale: string;
+  /** Frozen template variables. Schema-checked by the registry, never secrets. */
+  template_input: ColumnType<unknown, string, never>;
+  secret_ref_kind: ColumnType<string | null, string | null, never>;
+  /** AES-256-GCM ciphertext. Never a raw credential. */
+  sealed_secret: ColumnType<string | null, string | null, never>;
+  sealed_key_version: ColumnType<string | null, string | null, never>;
+  challenge_id: ColumnType<string | null, string | null, never>;
+  created_at: Timestamptz;
+}
+
+/**
+ * Channel-specific transport work. Mutable, operationally.
+ *
+ * `destination` is a PII snapshot frozen at creation and never re-read from a
+ * Contact or profile — a queued message may not follow a later profile edit.
+ * `state` is provider-neutral; BACKEND-44 writes only PENDING, CANCELLED and
+ * SUPPRESSED.
+ *
+ * Update is permitted on `state` and `failure_code` alone. Every other column
+ * is written once, and the repository exposes no method that touches them.
+ */
+export interface NotificationDeliveriesTable {
+  notification_delivery_id: string;
+  notification_intent_id: string;
+  workspace_id: ColumnType<string | null, string | null, never>;
+  user_id: ColumnType<string | null, string | null, never>;
+  channel: string;
+  /** PII. Never logged, never a metric label. */
+  destination: string;
+  state: ColumnType<string, string, string>;
+  failure_code: ColumnType<string | null, string | null, string | null>;
+  created_at: Timestamptz;
+}
+
 export interface SigningRequestsTable {
   signing_request_id: string;
   workspace_id: string;
@@ -1089,6 +1149,8 @@ export interface Database {
   signing_field_values: SigningFieldValuesTable;
   signing_access_grants: SigningAccessGrantsTable;
   signing_delivery_intents: SigningDeliveryIntentsTable;
+  notification_intents: NotificationIntentsTable;
+  notification_deliveries: NotificationDeliveriesTable;
   recipient_signing_sessions: RecipientSigningSessionsTable;
   document_artifacts: DocumentArtifactsTable;
   evidence_events: EvidenceEventsTable;
