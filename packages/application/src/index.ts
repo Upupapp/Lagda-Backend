@@ -51,3 +51,4 @@ export * from "./evidence/events.js";
 // BACKEND-43. The private audit trail projection — computed at read time
 // from evidence events, never materialized and never from logs.
 export * from "./audit/audit-trail.js";
+export * from "./notifications/index.js";
