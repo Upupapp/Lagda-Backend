@@ -22,6 +22,30 @@ export interface WorkerConfig {
   readonly cleanupCron: string;
   readonly cleanupBatchSize: number;
   readonly concurrencyOverride?: number;
+
+  // ── Notification delivery (BACKEND-45) ────────────────────────────────────
+
+  /** How often the dispatcher sweeps for due deliveries and expired leases. */
+  readonly dispatchCron: string;
+  readonly dispatchBatchSize: number;
+  /**
+   * How long a worker may hold a delivery claim before it is reclaimable.
+   *
+   * Must exceed the provider timeout with room to spare, or a slow-but-working
+   * send is reclaimed underneath itself and retried — manufacturing exactly the
+   * duplicate the lease exists to prevent.
+   */
+  readonly deliveryLeaseMs: number;
+  /** Bounded. Nothing retries forever, least of all a credential-bearing mail. */
+  readonly deliveryMaxAttempts: number;
+  /**
+   * Where first-party links point. Configuration only, never a request header
+   * (S147).
+   */
+  readonly appBaseUrl: string;
+  /** Opens sealed signing credentials at render time. Null disables delivery. */
+  readonly signingDeliveryKey: string | null;
+  readonly signingDeliveryKeyVersion: string;
 }
 
 export class WorkerConfigError extends Error {
@@ -65,6 +89,45 @@ export function loadWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerCo
     throw new WorkerConfigError(`CLEANUP_CRON must be a 5-field cron expression.`);
   }
 
+  const dispatchBatchSize = readInt(
+    env["DISPATCH_BATCH_SIZE"], "DISPATCH_BATCH_SIZE", 200);
+  if (dispatchBatchSize < 1 || dispatchBatchSize > 10_000) {
+    throw new WorkerConfigError("DISPATCH_BATCH_SIZE must be between 1 and 10000.");
+  }
+
+  // Every minute. A security email waiting an hour for a sweep is a login the
+  // user gave up on, so this is deliberately far more frequent than the
+  // cleanup cron beside it — the two look similar and are not.
+  const dispatchCron = env["DISPATCH_CRON"] ?? "* * * * *";
+  if (dispatchCron.trim().split(/\s+/).length !== 5) {
+    throw new WorkerConfigError("DISPATCH_CRON must be a 5-field cron expression.");
+  }
+
+  const deliveryLeaseMs = readInt(
+    env["DELIVERY_LEASE_MS"], "DELIVERY_LEASE_MS", 120_000);
+  // The floor is not arbitrary: EMAIL_TIMEOUT_MS is capped at 30s, and a lease
+  // shorter than the provider call it protects reclaims a send in flight.
+  if (deliveryLeaseMs < 60_000 || deliveryLeaseMs > 900_000) {
+    throw new WorkerConfigError("DELIVERY_LEASE_MS must be between 60000 and 900000.");
+  }
+
+  const deliveryMaxAttempts = readInt(
+    env["DELIVERY_MAX_ATTEMPTS"], "DELIVERY_MAX_ATTEMPTS", 3);
+  if (deliveryMaxAttempts < 1 || deliveryMaxAttempts > 10) {
+    throw new WorkerConfigError("DELIVERY_MAX_ATTEMPTS must be between 1 and 10.");
+  }
+
+  const appBaseUrl = env["APP_BASE_URL"] ?? "";
+  if (appBaseUrl !== "") {
+    try {
+      // Parsed here so a malformed base stops the process at boot rather than
+      // producing a broken signing link in a real invitation.
+      void new URL(appBaseUrl);
+    } catch {
+      throw new WorkerConfigError("APP_BASE_URL must be an absolute URL.");
+    }
+  }
+
   return {
     queueSchema: env["QUEUE_SCHEMA"] ?? "pgboss",
     queueMigrate: env["QUEUE_MIGRATE"] !== "false",
@@ -77,5 +140,12 @@ export function loadWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerCo
     cleanupBatchSize,
     ...(concurrency === undefined || concurrency === ""
       ? {} : { concurrencyOverride: Number(concurrency) }),
+    dispatchCron,
+    dispatchBatchSize,
+    deliveryLeaseMs,
+    deliveryMaxAttempts,
+    appBaseUrl,
+    signingDeliveryKey: env["SIGNING_DELIVERY_KEY"] ?? null,
+    signingDeliveryKeyVersion: env["SIGNING_DELIVERY_KEY_VERSION"] ?? "v1",
   };
 }

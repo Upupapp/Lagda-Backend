@@ -1058,6 +1058,16 @@ function scopedSigningAccess(
   store: InMemoryStore, scope: WorkspaceId,
 ): ScopedSigningAccessRepository {
   return {
+    isGrantUsable: (grantId: string, now: number) => Promise.resolve(
+      // Mirrors the SQL: in scope, not expired. The store holds
+      // `NewSigningAccessGrant`, which has no `revokedAt` — revocation has no
+      // write path yet (BACKEND-34 owns it), so there is nothing here to
+      // reproduce and pretending otherwise would test a fiction.
+      store.signingAccessGrants.some(grant =>
+        grant.grantId === grantId
+        && grant.workspaceId === scope
+        && grant.expiresAt > now)),
+
     insertGrant: (grant: NewSigningAccessGrant) => {
       if (grant.workspaceId !== scope) {
         throw new FakeScopeMismatchError(

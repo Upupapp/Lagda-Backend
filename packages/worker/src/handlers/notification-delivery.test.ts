@@ -4,12 +4,15 @@ import { describe, it, expect } from "vitest";
 import {
   parseNotificationDeliveryPayload, handleNotificationDelivery,
 } from "./notification-delivery.js";
-import { TerminalJobError, type WorkspaceJobContext } from "@lagda/application";
-import type { WorkspaceId } from "@lagda/contracts";
+import { TerminalJobError, type SystemJobContext } from "@lagda/application";
 
-const context: WorkspaceJobContext = {
+// SYSTEM-scoped, and that is the correction BACKEND-45 made. A delivery's
+// tenant is a property of its row -- an account security message has no
+// workspace at all -- so the queue message carries none and the handler
+// resolves it.
+const context: SystemJobContext = {
   jobId: "job_1", jobType: "notification.deliver", attempt: 1,
-  tenantScope: "workspace", workspaceId: "ws_1" as WorkspaceId,
+  tenantScope: "system",
 };
 
 describe("payload validation", () => {

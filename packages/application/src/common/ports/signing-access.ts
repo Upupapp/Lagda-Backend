@@ -163,6 +163,23 @@ export interface ScopedSigningAccessRepository {
     readonly activations: readonly RecipientActivationRecord[];
     readonly createdAt: number;
   }): Promise<void>;
+  /**
+   * Whether a grant can still admit its recipient (BACKEND-45, S59-S61).
+   *
+   * Asked before a secret-bearing message is rendered, so a signing link that
+   * expired or was revoked while the delivery sat in a queue is SUPPRESSED
+   * rather than delivered to someone who will click it and be refused with no
+   * explanation.
+   *
+   * False for a grant that is unknown, expired or revoked, and those three are
+   * deliberately one answer: the caller's next move is identical, and
+   * distinguishing them here would push a lifecycle decision into transport.
+   *
+   * Not a general grant read. It returns a boolean because a boolean is all
+   * transport is entitled to know about a credential it merely carries.
+   */
+  isGrantUsable(grantId: string, now: number): Promise<boolean>;
+
   /** For assertions and for BACKEND-37's later cohort advance. */
   listActivations(
     signingRequestId: SigningRequestId,

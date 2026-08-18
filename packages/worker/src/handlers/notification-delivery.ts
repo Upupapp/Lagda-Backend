@@ -11,6 +11,10 @@
 // `TransactionManager` — the worker resolves the scope, because a notification
 // may be workspace- or user-scoped and only the delivery row knows which.
 //
+// The context is SYSTEM-scoped and unused. A delivery's tenant is a property of
+// its row, not of the queue message, so the handler asks the dispatch index and
+// enters the scope it names — see `dependenciesFor`.
+//
 // ── At-least-once, assumed rather than hoped ───────────────────────────────
 //
 // pg-boss will deliver this job twice. The handler does nothing to prevent
@@ -24,7 +28,7 @@ import {
   deliverNotification,
   type NotificationDeliveryPayload, type NotificationDeliveryId,
   type DeliverNotificationDependencies, type DeliveryRunOutcome,
-  type WorkspaceJobContext,
+  type SystemJobContext,
 } from "@lagda/application";
 
 /**
@@ -69,7 +73,7 @@ export interface NotificationDeliveryHandlerDependencies {
  */
 export async function handleNotificationDelivery(
   raw: unknown,
-  _context: WorkspaceJobContext,
+  _context: SystemJobContext,
   deps: NotificationDeliveryHandlerDependencies,
 ): Promise<DeliveryRunOutcome> {
   const payload = parseNotificationDeliveryPayload(raw);

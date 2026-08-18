@@ -50,10 +50,14 @@ export const RateLimitCleanupJob: JobDefinition<CleanupPayload> = {
  * ── Workspace-scoped, and the payload does not say so ────────────────────
  *
  * A notification may be workspace-scoped or global-user-scoped, and the
- * delivery row records which. The job is declared `workspace` because that is
- * the stricter context to execute in; the handler reads the actual scope from
- * the row rather than trusting a payload field, which is what stops a job
- * written by hand from choosing its own tenant.
+ * delivery row records which. BACKEND-44 declared this `workspace` as the
+ * stricter of the two; BACKEND-45 corrects it to `system`, because `workspace`
+ * was a claim the payload cannot support and is simply false for an account
+ * security message, which has no workspace at all.
+ *
+ * The handler resolves the real scope from the dispatch index and enters it,
+ * so a hand-written job still cannot choose its own tenant — the guarantee
+ * moved from the declaration to the lookup, where it can actually be kept.
  *
  * ── Retries, and what they must not do ───────────────────────────────────
  *
@@ -73,7 +77,7 @@ export const RateLimitCleanupJob: JobDefinition<CleanupPayload> = {
  */
 export const NotificationDeliveryJob: JobDefinition<NotificationDeliveryPayload> = {
   type: "notification.deliver",
-  tenantScope: "workspace",
+  tenantScope: "system",
   schema: NotificationDeliveryPayloadSchema,
   maxAttempts: 3,
   retryBackoffSeconds: 60,

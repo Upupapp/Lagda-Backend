@@ -75,6 +75,24 @@ export function createScopedSigningAccessRepository(
       }
     },
 
+    async isGrantUsable(grantId: string, now: number) {
+      // Three refusals in one predicate: unknown, expired, revoked. The caller
+      // does the same thing for all three -- suppress the message -- and
+      // splitting them here would put a lifecycle judgement in a repository.
+      //
+      // Scoped by workspace as well as by id, like every read in this file. A
+      // grant id is opaque and unguessable, and it is still not an
+      // authorization to read across a tenant boundary.
+      const row = await trx.selectFrom("signing_access_grants")
+        .select("grant_id")
+        .where("grant_id", "=", grantId)
+        .where("workspace_id", "=", scope)
+        .where("revoked_at", "is", null)
+        .where("expires_at", ">", new Date(now))
+        .executeTakeFirst();
+      return row !== undefined;
+    },
+
     async listActivations(signingRequestId: SigningRequestId) {
       const rows = await trx.selectFrom("signing_request_recipient_activation")
         .selectAll()
