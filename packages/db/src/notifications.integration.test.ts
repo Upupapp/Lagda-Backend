@@ -37,18 +37,18 @@ const WS_B = "ws_nb" as WorkspaceId;
 const suite = hasIntegrationDatabase() ? describe : describe.skip;
 
 /** Deterministic ids, so a conflict is visible rather than hidden by a UUID. */
-function idGenerator(prefix: string) {
-  let n = 0;
-  return {
-    nextNotificationIntentId: () => `nint_${prefix}_${++n}` as NotificationIntentId,
-    nextNotificationDeliveryId: () => `ndel_${prefix}_${n}` as NotificationDeliveryId,
-  };
-}
+const ids = (prefix: string) => ({
+  notificationIntentId: `nint_${prefix}` as NotificationIntentId,
+  notificationDeliveryId: `ndel_${prefix}` as NotificationDeliveryId,
+  createdAt: AT,
+});
 
 const workspaceIntent = (
   sourceId: string,
+  prefix: string,
   destination = "alice@example.test",
 ): NewNotificationIntent => ({
+  ...ids(prefix),
   scope: { kind: "WORKSPACE", workspaceId: WS_A },
   notificationType: "SIGNING_INVITATION",
   source: { kind: "SIGNING_ACCESS_GRANT", sourceId },
@@ -67,7 +67,8 @@ const workspaceIntent = (
   destination,
 });
 
-const globalIntent = (sourceId: string): NewNotificationIntent => ({
+const globalIntent = (sourceId: string, prefix: string): NewNotificationIntent => ({
+  ...ids(prefix),
   scope: { kind: "GLOBAL_USER", userId: USER },
   notificationType: "PASSWORD_RESET",
   source: { kind: "SECURITY_CHALLENGE", sourceId },
@@ -121,7 +122,7 @@ suite("notifications (RLS, runtime role)", () => {
   ): Promise<T> =>
     app.db.transaction().execute(async trx => {
       await sql`select set_config('lagda.workspace_id', ${workspaceId}, true)`.execute(trx);
-      return body(createNotificationRepository(trx, idGenerator(prefix), () => AT));
+      return body(createNotificationRepository(trx));
     });
 
   /** Runs inside a user RLS context — no workspace at all. */
@@ -132,7 +133,7 @@ suite("notifications (RLS, runtime role)", () => {
   ): Promise<T> =>
     app.db.transaction().execute(async trx => {
       await sql`select set_config('lagda.user_id', ${userId}, true)`.execute(trx);
-      return body(createNotificationRepository(trx, idGenerator(prefix), () => AT));
+      return body(createNotificationRepository(trx));
     });
 
   describe("logical idempotency", () => {
@@ -141,8 +142,8 @@ suite("notifications (RLS, runtime role)", () => {
       // read-then-insert: both transactions read "absent" under a check-then-
       // write and both insert.
       const [first, second] = await Promise.all([
-        inWorkspace(WS_A, "a", r => r.createIfAbsent(workspaceIntent("grant_1"), null)),
-        inWorkspace(WS_A, "b", r => r.createIfAbsent(workspaceIntent("grant_1"), null)),
+        inWorkspace(WS_A, "a", r => r.createIfAbsent(workspaceIntent("grant_1", "a"), null)),
+        inWorkspace(WS_A, "b", r => r.createIfAbsent(workspaceIntent("grant_1", "b"), null)),
       ]);
 
       const outcomes = [first.outcome, second.outcome].sort();
@@ -157,8 +158,8 @@ suite("notifications (RLS, runtime role)", () => {
 
     it("creates a distinct intent for a new source occurrence", async () => {
       // S138, S241. A second OTP challenge is a new source id.
-      await asUser(USER, "a", r => r.createIfAbsent(globalIntent("chal_1"), null));
-      await asUser(USER, "b", r => r.createIfAbsent(globalIntent("chal_2"), null));
+      await asUser(USER, "a", r => r.createIfAbsent(globalIntent("chal_1", "a"), null));
+      await asUser(USER, "b", r => r.createIfAbsent(globalIntent("chal_2", "b"), null));
 
       const rows = await owner.db.selectFrom("notification_intents")
         .select("notification_intent_id").execute();
@@ -168,7 +169,7 @@ suite("notifications (RLS, runtime role)", () => {
     it("permits one delivery per intent and channel", async () => {
       // S195. The UNIQUE is what stops one decision producing two messages.
       const created = await inWorkspace(WS_A, "a",
-        r => r.createIfAbsent(workspaceIntent("grant_1"), null));
+        r => r.createIfAbsent(workspaceIntent("grant_1", "a"), null));
 
       await expect(owner.db.insertInto("notification_deliveries").values({
         notification_delivery_id: "ndel_dup",
@@ -184,7 +185,7 @@ suite("notifications (RLS, runtime role)", () => {
     it("stores a global account notification with no workspace", async () => {
       // S273. No fake tenant, and the row is still readable by its owner.
       const created = await asUser(USER, "a",
-        r => r.createIfAbsent(globalIntent("chal_1"), null));
+        r => r.createIfAbsent(globalIntent("chal_1", "a"), null));
 
       expect(created.intent.scope).toEqual({ kind: "GLOBAL_USER", userId: USER });
 
@@ -233,7 +234,7 @@ suite("notifications (RLS, runtime role)", () => {
   describe("tenant isolation", () => {
     it("hides one workspace's notifications from another", async () => {
       const created = await inWorkspace(WS_A, "a",
-        r => r.createIfAbsent(workspaceIntent("grant_1"), null));
+        r => r.createIfAbsent(workspaceIntent("grant_1", "a"), null));
 
       const seen = await inWorkspace(WS_B, "b",
         r => r.findIntentById(created.intent.notificationIntentId));
@@ -245,7 +246,7 @@ suite("notifications (RLS, runtime role)", () => {
       // The two RLS predicates are disjoint: a workspace admin must not learn
       // that one of their members requested a password reset.
       const created = await asUser(USER, "a",
-        r => r.createIfAbsent(globalIntent("chal_1"), null));
+        r => r.createIfAbsent(globalIntent("chal_1", "a"), null));
 
       const seen = await inWorkspace(WS_A, "b",
         r => r.findIntentById(created.intent.notificationIntentId));
@@ -255,7 +256,7 @@ suite("notifications (RLS, runtime role)", () => {
 
     it("hides a workspace notification from a user context", async () => {
       const created = await inWorkspace(WS_A, "a",
-        r => r.createIfAbsent(workspaceIntent("grant_1"), null));
+        r => r.createIfAbsent(workspaceIntent("grant_1", "a"), null));
 
       const seen = await asUser(USER, "b",
         r => r.findIntentById(created.intent.notificationIntentId));
@@ -269,7 +270,7 @@ suite("notifications (RLS, runtime role)", () => {
       // S55. The grant was never issued, so immutability is enforced by
       // PostgreSQL rather than by every future writer remembering.
       const created = await inWorkspace(WS_A, "a",
-        r => r.createIfAbsent(workspaceIntent("grant_1"), null));
+        r => r.createIfAbsent(workspaceIntent("grant_1", "a"), null));
 
       await expect(app.db.transaction().execute(async trx => {
         await sql`select set_config('lagda.workspace_id', ${WS_A}, true)`.execute(trx);
@@ -283,7 +284,7 @@ suite("notifications (RLS, runtime role)", () => {
     it("keeps a destination frozen against an unrelated profile change", async () => {
       // S248, S250. Nothing re-reads the address, so nothing can redirect it.
       const created = await inWorkspace(WS_A, "a",
-        r => r.createIfAbsent(workspaceIntent("grant_1", "alice@example.test"), null));
+        r => r.createIfAbsent(workspaceIntent("grant_1", "a", "alice@example.test"), null));
 
       await owner.db.updateTable("users")
         .set({ email: "changed@example.test", normalized_email: "changed@example.test" })
@@ -299,7 +300,7 @@ suite("notifications (RLS, runtime role)", () => {
   describe("stopping a pending delivery", () => {
     it("cancels a PENDING delivery and refuses a second stop", async () => {
       const created = await inWorkspace(WS_A, "a",
-        r => r.createIfAbsent(workspaceIntent("grant_1"), null));
+        r => r.createIfAbsent(workspaceIntent("grant_1", "a"), null));
 
       const first = await inWorkspace(WS_A, "b", r => r.stopPendingDelivery(
         created.delivery.notificationDeliveryId, "CANCELLED", "SOURCE_CANCELLED", null));
@@ -313,7 +314,7 @@ suite("notifications (RLS, runtime role)", () => {
 
     it("finds a stranded PENDING delivery for reconciliation", async () => {
       // S262. The lost-enqueue case: the row exists and nothing will pick it up.
-      await inWorkspace(WS_A, "a", r => r.createIfAbsent(workspaceIntent("grant_1"), null));
+      await inWorkspace(WS_A, "a", r => r.createIfAbsent(workspaceIntent("grant_1", "a"), null));
 
       const stranded = await inWorkspace(WS_A, "b",
         r => r.findPendingDeliveries(AT + 1, 10));

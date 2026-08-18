@@ -24,7 +24,9 @@ import type {
   NotificationRepository, NotificationCreationResult, NotificationType,
   NotificationAudience, NotificationScope, NotificationSecretRef,
   NotificationTemplateInput, NotificationLocale, NewNotificationIntent,
+  NotificationIntentIdGenerator, NotificationDeliveryIdGenerator,
 } from "../common/ports/notifications.js";
+import type { Clock } from "../common/ports/index.js";
 import type { NotificationTemplateRegistry } from "./template-registry.js";
 import { policyFor } from "./policy.js";
 
@@ -62,6 +64,8 @@ export class NotificationPolicyViolation extends Error {
 export interface CreateNotificationIntentDependencies {
   readonly notifications: NotificationRepository;
   readonly templates: NotificationTemplateRegistry;
+  readonly ids: NotificationIntentIdGenerator & NotificationDeliveryIdGenerator;
+  readonly clock: Clock;
 }
 
 /**
@@ -111,6 +115,12 @@ export function createNotificationIntent(
     deps.templates.validateInput(template, input.templateInput);
 
     const newIntent: NewNotificationIntent = {
+      // Minted unconditionally. When the insert conflicts these are discarded
+      // and the existing row's identity is returned -- cheaper than a read
+      // that would have to race the insert it is trying to avoid.
+      notificationIntentId: deps.ids.nextNotificationIntentId(),
+      notificationDeliveryId: deps.ids.nextNotificationDeliveryId(),
+      createdAt: deps.clock.now(),
       scope: input.scope,
       notificationType: input.notificationType,
       source: { kind: policy.sourceKind, sourceId: input.sourceId },

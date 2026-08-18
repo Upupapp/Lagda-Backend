@@ -26,7 +26,6 @@ function fakeRepository(): NotificationRepository & {
   readonly rows: Map<string, NotificationCreationResult>;
 } {
   const rows = new Map<string, NotificationCreationResult>();
-  let sequence = 0;
 
   return {
     rows,
@@ -37,11 +36,10 @@ function fakeRepository(): NotificationRepository & {
         return Promise.resolve({ ...existing, outcome: "ALREADY_EXISTS" as const });
       }
 
-      sequence += 1;
       const created: NotificationCreationResult = {
         outcome: "CREATED",
         intent: {
-          notificationIntentId: `nint_${sequence}` as NotificationIntentId,
+          notificationIntentId: input.notificationIntentId,
           scope: input.scope,
           notificationType: input.notificationType,
           source: input.source,
@@ -50,15 +48,15 @@ function fakeRepository(): NotificationRepository & {
           locale: input.locale,
           templateInput: input.templateInput,
           ...(input.secretRef === undefined ? {} : { secretRef: input.secretRef }),
-          createdAt: 1_700_000_000_000,
+          createdAt: input.createdAt,
         },
         delivery: {
-          notificationDeliveryId: `ndel_${sequence}` as NotificationDeliveryId,
-          notificationIntentId: `nint_${sequence}` as NotificationIntentId,
+          notificationDeliveryId: input.notificationDeliveryId,
+          notificationIntentId: input.notificationIntentId,
           channel: input.channel,
           destination: input.destination,
           state: "PENDING",
-          createdAt: 1_700_000_000_000,
+          createdAt: input.createdAt,
         },
       };
       rows.set(key, created);
@@ -162,10 +160,20 @@ describe("the policy table", () => {
 });
 
 describe("creating an intent", () => {
-  const create = (repository = fakeRepository()) => ({
-    repository,
-    run: createNotificationIntent({ notifications: repository, templates }),
-  });
+  const create = (repository = fakeRepository()) => {
+    let n = 0;
+    return {
+      repository,
+      run: createNotificationIntent({
+        notifications: repository, templates,
+        ids: {
+          nextNotificationIntentId: () => `nint_${++n}` as NotificationIntentId,
+          nextNotificationDeliveryId: () => `ndel_${n}` as NotificationDeliveryId,
+        },
+        clock: { now: () => 1_700_000_000_000 },
+      }),
+    };
+  };
 
   it("creates one intent with a PENDING delivery", () => {
     // S238.

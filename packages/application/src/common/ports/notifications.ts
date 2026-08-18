@@ -437,8 +437,19 @@ export interface NotificationLogicalKey {
 
 // ── Repository ───────────────────────────────────────────────────────────────
 
-/** What creating a notification needs, before ids and timestamps are assigned. */
+/**
+ * Everything one notification needs to be written.
+ *
+ * Identity and time come from the CALLER, matching every other repository in
+ * LAGDA: ids are minted by an application-layer generator and the clock is a
+ * port, so a repository stays a pure translation of a decision already made.
+ * A repository that minted its own ids would also be a repository that could
+ * not be replayed deterministically in a test.
+ */
 export interface NewNotificationIntent {
+  readonly notificationIntentId: NotificationIntentId;
+  readonly notificationDeliveryId: NotificationDeliveryId;
+  readonly createdAt: number;
   readonly scope: NotificationScope;
   readonly notificationType: NotificationType;
   readonly source: NotificationSource;

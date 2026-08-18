@@ -36,6 +36,7 @@ import type {
   WorkspaceId, WorkspaceMemberId, UserId, WorkspaceRole,
 } from "@lagda/contracts";
 import type { NormalizedEmail } from "../../auth/email-identity.js";
+import type { NotificationRepository } from "./notifications.js";
 
 // ── Time ─────────────────────────────────────────────────────────────────────
 
@@ -287,6 +288,20 @@ export interface WorkspaceUnitOfWork {
    * second would have no RLS context at all.
    */
   readonly uploads: ScopedUploadRepository;
+  /**
+   * The notification substrate, on the SAME transaction (BACKEND-44).
+   *
+   * Reachable here for the same reason idempotency is: the guarantee depends on
+   * it. A notification intent must be written inside the transaction that owns
+   * the fact justifying it, so a rollback takes the intent with it and a commit
+   * cannot leave a message owed for something that never happened.
+   *
+   * The tables carry their own scope discriminant rather than a bare
+   * `workspace_id`, because an account security notification belongs to a user
+   * and not to a tenant. The repository is therefore unscoped at construction
+   * and each row states its own scope.
+   */
+  readonly notifications: NotificationRepository;
   /**
    * Durable idempotency, on the SAME transaction (BACKEND-25).
    *

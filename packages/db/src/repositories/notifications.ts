@@ -18,8 +18,7 @@ import type {
   NotificationRepository, NewNotificationIntent, NotificationIntentRecord,
   NotificationDeliveryRecord, NotificationCreationResult, NotificationScope,
   NotificationAudience, NotificationSecretRef, NotificationIntentId,
-  NotificationDeliveryId, NotificationIntentIdGenerator,
-  NotificationDeliveryIdGenerator, NotificationType, NotificationChannel,
+  NotificationDeliveryId, NotificationType, NotificationChannel,
   NotificationSourceKind, NotificationDeliveryState, NotificationFailureCode,
   NotificationLocale, NotificationTemplateKey, NotificationTemplateInput,
   SigningRequestRecipientId, SealedDeliverySecret,
@@ -177,11 +176,7 @@ const secretColumns = (secretRef: NotificationSecretRef | undefined) => {
 
 // ── Repository ───────────────────────────────────────────────────────────────
 
-export function createNotificationRepository(
-  trx: Trx,
-  ids: NotificationIntentIdGenerator & NotificationDeliveryIdGenerator,
-  now: () => number,
-): NotificationRepository {
+export function createNotificationRepository(trx: Trx): NotificationRepository {
   const readIntentBySource = async (
     sourceKind: string,
     sourceId: string,
@@ -204,9 +199,9 @@ export function createNotificationRepository(
 
   return {
     async createIfAbsent(input: NewNotificationIntent): Promise<NotificationCreationResult> {
-      const createdAt = now();
-      const intentId = ids.nextNotificationIntentId();
-      const deliveryId = ids.nextNotificationDeliveryId();
+      const { createdAt } = input;
+      const intentId = input.notificationIntentId;
+      const deliveryId = input.notificationDeliveryId;
 
       try {
         // Insert-or-conflict on the logical key. The row count tells us which

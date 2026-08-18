@@ -47,6 +47,7 @@ import { createScopedPreparationRepository } from "../repositories/preparation.j
 import { createScopedRecipientRepository } from "../repositories/recipients.js";
 import { createScopedSigningRequestRepository } from "../repositories/signing-requests.js";
 import { createScopedSigningAccessRepository } from "../repositories/signing-access.js";
+import { createNotificationRepository } from "../repositories/notifications.js";
 import { createRecipientCeremonyRepository } from "../repositories/signing-ceremony.js";
 import { createRecipientSubmissionRepository } from "../repositories/signing-submission.js";
 import type {
@@ -104,6 +105,9 @@ function buildUnitOfWork(
     recipients: createScopedRecipientRepository(trx, workspaceId),
     signingRequests: createScopedSigningRequestRepository(trx, workspaceId),
     signingAccess: createScopedSigningAccessRepository(trx, workspaceId),
+    // Unscoped at construction: each row carries its own scope discriminant,
+    // and RLS enforces it from the transaction context.
+    notifications: createNotificationRepository(trx),
     signingWorkflow: createScopedSigningWorkflowRepository(trx, workspaceId),
     completion: createScopedCompletionRepository(trx, workspaceId),
     completionReconciliation:

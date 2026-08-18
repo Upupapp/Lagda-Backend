@@ -89,6 +89,10 @@ import type {
   SigningRequestId, SigningRequestRecipientId, SigningRequestFieldId,
   SigningRequestIdGenerator,
 } from "../common/ports/signing-requests.js";
+import type {
+  NotificationRepository, NewNotificationIntent, NotificationIntentRecord,
+  NotificationDeliveryRecord, NotificationIntentId,
+} from "../common/ports/notifications.js";
 
 /** A fixed instant, so assertions mean the same thing in any year. */
 export class FixedClock implements Clock {
@@ -400,6 +404,9 @@ export class InMemoryStore {
   readonly accountEmails = new Map<string, UserId>();
   /** Digest to invitation id. The real lookup is an RLS policy on a unique column. */
   readonly invitationDigests = new Map<string, string>();
+  /** BACKEND-44. Keyed by id; the logical-key index lives in the repository. */
+  readonly notificationIntents = new Map<string, NotificationIntentRecord>();
+  readonly notificationDeliveries = new Map<string, NotificationDeliveryRecord>();
   contacts: ContactRecord[] = [];
   documents: DocumentRecord[] = [];
   preparations: PreparationRecord[] = [];
@@ -2016,6 +2023,7 @@ export class FakeTransactionManager implements TransactionManager {
         completionReconciliation:
           completionReconciliation(this.store, workspaceId),
         completionInputs: completionInputs(this.store, workspaceId),
+        notifications: fakeNotifications(this.store),
       });
       this.committed++;
       return result;
@@ -2091,6 +2099,7 @@ export class FakeTransactionManager implements TransactionManager {
             completionReconciliation:
               completionReconciliation(store, workspaceId),
             completionInputs: completionInputs(store, workspaceId),
+            notifications: fakeNotifications(store),
           });
         },
       });
@@ -2466,6 +2475,83 @@ function scopedUploads(
         completedAt: input.completedAt,
       });
       return Promise.resolve();
+    },
+  };
+}
+
+/**
+ * An in-memory notification substrate.
+ *
+ * Enforces the ONE rule the real table enforces -- uniqueness on
+ * `(sourceKind, sourceId, notificationType)` -- and nothing else. It cannot
+ * model the concurrent case, which is exactly why that case is proved against
+ * real PostgreSQL instead.
+ */
+export function fakeNotifications(
+  store: { notificationIntents: Map<string, NotificationIntentRecord>;
+           notificationDeliveries: Map<string, NotificationDeliveryRecord>; },
+): NotificationRepository {
+  const logicalKey = (input: NewNotificationIntent): string =>
+    `${input.source.kind}|${input.source.sourceId}|${input.notificationType}`;
+
+  const byLogicalKey = new Map<string, NotificationIntentId>();
+
+  return {
+    createIfAbsent(input) {
+      const existingId = byLogicalKey.get(logicalKey(input));
+      if (existingId !== undefined) {
+        const intent = store.notificationIntents.get(existingId);
+        const delivery = [...store.notificationDeliveries.values()]
+          .find(row => row.notificationIntentId === existingId);
+        if (intent === undefined || delivery === undefined) {
+          throw new Error("fake notification store lost a row");
+        }
+        return Promise.resolve({ outcome: "ALREADY_EXISTS" as const, intent, delivery });
+      }
+
+      const intent: NotificationIntentRecord = {
+        notificationIntentId: input.notificationIntentId,
+        scope: input.scope,
+        notificationType: input.notificationType,
+        source: input.source,
+        audience: input.audience,
+        template: input.template,
+        locale: input.locale,
+        templateInput: input.templateInput,
+        ...(input.secretRef === undefined ? {} : { secretRef: input.secretRef }),
+        createdAt: input.createdAt,
+      };
+      const delivery: NotificationDeliveryRecord = {
+        notificationDeliveryId: input.notificationDeliveryId,
+        notificationIntentId: input.notificationIntentId,
+        channel: input.channel,
+        destination: input.destination,
+        state: "PENDING",
+        createdAt: input.createdAt,
+      };
+
+      store.notificationIntents.set(input.notificationIntentId, intent);
+      store.notificationDeliveries.set(input.notificationDeliveryId, delivery);
+      byLogicalKey.set(logicalKey(input), input.notificationIntentId);
+      return Promise.resolve({ outcome: "CREATED" as const, intent, delivery });
+    },
+
+    findIntentById: id => Promise.resolve(store.notificationIntents.get(id) ?? null),
+    findDeliveryById: id => Promise.resolve(store.notificationDeliveries.get(id) ?? null),
+
+    findPendingDeliveries: (olderThan, limit) => Promise.resolve(
+      [...store.notificationDeliveries.values()]
+        .filter(row => row.state === "PENDING" && row.createdAt <= olderThan)
+        .sort((a, b) => a.createdAt - b.createdAt)
+        .slice(0, limit)),
+
+    stopPendingDelivery: (id, state, failureCode) => {
+      const delivery = store.notificationDeliveries.get(id);
+      if (delivery === undefined || delivery.state !== "PENDING") {
+        return Promise.resolve(false);
+      }
+      store.notificationDeliveries.set(id, { ...delivery, state, failureCode });
+      return Promise.resolve(true);
     },
   };
 }
