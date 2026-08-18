@@ -114,6 +114,17 @@ function buildUnitOfWork(
     signingAccess: createScopedSigningAccessRepository(trx, workspaceId),
     // Unscoped at construction: each row carries its own scope discriminant,
     // and RLS enforces it from the transaction context.
+    // One column from `users`, for the sentence an invitation email opens
+    // with. Deliberately not a user repository -- see `ActorProfileRepository`.
+    actorProfiles: {
+      displayNameOf: async (userId: UserId) => {
+        const row = await trx.selectFrom("users")
+          .select("display_name")
+          .where("user_id", "=", userId)
+          .executeTakeFirst();
+        return row?.display_name ?? null;
+      },
+    },
     notifications: createNotificationRepository(trx),
     notificationTransport: createNotificationTransportRepository(trx),
     signingWorkflow: createScopedSigningWorkflowRepository(trx, workspaceId),

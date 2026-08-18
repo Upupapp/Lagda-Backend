@@ -2089,6 +2089,10 @@ export class FakeTransactionManager implements TransactionManager {
     try {
       const result = await operation({
         workspaceId,
+        // The store holds no user records, so a display name is unknown rather
+        // than fabricated. Null exercises the caller's fallback, which is the
+        // path a deleted inviter takes.
+        actorProfiles: { displayNameOf: () => Promise.resolve(null) },
         workspaces: scopedWorkspaces(this.store, workspaceId),
         memberships: scopedMemberships(this.store, workspaceId),
         evidence: scopedEvidence(this.store, workspaceId),
@@ -2166,6 +2170,7 @@ export class FakeTransactionManager implements TransactionManager {
           this.scopes.push(workspaceId);
           return inner({
             workspaceId,
+            actorProfiles: { displayNameOf: () => Promise.resolve(null) },
             workspaces: scopedWorkspaces(store, workspaceId),
             memberships: scopedMemberships(store, workspaceId),
             evidence: scopedEvidence(store, workspaceId),

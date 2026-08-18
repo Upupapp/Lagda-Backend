@@ -279,6 +279,19 @@ export interface WorkspaceUnitOfWork {
   readonly workspaceId: WorkspaceId;
   readonly workspaces: ScopedWorkspaceRepository;
   readonly memberships: ScopedMembershipRepository;
+  /**
+   * Display names for people this workspace already knows about.
+   *
+   * ONE method, and narrow on purpose. An invitation email says who invited
+   * you, and a membership record carries a `userId` and no name — so rendering
+   * that sentence needs a read the workspace unit of work did not have.
+   *
+   * It is not a general account repository and must not become one. Anything
+   * beyond a display name — an email, a password hash, a verification state —
+   * would put account data inside a tenant transaction, where a workspace
+   * member could become readable to the workspace rather than to themselves.
+   */
+  readonly actorProfiles: ActorProfileRepository;
   readonly evidence: ScopedEvidenceRepository;
   readonly artifacts: ScopedArtifactRepository;
   readonly finalizations: ScopedFinalizationRepository;
@@ -507,6 +520,18 @@ export interface NotificationDeliveryUnitOfWork {
   readonly scope: NotificationScope;
   readonly notifications: NotificationRepository;
   readonly notificationTransport: NotificationTransportRepository;
+}
+
+/**
+ * The one account fact a workspace transaction may read.
+ *
+ * `users` carries no tenant policy, so this read is possible from here; the
+ * bound on it is the interface, not the database. Null for an account that no
+ * longer exists — the caller renders a fallback rather than failing a whole
+ * invitation over a deleted inviter.
+ */
+export interface ActorProfileRepository {
+  displayNameOf(userId: UserId): Promise<string | null>;
 }
 
 export interface TransactionManager {
