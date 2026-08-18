@@ -283,13 +283,29 @@ export interface InvitationCredentialUnitOfWork {
  * invitation row, where its lifetime is bounded by the invitation's own, and
  * the link is rebuilt from configuration at send time.
  */
-export type InvitationDeliveryScheduler = (input: {
-  readonly invitationId: WorkspaceInvitationId;
-  readonly workspaceId: WorkspaceId;
-  readonly inviteeEmail: string;
-  readonly requestedRole: WorkspaceRole;
-  readonly expiresAt: number;
-}) => Promise<void>;
+export type InvitationDeliveryScheduler = (
+  input: {
+    readonly invitationId: WorkspaceInvitationId;
+    readonly workspaceId: WorkspaceId;
+    readonly invitedByUserId: UserId;
+    readonly inviteeEmail: string;
+    readonly requestedRole: WorkspaceRole;
+    readonly expiresAt: number;
+  },
+  /**
+   * The caller's OWN transaction and its repositories.
+   *
+   * Handed over rather than opened here, which is what makes "inside the
+   * transaction" true rather than intended. A scheduler that opened its own
+   * connection would commit independently, and the invitation could exist with
+   * no notification — a pending row in a manager's list that no email will ever
+   * match.
+   */
+  context: {
+    readonly uow: WorkspaceUnitOfWork;
+    readonly transaction: unknown;
+  },
+) => Promise<void>;
 
 export interface WorkspaceInvitationIdGenerator {
   nextWorkspaceInvitationId(): WorkspaceInvitationId;

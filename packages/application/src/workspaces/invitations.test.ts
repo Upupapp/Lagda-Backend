@@ -132,7 +132,12 @@ async function harness(
         seal: (raw: string) => `sealed(${raw})` as never,
       },
     }),
-    scheduleDelivery: (input) => {
+    scheduleDelivery: (input, context) => {
+      // The scheduler must be handed the CALLER's transaction, not left to
+      // open its own -- that is what makes "inside the transaction" true.
+      if (context.uow === undefined) {
+        return Promise.reject(new Error("scheduler was given no transaction"));
+      }
       if (over.deliveryFails === true) {
         return Promise.reject(new Error("queue unavailable"));
       }
@@ -290,6 +295,29 @@ describe("createWorkspaceInvitation", () => {
     const h = await harness({ deliveryFails: true });
     await expect(invite(h)).rejects.toThrow("queue unavailable");
     expect(h.store.invitations).toHaveLength(0);
+  });
+
+  it("hands delivery the caller's own transaction", async () => {
+    // A scheduler that opened its own connection would commit independently,
+    // and an invitation could exist with no notification -- a pending row in a
+    // manager's list that no email will ever match.
+    const seen: unknown[] = [];
+    const h = await harness();
+    const deps = {
+      ...h.deps,
+      scheduleDelivery: (_input: unknown, context: { uow: unknown }) => {
+        seen.push(context.uow);
+        return Promise.resolve();
+      },
+    };
+
+    await createWorkspaceInvitation(
+      { actor: actor(OWNER), workspaceId: h.workspaceId,
+        email: "ctx@example.test", role: "member" },
+      deps);
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toBeDefined();
   });
 
   it("hands delivery a POINTER, never a link or a raw token", async () => {

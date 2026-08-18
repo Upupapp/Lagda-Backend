@@ -24,7 +24,7 @@ import type {
   Clock, TransactionManager, WorkspaceInvitationRecord,
   WorkspaceInvitationIdGenerator, WorkspaceMemberIdGenerator,
   InvitationTokenFactory, InvitationLinkBuilder, InvitationDeliveryScheduler,
-  DeliverySecretSealer,
+  DeliverySecretSealer, WorkspaceUnitOfWork,
 } from "../common/ports/index.js";
 import type { AuthenticatedActor } from "../common/ports/session.js";
 import {
@@ -295,8 +295,9 @@ export async function createWorkspaceInvitation(
       // INSIDE the transaction. If delivery cannot be durably scheduled, the
       // invitation does not exist — better than a pending row in the manager's
       // list that no email will ever match (§129).
-      await scheduleIfConfigured(deps, {
+      await scheduleIfConfigured(deps, uow, {
         invitationId, workspaceId: input.workspaceId,
+        invitedByUserId: input.actor.userId,
         inviteeEmail: normalized.display, requestedRole: input.role,
         expiresAt,
       });
@@ -364,8 +365,10 @@ function sealed(
  */
 async function scheduleIfConfigured(
   deps: InvitationDependencies,
+  uow: WorkspaceUnitOfWork,
   input: {
     invitationId: WorkspaceInvitationId; workspaceId: WorkspaceId;
+    invitedByUserId: UserId;
     inviteeEmail: string; requestedRole: InvitableWorkspaceRole;
     expiresAt: number;
   },
@@ -374,10 +377,11 @@ async function scheduleIfConfigured(
   await deps.scheduleDelivery({
     invitationId: input.invitationId,
     workspaceId: input.workspaceId,
+    invitedByUserId: input.invitedByUserId,
     inviteeEmail: input.inviteeEmail,
     requestedRole: input.requestedRole,
     expiresAt: input.expiresAt,
-  });
+  }, { uow, transaction: uow });
 }
 
 // ── List ─────────────────────────────────────────────────────────────────────
@@ -469,9 +473,10 @@ export async function resendWorkspaceInvitation(
       // leave the recipient's existing link dead and the replacement unsent —
       // an invitee with no way in and a manager who thinks they resent it
       // (§33, §260).
-      await scheduleIfConfigured(deps, {
+      await scheduleIfConfigured(deps, uow, {
         invitationId: existing.invitationId,
         workspaceId: input.workspaceId,
+        invitedByUserId: existing.invitedByUserId,
         inviteeEmail: existing.inviteeEmail,
         requestedRole: existing.requestedRole,
         expiresAt,
