@@ -35,6 +35,8 @@ import type {
   PasswordResettableUserRepository, ResetTokenDigest, ResetTokenFactory, UserId,
 } from "../common/ports/auth.js";
 import type { RevocationReason } from "../common/ports/session.js";
+import type { DeliverySecretSealer } from "../common/ports/signing-access.js";
+import type { NotificationRepository } from "../common/ports/notifications.js";
 
 /**
  * A reset challenge as the application sees it.
@@ -162,6 +164,31 @@ export interface RequestPasswordResetDependencies {
     operation: (repositories: {
       readonly challenges: PasswordResetChallengeRepository;
       readonly users: PasswordResettableUserRepository;
+      /**
+       * Establishes user context for the REST of this transaction (OD-185).
+       *
+       * ── Why a transaction adopts a user partway through ─────────────────
+       *
+       * An account notification is `GLOBAL_USER`-scoped, and its RLS policy
+       * requires `lagda.user_id` in `WITH CHECK`, not merely in `USING`. But
+       * this transaction cannot set that context at the top: the user is
+       * DISCOVERED inside it, by the address lookup, and before that lookup
+       * the flow genuinely does not know whose account it is — and must not,
+       * because forgot-password answers identically for an address that
+       * exists and one that does not.
+       *
+       * So the shape is "resolve identity, then act as that identity", which
+       * is what a login does. The only read that precedes it is the account
+       * resolution itself, on a table with no tenant policy.
+       *
+       * Returns the repositories that require the context. Repositories
+       * available BEFORE adoption stay available; nothing is taken away.
+       */
+      readonly adoptUser: (userId: UserId) => Promise<{
+        readonly notifications: NotificationRepository;
+        /** The adapter's transaction handle, for the intent write. */
+        readonly transaction: unknown;
+      }>;
     }) => Promise<T>,
   ) => Promise<T>;
   /**
@@ -176,11 +203,28 @@ export interface RequestPasswordResetDependencies {
    * Absent while no notification infrastructure exists, in which case the
    * challenge is still created correctly and the raw token is discarded.
    */
-  readonly scheduleDelivery?: (input: {
-    readonly userId: UserId;
-    readonly rawToken: string;
-    readonly expiresAt: number;
-  }) => Promise<void>;
+  readonly scheduleDelivery?: (
+    input: {
+      readonly userId: UserId;
+      readonly challengeId: PasswordResetChallengeId;
+      /** The ACCOUNT's canonical address, not the form that resolved it. */
+      readonly destination: string;
+      readonly displayName: string | null;
+      readonly expiresAt: number;
+    },
+    /** The adopted context, from `adoptUser`. Never a fresh connection. */
+    context: {
+      readonly notifications: NotificationRepository;
+      readonly transaction: unknown;
+    },
+  ) => Promise<void>;
+  /**
+   * Seals the raw token so the reset email can carry it (OD-184).
+   *
+   * Absent means the challenge is created and cannot be mailed, which surfaces
+   * as a SUPPRESSED delivery rather than as silence.
+   */
+  readonly sealer?: DeliverySecretSealer;
 }
 
 /**
@@ -215,7 +259,11 @@ export async function requestPasswordReset(
   const token = deps.tokens.issue();
   const expiresAt = now + deps.resetTtlMs;
 
-  return deps.commit(async ({ challenges, users }) => {
+  // Minted before the transaction alongside the token, so the notification can
+  // point at the challenge it is about without a read-back.
+  const challengeId = deps.newChallengeId();
+
+  return deps.commit(async ({ challenges, users, adoptUser }) => {
     const account = await users.findByNormalizedEmail(normalized.normalized);
     if (account === null) {
       // No challenge, no account created, no email (§35). The caller cannot
@@ -229,18 +277,33 @@ export async function requestPasswordReset(
     // rather than both landing (§15, §16, §17).
     await challenges.supersedeActiveForUser({ userId: account.userId, now });
     await challenges.create({
-      challengeId: deps.newChallengeId(),
+      challengeId,
       userId: account.userId,
-      // The DIGEST. The raw token never reaches persistence (§6, §39).
+      // The DIGEST. The raw token never reaches persistence in the clear.
       tokenDigest: token.digest,
       createdAt: now,
       expiresAt,
+      // The same token, SEALED, in the same statement (OD-184). Its life is
+      // bounded by this row's -- consumed, superseded or expired all end it.
+      ...(deps.sealer === undefined ? {} : {
+        sealedSecret: deps.sealer.seal(token.raw),
+        sealedKeyVersion: deps.sealer.keyVersion,
+      }),
     });
 
     if (deps.scheduleDelivery !== undefined) {
+      // OD-185. The transaction adopts the account HERE, after the lookup that
+      // discovered it and before the only write that needs user context. A
+      // notification intent is GLOBAL_USER-scoped and its policy checks
+      // `lagda.user_id` on write, so without this the insert matches nothing.
+      const adopted = await adoptUser(account.userId);
       await deps.scheduleDelivery({
-        userId: account.userId, rawToken: token.raw, expiresAt,
-      });
+        userId: account.userId,
+        challengeId,
+        destination: account.email,
+        displayName: account.displayName,
+        expiresAt,
+      }, adopted);
     }
 
     return { outcome: "accepted", telemetryReason: "challenge-created" };

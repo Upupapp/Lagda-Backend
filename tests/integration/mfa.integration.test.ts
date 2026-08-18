@@ -232,6 +232,9 @@ describe.skipIf(!hasIntegrationDatabase())("multi-factor authentication", () => 
     commit: operation => database.db.transaction().execute(trx => operation({
       challenges: createPasswordResetRepository(trx),
       users: createPasswordResettableUserRepository(trx),
+      // OD-185. Not exercised here: this suite covers the challenge, not the
+      // notification, and a fake that succeeded would assert nothing.
+      adoptUser: () => Promise.reject(new Error("adoptUser is not exercised here")),
     })),
   });
 

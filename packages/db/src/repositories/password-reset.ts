@@ -6,7 +6,9 @@
 // token both see it active, and both go on to set a password. Only one of those
 // passwords is the one the user typed.
 
-import type { Kysely, Selectable, Transaction } from "kysely";
+import { sql, type Kysely, type Selectable, type Transaction } from "kysely";
+import type { NotificationRepository } from "@lagda/application";
+import { createNotificationRepository } from "./notifications.js";
 import type {
   PasswordHash, PasswordResetChallenge, PasswordResetChallengeId,
   PasswordResetChallengeRepository, PasswordResettableUserRepository,
@@ -25,6 +27,51 @@ function toChallenge(
     expiresAt: row.expires_at.getTime(),
     consumedAt: row.consumed_at === null ? null : row.consumed_at.getTime(),
     supersededAt: row.superseded_at === null ? null : row.superseded_at.getTime(),
+  };
+}
+
+/**
+ * Establishes user context for the remainder of a transaction (OD-185).
+ *
+ * ── Why this is a factory and not a method on a repository ────────────────
+ *
+ * Adopting a user is a property of the TRANSACTION, not of any one table. It
+ * changes what every subsequent statement can see, so it belongs beside the
+ * transaction rather than inside a repository that happens to need it.
+ *
+ * ── The guard, and why it throws ──────────────────────────────────────────
+ *
+ * A transaction may adopt ONE user, once. Adopting a second would let a single
+ * unit of work act as two people, and every RLS predicate evaluated after the
+ * switch would silently answer for the wrong one. Re-adopting the SAME user is
+ * allowed and is a no-op, because a retry inside one flow is ordinary.
+ *
+ * `set_config(..., true)` is transaction-local, so the context is gone at
+ * COMMIT or ROLLBACK and cannot ride a pooled connection into the next request
+ * — the same mechanism, and the same guarantee, as tenant context.
+ */
+export function createUserAdopter(
+  trx: Transaction<Database>,
+  setting: string,
+): (userId: string) => Promise<{
+  notifications: NotificationRepository; transaction: unknown;
+}> {
+  let adopted: string | null = null;
+
+  return async (userId: string) => {
+    if (adopted !== null && adopted !== userId) {
+      throw new Error(
+        "A transaction may not act as two different users. "
+        + `Already adopted ${adopted}, asked for ${userId}.`);
+    }
+    if (adopted === null) {
+      await sql`select set_config(${setting}, ${userId}, true)`.execute(trx);
+      adopted = userId;
+    }
+    return {
+      notifications: createNotificationRepository(trx),
+      transaction: trx,
+    };
   };
 }
 

@@ -83,10 +83,14 @@ async function build(options: {
         findByTokenDigest: () => Promise.resolve(null),
         consumeIfActive: () => Promise.resolve(false),
         supersedeActiveForUser: () => Promise.resolve(0),
-      findSealedIfActive: () => Promise.resolve(null),
-      scrubExpiredSecrets: () => Promise.resolve(0),
+        findSealedIfActive: () => Promise.resolve(null),
+        scrubExpiredSecrets: () => Promise.resolve(0),
         create() { created.push("created"); return Promise.resolve(); },
       },
+      // OD-185. Not exercised here: this suite covers the challenge, not the
+      // notification, and a fake that succeeded would assert nothing.
+      adoptUser: () => Promise.reject(new Error("adoptUser is not exercised here")),
+
       users: {
         findByNormalizedEmail: () => Promise.resolve(
           options.accountExists === false ? null : {

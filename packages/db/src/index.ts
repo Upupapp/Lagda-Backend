@@ -49,6 +49,7 @@ export {
 } from "./repositories/verification.js";
 export {
   createPasswordResetRepository, createPasswordResettableUserRepository,
+  createUserAdopter,
 } from "./repositories/password-reset.js";
 export {
   createMfaFactorRepository, createRecoveryCodeRepository,
