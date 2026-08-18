@@ -38,6 +38,8 @@ async function build(options: {
         : null,
     clock: { now: () => 1_700_000_000_000 },
     commit: operation => operation({
+      adoptUser: () => Promise.reject(
+        new Error("adoptUser is not exercised here")),
       challenges: {
         findByTokenDigest: () => Promise.resolve(
           options.verifyOutcome === "invalid"
@@ -52,6 +54,8 @@ async function build(options: {
             }),
         consumeIfActive: () => Promise.resolve(true),
         supersedeActiveForUser: () => Promise.resolve(0),
+        findSealedIfActive: () => Promise.resolve(null),
+        scrubExpiredSecrets: () => Promise.resolve(0),
         create: () => Promise.resolve(),
       },
       users: {
@@ -73,10 +77,14 @@ async function build(options: {
     newChallengeId: () => "evc_2" as VerificationChallengeId,
     verificationTtlMs: 86_400_000,
     commit: operation => operation({
+      adoptUser: () => Promise.reject(
+        new Error("adoptUser is not exercised here")),
       challenges: {
         findByTokenDigest: () => Promise.resolve(null),
         consumeIfActive: () => Promise.resolve(false),
         supersedeActiveForUser: () => Promise.resolve(1),
+        findSealedIfActive: () => Promise.resolve(null),
+        scrubExpiredSecrets: () => Promise.resolve(0),
         create() { rotations.push("created"); return Promise.resolve(); },
       },
       users: {
@@ -274,10 +282,14 @@ describe("POST /auth/resend-verification", () => {
         digestSubmitted: () => "a".repeat(64) as VerificationTokenDigest,
         clock: { now: () => 0 },
         commit: operation => operation({
+      adoptUser: () => Promise.reject(
+        new Error("adoptUser is not exercised here")),
           challenges: {
             findByTokenDigest: () => Promise.resolve(null),
             consumeIfActive: () => Promise.resolve(false),
             supersedeActiveForUser: () => Promise.resolve(0),
+            findSealedIfActive: () => Promise.resolve(null),
+            scrubExpiredSecrets: () => Promise.resolve(0),
             create: () => Promise.resolve(),
           },
           users: {
@@ -297,10 +309,14 @@ describe("POST /auth/resend-verification", () => {
         newChallengeId: () => "evc_3" as VerificationChallengeId,
         verificationTtlMs: 1000,
         commit: operation => operation({
+      adoptUser: () => Promise.reject(
+        new Error("adoptUser is not exercised here")),
           challenges: {
             findByTokenDigest: () => Promise.resolve(null),
             consumeIfActive: () => Promise.resolve(false),
             supersedeActiveForUser: () => Promise.resolve(0),
+            findSealedIfActive: () => Promise.resolve(null),
+            scrubExpiredSecrets: () => Promise.resolve(0),
             create: () => Promise.resolve(),
           },
           users: {

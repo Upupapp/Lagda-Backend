@@ -1,7 +1,9 @@
 // The account-scoped producer: what it points at, and what it must not become.
 
 import { describe, it, expect } from "vitest";
-import { createResetNotificationProducer } from "./reset-producer.js";
+import {
+  createResetNotificationProducer, createVerificationNotificationProducer,
+} from "./reset-producer.js";
 import { createTemplateRegistry } from "./template-registry.js";
 import { ALL_TEMPLATES } from "./templates.js";
 import type {
@@ -97,5 +99,40 @@ describe("what it carries", () => {
 
     expect((h.created[0]?.templateInput as { recipientName: string }).recipientName)
       .toBe("there");
+  });
+});
+
+describe("the verification sibling", () => {
+  it("declares its own notification type, not reset's", async () => {
+    // Separate producers rather than one parameterised by type, matching the
+    // separation the challenge TABLES keep: the two were built as distinct
+    // types with the same shape precisely so one cannot stand in for the
+    // other. The parameter deciding which credential domain a message belongs
+    // to is the one worst suited to being a variable.
+    const created: NewNotificationIntent[] = [];
+    const producer = createVerificationNotificationProducer({
+      templates: createTemplateRegistry(ALL_TEMPLATES),
+      ids: {
+        nextNotificationIntentId: () => "nint_1" as NotificationIntentId,
+        nextNotificationDeliveryId: () => "ndel_1" as NotificationDeliveryId,
+      },
+      clock: { now: () => AT },
+    });
+
+    await producer({
+      challengeId: CHALLENGE,
+      userId: USER,
+      destination: "maria@example.test",
+      displayName: "Maria",
+    }, {
+      createIfAbsent: (intent: NewNotificationIntent) => {
+        created.push(intent);
+        return Promise.resolve({ outcome: "created" as const, intent: intent as never });
+      },
+    } as never, null);
+
+    expect(created[0]?.notificationType).toBe("ACCOUNT_EMAIL_VERIFICATION");
+    expect(created[0]?.scope).toEqual({ kind: "GLOBAL_USER", userId: USER });
+    expect(JSON.stringify(created[0])).not.toContain("http");
   });
 });

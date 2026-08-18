@@ -47,7 +47,14 @@ export function createVerificationRepository(
       // challenge both issue this UPDATE; PostgreSQL serializes them and the
       // second matches zero rows.
       const result = await db.updateTable("email_verification_challenges")
-        .set({ consumed_at: new Date(input.now) })
+        // The ciphertext goes with the transition. A consumed challenge that
+        // still carried an openable token would be a spent credential left
+        // recoverable, and migration 037's CHECK constraint rejects the row.
+        .set({
+          consumed_at: new Date(input.now),
+          sealed_secret: null,
+          sealed_key_version: null,
+        })
         .where("challenge_id", "=", input.challengeId)
         .where("consumed_at", "is", null)
         .where("superseded_at", "is", null)
@@ -64,7 +71,11 @@ export function createVerificationRepository(
       // the one-active-challenge index slot, so a resend must clear it before
       // inserting a replacement (§123).
       const result = await db.updateTable("email_verification_challenges")
-        .set({ superseded_at: new Date(input.now) })
+        .set({
+          superseded_at: new Date(input.now),
+          sealed_secret: null,
+          sealed_key_version: null,
+        })
         .where("user_id", "=", input.userId)
         .where("consumed_at", "is", null)
         .where("superseded_at", "is", null)
@@ -82,7 +93,45 @@ export function createVerificationRepository(
         expires_at: new Date(input.expiresAt),
         consumed_at: null,
         superseded_at: null,
+        sealed_secret: input.sealedSecret ?? null,
+        sealed_key_version: input.sealedKeyVersion ?? null,
       }).execute();
+    },
+
+    async findSealedIfActive(input) {
+      // One null for unknown, consumed, superseded and expired. The renderer
+      // suppresses in every case, and the lifecycle belongs to this row.
+      const row = await db.selectFrom("email_verification_challenges")
+        .select(["sealed_secret", "sealed_key_version"])
+        .where("challenge_id", "=", input.challengeId)
+        .where("consumed_at", "is", null)
+        .where("superseded_at", "is", null)
+        .where("expires_at", ">", new Date(input.now))
+        .executeTakeFirst();
+
+      if (row === undefined
+        || row.sealed_secret === null
+        || row.sealed_key_version === null) {
+        return null;
+      }
+      return { sealed: row.sealed_secret, keyVersion: row.sealed_key_version };
+    },
+
+    async scrubExpiredSecrets(input) {
+      // Expiry performs no write of its own, so without this a token nobody
+      // clicked would keep an openable credential indefinitely.
+      const result = await db.updateTable("email_verification_challenges")
+        .set({ sealed_secret: null, sealed_key_version: null })
+        .where("sealed_secret", "is not", null)
+        .where("expires_at", "<=", new Date(input.now))
+        .where("challenge_id", "in", eb => eb
+          .selectFrom("email_verification_challenges")
+          .select("challenge_id")
+          .where("sealed_secret", "is not", null)
+          .where("expires_at", "<=", new Date(input.now))
+          .limit(input.limit))
+        .executeTakeFirst();
+      return Number(result.numUpdatedRows ?? 0n);
     },
   };
 }

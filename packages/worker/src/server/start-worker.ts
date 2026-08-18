@@ -10,6 +10,7 @@ import type { JobWithMetadata } from "pg-boss";
 import {
   createDatabase, loadDatabaseConfig, createIdempotencyRepository,
   createRateLimitCounterRepository, createPasswordResetRepository,
+  createVerificationRepository,
   type LagdaDatabase,
 } from "@lagda/db";
 import {
@@ -174,6 +175,7 @@ export async function startWorker(): Promise<StartedWorker> {
     // record belongs to a person, not a workspace -- so it is read on the plain
     // connection rather than through a scoped unit of work.
     const passwordResets = createPasswordResetRepository(database.db);
+    const verifications = createVerificationRepository(database.db);
 
     /**
      * Built per delivery, because one of the lookups needs the delivery's own
@@ -187,9 +189,16 @@ export async function startWorker(): Promise<StartedWorker> {
         // Account security challenges. Read on the plain connection: an
         // account record belongs to a person rather than a workspace, and
         // password_reset_challenges carries no tenant column.
+        // Both account challenge domains answer under SECURITY_CHALLENGE,
+        // because that is the source kind their policy rows declare. The
+        // challenge ids are distinct opaque namespaces, so asking the reset
+        // table about a verification id returns null and the verification
+        // lookup answers — which is safe, and is why the fall-through is
+        // written explicitly rather than left to ordering.
         SECURITY_CHALLENGE: {
-          findSealedIfActive: (sourceId: string, now: number) =>
-            passwordResets.findSealedIfActive({ challengeId: sourceId as never, now }),
+          findSealedIfActive: async (sourceId: string, now: number) =>
+            await passwordResets.findSealedIfActive({ challengeId: sourceId as never, now })
+            ?? await verifications.findSealedIfActive({ challengeId: sourceId as never, now }),
         },
         // Invitations are workspace-scoped, so the read happens inside the
         // delivery's own workspace transaction rather than on the bare

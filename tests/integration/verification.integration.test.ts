@@ -92,6 +92,8 @@ describe.skipIf(!hasIntegrationDatabase())("email verification", () => {
     commit: operation => database.db.transaction().execute(trx => operation({
       challenges: createVerificationRepository(trx),
       users: createVerifiableUserRepository(trx),
+      // OD-185. Not exercised here.
+      adoptUser: () => Promise.reject(new Error("adoptUser is not exercised here")),
     })),
   });
 
@@ -116,6 +118,8 @@ describe.skipIf(!hasIntegrationDatabase())("email verification", () => {
       commit: operation => database.db.transaction().execute(trx => operation({
         challenges: createVerificationRepository(trx),
         users: createVerifiableUserRepository(trx),
+        // OD-185. Not exercised here.
+        adoptUser: () => Promise.reject(new Error("adoptUser is not exercised here")),
       })),
       ...(overrides.withDelivery === true || overrides.failDelivery === true
         ? {

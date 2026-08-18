@@ -23,6 +23,7 @@ import type {
   NotificationIntentIdGenerator, NotificationDeliveryIdGenerator,
 } from "../common/ports/notifications.js";
 import type { PasswordResetChallengeId } from "../common/ports/auth.js";
+import type { VerificationChallengeId } from "../common/ports/auth.js";
 import type { NotificationTemplateRegistry } from "./template-registry.js";
 import { createNotificationIntent } from "./create-intent.js";
 
@@ -36,7 +37,7 @@ export interface ResetProducerDependencies {
 }
 
 export interface ResetNotificationInput {
-  readonly challengeId: PasswordResetChallengeId;
+  readonly challengeId: PasswordResetChallengeId | VerificationChallengeId;
   readonly userId: UserId;
   /**
    * The account's canonical address, read in this transaction.
@@ -47,6 +48,42 @@ export interface ResetNotificationInput {
    */
   readonly destination: string;
   readonly displayName: string | null;
+}
+
+/**
+ * The verification sibling.
+ *
+ * A separate function rather than a parameterised one, matching the separation
+ * the challenge TABLES already keep: `email_verification_challenges` and
+ * `password_reset_challenges` were built as distinct types with the same shape
+ * precisely so one cannot be passed where the other is expected. Collapsing
+ * their producers would re-introduce by parameter what the schema separates by
+ * type — and the parameter that decides which credential domain a message
+ * belongs to is the one worst suited to being a variable.
+ */
+export function createVerificationNotificationProducer(
+  deps: ResetProducerDependencies,
+) {
+  return async (
+    input: ResetNotificationInput,
+    notifications: NotificationRepository,
+    transaction: unknown,
+  ): Promise<void> => {
+    await createNotificationIntent({
+      notifications,
+      templates: deps.templates,
+      ids: deps.ids,
+      clock: deps.clock,
+    })({
+      notificationType: "ACCOUNT_EMAIL_VERIFICATION",
+      sourceId: input.challengeId,
+      scope: { kind: "GLOBAL_USER", userId: input.userId },
+      audience: { kind: "USER", userId: input.userId },
+      destination: input.destination,
+      templateInput: { recipientName: input.displayName ?? FALLBACK_NAME },
+      secretRef: { kind: "CHALLENGE", challengeId: input.challengeId },
+    }, transaction);
+  };
 }
 
 export function createResetNotificationProducer(deps: ResetProducerDependencies) {

@@ -13,6 +13,8 @@
 // design — see the comments at each one.
 
 import type { Clock } from "../common/ports/index.js";
+import type { NotificationRepository } from "../common/ports/notifications.js";
+import type { DeliverySecretSealer } from "../common/ports/signing-access.js";
 import { normalizeEmail } from "./email-identity.js";
 import type {
   UserId, UserRepository, VerificationChallengeId, VerificationTokenDigest,
@@ -66,7 +68,27 @@ export interface VerificationChallengeRepositoryFull {
     readonly tokenDigest: VerificationTokenDigest;
     readonly createdAt: number;
     readonly expiresAt: number;
+    /** The raw token, sealed, so the email can carry it (OD-184). */
+    readonly sealedSecret?: string;
+    readonly sealedKeyVersion?: string;
   }) => Promise<void>;
+
+  /**
+   * Reads back the sealed token for a challenge that is still usable.
+   *
+   * Null for unknown, consumed, superseded and expired alike — the renderer
+   * suppresses in every case, and this row is what knows the lifecycle.
+   */
+  readonly findSealedIfActive: (input: {
+    readonly challengeId: VerificationChallengeId;
+    readonly now: number;
+  }) => Promise<{ readonly sealed: string; readonly keyVersion: string } | null>;
+
+  /** Clears ciphertext from challenges that expired without being used. */
+  readonly scrubExpiredSecrets: (input: {
+    readonly now: number;
+    readonly limit: number;
+  }) => Promise<number>;
 }
 
 /** The one write verification needs on an account. Not a generic patch (§73). */
@@ -109,6 +131,18 @@ export interface VerifyEmailDependencies {
     operation: (repositories: {
       readonly challenges: VerificationChallengeRepositoryFull;
       readonly users: VerifiableUserRepository;
+      /**
+       * Establishes user context for the rest of this transaction (OD-185).
+       *
+       * The account is DISCOVERED here, by the address lookup, and a
+       * verification notification is GLOBAL_USER-scoped — so the context
+       * cannot be set at the top and the intent cannot be written without it.
+       * One user, once; a second adoption throws.
+       */
+      readonly adoptUser: (userId: UserId) => Promise<{
+        readonly notifications: NotificationRepository;
+        readonly transaction: unknown;
+      }>;
     }) => Promise<T>,
   ) => Promise<T>;
 }
@@ -197,6 +231,18 @@ export interface ResendVerificationDependencies {
     operation: (repositories: {
       readonly challenges: VerificationChallengeRepositoryFull;
       readonly users: VerifiableUserRepository;
+      /**
+       * Establishes user context for the rest of this transaction (OD-185).
+       *
+       * The account is DISCOVERED here, by the address lookup, and a
+       * verification notification is GLOBAL_USER-scoped — so the context
+       * cannot be set at the top and the intent cannot be written without it.
+       * One user, once; a second adoption throws.
+       */
+      readonly adoptUser: (userId: UserId) => Promise<{
+        readonly notifications: NotificationRepository;
+        readonly transaction: unknown;
+      }>;
     }) => Promise<T>,
   ) => Promise<T>;
   /**
@@ -210,11 +256,27 @@ export interface ResendVerificationDependencies {
    * Absent when no notification infrastructure exists, in which case the
    * rotation still happens and the raw code is discarded — see the report.
    */
-  readonly scheduleDelivery?: (input: {
-    readonly userId: UserId;
-    readonly rawCode: string;
-    readonly expiresAt: number;
-  }) => Promise<void>;
+  readonly scheduleDelivery?: (
+    input: {
+      readonly userId: UserId;
+      readonly challengeId: VerificationChallengeId;
+      /** The ACCOUNT's canonical address, not the form that resolved it. */
+      readonly destination: string;
+      readonly displayName: string | null;
+      readonly expiresAt: number;
+    },
+    context: {
+      readonly notifications: NotificationRepository;
+      readonly transaction: unknown;
+    },
+  ) => Promise<void>;
+  /**
+   * Seals the raw code so the email can carry it (OD-184).
+   *
+   * Absent means the challenge rotates and cannot be mailed, which surfaces as
+   * a SUPPRESSED delivery rather than as silence.
+   */
+  readonly sealer?: DeliverySecretSealer;
 }
 
 /**
@@ -245,7 +307,9 @@ export async function resendEmailVerification(
   // back the raw code is simply discarded and never delivered (§65).
   const code = deps.tokens.issue();
 
-  return deps.commit(async ({ challenges, users }) => {
+  const challengeId = deps.newChallengeId();
+
+  return deps.commit(async ({ challenges, users, adoptUser }) => {
     const account = await users.findByNormalizedEmail(normalized.normalized);
     if (account === null) {
       return { outcome: "accepted", telemetryReason: "unknown-account" };
@@ -262,21 +326,32 @@ export async function resendEmailVerification(
     // than both landing (§17, §18).
     await challenges.supersedeActiveForUser({ userId: account.userId, now });
     await challenges.create({
-      challengeId: deps.newChallengeId(),
+      challengeId,
       userId: account.userId,
-      // The DIGEST. The raw code never reaches persistence.
+      // The DIGEST. The raw code never reaches persistence in the clear.
       tokenDigest: code.digest,
       createdAt: now,
       expiresAt: now + deps.verificationTtlMs,
+      // The same code, SEALED, in the same statement (OD-184). Consumed,
+      // superseded or expired all end its life.
+      ...(deps.sealer === undefined ? {} : {
+        sealedSecret: deps.sealer.seal(code.raw),
+        sealedKeyVersion: deps.sealer.keyVersion,
+      }),
     });
 
     // Inside the transaction, so a scheduling failure rolls the rotation back.
     if (deps.scheduleDelivery !== undefined) {
+      // OD-185. Adopt AFTER the lookup that found the account and before the
+      // only write that needs user context.
+      const adopted = await adoptUser(account.userId);
       await deps.scheduleDelivery({
         userId: account.userId,
-        rawCode: code.raw,
+        challengeId,
+        destination: account.email,
+        displayName: account.displayName,
         expiresAt: now + deps.verificationTtlMs,
-      });
+      }, adopted);
     }
 
     return { outcome: "accepted", telemetryReason: "rotated" };

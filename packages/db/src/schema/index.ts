@@ -953,6 +953,16 @@ export interface EmailVerificationChallengesTable {
   consumed_at: ColumnType<Date | null, Date | null, Date | null>;
   /** Set when a resend rotates this challenge. Distinct from consumed. */
   superseded_at: ColumnType<Date | null, Date | null, Date | null>;
+  /**
+   * AES-256-GCM ciphertext of the raw token (OD-184, migration 037).
+   *
+   * Present only while the challenge is ACTIVE. Its own constraints rather than
+   * shared ones with the reset table: the two were built as separate types on
+   * purpose, so a verification challenge cannot be passed where a reset
+   * challenge is expected, and their credentials keep that separation.
+   */
+  sealed_secret: ColumnType<string | null, string | null, string | null>;
+  sealed_key_version: ColumnType<string | null, string | null, string | null>;
 }
 
 /**
