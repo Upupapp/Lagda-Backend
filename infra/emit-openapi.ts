@@ -59,6 +59,10 @@ const app = await createApp({
   dependencies: {
     databaseHealth: { isReachable: () => Promise.resolve(true) },
     sessions: stub("sessions"),
+    // The identity surface. Missing from this list until the integration sweep
+    // found the consequence: a contract of 38 paths, every one assuming a
+    // session, and no route in it able to issue one.
+    identity: () => stub("identity"),
     limiter: stub("limiter"),
     signingAccess: () => stub("signingAccess"),
     publicVerification: () => stub("publicVerification"),
@@ -93,11 +97,33 @@ await app.ready();
 const document = app.swagger();
 const paths = Object.keys((document as { paths?: Record<string, unknown> }).paths ?? {});
 
-if (paths.length <= 2) {
+// ── The guard, raised ──────────────────────────────────────────────────────
+//
+// It used to refuse a document with only health and readiness. That is the right
+// instinct and it fired at 2 paths, which is why it could not fire at 38 --
+// exactly the partial contract that shipped with no way to sign in.
+//
+// So it now asserts a FLOOR and a required set. The floor catches a group going
+// missing wholesale; the required paths catch the case the floor cannot see, by
+// naming the surfaces whose absence is not a smaller contract but a broken one.
+const MINIMUM_PATHS = 45;
+const REQUIRED_PATHS = [
+  "/auth/register",
+  "/auth/sessions",
+  "/auth/password-resets",
+  "/workspaces",
+  "/signing-access/bootstrap",
+];
+
+const missingRequired = REQUIRED_PATHS.filter(path => !paths.includes(path));
+
+if (paths.length < MINIMUM_PATHS || missingRequired.length > 0) {
   console.error(JSON.stringify({
     level: "error",
-    msg: "openapi document has only health/readiness paths -- a dependency group is missing, refusing to write a partial contract",
-    paths,
+    msg: "openapi document is partial -- a dependency group is missing, refusing to write it",
+    paths: paths.length,
+    minimum: MINIMUM_PATHS,
+    missingRequired,
   }));
   await app.close();
   process.exit(1);

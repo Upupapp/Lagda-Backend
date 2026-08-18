@@ -55,6 +55,7 @@ import {
 import {
   registerProviderWebhookRoutes,
 } from "../notifications/provider-webhook-routes.js";
+import { registerIdentityRoutes } from "./identity-routes.js";
 
 export interface CreateAppOptions {
   readonly config: ApiConfig;
@@ -610,6 +611,21 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
         ? {}
         : { rateLimit: { limiter: publicLimiter, metrics } }),
     });
+  }
+
+  // ── The identity surface ──────────────────────────────────────────────────
+  //
+  // On the ROOT instance, outside the authenticated scope, and that is not an
+  // oversight: every route here is either reached without a session or issues
+  // the session itself. Inside the scope, `requireSession` would reject the
+  // caller before sign-in could run — refusing everyone who has not yet done
+  // the thing the scope exists to require.
+  //
+  // The account and MFA-settings routes DO need a full session and take it from
+  // `authenticatedUser`, because they sit beside routes that must stay
+  // anonymous.
+  if (dependencies.identity !== undefined) {
+    registerIdentityRoutes(app, config, dependencies.identity());
   }
 
   // ── The provider callback (BACKEND-45) ────────────────────────────────────

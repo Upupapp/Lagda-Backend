@@ -8,6 +8,7 @@
 // so a route cannot reach a dependency it was not given.
 
 import type { ProviderWebhookRouteOptions } from "../notifications/provider-webhook-routes.js";
+import type { IdentityDependencies } from "./identity-routes.js";
 import type { PublicVerificationDependencies } from "@lagda/application";
 import type {
   SessionService, AbuseLimiter,
@@ -73,6 +74,21 @@ export interface AppDependencies {
    * mode an "enabled" boolean invites.
    */
   readonly providerWebhook?: () => ProviderWebhookRouteOptions;
+  /**
+   * The identity surface: registration, sessions, verification, recovery, MFA,
+   * account (BACKEND-45 integration sweep, S1).
+   *
+   * Optional as a WHOLE, and the whole is what matters here more than anywhere
+   * else in this object. Registration without sessions is an account nobody
+   * can use; sessions without recovery is an account nobody can get back into.
+   * A per-group flag would make each of those independently reachable, and each
+   * is a half-built product rather than a configuration.
+   *
+   * Absent means none of it is mounted — which is the state that shipped 38
+   * published paths, every one of them assuming a session no route could
+   * issue.
+   */
+  readonly identity?: () => IdentityDependencies;
   /**
    * BACKEND-35. Absent in tests that do not exercise the ceremony, exactly as
    * `signingAccess` is - an undefined dependency means the routes are never

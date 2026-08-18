@@ -80,6 +80,9 @@ export {
 } from "./workspaces/invitation-routes.js";
 export { createInvitationLinkBuilder } from "./workspaces/invitation-link.js";
 export {
+  registerIdentityRoutes, IDENTITY_PATHS, type IdentityDependencies,
+} from "./app/identity-routes.js";
+export {
   registerProviderWebhookRoutes, presentedSecret,
   type ProviderWebhookRouteOptions, type ProviderEventConfirmer,
 } from "./notifications/provider-webhook-routes.js";

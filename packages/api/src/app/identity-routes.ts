@@ -1,0 +1,194 @@
+// The identity surface: registration, sessions, verification, recovery, MFA,
+// account.
+//
+// ── Why this file exists ───────────────────────────────────────────────────
+//
+// Six registrars were written, exported, and referenced by nothing. The
+// integration sweep found the consequence: 38 published paths, all of which
+// assume a session, and no route anywhere that can issue one.
+//
+// Nothing was lying. `createApp` mounts a group only when its dependency is
+// supplied — the design that stops an unwired route from looking mounted — and
+// it behaved exactly as intended. The gap was that nobody ever supplied these.
+//
+// So they are grouped and mounted together, present-or-absent AS A WHOLE. That
+// is the same shape invitations and members use, and here it matters more:
+// registration without sessions is an account nobody can use, and sessions
+// without recovery is an account nobody can get back into. A per-route flag
+// would make each of those independently reachable, and each of them is a
+// half-built product rather than a configuration.
+//
+// ── Paths are constants, not configuration ────────────────────────────────
+//
+// A deployment does not get to choose where sign-in lives. These strings are
+// part of the published contract, they are baked into a generated client, and a
+// configurable one would let two environments disagree about the API they
+// claim to implement.
+
+import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { UserId } from "@lagda/contracts";
+import type { SessionId } from "@lagda/application";
+import type {
+  RegisterUserDependencies, LoginDependencies,
+  VerifyEmailDependencies, ResendVerificationDependencies,
+  RequestPasswordResetDependencies, ResetPasswordDependencies,
+  CompleteMfaDependencies, BeginEnrolmentDependencies,
+  ConfirmEnrolmentDependencies, DisableMfaDependencies,
+  GetCurrentUserDependencies, UpdateProfileDependencies,
+  UpdatePreferencesDependencies, ChangePasswordDependencies,
+  ListSessionsDependencies, RevokeSessionDependencies,
+  RevokeOtherSessionsDependencies,
+} from "@lagda/application";
+import type { ApiConfig } from "../config/index.js";
+import { registerAuthRoutes } from "../auth/register-route.js";
+import { registerSessionRoutes } from "../auth/session-routes.js";
+import { registerVerificationRoutes } from "../auth/verification-routes.js";
+import { registerPasswordResetRoutes } from "../auth/password-reset-routes.js";
+import { registerMfaRoutes } from "../auth/mfa-routes.js";
+import { registerAccountRoutes } from "../account/account-routes.js";
+
+/** The published identity paths. Contract, not configuration. */
+export const IDENTITY_PATHS = {
+  register: "/auth/register",
+  signIn: "/auth/sessions",
+  signOut: "/auth/sessions/current",
+  verifyEmail: "/auth/email-verifications",
+  resendVerification: "/auth/email-verifications/resend",
+  forgotPassword: "/auth/password-resets",
+  resetPassword: "/auth/password-resets/complete",
+  mfaVerify: "/auth/mfa/verifications",
+  mfaEnroll: "/auth/mfa/enrolments",
+  mfaConfirm: "/auth/mfa/enrolments/confirm",
+  mfaDisable: "/auth/mfa/enrolments/current",
+} as const;
+
+/**
+ * Everything the identity surface needs.
+ *
+ * Factories throughout, so a route holds no repository, no hasher and no
+ * database handle of its own — it cannot query or hash even by accident.
+ */
+export interface IdentityDependencies {
+  readonly register: () => RegisterUserDependencies;
+  readonly login: () => LoginDependencies;
+  readonly verifyEmail: () => VerifyEmailDependencies;
+  readonly resendVerification: () => ResendVerificationDependencies;
+  readonly requestPasswordReset: () => RequestPasswordResetDependencies;
+  readonly resetPassword: () => ResetPasswordDependencies;
+  readonly completeMfa: () => CompleteMfaDependencies;
+  readonly beginEnrolment: () => BeginEnrolmentDependencies;
+  readonly confirmEnrolment: () => ConfirmEnrolmentDependencies;
+  readonly disableMfa: () => DisableMfaDependencies;
+  readonly currentUser: () => GetCurrentUserDependencies;
+  readonly updateProfile: () => UpdateProfileDependencies;
+  readonly updatePreferences: () => UpdatePreferencesDependencies;
+  readonly changePassword: () => ChangePasswordDependencies;
+  readonly listSessions: () => ListSessionsDependencies;
+  readonly revokeSession: () => RevokeSessionDependencies;
+  readonly revokeOtherSessions: () => RevokeOtherSessionsDependencies;
+
+  /** Ends one session by id. Used by sign-out. */
+  readonly endSession: (sessionId: string) => Promise<void>;
+  /**
+   * Issues the FULL session after both factors succeed.
+   *
+   * A separate capability rather than something the MFA use case does, so "no
+   * session before MFA" is checkable in one place.
+   */
+  readonly issueSession: (userId: UserId) => Promise<{
+    readonly sessionToken: string;
+    readonly csrfToken: string;
+    readonly expiresAt: number;
+  }>;
+  /** Resolves a FULL session. Null for anonymous and for pre-auth credentials. */
+  readonly authenticatedUser: (request: FastifyRequest) => Promise<{
+    readonly userId: UserId;
+    readonly sessionId: SessionId;
+  } | null>;
+  /** Delivers the verification link created by registration. */
+  readonly deliverVerification?: (input: {
+    readonly email: string;
+    readonly rawToken: string;
+    readonly expiresAt: number;
+  }) => Promise<void>;
+}
+
+/**
+ * Mounts all six groups on the ROOT instance.
+ *
+ * Outside the authenticated scope, and that is not an oversight: every route
+ * here is either reached without a session or issues the session itself.
+ * Registering them inside the scope would make `requireSession` reject the
+ * caller before sign-in could run — the scope would refuse everyone who has
+ * not yet done the thing the scope exists to require.
+ *
+ * The account and MFA-settings routes DO need a full session, and they get it
+ * from `authenticatedUser` rather than from placement, because they sit beside
+ * routes that must stay anonymous.
+ */
+export function registerIdentityRoutes(
+  app: FastifyInstance,
+  config: ApiConfig,
+  deps: IdentityDependencies,
+): void {
+  registerAuthRoutes(app, {
+    path: IDENTITY_PATHS.register,
+    dependencies: deps.register,
+    ...(deps.deliverVerification === undefined
+      ? {}
+      : { deliverVerification: deps.deliverVerification }),
+  });
+
+  registerSessionRoutes(app, {
+    signInPath: IDENTITY_PATHS.signIn,
+    signOutPath: IDENTITY_PATHS.signOut,
+    config,
+    dependencies: deps.login,
+    revokeSession: deps.endSession,
+  });
+
+  registerVerificationRoutes(app, {
+    verifyPath: IDENTITY_PATHS.verifyEmail,
+    resendPath: IDENTITY_PATHS.resendVerification,
+    verifyDependencies: deps.verifyEmail,
+    resendDependencies: deps.resendVerification,
+  });
+
+  registerPasswordResetRoutes(app, {
+    forgotPath: IDENTITY_PATHS.forgotPassword,
+    resetPath: IDENTITY_PATHS.resetPassword,
+    config,
+    requestDependencies: deps.requestPasswordReset,
+    resetDependencies: deps.resetPassword,
+  });
+
+  registerMfaRoutes(app, {
+    verifyPath: IDENTITY_PATHS.mfaVerify,
+    enrollPath: IDENTITY_PATHS.mfaEnroll,
+    confirmPath: IDENTITY_PATHS.mfaConfirm,
+    disablePath: IDENTITY_PATHS.mfaDisable,
+    config,
+    verifyDependencies: deps.completeMfa,
+    enrollDependencies: deps.beginEnrolment,
+    confirmDependencies: deps.confirmEnrolment,
+    disableDependencies: deps.disableMfa,
+    issueSession: deps.issueSession,
+    // MFA settings need a FULL session and must never accept a pre-auth
+    // credential: enrolling or disabling a factor mid-ceremony would let a
+    // password alone change the account's security configuration.
+    authenticatedUser: async request =>
+      (await deps.authenticatedUser(request))?.userId ?? null,
+  });
+
+  registerAccountRoutes(app, {
+    config,
+    authenticatedUser: deps.authenticatedUser,
+    currentUserDependencies: deps.currentUser,
+    updateProfileDependencies: deps.updateProfile,
+    updatePreferencesDependencies: deps.updatePreferences,
+    changePasswordDependencies: deps.changePassword,
+    listSessionsDependencies: deps.listSessions,
+    revokeSessionDependencies: deps.revokeSession,
+    revokeOtherSessionsDependencies: deps.revokeOtherSessions,
+  });
+}
