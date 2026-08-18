@@ -17,6 +17,7 @@ import type { WorkspaceId } from "@lagda/contracts";
 export const JOB_TYPES = [
   "idempotency.cleanup",
   "rate-limit.cleanup",
+  "notification.deliver",
 ] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 
@@ -47,6 +48,33 @@ export const CleanupPayloadSchema = Type.Object(
   { additionalProperties: false },
 );
 export type CleanupPayload = Static<typeof CleanupPayloadSchema>;
+
+/**
+ * Delivering one notification. An IDENTIFIER, and nothing else.
+ *
+ * ── What is absent, and why each one matters ─────────────────────────────
+ *
+ * No destination (S124). A queue row holding a recipient address is PII
+ * duplicated into a table that is dumped, replayed and inspected far more
+ * casually than the record it was copied from — and the durable delivery row
+ * already has it.
+ *
+ * No subject or body (S125). Rendering happens in the handler, from the frozen
+ * template input, immediately before sending.
+ *
+ * No raw secret (S126). The credential is resolved from its secure reference
+ * at render time and is never written anywhere a job payload can reach.
+ *
+ * The handler therefore loads everything it needs from the delivery row, which
+ * is also what makes at-least-once safe: a job replayed after the delivery was
+ * cancelled reads the cancellation rather than a stale copy of its own inputs.
+ */
+export const NotificationDeliveryPayloadSchema = Type.Object(
+  { notificationDeliveryId: Type.String({ minLength: 1, maxLength: 64 }) },
+  { additionalProperties: false },
+);
+export type NotificationDeliveryPayload =
+  Static<typeof NotificationDeliveryPayloadSchema>;
 
 /** Everything a job definition declares. */
 export interface JobDefinition<TPayload> {
