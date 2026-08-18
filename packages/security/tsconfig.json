@@ -13,25 +13,7 @@
       "path": "../contracts"
     },
     {
-      "path": "../core"
-    },
-    {
       "path": "../application"
-    },
-    {
-      "path": "../db"
-    },
-    {
-      "path": "../sealing"
-    },
-    {
-      "path": "../storage"
-    },
-    {
-      "path": "../scanning"
-    },
-    {
-      "path": "../security"
     }
   ],
   "exclude": [

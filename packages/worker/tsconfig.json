@@ -26,6 +26,9 @@
     },
     {
       "path": "../storage"
+    },
+    {
+      "path": "../security"
     }
   ],
   "exclude": [

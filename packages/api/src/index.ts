@@ -51,10 +51,13 @@ export {
   createResetTokenFactory, digestResetToken, digestSubmittedResetToken,
   isWellFormedResetToken, buildPasswordResetUrl,
 } from "./security/reset-token.js";
+// Re-exported from `@lagda/security`, where they moved so the worker can open a
+// sealed credential without importing the HTTP package. Kept exported here so
+// every existing consumer of `@lagda/api` is unaffected.
 export {
   createSecretBox, generateSecretBoxKey, SecretBoxError, type SecretBox,
   type SealedSecret,
-} from "./security/secret-box.js";
+} from "@lagda/security";
 export {
   generateTotpSecret, buildProvisioningUri, verifyTotp, timeStepFor,
   isWellFormedTotpCode, TOTP_PARAMETERS, type TotpSecret,

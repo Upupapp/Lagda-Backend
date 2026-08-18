@@ -1,5 +1,5 @@
 {
-  "name": "@lagda/worker",
+  "name": "@lagda/security",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -20,12 +20,7 @@
   },
   "dependencies": {
     "@lagda/application": "*",
-    "@lagda/contracts": "*",
-    "@lagda/core": "*",
-    "@lagda/db": "*",
-    "@lagda/sealing": "*",
-    "@lagda/storage": "*",
-    "pg-boss": "^12.27.0",
-    "@lagda/security": "*"
-  }
+    "@lagda/contracts": "*"
+  },
+  "description": "Cryptographic primitives shared by the HTTP and worker processes."
 }

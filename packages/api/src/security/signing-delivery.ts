@@ -18,7 +18,7 @@
 import type {
   DeliverySecretSealer, SealedDeliverySecret, SigningLinkBuilder,
 } from "@lagda/application";
-import { createSecretBox } from "./secret-box.js";
+import { createSecretBox } from "@lagda/security";
 
 /**
  * Seals a raw signing credential with AES-256-GCM.

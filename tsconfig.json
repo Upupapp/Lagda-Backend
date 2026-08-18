@@ -23,6 +23,9 @@
       "path": "packages/email"
     },
     {
+      "path": "packages/security"
+    },
+    {
       "path": "packages/scanning"
     },
     {

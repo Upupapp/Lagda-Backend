@@ -61,7 +61,7 @@ describe("workspace foundation", () => {
     // assertion below pass without checking anything.
     expect(packageNames).toEqual([
       "api", "application", "contracts", "core", "db", "email", "scanning",
-      "sealing", "storage", "worker",
+      "sealing", "security", "storage", "worker",
     ]);
   });
 
