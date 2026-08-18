@@ -15,6 +15,7 @@ import {
   IdempotencyCleanupJob, RateLimitCleanupJob, NotificationDeliveryJob,
   NotificationDispatchJob, JOB_DEFINITIONS,
   createTemplateRegistry, ALL_TEMPLATES, createNotificationLinkBuilder,
+  noopMetrics,
   type JobDefinition, type SystemJobContext,
   type DeliverNotificationDependencies, type NotificationDeliveryId,
   type NotificationTransportRepository, type NotificationDeliveryUnitOfWork,
@@ -26,7 +27,7 @@ import { createSealedSecretResolver } from "@lagda/security";
 import { randomUUID } from "node:crypto";
 import { createJobScheduler } from "../queue/scheduler.js";
 import {
-  handleNotificationDelivery,
+  handleNotificationDelivery, recordDeliveryOutcome,
 } from "../handlers/notification-delivery.js";
 import {
   handleNotificationDispatch,
@@ -222,9 +223,37 @@ export async function startWorker(): Promise<StartedWorker> {
     await ensureQueue(boss, NotificationDispatchJob);
 
     await registerSystemHandler(boss, config, NotificationDispatchJob, (raw, context) =>
-      handleNotificationDispatch(raw, context, { transactions, scheduler, clock }));
-    await registerSystemHandler(boss, config, NotificationDeliveryJob, (raw, context) =>
-      handleNotificationDelivery(raw, context, { dependenciesFor }));
+      handleNotificationDispatch(raw, context, { transactions, scheduler, clock })
+        .then(outcome => {
+          // Truncation is the signal worth having here: a sweep that keeps
+          // filling its batch means the backlog is growing faster than the
+          // cadence drains it, and that is invisible in a success count.
+          emit("info", "worker.notification_dispatch", { ...outcome });
+          return outcome;
+        }));
+    await registerSystemHandler(boss, config, NotificationDeliveryJob,
+      async (raw, context) => {
+        const started = performance.now();
+        const outcome = await handleNotificationDelivery(
+          raw, context, { dependenciesFor });
+
+        // Instrumented, collecting nothing. `noopMetrics` is the honest state
+        // until BACKEND-66 selects an exporter -- the same INSTRUMENTED_NO_
+        // EXPORTER position the API reports, rather than a claim that delivery
+        // is being measured.
+        recordDeliveryOutcome(noopMetrics, outcome, performance.now() - started);
+
+        // S213. The delivery id and the outcome, and nothing else. Not the
+        // destination (S214), not the subject or body (S215), not the provider
+        // message reference -- which is the field most tempting to correlate on
+        // and the one that ties a log line to a specific person's mail.
+        emit("info", "worker.notification_delivery", {
+          result: outcome.result,
+          notificationDeliveryId:
+            (raw as { notificationDeliveryId?: string }).notificationDeliveryId,
+        });
+        return outcome;
+      });
 
     emit("info", "worker.notification_delivery_enabled", {
       provider: "postmark",

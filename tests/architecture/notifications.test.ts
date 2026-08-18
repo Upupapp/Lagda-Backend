@@ -437,6 +437,52 @@ describe("the transport cannot reach the domain it reports on", () => {
   });
 });
 
+describe("email delivery metrics", () => {
+  it("declares a label allowlist that admits nothing identifying", () => {
+    // S210, S211. A metrics store is retained longer and read more widely than
+    // a log, so its rules are stricter: no destination, no provider message
+    // reference, no delivery or intent id, no workspace, no user.
+    const catalog = code(path.join(
+      PACKAGES, "application", "src", "observability", "metrics.ts"));
+
+    const emailBlock = catalog.slice(catalog.indexOf("email_delivery_attempts_total:"));
+    for (const forbidden of [
+      "destination", "email\"", "providerMessageReference", "messageId",
+      "notificationDeliveryId", "notificationIntentId", "workspaceId", "userId",
+      "subject", "recipient",
+    ]) {
+      expect({ forbidden, present: emailBlock.includes(forbidden) })
+        .toEqual({ forbidden, present: false });
+    }
+  });
+
+  it("keeps every email metric label inside the shared bounded vocabulary", () => {
+    // Each one is a closed union in code: an outcome, a five-value
+    // notification type, a provider name, a process role, an event type. None
+    // can grow a series per tenant or per message.
+    const catalog = code(path.join(
+      PACKAGES, "application", "src", "observability", "metrics.ts"));
+
+    const ALLOWED = new Set([
+      "result", "notificationType", "provider", "processRole", "eventType",
+    ]);
+    const pattern = /email_[a-z_]+:\s*\n?\s*\[([^\]]*)\]/gu;
+    let match: RegExpExecArray | null;
+    let checked = 0;
+    while ((match = pattern.exec(catalog)) !== null) {
+      checked++;
+      for (const label of (match[1] ?? "").split(",")) {
+        const name = label.trim().replace(/["']/gu, "");
+        if (name === "") continue;
+        expect({ name, allowed: ALLOWED.has(name) })
+          .toEqual({ name, allowed: true });
+      }
+    }
+    // A regex that matched nothing would pass silently.
+    expect(checked).toBeGreaterThan(0);
+  });
+});
+
 describe("the provider credential never leaves its header", () => {
   it("is never interpolated into a string", () => {
     // S96, S217, S218. The token is a header value and nothing else. An

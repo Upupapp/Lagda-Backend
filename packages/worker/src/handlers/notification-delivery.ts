@@ -28,7 +28,7 @@ import {
   deliverNotification,
   type NotificationDeliveryPayload, type NotificationDeliveryId,
   type DeliverNotificationDependencies, type DeliveryRunOutcome,
-  type SystemJobContext,
+  type SystemJobContext, type MetricsRecorder,
 } from "@lagda/application";
 
 /**
@@ -87,4 +87,53 @@ export async function handleNotificationDelivery(
   }
 
   return deliverNotification(dependencies)(deliveryId);
+}
+
+/**
+ * Records one delivery run.
+ *
+ * ── Why the worker measures and the use case does not ──────────────────────
+ *
+ * `deliverNotification` takes no metrics recorder, for the same reason no use
+ * case takes a logger (INV-134): instrumentation is applied from the OUTSIDE at
+ * composition, so the application package stays free of observability
+ * dependencies and callable from anywhere.
+ *
+ * ── What is deliberately not measured ──────────────────────────────────────
+ *
+ * The destination (S210), the provider message reference (S211), the delivery
+ * or intent id, the workspace, the subject, the body. The first is a
+ * counterparty's personal data; the second and third would make one time series
+ * per message. `notificationType` is a five-value union and is the dimension an
+ * operator actually asks about.
+ *
+ * The type is taken from the OUTCOME rather than looked up, so measuring cannot
+ * cost a query — and a metrics call that could fail is a metrics call that can
+ * take down the thing it observes.
+ */
+export function recordDeliveryOutcome(
+  metrics: MetricsRecorder,
+  outcome: DeliveryRunOutcome,
+  durationMs: number,
+): void {
+  const labels = { provider: "postmark", processRole: "worker" } as const;
+
+  // NOT_CLAIMABLE is not an attempt. Counting it would inflate the attempt
+  // rate with lost claim races, which are the ordinary consequence of
+  // at-least-once queue delivery rather than work being done.
+  if (outcome.result === "NOT_CLAIMABLE") {
+    metrics.increment("email_delivery_results_total",
+      { ...labels, result: "not_claimable" });
+    return;
+  }
+
+  metrics.increment("email_delivery_attempts_total", labels);
+  metrics.observe("email_delivery_duration_ms", durationMs,
+    { ...labels, result: outcome.result.toLowerCase() });
+  metrics.increment("email_delivery_results_total",
+    { ...labels, result: outcome.result.toLowerCase() });
+
+  if (outcome.result === "RETRY_SCHEDULED") {
+    metrics.increment("email_delivery_retries_total", labels);
+  }
 }
