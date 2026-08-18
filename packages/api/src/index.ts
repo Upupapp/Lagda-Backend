@@ -80,6 +80,10 @@ export {
 } from "./workspaces/invitation-routes.js";
 export { createInvitationLinkBuilder } from "./workspaces/invitation-link.js";
 export {
+  registerProviderWebhookRoutes, presentedSecret,
+  type ProviderWebhookRouteOptions, type ProviderEventConfirmer,
+} from "./notifications/provider-webhook-routes.js";
+export {
   registerMemberRoutes, ChangeMemberRoleRequestSchema, WorkspaceMemberSchema,
   MemberListResponseSchema, WorkspaceAccessResponseSchema,
   type MemberRouteOptions,

@@ -7,6 +7,7 @@
 // Routes receive the specific capability they need, never this whole object,
 // so a route cannot reach a dependency it was not given.
 
+import type { ProviderWebhookRouteOptions } from "../notifications/provider-webhook-routes.js";
 import type { PublicVerificationDependencies } from "@lagda/application";
 import type {
   SessionService, AbuseLimiter,
@@ -63,6 +64,15 @@ export interface AppDependencies {
    * unprotected.
    */
   readonly publicVerification?: () => PublicVerificationDependencies;
+  /**
+   * BACKEND-45. The provider callback surface.
+   *
+   * Optional, and absent by default in every environment that has not
+   * configured a webhook credential. Absent means the route DOES NOT EXIST —
+   * never that it exists with authentication disabled, which is the failure
+   * mode an "enabled" boolean invites.
+   */
+  readonly providerWebhook?: () => ProviderWebhookRouteOptions;
   /**
    * BACKEND-35. Absent in tests that do not exercise the ceremony, exactly as
    * `signingAccess` is - an undefined dependency means the routes are never

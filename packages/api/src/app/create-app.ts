@@ -52,6 +52,9 @@ import { registerCancelRoutes } from "../signing-requests/cancel-routes.js";
 import {
   registerPublicVerificationRoutes,
 } from "../verification/public-verification-routes.js";
+import {
+  registerProviderWebhookRoutes,
+} from "../notifications/provider-webhook-routes.js";
 
 export interface CreateAppOptions {
   readonly config: ApiConfig;
@@ -607,6 +610,20 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
         ? {}
         : { rateLimit: { limiter: publicLimiter, metrics } }),
     });
+  }
+
+  // ── The provider callback (BACKEND-45) ────────────────────────────────────
+  //
+  // Registered on the ROOT instance, outside every authenticated scope and
+  // outside the recipient realm. A provider has no session and no workspace by
+  // construction, and the credential it presents is a shared secret compared in
+  // fixed time by the confirmer.
+  //
+  // Absent dependencies mean the route does not exist. A deployment with no
+  // webhook credential has no webhook endpoint at all, rather than one that
+  // accepts anything.
+  if (dependencies.providerWebhook !== undefined) {
+    registerProviderWebhookRoutes(app, dependencies.providerWebhook());
   }
 
   if (dependencies.signingAccess !== undefined) {
