@@ -590,7 +590,17 @@ export interface EmailDeliveryProvider {
 export type EmailDeliveryResult =
   | { readonly outcome: "ACCEPTED"; readonly providerMessageReference?: string }
   | { readonly outcome: "FAILED_RETRYABLE" }
-  | { readonly outcome: "FAILED_TERMINAL" };
+  | { readonly outcome: "FAILED_TERMINAL" }
+  /**
+   * The transport could not determine whether the provider accepted it.
+   *
+   * Added by BACKEND-45. A timeout or dropped connection may have occurred
+   * before the request left or after it was accepted, and no provider
+   * evaluated offers a send-idempotency key that would settle it (OD-176).
+   * Modelling it as either failure or success is wrong in a different
+   * direction, so it is neither.
+   */
+  | { readonly outcome: "AMBIGUOUS" };
 
 // ── Claiming and attempts (BACKEND-45) ───────────────────────────────────────
 
