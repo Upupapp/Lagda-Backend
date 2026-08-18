@@ -728,6 +728,19 @@ export interface NotificationDispatchRepository {
   listExpiredClaims(now: number, limit: number): Promise<readonly DispatchRef[]>;
 
   /**
+   * Resolves one delivery to the scope a worker must enter to touch it.
+   *
+   * How a queue job carrying only an identifier finds its tenant. The scope
+   * comes from the index and never from the payload, so a hand-written job
+   * cannot nominate the workspace it runs in.
+   *
+   * Null means the delivery does not exist — deleted, or an id someone typed.
+   */
+  findScope(
+    notificationDeliveryId: NotificationDeliveryId,
+  ): Promise<DispatchRef | null>;
+
+  /**
    * Resolves a provider callback to a scope.
    *
    * By message reference and never by the destination address the provider

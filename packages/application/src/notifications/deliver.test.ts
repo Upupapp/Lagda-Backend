@@ -89,13 +89,6 @@ function harness(over: {
         reclaimExpiredLeases: () => Promise.resolve([]),
         listAttempts: () => Promise.resolve([]),
       },
-      notifications: {
-        createIfAbsent: () => { throw new Error("delivery must not create intents"); },
-        findIntentById: () => Promise.resolve(null),
-        findDeliveryById: () => Promise.resolve(null),
-        findPendingDeliveries: () => Promise.resolve([]),
-        stopPendingDelivery: () => Promise.resolve(true),
-      },
       templates: createTemplateRegistry(ALL_TEMPLATES),
       secrets: {
         resolve: () => Promise.resolve(
@@ -232,9 +225,13 @@ describe("acceptance", () => {
   });
 
   it("creates no intent -- a retry is never a new notification", async () => {
-    // The fake throws if `createIfAbsent` is reached.
+    // Enforced by ABSENCE now rather than by a throwing fake: the use case has
+    // no NotificationRepository at all, so there is no method on its
+    // dependencies that could create one. A retry reuses the intent the claim
+    // returned, and nothing else is reachable from here.
     const h = harness({ send: { outcome: "FAILED_RETRYABLE" } });
     await expect(deliverNotification(h.deps)(DELIVERY)).resolves.toBeDefined();
+    expect(Object.keys(h.deps)).not.toContain("notifications");
   });
 });
 

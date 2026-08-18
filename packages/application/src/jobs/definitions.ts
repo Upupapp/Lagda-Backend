@@ -65,9 +65,11 @@ export const RateLimitCleanupJob: JobDefinition<CleanupPayload> = {
  * secret-bearing message keeps trying to deliver a credential that is expiring
  * while it tries.
  *
- * Concurrency is 1 until a provider exists. BACKEND-45 raises it once it has
- * delivery claiming, without which parallel workers would send one message
- * twice.
+ * Concurrency is 4, raised by BACKEND-45 now that claiming exists: the claim is
+ * one conditional UPDATE, so parallel workers contend on a row rather than
+ * duplicating a message. Four rather than a larger number because the
+ * interesting bound is the PROVIDER's rate limit, not this process's CPU, and
+ * BACKEND-61 benchmarks it properly (S207, S208).
  */
 export const NotificationDeliveryJob: JobDefinition<NotificationDeliveryPayload> = {
   type: "notification.deliver",
@@ -75,7 +77,7 @@ export const NotificationDeliveryJob: JobDefinition<NotificationDeliveryPayload>
   schema: NotificationDeliveryPayloadSchema,
   maxAttempts: 3,
   retryBackoffSeconds: 60,
-  concurrency: 1,
+  concurrency: 4,
   idempotencyStrategy:
     "The payload is a delivery id. The handler re-reads the delivery row and "
     + "acts only on a sendable state, so a duplicate delivery of the job finds "
@@ -84,8 +86,43 @@ export const NotificationDeliveryJob: JobDefinition<NotificationDeliveryPayload>
     + "the provider itself.",
 };
 
+/**
+ * Finds transport work across every tenant and enqueues it.
+ *
+ * SYSTEM-scoped, and that is the whole reason it exists separately from the
+ * delivery job: a dispatcher has no workspace by construction. It reads the
+ * unpoliced dispatch index for identifiers, then every write happens inside the
+ * scope that index named (OD-174).
+ *
+ * ── Why one at a time ─────────────────────────────────────────────────────
+ *
+ * Two concurrent dispatchers would enqueue the same delivery twice. That is
+ * harmless — the claim rejects the second — but it is pure waste, and a sweep
+ * is not the bottleneck in this system.
+ *
+ * ── Why retries are safe ──────────────────────────────────────────────────
+ *
+ * Enqueuing is idempotent in effect rather than in mechanism: a duplicate
+ * delivery job finds the row already claimed or already terminal and returns
+ * without touching a provider.
+ */
+export const NotificationDispatchJob: JobDefinition<CleanupPayload> = {
+  type: "notification.dispatch",
+  tenantScope: "system",
+  schema: CleanupPayloadSchema,
+  maxAttempts: 3,
+  retryBackoffSeconds: 60,
+  concurrency: 1,
+  idempotencyStrategy:
+    "Enqueues delivery jobs by identifier. A duplicate run enqueues duplicate "
+    + "jobs, each of which loses the claim race and does nothing. The reclaim "
+    + "half is a conditional UPDATE on expired leases, which a second run "
+    + "finds already reclaimed.",
+};
+
 export const JOB_DEFINITIONS = [
   IdempotencyCleanupJob,
   RateLimitCleanupJob,
   NotificationDeliveryJob,
+  NotificationDispatchJob,
 ] as const;

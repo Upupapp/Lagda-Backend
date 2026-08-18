@@ -1348,6 +1348,7 @@ function dispatchIndex(): NotificationDispatchRepository {
   return {
     listDue: unmodelled,
     listExpiredClaims: unmodelled,
+    findScope: unmodelled,
     findByProviderReference: unmodelled,
   };
 }

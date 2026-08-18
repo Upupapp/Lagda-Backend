@@ -30,7 +30,7 @@
 // is not a fact about a signer.
 
 import type {
-  NotificationTransportRepository, NotificationRepository,
+  NotificationTransportRepository,
   NotificationSecretRef, NotificationDeliveryId,
   NotificationDeliveryAttemptIdGenerator, NotificationFailureCode,
   EmailDeliveryProvider, EmailMessage, AttemptOutcome, AttemptFailureCode,
@@ -73,7 +73,6 @@ export interface NotificationLinkBuilder {
 
 export interface DeliverNotificationDependencies {
   readonly transport: NotificationTransportRepository;
-  readonly notifications: NotificationRepository;
   readonly templates: NotificationTemplateRegistry;
   readonly secrets: NotificationSecretResolver;
   readonly links: NotificationLinkBuilder;

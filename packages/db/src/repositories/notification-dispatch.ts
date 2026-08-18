@@ -102,6 +102,14 @@ export function createNotificationDispatchRepository(
       return rows.map(toDispatchRef);
     },
 
+    async findScope(notificationDeliveryId) {
+      const row = await trx.selectFrom("notification_dispatch_index")
+        .select(columns)
+        .where("notification_delivery_id", "=", notificationDeliveryId as string)
+        .executeTakeFirst();
+      return row === undefined ? null : toDispatchRef(row);
+    },
+
     async findByProviderReference(reference) {
       // By reference alone. The destination the provider reports is never a
       // lookup key (S39) — an attacker who guesses an address must not be able

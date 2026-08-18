@@ -18,6 +18,7 @@ export const JOB_TYPES = [
   "idempotency.cleanup",
   "rate-limit.cleanup",
   "notification.deliver",
+  "notification.dispatch",
 ] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 

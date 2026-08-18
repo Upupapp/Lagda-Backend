@@ -11,3 +11,11 @@ export {
   handleIdempotencyCleanup, handleRateLimitCleanup, parseCleanupPayload,
   type CleanupDependencies, type CleanupOutcome,
 } from "./handlers/cleanup.js";
+export {
+  handleNotificationDelivery, parseNotificationDeliveryPayload,
+  type NotificationDeliveryHandlerDependencies,
+} from "./handlers/notification-delivery.js";
+export {
+  handleNotificationDispatch, parseNotificationDispatchPayload,
+  type NotificationDispatchDependencies,
+} from "./handlers/notification-dispatch.js";
