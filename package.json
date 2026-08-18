@@ -21,6 +21,7 @@
     "test:coverage": "vitest run --coverage",
     "check": "npm run typecheck && npm run lint && npm test",
     "ci": "npm run typecheck && npm run lint && npm test && npm run build",
+    "openapi:emit": "node --experimental-strip-types infra/emit-openapi.ts openapi.json",
     "db:migrate": "node --experimental-strip-types infra/migrate.ts up",
     "db:migrate:status": "node --experimental-strip-types infra/migrate.ts status",
     "test:integration": "vitest run --config vitest.integration.config.ts",
