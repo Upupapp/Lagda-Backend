@@ -265,6 +265,38 @@ suite("notifications (RLS, runtime role)", () => {
     });
   });
 
+  describe("audience integrity", () => {
+    it("refuses an audience recipient from another workspace", async () => {
+      // The compound FK is what makes a cross-tenant audience a constraint
+      // violation rather than a review item (S272).
+      await expect(owner.db.insertInto("notification_intents").values({
+        notification_intent_id: "nint_crosstenant",
+        workspace_id: WS_B, user_id: null,
+        notification_type: "SIGNING_INVITATION",
+        source_kind: "SIGNING_ACCESS_GRANT", source_id: "grant_x",
+        audience_kind: "SIGNING_REQUEST_RECIPIENT", audience_user_id: null,
+        // A recipient that exists, but in WS_A.
+        audience_recipient_id: "srr_a", audience_invitation_id: null,
+        template_key: "signing-invitation", template_version: 1, locale: "en",
+        template_input: JSON.stringify({}),
+        secret_ref_kind: null, sealed_secret: null,
+        sealed_key_version: null, challenge_id: null,
+        created_at: new Date(AT),
+      }).execute()).rejects.toThrow(/foreign key|violates/iu);
+    });
+
+    it("refuses to delete a recipient with an outstanding notification", async () => {
+      // RESTRICT. This restores, indirectly, what the retired table's grant FK
+      // gave: the credential and the message carrying it cannot be separated.
+      await inWorkspace(WS_A, "a", r => r.createIfAbsent(workspaceIntent("grant_1", "a"), null));
+
+      await expect(
+        sql`delete from signing_request_recipients where request_recipient_id = 'srr_a'`
+          .execute(owner.db),
+      ).rejects.toThrow(/foreign key|violates/iu);
+    });
+  });
+
   describe("immutability", () => {
     it("refuses an UPDATE on an intent under the runtime role", async () => {
       // S55. The grant was never issued, so immutability is enforced by
