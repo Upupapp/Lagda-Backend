@@ -41,7 +41,6 @@ const TERMINAL_ERROR_CODES = new Set([
   401, // Sender signature not found
   406, // Inactive recipient — hard-bounced or marked spam previously
   409, // JSON required
-  300_1, // defensive: unknown 300-series variants stay terminal
 ]);
 
 interface PostmarkResponse {
