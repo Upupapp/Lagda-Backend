@@ -37,6 +37,7 @@ import {
   FixedClock, SequentialWorkspaceIds, SequentialMemberIds,
   SequentialPreparationIds, SequentialRecipientIds, SequentialSigningRequestIds,
   SequentialSigningAccessIds, FakeTransactionManager, InMemoryStore,
+  fakeTemplateRegistry,
 } from "../test-support/fakes.js";
 import {
   createIdempotencyKeyDigester, createIdempotencyRecordIds,
@@ -164,6 +165,7 @@ async function harness(over: { sealerFails?: boolean } = {}): Promise<Harness> {
         },
       },
       links: { build: (raw: string) => `https://app.lagda.test/sign/${raw}` },
+      templates: fakeTemplateRegistry,
       policy: { bootstrapLifetimeMs: LIFETIME },
       idempotency,
     },
@@ -246,7 +248,7 @@ describe("the state transition", () => {
     await expect(send(h, id, "send-key-000002")).rejects
       .toBeInstanceOf(SigningRequestAlreadySentError);
     expect(h.store.signingAccessGrants).toHaveLength(1);
-    expect(h.store.deliveryIntents).toHaveLength(1);
+    expect([...h.store.notificationDeliveries.values()]).toHaveLength(1);
   });
 
   it("reports an unknown request as absent", async () => {
@@ -282,10 +284,13 @@ describe("send reads the snapshot and nothing mutable", () => {
 
     await send(h, created.signingRequestId);
 
-    const intent = h.store.deliveryIntents[0];
-    expect(intent?.recipientEmail).toBe("Maria.Santos@AyalaLand.com.ph");
-    expect(intent?.recipientName).toBe("Maria Santos");
-    expect(intent?.documentTitle).toBe("Office Lease");
+    // The snapshot lives in the frozen template input and the delivery's
+    // destination, and neither follows the mutations above.
+    const intent = [...h.store.notificationIntents.values()][0];
+    const delivery = [...h.store.notificationDeliveries.values()][0];
+    expect(delivery?.destination).toBe("Maria.Santos@AyalaLand.com.ph");
+    expect(intent?.templateInput["recipientName"]).toBe("Maria Santos");
+    expect(intent?.templateInput["documentTitle"]).toBe("Office Lease");
   });
 
   it("survives the preparation field being deleted before send", async () => {
@@ -315,7 +320,7 @@ describe("routing activation", () => {
     expect(sent.activatedRecipientCount).toBe(3);
     expect(sent.waitingRecipientCount).toBe(0);
     expect(h.store.signingAccessGrants).toHaveLength(3);
-    expect(h.store.deliveryIntents).toHaveLength(3);
+    expect([...h.store.notificationDeliveries.values()]).toHaveLength(3);
   });
 
   it("activates only the earliest cohort when orders differ", async () => {
@@ -331,7 +336,7 @@ describe("routing activation", () => {
     expect(sent.waitingRecipientCount).toBe(2);
     // The whole point of §47: a waiting recipient holds no long-lived secret.
     expect(h.store.signingAccessGrants).toHaveLength(1);
-    expect(h.store.deliveryIntents).toHaveLength(1);
+    expect([...h.store.notificationDeliveries.values()]).toHaveLength(1);
   });
 
   it("activates a mixed cohort together", async () => {
@@ -382,8 +387,8 @@ describe("routing activation", () => {
 
     expect(sent.activatedRecipientCount).toBe(2);
     expect(h.store.signingAccessGrants).toHaveLength(1);
-    expect(h.store.deliveryIntents).toHaveLength(1);
-    expect(h.store.deliveryIntents[0]?.recipientEmail).toBe("signer@x.com");
+    expect([...h.store.notificationDeliveries.values()]).toHaveLength(1);
+    expect([...h.store.notificationDeliveries.values()][0]?.destination).toBe("signer@x.com");
   });
 });
 
@@ -412,8 +417,9 @@ describe("signing access credentials", () => {
     // Sealed, so an async renderer can recover it. This is the one place the
     // raw value survives the transaction, and it survives encrypted.
     expect(h.sealed).toEqual([raw]);
-    expect(h.store.deliveryIntents[0]?.sealedCredential).toBe(`sealed:${String(raw)}`);
-    expect(h.store.deliveryIntents[0]?.sealedKeyVersion).toBe("v1");
+    const secretRef = [...h.store.notificationIntents.values()][0]?.secretRef;
+    expect(secretRef?.kind === "SEALED" && secretRef.sealed).toBe(`sealed:${String(raw)}`);
+    expect(secretRef?.kind === "SEALED" && secretRef.keyVersion).toBe("v1");
   });
 
   it("gives each recipient a different credential", async () => {
@@ -453,7 +459,7 @@ describe("signing access credentials", () => {
     const everything = JSON.stringify({
       sent,
       grants: h.store.signingAccessGrants,
-      intents: h.store.deliveryIntents,
+      intents: [...h.store.notificationIntents.values()],
     });
     expect(everything).not.toContain("https://");
     expect(everything).not.toContain("/sign/");
@@ -472,7 +478,7 @@ describe("atomicity", () => {
     await expect(send(h, id)).rejects.toThrow(/no key configured/);
     expect(h.store.signingRequests[0]?.state).toBe("draft");
     expect(h.store.signingAccessGrants).toHaveLength(0);
-    expect(h.store.deliveryIntents).toHaveLength(0);
+    expect([...h.store.notificationDeliveries.values()]).toHaveLength(0);
     expect(h.store.activations).toHaveLength(0);
   });
 
@@ -492,7 +498,7 @@ describe("atomicity", () => {
     await expect(send(h, id)).rejects.toThrow(/second recipient fails/);
     expect(h.store.signingRequests[0]?.state).toBe("draft");
     expect(h.store.signingAccessGrants).toHaveLength(0);
-    expect(h.store.deliveryIntents).toHaveLength(0);
+    expect([...h.store.notificationDeliveries.values()]).toHaveLength(0);
   });
 
   it("refuses to send when the source artifact is gone", async () => {
@@ -521,7 +527,7 @@ describe("idempotency", () => {
     expect(replay.signingRequestId).toBe(first.signingRequestId);
     // The property that matters: no second credential, no second invitation.
     expect(h.store.signingAccessGrants).toHaveLength(1);
-    expect(h.store.deliveryIntents).toHaveLength(1);
+    expect([...h.store.notificationDeliveries.values()]).toHaveLength(1);
     expect(h.tokens.issued).toHaveLength(1);
   });
 
@@ -639,7 +645,7 @@ describe("send performs no ceremony and contacts no provider", () => {
     }
     const everything = JSON.stringify({
       grants: h.store.signingAccessGrants,
-      intents: h.store.deliveryIntents,
+      intents: [...h.store.notificationIntents.values()],
     });
     for (const absent of [
       "viewedAt", "signedAt", "declinedAt", "authenticatedAt", "completedAt",

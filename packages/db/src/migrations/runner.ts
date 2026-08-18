@@ -38,6 +38,7 @@ import * as m027 from "./027_completion_failure_codes.js";
 import * as m028 from "./028_signing_request_completed.js";
 import * as m029 from "./029_evidence_event_provenance.js";
 import * as m030 from "./030_notifications.js";
+import * as m031 from "./031_retire_signing_delivery_intents.js";
 
 /**
  * Migrations listed explicitly rather than read from disk.
@@ -80,6 +81,7 @@ const MIGRATIONS: Record<string, Migration> = {
   "028_signing_request_completed": m028,
   "029_evidence_event_provenance": m029,
   "030_notifications": m030,
+  "031_retire_signing_delivery_intents": m031,
 };
 
 class ExplicitMigrationProvider implements MigrationProvider {

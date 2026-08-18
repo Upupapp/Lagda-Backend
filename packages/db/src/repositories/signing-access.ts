@@ -8,7 +8,7 @@ import type { Transaction } from "kysely";
 import type { WorkspaceId } from "@lagda/contracts";
 import { RECIPIENT_WORKFLOW_STATES } from "@lagda/contracts";
 import type {
-  ScopedSigningAccessRepository, NewSigningAccessGrant, NewDeliveryIntent,
+  ScopedSigningAccessRepository, NewSigningAccessGrant,
   RecipientActivationState,
   SigningRequestId, SigningRequestRecipientId,
   SigningAccessDigest,
@@ -55,33 +55,6 @@ export function createScopedSigningAccessRepository(
       }
     },
 
-    async insertDeliveryIntent(intent: NewDeliveryIntent): Promise<void> {
-      if (intent.workspaceId !== scope) {
-        throw new WorkspaceScopeMismatchError(
-          "SigningDeliveryIntent", scope, intent.workspaceId);
-      }
-      try {
-        await trx.insertInto("signing_delivery_intents").values({
-          delivery_intent_id: intent.deliveryIntentId,
-          workspace_id: intent.workspaceId,
-          signing_request_id: intent.signingRequestId,
-          request_recipient_id: intent.recipientId,
-          grant_id: intent.grantId,
-          purpose: intent.purpose,
-          recipient_email: intent.recipientEmail,
-          recipient_name: intent.recipientName,
-          document_title: intent.documentTitle,
-          sender_display_name: intent.senderDisplayName,
-          workspace_name: intent.workspaceName,
-          sealed_credential: intent.sealedCredential,
-          sealed_key_version: intent.sealedKeyVersion,
-          created_at: new Date(intent.createdAt),
-          dispatched_at: null,
-        }).execute();
-      } catch (error) {
-        throw translatePersistenceError(error);
-      }
-    },
 
     async insertActivations(input): Promise<void> {
       if (input.activations.length === 0) return;

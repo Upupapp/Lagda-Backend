@@ -17,8 +17,8 @@ import type {
 import type {
   ArtifactId, PreparationId, RecipientId,
   SigningRequestId, SigningRequestRecipientId, SigningRequestFieldId,
-  SigningAccessGrantId, DeliveryIntentId, SigningAccessDigest,
-  SealedDeliverySecret, NewSigningRequestSnapshot,
+  SigningAccessGrantId, SigningAccessDigest,
+  NewSigningRequestSnapshot,
 } from "@lagda/application";
 import { createDatabase, type LagdaDatabase } from "./client/index.js";
 import { loadDatabaseConfig } from "./config/index.js";
@@ -137,23 +137,6 @@ suite("signing request send (RLS, runtime role)", () => {
     credentialDigest: (over.digest ?? "b".repeat(64)) as SigningAccessDigest,
     createdAt: AT,
     expiresAt: AT + 14 * 24 * 3_600_000,
-  });
-
-  const intentFor = (ws: WorkspaceId, grantId: string, intentId: string) => ({
-    deliveryIntentId: intentId as DeliveryIntentId,
-    workspaceId: ws,
-    signingRequestId: requestOf(ws),
-    recipientId: recipientOf(ws),
-    grantId: grantId as SigningAccessGrantId,
-    purpose: "signing-invitation" as const,
-    recipientEmail: "Juan@Example.com",
-    recipientName: "Juan dela Cruz",
-    documentTitle: "Office Lease",
-    senderDisplayName: "Acme Legal",
-    workspaceName: "Acme Legal",
-    sealedCredential: "v1.aaa.bbb.ccc" as SealedDeliverySecret,
-    sealedKeyVersion: "v1",
-    createdAt: AT,
   });
 
   // ── The conditional transition ────────────────────────────────────────────
@@ -286,144 +269,18 @@ suite("signing request send (RLS, runtime role)", () => {
   });
 
   // ── Delivery intents ──────────────────────────────────────────────────────
+  //
+  // Removed by BACKEND-44. `signing_delivery_intents` was retired in migration
+  // 031 and the invitation now lives on `notification_intents` /
+  // `notification_deliveries`, which `notifications.integration.test.ts` covers:
+  // one intent per grant, the sealed credential, and pending discovery.
+  //
+  // One guarantee did NOT survive the move and is not silently dropped here:
+  // the old table had compound foreign keys to the recipient AND to the grant,
+  // so deleting a grant with an outstanding intent was refused by PostgreSQL.
+  // The canonical table's source is polymorphic and cannot carry that FK.
+  // Recorded as OD-175.
 
-  describe("delivery intents", () => {
-    it("accepts one intent per grant and refuses a second", async () => {
-      await createTransactionManager(app.db).runForWorkspace(WS_A, async uow => {
-        await uow.signingAccess.insertGrant(grant(WS_A));
-        await uow.signingAccess.insertDeliveryIntent(
-          intentFor(WS_A, `sag_${WS_A}`, "sdi_1"));
-      });
-
-      await expect(createTransactionManager(app.db).runForWorkspace(
-        WS_A, uow => uow.signingAccess.insertDeliveryIntent(
-          intentFor(WS_A, `sag_${WS_A}`, "sdi_2")),
-      )).rejects.toThrow(/duplicate|unique|violates/i);
-    });
-
-    it("stores the sealed credential and no raw value", async () => {
-      await createTransactionManager(app.db).runForWorkspace(WS_A, async uow => {
-        await uow.signingAccess.insertGrant(grant(WS_A));
-        await uow.signingAccess.insertDeliveryIntent(
-          intentFor(WS_A, `sag_${WS_A}`, "sdi_1"));
-      });
-
-      const row = await sql<{ sealed_credential: string; sealed_key_version: string }>`
-        select sealed_credential, sealed_key_version from signing_delivery_intents
-      `.execute(owner.db);
-      // The `v1.` prefix is the SecretBox format. A plaintext token would not
-      // have it, and this is what a reviewer can check at a glance.
-      expect(row.rows[0]?.sealed_credential).toMatch(/^v1\./);
-      expect(row.rows[0]?.sealed_key_version).toBe("v1");
-    });
-
-    it("refuses to delete a grant while its intent exists", async () => {
-      // RESTRICT: an intent without its grant is an email nobody can act on.
-      await createTransactionManager(app.db).runForWorkspace(WS_A, async uow => {
-        await uow.signingAccess.insertGrant(grant(WS_A));
-        await uow.signingAccess.insertDeliveryIntent(
-          intentFor(WS_A, `sag_${WS_A}`, "sdi_1"));
-      });
-      await expect(
-        sql`delete from signing_access_grants where grant_id = ${`sag_${WS_A}`}`
-          .execute(owner.db),
-      ).rejects.toThrow(/foreign key|violates/i);
-    });
-
-    it("finds outstanding work through the partial index", async () => {
-      // How BACKEND-45's dispatcher will locate pending deliveries.
-      await createTransactionManager(app.db).runForWorkspace(WS_A, async uow => {
-        await uow.signingAccess.insertGrant(grant(WS_A));
-        await uow.signingAccess.insertDeliveryIntent(
-          intentFor(WS_A, `sag_${WS_A}`, "sdi_1"));
-      });
-      const pending = await sql<{ total: string }>`
-        select count(*) as total from signing_delivery_intents
-        where dispatched_at is null
-      `.execute(owner.db);
-      expect(Number(pending.rows[0]?.total)).toBe(1);
-    });
-  });
-
-  // ── Activation ────────────────────────────────────────────────────────────
-
-  describe("activation", () => {
-    it("stores waiting and active rows and reads them back", async () => {
-      await createTransactionManager(app.db).runForWorkspace(
-        WS_A, uow => uow.signingAccess.insertActivations({
-          signingRequestId: requestOf(WS_A),
-          activations: [
-            { recipientId: recipientOf(WS_A), state: "active", activatedAt: AT },
-          ],
-          createdAt: AT,
-        }));
-
-      const rows = await createTransactionManager(app.db).runForWorkspace(
-        WS_A, uow => uow.signingAccess.listActivations(requestOf(WS_A)));
-      expect(rows).toHaveLength(1);
-      expect(rows[0]?.state).toBe("active");
-      expect(rows[0]?.activatedAt).toBe(AT);
-    });
-
-    // BACKEND-37 renamed `activation_state` to `recipient_state` and widened
-    // it from two values to four. Both tests below were updated rather than
-    // deleted: the RULES they assert are unchanged, and one of them used
-    // `'signed'` as its example of an impossible value, which is now a real
-    // state and would have made the test pass for the wrong reason.
-    it("refuses a non-waiting row with no timestamp", async () => {
-      await expect(app.db.transaction().execute(async trx => {
-        await sql`select set_config('lagda.workspace_id', ${WS_A}, true)`.execute(trx);
-        await sql`
-          insert into signing_request_recipient_activation (workspace_id,
-            signing_request_id, request_recipient_id, recipient_state, created_at)
-          values (${WS_A}, ${requestOf(WS_A)}, ${recipientOf(WS_A)}, 'active', now())
-        `.execute(trx);
-      })).rejects.toThrow(/check|violates/i);
-    });
-
-    it("refuses an unknown recipient state", async () => {
-      await expect(app.db.transaction().execute(async trx => {
-        await sql`select set_config('lagda.workspace_id', ${WS_A}, true)`.execute(trx);
-        await sql`
-          insert into signing_request_recipient_activation (workspace_id,
-            signing_request_id, request_recipient_id, recipient_state,
-            activated_at, created_at)
-          values (${WS_A}, ${requestOf(WS_A)}, ${recipientOf(WS_A)}, 'completed',
-            now(), now())
-        `.execute(trx);
-      })).rejects.toThrow(/check|violates/i);
-    });
-
-    it("refuses SIGNED with no submission", async () => {
-      // §108, at the storage layer. A workflow row claiming a signature it
-      // cannot name is the one state that would make `signed` untrustworthy.
-      await expect(app.db.transaction().execute(async trx => {
-        await sql`select set_config('lagda.workspace_id', ${WS_A}, true)`.execute(trx);
-        await sql`
-          insert into signing_request_recipient_activation (workspace_id,
-            signing_request_id, request_recipient_id, recipient_state,
-            activated_at, signed_at, created_at)
-          values (${WS_A}, ${requestOf(WS_A)}, ${recipientOf(WS_A)}, 'signed',
-            now(), now(), now())
-        `.execute(trx);
-      })).rejects.toThrow(/check|violates/i);
-    });
-
-    it("refuses SIGNED naming a submission that is not this recipient's", async () => {
-      // The four-column foreign key. Not "rejected by a check" - the row has
-      // no referent, so PostgreSQL refuses it however the application behaved.
-      await expect(app.db.transaction().execute(async trx => {
-        await sql`select set_config('lagda.workspace_id', ${WS_A}, true)`.execute(trx);
-        await sql`
-          insert into signing_request_recipient_activation (workspace_id,
-            signing_request_id, request_recipient_id, recipient_state,
-            activated_at, signed_at, submission_id, created_at)
-          values (${WS_A}, ${requestOf(WS_A)}, ${recipientOf(WS_A)}, 'signed',
-            now(), now(), 'sub_does_not_exist', now())
-        `.execute(trx);
-      })).rejects.toThrow(/foreign key|violates/i);
-    });
-  });
 
   // ── Tenancy ───────────────────────────────────────────────────────────────
 

@@ -122,7 +122,6 @@ export async function truncateAll(database: LagdaDatabase): Promise<void> {
   await database.db.deleteFrom("recipient_signing_sessions").execute();
   // Send artefacts next. The delivery intent references the grant with
   // RESTRICT, so the grant cannot go before it.
-  await database.db.deleteFrom("signing_delivery_intents").execute();
   await database.db.deleteFrom("signing_access_grants").execute();
   await database.db.deleteFrom("signing_request_fields").execute();
   await database.db.deleteFrom("signing_request_recipients").execute();

@@ -18,6 +18,7 @@ import {
   FixedClock, FakeTransactionManager, InMemoryStore,
   SequentialSigningWorkflowIds, SequentialSigningAccessIds,
   SequentialCompletionIds,
+  fakeTemplateRegistry,
 } from "../test-support/fakes.js";
 import {
   advanceSigningWorkflow, cancelSigningRequest, reconcileSigningWorkflow,
@@ -56,6 +57,8 @@ function harness(): Harness {
           digest: () => null },
         sealer: { keyVersion: "v1", seal: (plaintext: string) => plaintext as never },
         links: { build: (raw: string) => `https://app.lagda.test/sign/${raw}` },
+        templates: fakeTemplateRegistry,
+        clock: { now: () => AT },
         policy: { bootstrapLifetimeMs: 7 * 24 * 3_600_000 },
       },
     },
@@ -187,8 +190,8 @@ describe("sequential routing", () => {
     // what these two assertions would not distinguish on their own — the shared
     // function is asserted by `tests/architecture/signing-state.test.ts`.
     expect(h.store.signingAccessGrants).toHaveLength(1);
-    expect(h.store.deliveryIntents).toHaveLength(1);
-    expect(h.store.deliveryIntents[0]?.recipientEmail).toBe("b@example.test");
+    expect([...h.store.notificationDeliveries.values()]).toHaveLength(1);
+    expect([...h.store.notificationDeliveries.values()][0]?.destination).toBe("b@example.test");
   });
 
   it("does NOT activate the next cohort on a partial one", async () => {
@@ -220,7 +223,7 @@ describe("sequential routing", () => {
     await advance(h);
 
     expect(h.store.signingAccessGrants).toHaveLength(1);
-    expect(h.store.deliveryIntents).toHaveLength(1);
+    expect([...h.store.notificationDeliveries.values()]).toHaveLength(1);
   });
 
   it("clears every outstanding intent for the request in one pass", async () => {
@@ -269,7 +272,7 @@ describe("decline", () => {
 
     await advance(h);
     expect(h.store.activations.find(r => r.recipientId === "b")?.state).toBe("waiting");
-    expect(h.store.deliveryIntents).toHaveLength(0);
+    expect([...h.store.notificationDeliveries.values()]).toHaveLength(0);
   });
 });
 

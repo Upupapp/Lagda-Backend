@@ -36,7 +36,6 @@ export type SealedDeliverySecret =
   string & { readonly __brand: "SealedDeliverySecret" };
 
 export type SigningAccessGrantId = string & { readonly __brand: "SigningAccessGrantId" };
-export type DeliveryIntentId = string & { readonly __brand: "DeliveryIntentId" };
 
 /**
  * Issues and digests signing bootstrap credentials.
@@ -96,7 +95,6 @@ export interface SigningLinkBuilder {
 
 export interface SigningAccessIdGenerator {
   nextSigningAccessGrantId(): SigningAccessGrantId;
-  nextDeliveryIntentId(): DeliveryIntentId;
 }
 
 // ── Records ──────────────────────────────────────────────────────────────────
@@ -141,24 +139,6 @@ export interface SigningAccessGrantRecord extends NewSigningAccessGrant {
  * later must produce the same email — and the workspace name and the sender's
  * display name are both mutable.
  */
-export interface NewDeliveryIntent {
-  readonly deliveryIntentId: DeliveryIntentId;
-  readonly workspaceId: WorkspaceId;
-  readonly signingRequestId: SigningRequestId;
-  readonly recipientId: SigningRequestRecipientId;
-  readonly grantId: SigningAccessGrantId;
-  readonly purpose: "signing-invitation";
-  /** PII. Never logged. */
-  readonly recipientEmail: string;
-  readonly recipientName: string;
-  readonly documentTitle: string;
-  readonly senderDisplayName: string;
-  readonly workspaceName: string;
-  /** The sealed RAW TOKEN, not the URL. */
-  readonly sealedCredential: SealedDeliverySecret;
-  readonly sealedKeyVersion: string;
-  readonly createdAt: number;
-}
 
 /**
  * Send-side persistence, bound to ONE workspace and ONE transaction.
@@ -177,7 +157,6 @@ export interface NewDeliveryIntent {
 export interface ScopedSigningAccessRepository {
   /** @throws if a record's workspace differs from the bound scope. */
   insertGrant(grant: NewSigningAccessGrant): Promise<void>;
-  insertDeliveryIntent(intent: NewDeliveryIntent): Promise<void>;
   /** The whole activation plan, in one statement group. */
   insertActivations(input: {
     readonly signingRequestId: SigningRequestId;

@@ -34,6 +34,7 @@ import {
   FakeTransactionManager, InMemoryStore,
   SequentialSigningWorkflowIds, SequentialSigningAccessIds,
   SequentialCompletionIds,
+  fakeTemplateRegistry,
 } from "../test-support/fakes.js";
 
 const AT = Date.parse("2026-08-10T14:00:00.000Z");
@@ -144,6 +145,8 @@ function harness(): Harness {
         },
         sealer: { keyVersion: "v1", seal: (p: string) => p as never },
         links: { build: (raw: string) => `https://app.lagda.test/sign/${raw}` },
+        templates: fakeTemplateRegistry,
+        clock: { now: () => AT },
         policy: { bootstrapLifetimeMs: 7 * 24 * 3_600_000 },
       },
       ids: {
@@ -624,7 +627,7 @@ describe("what submission does NOT do", () => {
     // Still no PDF, no seal, and no delivery: the single signer is the whole
     // cohort, so the advance had nobody to provision.
     expect(h.store.seals).toHaveLength(0);
-    expect(h.store.deliveryIntents).toHaveLength(0);
+    expect([...h.store.notificationDeliveries.values()]).toHaveLength(0);
   });
 
   it("makes a single-signer request completion-ready and NEVER completed", async () => {

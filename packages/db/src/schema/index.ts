@@ -475,32 +475,6 @@ export interface SigningAccessGrantsTable {
   revoked_at: ColumnType<Date | null, Date | null, Date | null>;
 }
 
-/**
- * The durable "send this" record.
- *
- * Carries a delivery SNAPSHOT so a provider retry hours later renders the same
- * email, and the sealed raw credential so it can be rendered at all. Every
- * text column here is PII or business-sensitive and none of it may be logged.
- */
-export interface SigningDeliveryIntentsTable {
-  delivery_intent_id: string;
-  workspace_id: string;
-  signing_request_id: string;
-  request_recipient_id: string;
-  grant_id: string;
-  purpose: string;
-  recipient_email: string;
-  recipient_name: string;
-  document_title: string;
-  sender_display_name: string;
-  workspace_name: string;
-  /** AES-256-GCM through SecretBox. The raw TOKEN, never the URL. */
-  sealed_credential: string;
-  sealed_key_version: string;
-  created_at: Timestamptz;
-  /** Set by BACKEND-45 when a provider accepts it. NULL means outstanding. */
-  dispatched_at: ColumnType<Date | null, Date | null, Date | null>;
-}
 
 /**
  * The durable decision to communicate. Immutable once written.
@@ -1148,7 +1122,6 @@ export interface Database {
   signing_representations: SigningRepresentationsTable;
   signing_field_values: SigningFieldValuesTable;
   signing_access_grants: SigningAccessGrantsTable;
-  signing_delivery_intents: SigningDeliveryIntentsTable;
   notification_intents: NotificationIntentsTable;
   notification_deliveries: NotificationDeliveriesTable;
   recipient_signing_sessions: RecipientSigningSessionsTable;

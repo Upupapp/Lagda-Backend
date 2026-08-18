@@ -79,8 +79,8 @@ import type {
 } from "../common/ports/signing-sessions.js";
 import type { SigningAccessDigest } from "../common/ports/signing-access.js";
 import type {
-  ScopedSigningAccessRepository, NewSigningAccessGrant, NewDeliveryIntent,
-  SigningAccessGrantId, DeliveryIntentId,
+  ScopedSigningAccessRepository, NewSigningAccessGrant,
+  SigningAccessGrantId,
   SigningAccessIdGenerator,
 } from "../common/ports/signing-access.js";
 import type {
@@ -91,8 +91,11 @@ import type {
 } from "../common/ports/signing-requests.js";
 import type {
   NotificationRepository, NewNotificationIntent, NotificationIntentRecord,
-  NotificationDeliveryRecord, NotificationIntentId,
+  NotificationDeliveryRecord, NotificationIntentId, NotificationDeliveryId,
+  NotificationIntentIdGenerator, NotificationDeliveryIdGenerator,
 } from "../common/ports/notifications.js";
+import { createTemplateRegistry } from "../notifications/template-registry.js";
+import { ALL_TEMPLATES } from "../notifications/templates.js";
 
 /** A fixed instant, so assertions mean the same thing in any year. */
 export class FixedClock implements Clock {
@@ -155,10 +158,21 @@ export class SequentialSigningWorkflowIds implements SigningWorkflowIdGenerator 
 }
 
 export class SequentialSigningAccessIds
-implements SigningAccessIdGenerator, EvidenceEventIdGenerator {
+implements SigningAccessIdGenerator, EvidenceEventIdGenerator,
+  NotificationIntentIdGenerator, NotificationDeliveryIdGenerator {
   private grant = 1;
   private intent = 1;
   private evidence = 1;
+  private notificationIntent = 1;
+  private notificationDelivery = 1;
+
+  /** BACKEND-44. One invitation intent per activation. */
+  nextNotificationIntentId(): NotificationIntentId {
+    return `nint_${String(this.notificationIntent++)}` as NotificationIntentId;
+  }
+  nextNotificationDeliveryId(): NotificationDeliveryId {
+    return `ndel_${String(this.notificationDelivery++)}` as NotificationDeliveryId;
+  }
 
   /** BACKEND-43. Send appends `transaction-sent` and one event per activation. */
   nextEvidenceEventId(): EvidenceEventId {
@@ -166,9 +180,6 @@ implements SigningAccessIdGenerator, EvidenceEventIdGenerator {
   }
   nextSigningAccessGrantId(): SigningAccessGrantId {
     return `sag_${String(this.grant++)}` as SigningAccessGrantId;
-  }
-  nextDeliveryIntentId(): DeliveryIntentId {
-    return `sdi_${String(this.intent++)}` as DeliveryIntentId;
   }
 }
 
@@ -373,7 +384,8 @@ interface StoreSnapshot {
   readonly signingRequestRecipients: SigningRequestRecipientRecord[];
   readonly signingRequestFields: SigningRequestFieldRecord[];
   readonly signingAccessGrants: NewSigningAccessGrant[];
-  readonly deliveryIntents: NewDeliveryIntent[];
+  readonly notificationIntents: Map<string, NotificationIntentRecord>;
+  readonly notificationDeliveries: Map<string, NotificationDeliveryRecord>;
   readonly activations: ActivationRow[];
   readonly workflowIntents: WorkflowIntentRow[];
   readonly completionRuns: CompletionRunRow[];
@@ -416,7 +428,6 @@ export class InMemoryStore {
   signingRequestRecipients: SigningRequestRecipientRecord[] = [];
   signingRequestFields: SigningRequestFieldRecord[] = [];
   signingAccessGrants: NewSigningAccessGrant[] = [];
-  deliveryIntents: NewDeliveryIntent[] = [];
   activations: ActivationRow[] = [];
   workflowIntents: WorkflowIntentRow[] = [];
   completionRuns: CompletionRunRow[] = [];
@@ -452,7 +463,13 @@ export class InMemoryStore {
       signingRequestRecipients: [...this.signingRequestRecipients],
       signingRequestFields: [...this.signingRequestFields],
       signingAccessGrants: [...this.signingAccessGrants],
-      deliveryIntents: [...this.deliveryIntents],
+      // Notifications restore with everything else. Omitting them would let a
+      // rolled-back send leave an invitation owed for a request that never
+      // reached `sent` -- exactly the inconsistency same-transaction creation
+      // exists to prevent, and the fake must model it or the guarantee is
+      // untested.
+      notificationIntents: new Map(this.notificationIntents),
+      notificationDeliveries: new Map(this.notificationDeliveries),
       activations: this.activations.map(row => ({ ...row })),
       workflowIntents: this.workflowIntents.map(row => ({ ...row })),
       completionRuns: this.completionRuns.map(row => ({ ...row })),
@@ -475,6 +492,14 @@ export class InMemoryStore {
     // inconsistency the snapshot exists to prevent.
     this.uploads.clear();
     for (const [key, value] of snapshot.uploads) this.uploads.set(key, value);
+    this.notificationIntents.clear();
+    for (const [key, value] of snapshot.notificationIntents) {
+      this.notificationIntents.set(key, value);
+    }
+    this.notificationDeliveries.clear();
+    for (const [key, value] of snapshot.notificationDeliveries) {
+      this.notificationDeliveries.set(key, value);
+    }
     this.workspaces.clear();
     for (const [key, value] of snapshot.workspaces) this.workspaces.set(key, value);
     this.memberships.length = 0;
@@ -489,7 +514,6 @@ export class InMemoryStore {
     this.signingRequestRecipients = [...snapshot.signingRequestRecipients];
     this.signingRequestFields = [...snapshot.signingRequestFields];
     this.signingAccessGrants = [...snapshot.signingAccessGrants];
-    this.deliveryIntents = [...snapshot.deliveryIntents];
     this.activations = snapshot.activations.map(row => ({ ...row }));
     this.workflowIntents = snapshot.workflowIntents.map(row => ({ ...row }));
     this.completionRuns = snapshot.completionRuns.map(row => ({ ...row }));
@@ -1045,17 +1069,6 @@ function scopedSigningAccess(
       return Promise.resolve();
     },
 
-    insertDeliveryIntent: (intent: NewDeliveryIntent) => {
-      if (intent.workspaceId !== scope) {
-        throw new FakeScopeMismatchError(
-          "SigningDeliveryIntent", scope, intent.workspaceId);
-      }
-      if (store.deliveryIntents.some(existing => existing.grantId === intent.grantId)) {
-        throw new Error("grant already has a delivery intent");
-      }
-      store.deliveryIntents.push(intent);
-      return Promise.resolve();
-    },
 
     insertActivations: (input) => {
       for (const activation of input.activations) {
@@ -2494,19 +2507,23 @@ export function fakeNotifications(
   const logicalKey = (input: NewNotificationIntent): string =>
     `${input.source.kind}|${input.source.sourceId}|${input.notificationType}`;
 
-  const byLogicalKey = new Map<string, NotificationIntentId>();
+  // Derived from the rows rather than kept beside them: a separate index would
+  // survive a rollback that removed the rows it points at, and the fake would
+  // then refuse to recreate a notification the database would happily accept.
+  const findByLogicalKey = (key: string): NotificationIntentRecord | undefined =>
+    [...store.notificationIntents.values()].find(
+      row => `${row.source.kind}|${row.source.sourceId}|${row.notificationType}` === key);
 
   return {
     createIfAbsent(input) {
-      const existingId = byLogicalKey.get(logicalKey(input));
-      if (existingId !== undefined) {
-        const intent = store.notificationIntents.get(existingId);
-        const delivery = [...store.notificationDeliveries.values()]
-          .find(row => row.notificationIntentId === existingId);
-        if (intent === undefined || delivery === undefined) {
-          throw new Error("fake notification store lost a row");
-        }
-        return Promise.resolve({ outcome: "ALREADY_EXISTS" as const, intent, delivery });
+      const existing = findByLogicalKey(logicalKey(input));
+      if (existing !== undefined) {
+        const delivery = [...store.notificationDeliveries.values()].find(
+          row => row.notificationIntentId === existing.notificationIntentId);
+        if (delivery === undefined) throw new Error("fake store lost a delivery");
+        return Promise.resolve({
+          outcome: "ALREADY_EXISTS" as const, intent: existing, delivery,
+        });
       }
 
       const intent: NotificationIntentRecord = {
@@ -2532,7 +2549,6 @@ export function fakeNotifications(
 
       store.notificationIntents.set(input.notificationIntentId, intent);
       store.notificationDeliveries.set(input.notificationDeliveryId, delivery);
-      byLogicalKey.set(logicalKey(input), input.notificationIntentId);
       return Promise.resolve({ outcome: "CREATED" as const, intent, delivery });
     },
 
@@ -2555,3 +2571,12 @@ export function fakeNotifications(
     },
   };
 }
+
+/**
+ * The real template registry, with the real templates.
+ *
+ * Not a stub. Intent creation validates its input against the template schema,
+ * so a stub that accepted anything would let a send suite pass with a model the
+ * renderer could never use.
+ */
+export const fakeTemplateRegistry = createTemplateRegistry(ALL_TEMPLATES);

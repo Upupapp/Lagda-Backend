@@ -90,9 +90,14 @@ describe("send reads the snapshot and nothing mutable", () => {
   it("snapshots the delivery values into the intent", () => {
     // A retry hours later must render the same email, and the workspace name
     // is mutable.
+    //
+    // BACKEND-44 moved these onto the canonical notification intent: the
+    // address became the delivery's `destination`, and the four display values
+    // became the frozen `templateInput`. The guarantee is unchanged -- every
+    // value is still copied at provisioning and never re-read.
     const source = code(USE_CASE);
     for (const field of [
-      "recipientEmail:", "recipientName:", "documentTitle:",
+      "destination: recipient.email", "recipientName:", "documentTitle:",
       "senderDisplayName:", "workspaceName:",
     ]) {
       expect(source, `the intent has no ${field}`).toContain(field);
@@ -240,7 +245,10 @@ describe("the bootstrap credential", () => {
   it("seals the raw credential rather than dropping or exposing it", () => {
     const source = code(USE_CASE);
     expect(source).toContain("deps.sealer.seal(credential.raw)");
-    expect(source).toContain("sealedCredential: sealed");
+    // Carried as a SEALED secret reference on the notification intent since
+    // BACKEND-44; it is still the sealed value that is persisted, and still
+    // nothing else.
+    expect(source).toContain('kind: "SEALED", sealed,');
     // And it is the TOKEN that is sealed, not a URL.
     expect(source).not.toMatch(/seal\(\s*deps\.links\.build/);
   });

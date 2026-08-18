@@ -55,6 +55,11 @@ import {
   createIdempotencyService, type IdempotencyDependencies,
 } from "../idempotency/service.js";
 import { assertCapability, type WorkspaceAccessContext } from "../workspaces/workspace-access.js";
+import type {
+  NotificationIntentIdGenerator, NotificationDeliveryIdGenerator,
+} from "../common/ports/notifications.js";
+import type { NotificationTemplateRegistry } from "../notifications/template-registry.js";
+import { createNotificationIntent } from "../notifications/create-intent.js";
 
 // ── Errors ───────────────────────────────────────────────────────────────────
 
@@ -140,17 +145,26 @@ export interface SigningRequestSentView {
  * the function practical rather than merely intended.
  */
 export interface SigningAccessProvisioningDependencies {
-  readonly ids: SigningAccessIdGenerator & EvidenceEventIdGenerator;
+  readonly ids: SigningAccessIdGenerator & EvidenceEventIdGenerator
+    & NotificationIntentIdGenerator & NotificationDeliveryIdGenerator;
   readonly tokens: SigningAccessTokenFactory;
   readonly sealer: DeliverySecretSealer;
   readonly links: SigningLinkBuilder;
   readonly policy: SigningAccessPolicy;
+  /**
+   * The template registry, needed to resolve and freeze a version (BACKEND-44).
+   *
+   * Provisioning is where the invitation's copy is fixed, because that is where
+   * the credential it carries is minted. Resolving the version later would let
+   * a deployment between activation and delivery change the message.
+   */
+  readonly templates: NotificationTemplateRegistry;
+  readonly clock: Clock;
 }
 
 export interface SendSigningRequestDependencies
   extends SigningAccessProvisioningDependencies {
   readonly transactions: TransactionManager;
-  readonly clock: Clock;
   readonly idempotency: Omit<IdempotencyDependencies, "repository">;
 }
 
@@ -445,27 +459,45 @@ export async function provisionSigningRecipientAccess(
     expiresAt: now + deps.policy.bootstrapLifetimeMs,
   });
 
-  await uow.signingAccess.insertDeliveryIntent({
-    deliveryIntentId: deps.ids.nextDeliveryIntentId(),
-    workspaceId: request.workspaceId,
-    signingRequestId: request.signingRequestId,
-    recipientId: recipient.recipientId,
-    grantId,
-    purpose: "signing-invitation",
+  // The invitation, on the canonical notification substrate (BACKEND-44).
+  //
+  // Keyed on the GRANT, which is why this sits here rather than at the request
+  // level: a grant is provisioned once per recipient activation, so sequential
+  // routing produces one invitation per signer rather than one per request.
+  //
+  // In THIS transaction, so a request cannot be marked sent with no invitation
+  // owed, and an invitation cannot be owed for a send that rolled back.
+  await createNotificationIntent({
+    notifications: uow.notifications,
+    templates: deps.templates,
+    ids: deps.ids,
+    clock: deps.clock,
+  })({
+    notificationType: "SIGNING_INVITATION",
+    sourceId: grantId,
+    scope: { kind: "WORKSPACE", workspaceId: request.workspaceId },
+    audience: {
+      kind: "SIGNING_REQUEST_RECIPIENT",
+      signingRequestRecipientId: recipient.recipientId,
+    },
     // The DELIVERY SNAPSHOT, from the request's own immutable rows. A retry
-    // hours from now renders the same email.
-    recipientEmail: recipient.email,
-    recipientName: recipient.name,
-    documentTitle: request.documentTitle,
-    // Presentation metadata the renderer needs. Snapshotted for the same
-    // reason: a sender who changes their display name tomorrow must not
-    // change the message a queued invitation renders (§181, §182).
-    senderDisplayName: await senderDisplayName(uow),
-    workspaceName: await workspaceName(uow),
-    sealedCredential: sealed,
-    sealedKeyVersion: deps.sealer.keyVersion,
-    createdAt: now,
-  });
+    // hours from now renders the same email, to the same address.
+    destination: recipient.email,
+    templateInput: {
+      recipientName: recipient.name,
+      documentTitle: request.documentTitle,
+      // Presentation metadata the renderer needs. Snapshotted for the same
+      // reason: a sender who changes their display name tomorrow must not
+      // change the message a queued invitation renders (§181, §182).
+      senderDisplayName: await senderDisplayName(uow),
+      workspaceName: await workspaceName(uow),
+    },
+    // The credential travels SEALED, because a signing link cannot be
+    // recovered from a digest and the renderer runs long after this commits.
+    secretRef: {
+      kind: "SEALED", sealed, keyVersion: deps.sealer.keyVersion,
+    },
+  }, uow);
 
   // The link is NOT built here and NOT stored. `deps.links` exists so the
   // renderer can build it from the sealed token; building it now would mean
