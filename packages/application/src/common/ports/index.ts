@@ -36,7 +36,9 @@ import type {
   WorkspaceId, WorkspaceMemberId, UserId, WorkspaceRole,
 } from "@lagda/contracts";
 import type { NormalizedEmail } from "../../auth/email-identity.js";
-import type { NotificationRepository } from "./notifications.js";
+import type {
+  NotificationRepository, NotificationTransportRepository,
+} from "./notifications.js";
 
 // ── Time ─────────────────────────────────────────────────────────────────────
 
@@ -302,6 +304,15 @@ export interface WorkspaceUnitOfWork {
    * and each row states its own scope.
    */
   readonly notifications: NotificationRepository;
+  /**
+   * Delivery claiming and attempt history (BACKEND-45).
+   *
+   * Separate from `notifications` because it exists only once a provider does.
+   * On the same unit of work because a claim and the attempt it opens must
+   * commit together, or a provider call could happen with no durable record
+   * that it was about to.
+   */
+  readonly notificationTransport: NotificationTransportRepository;
   /**
    * Durable idempotency, on the SAME transaction (BACKEND-25).
    *

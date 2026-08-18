@@ -93,6 +93,7 @@ import type {
   NotificationRepository, NewNotificationIntent, NotificationIntentRecord,
   NotificationDeliveryRecord, NotificationIntentId, NotificationDeliveryId,
   NotificationIntentIdGenerator, NotificationDeliveryIdGenerator,
+  NotificationTransportRepository,
 } from "../common/ports/notifications.js";
 import { createTemplateRegistry } from "../notifications/template-registry.js";
 import { ALL_TEMPLATES } from "../notifications/templates.js";
@@ -2037,6 +2038,7 @@ export class FakeTransactionManager implements TransactionManager {
           completionReconciliation(this.store, workspaceId),
         completionInputs: completionInputs(this.store, workspaceId),
         notifications: fakeNotifications(this.store),
+        notificationTransport: fakeNotificationTransport(),
       });
       this.committed++;
       return result;
@@ -2113,6 +2115,7 @@ export class FakeTransactionManager implements TransactionManager {
               completionReconciliation(store, workspaceId),
             completionInputs: completionInputs(store, workspaceId),
             notifications: fakeNotifications(store),
+            notificationTransport: fakeNotificationTransport(),
           });
         },
       });
@@ -2580,3 +2583,21 @@ export function fakeNotifications(
  * renderer could never use.
  */
 export const fakeTemplateRegistry = createTemplateRegistry(ALL_TEMPLATES);
+
+/**
+ * A transport repository that claims nothing.
+ *
+ * Delivery is exercised in `deliver.test.ts` with its own purpose-built fakes,
+ * and against real PostgreSQL for the claim race. This exists so the unit of
+ * work is complete for suites that never deliver anything -- returning null
+ * from `claimForDelivery` rather than a plausible claim, so a test that
+ * accidentally depends on delivery fails loudly instead of passing on a stub.
+ */
+export function fakeNotificationTransport(): NotificationTransportRepository {
+  return {
+    claimForDelivery: () => Promise.resolve(null),
+    completeAttempt: () => Promise.resolve(false),
+    reclaimExpiredLeases: () => Promise.resolve([]),
+    listAttempts: () => Promise.resolve([]),
+  };
+}
