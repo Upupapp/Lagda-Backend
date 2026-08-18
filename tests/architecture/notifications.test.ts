@@ -44,18 +44,37 @@ const notificationSources = productionSources.filter(file =>
   file.includes(`${path.sep}notifications${path.sep}`)
   || file.endsWith("notifications.ts"));
 
-describe("no email provider is introduced", () => {
+describe("the provider stays inside its adapter", () => {
   /**
-   * The vendors BACKEND-45 will choose between, and the transports it might use.
+   * Vendor SDKs and raw transports.
    *
-   * BACKEND-44 must select none of them (S301). The point of the provider-
-   * neutral substrate is that this choice stays open and stays reversible.
+   * BACKEND-44 forbade all of these everywhere. BACKEND-45 selected Amazon SES
+   * (ADR-036), so the rule narrows rather than disappears: the SDK may exist in
+   * exactly ONE infrastructure adapter and nowhere else (S5, S6).
+   *
+   * Narrowing rather than deleting is the point. "No SDK anywhere" stops being
+   * true the moment a provider is chosen, and a test that is simply removed at
+   * that moment takes the real guarantee with it — that core, application,
+   * contracts and routes never learn a vendor's name.
    */
   const FORBIDDEN_PACKAGES = [
     "@sendgrid/mail", "@sendgrid/client", "postmark", "nodemailer",
     "@aws-sdk/client-ses", "aws-sdk/clients/ses", "mailgun.js", "mailgun-js",
     "resend", "@resend/node", "smtp", "emailjs",
   ];
+
+  /**
+   * The one path permitted to import the selected provider's SDK.
+   *
+   * A path rather than a package name, so moving the adapter is a deliberate
+   * edit here rather than a silent widening.
+   */
+  const ADAPTER_PATH = path.join("db", "src", "email");
+
+  /** The SDK ADR-036 selected. Everything else stays forbidden outright. */
+  const SELECTED_PROVIDER_PACKAGES = ["@aws-sdk/client-sesv2", "@aws-sdk/client-ses"];
+
+  const isAdapter = (file: string): boolean => file.includes(ADAPTER_PATH);
 
   it("declares no provider SDK in any package manifest", () => {
     const manifests = readdirSync(PACKAGES)
@@ -73,17 +92,58 @@ describe("no email provider is introduced", () => {
         ...parsed.dependencies, ...parsed.devDependencies,
       });
       for (const forbidden of FORBIDDEN_PACKAGES) {
+        // The selected provider's SDK is permitted as a dependency of the
+        // package holding the adapter; every rejected vendor stays banned.
+        if (SELECTED_PROVIDER_PACKAGES.includes(forbidden)
+          && manifest.includes(`${path.sep}db${path.sep}`)) continue;
         expect(declared).not.toContain(forbidden);
       }
     }
   });
 
-  it("imports no provider SDK anywhere in source", () => {
+  it("imports the selected SDK only inside the adapter, and no other vendor at all", () => {
     for (const file of allSources) {
       const source = read(file);
       for (const forbidden of FORBIDDEN_PACKAGES) {
-        expect(source).not.toContain(`from "${forbidden}"`);
+        const permittedHere =
+          SELECTED_PROVIDER_PACKAGES.includes(forbidden) && isAdapter(file);
+        if (permittedHere) continue;
+        expect(source, `${file} imports ${forbidden}`)
+          .not.toContain(`from "${forbidden}"`);
         expect(source).not.toContain(`require("${forbidden}")`);
+      }
+    }
+  });
+
+  it("keeps every rejected vendor banned outright", () => {
+    // ADR-036 chose one provider. The alternatives were evaluated and rejected,
+    // and a rejected vendor appearing anywhere means a second transport path.
+    const rejected = FORBIDDEN_PACKAGES.filter(
+      pkg => !SELECTED_PROVIDER_PACKAGES.includes(pkg));
+
+    for (const file of allSources) {
+      const source = read(file);
+      for (const vendor of rejected) {
+        expect(source, `${file} references rejected vendor ${vendor}`)
+          .not.toContain(`from "${vendor}"`);
+      }
+    }
+  });
+
+  it("never lets core, application, contracts or routes name a vendor", () => {
+    // The guarantee that survives provider selection. Replacing SES must mean
+    // writing one file, not refactoring the notification domain.
+    const insulated = productionSources.filter(file =>
+      file.includes(path.join("core", "src"))
+      || file.includes(path.join("application", "src"))
+      || file.includes(path.join("contracts", "src"))
+      || file.includes(path.join("api", "src")));
+
+    for (const file of insulated) {
+      const source = read(file).toLowerCase();
+      for (const vendor of ["sendgrid", "postmark", "mailgun", "nodemailer",
+        "@aws-sdk", "sesv2"]) {
+        expect(source, `${file} names ${vendor}`).not.toContain(vendor);
       }
     }
   });
