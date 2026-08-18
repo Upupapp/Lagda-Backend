@@ -87,16 +87,18 @@ interface Harness {
   readonly tokens: ReturnType<typeof fakeTokens>;
   readonly deps: InvitationDependencies;
   readonly acceptDeps: AcceptInvitationDependencies;
-  readonly delivered: { invitationId: string; invitationUrl: string }[];
+  readonly delivered: { invitationId: string }[];
   readonly workspaceId: WorkspaceId;
 }
 
 /** A workspace owned by OWNER, with the accounts the tests need registered. */
-async function harness(over: { deliveryFails?: boolean } = {}): Promise<Harness> {
+async function harness(
+  over: { deliveryFails?: boolean; noSealer?: boolean } = {},
+): Promise<Harness> {
   const store = new InMemoryStore();
   const transactions = new FakeTransactionManager(store);
   const tokens = fakeTokens();
-  const delivered: { invitationId: string; invitationUrl: string }[] = [];
+  const delivered: { invitationId: string }[] = [];
 
   store.accountEmails.set(OWNER_EMAIL, OWNER);
   store.accountEmails.set(INVITEE_EMAIL, INVITEE);
@@ -121,13 +123,20 @@ async function harness(over: { deliveryFails?: boolean } = {}): Promise<Harness>
     invitationIds: fakeInvitationIds(),
     tokens,
     links: { build: (raw: string) => `https://app.lagda.test/accept-invitation?token=${raw}` },
+    // A stand-in for the real SecretBox: reversible, and visibly not the raw
+    // token, which is all this suite needs to prove the value stored is not
+    // the value mailed.
+    ...(over.noSealer === true ? {} : {
+      sealer: {
+        keyVersion: "k1",
+        seal: (raw: string) => `sealed(${raw})` as never,
+      },
+    }),
     scheduleDelivery: (input) => {
       if (over.deliveryFails === true) {
         return Promise.reject(new Error("queue unavailable"));
       }
-      delivered.push({
-        invitationId: input.invitationId, invitationUrl: input.invitationUrl,
-      });
+      delivered.push({ invitationId: input.invitationId });
       return Promise.resolve();
     },
     idempotency: {
@@ -283,11 +292,52 @@ describe("createWorkspaceInvitation", () => {
     expect(h.store.invitations).toHaveLength(0);
   });
 
-  it("hands delivery a URL built from the configured origin", async () => {
+  it("hands delivery a POINTER, never a link or a raw token", async () => {
+    // BACKEND-45, OD-184. A URL passed here would have to live on the
+    // notification to survive until the worker renders the message -- putting a
+    // credential in an immutable table that can never clear it, and baking a
+    // hostname into a row so that rotating the canonical domain would strand
+    // every unsent invitation.
     const h = await harness();
     await invite(h);
-    expect(h.delivered[0]?.invitationUrl)
-      .toBe(`https://app.lagda.test/accept-invitation?token=${h.tokens.issued[0] ?? ""}`);
+
+    const handed = JSON.stringify(h.delivered[0]);
+    expect(handed).toContain("inv_");
+    expect(handed).not.toContain("http");
+    expect(handed).not.toContain(h.tokens.issued[0] ?? "NO-TOKEN");
+  });
+
+  it("stores no ciphertext when no key is configured", async () => {
+    // A working state, not a broken one: the invitation exists, the credential
+    // is unrecoverable, and the delivery will surface as SUPPRESSED. Strictly
+    // better than mailing an invitation with no link in it.
+    const h = await harness({ noSealer: true });
+    await invite(h);
+
+    const sealed = await h.deps.transactions.runForWorkspace(
+      h.workspaceId, uow => uow.invitations.findSealedIfActive({
+        invitationId: h.store.invitations[0]?.invitationId ?? ("x" as never),
+        now: AT,
+      }));
+
+    expect(sealed).toBeNull();
+  });
+
+  it("seals the raw token onto the invitation, not into the message", async () => {
+    // The credential is recoverable at send time from the row whose lifecycle
+    // bounds it -- accepted, revoked, declined, superseded or expired all end
+    // it. Nothing durable outside that row holds the value.
+    const h = await harness();
+    await invite(h);
+
+    const sealed = await h.deps.transactions.runForWorkspace(
+      h.workspaceId, uow => uow.invitations.findSealedIfActive({
+        invitationId: h.store.invitations[0]?.invitationId ?? ("x" as never),
+        now: AT,
+      }));
+
+    expect(sealed).not.toBeNull();
+    expect(sealed?.sealed).not.toBe(h.tokens.issued[0]);
   });
 
   // ── Idempotency ────────────────────────────────────────────────────────────

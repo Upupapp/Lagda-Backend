@@ -265,19 +265,29 @@ export interface InvitationCredentialUnitOfWork {
  * Scheduling after commit would produce the worst available outcome on a
  * resend: the previous link invalidated and the replacement never sent.
  *
- * OPTIONAL, exactly as it is for email verification and password reset, and for
- * the same reason: there is no notification infrastructure (OD-003, BACKEND-44/
- * 45). Where it is absent the invitation is still created correctly and the raw
- * token is discarded — see INVITATION_ARCHITECTURE.md, which reports delivery
- * as BLOCKED rather than implying an email is sent.
+ * OPTIONAL. Where it is absent the invitation is still created correctly and
+ * nothing is sent — see INVITATION_ARCHITECTURE.md, which reports delivery as
+ * BLOCKED rather than implying an email is sent.
+ *
+ * ── No URL, and no raw token (BACKEND-45, OD-184) ──────────────────────────
+ *
+ * This once carried `invitationUrl`, built at creation time. It no longer does,
+ * and the change is not cosmetic.
+ *
+ * A URL passed here would have to be stored on the notification to survive
+ * until the worker renders the message — which would put a live credential in
+ * an IMMUTABLE table that can never clear it, and bake a hostname into a row so
+ * that rotating the canonical domain would strand every unsent invitation.
+ *
+ * The notification now carries a POINTER. The credential is sealed onto the
+ * invitation row, where its lifetime is bounded by the invitation's own, and
+ * the link is rebuilt from configuration at send time.
  */
 export type InvitationDeliveryScheduler = (input: {
   readonly invitationId: WorkspaceInvitationId;
   readonly workspaceId: WorkspaceId;
   readonly inviteeEmail: string;
   readonly requestedRole: WorkspaceRole;
-  /** Handed over ONCE. Never persisted by the caller, never logged. */
-  readonly invitationUrl: string;
   readonly expiresAt: number;
 }) => Promise<void>;
 

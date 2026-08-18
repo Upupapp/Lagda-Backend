@@ -24,6 +24,7 @@ import type {
   Clock, TransactionManager, WorkspaceInvitationRecord,
   WorkspaceInvitationIdGenerator, WorkspaceMemberIdGenerator,
   InvitationTokenFactory, InvitationLinkBuilder, InvitationDeliveryScheduler,
+  DeliverySecretSealer,
 } from "../common/ports/index.js";
 import type { AuthenticatedActor } from "../common/ports/session.js";
 import {
@@ -162,6 +163,15 @@ export interface InvitationDependencies extends WorkspaceAccessDependencies {
   readonly tokens: InvitationTokenFactory;
   readonly links: InvitationLinkBuilder;
   /**
+   * Seals the raw token so the invitation email can carry it (OD-184).
+   *
+   * Optional, and its absence is a working state rather than a broken one: the
+   * invitation is created, the credential is unrecoverable, and the delivery
+   * surfaces as SUPPRESSED. That is strictly better than the alternative shape,
+   * where an unconfigured deployment mails an invitation with no link in it.
+   */
+  readonly sealer?: DeliverySecretSealer;
+  /**
    * Persists the intent to deliver, INSIDE the transaction.
    *
    * Optional only because there is no notification infrastructure yet — the
@@ -271,10 +281,15 @@ export async function createWorkspaceInvitation(
         inviteeNormalizedEmail: normalized.normalized,
         requestedRole: input.role,
         invitedByUserId: input.actor.userId,
-        // The DIGEST. The raw token never reaches persistence.
+        // The DIGEST. The raw token is never persisted in the clear.
         tokenDigest: token.digest,
         createdAt: now,
         expiresAt,
+        // The same token, SEALED, in the same statement. A second write would
+        // leave a window in which the invitation exists and its credential is
+        // unrecoverable, and a crash inside that window produces a pending row
+        // no email can ever match.
+        ...sealed(deps, token.raw),
       });
 
       // INSIDE the transaction. If delivery cannot be durably scheduled, the
@@ -283,7 +298,7 @@ export async function createWorkspaceInvitation(
       await scheduleIfConfigured(deps, {
         invitationId, workspaceId: input.workspaceId,
         inviteeEmail: normalized.display, requestedRole: input.role,
-        rawToken: token.raw, expiresAt,
+        expiresAt,
       });
 
       const summary: InvitationSummary = {
@@ -317,13 +332,42 @@ export async function createWorkspaceInvitation(
   });
 }
 
-/** Builds the link and hands it to delivery. Never logs it, never stores it. */
+/**
+ * Seals a raw credential, or contributes nothing.
+ *
+ * Returns an EMPTY object rather than undefined fields, so under
+ * `exactOptionalPropertyTypes` an unconfigured deployment omits the keys
+ * entirely — which is what the both-or-neither CHECK constraint expects.
+ */
+function sealed(
+  deps: { readonly sealer?: DeliverySecretSealer },
+  rawToken: string,
+): { sealedSecret?: string; sealedKeyVersion?: string } {
+  if (deps.sealer === undefined) return {};
+  return {
+    sealedSecret: deps.sealer.seal(rawToken),
+    sealedKeyVersion: deps.sealer.keyVersion,
+  };
+}
+
+/**
+ * Records the intent to deliver. Carries a POINTER, never a link.
+ *
+ * The raw token is not passed and the URL is not built here. Both would have to
+ * be carried on the notification to survive until the worker renders the
+ * message, and the notification table is immutable — a credential written there
+ * could never be cleared, and a hostname written there would strand every
+ * unsent invitation the day the canonical domain changed.
+ *
+ * The credential is already sealed onto the invitation row by the caller. The
+ * link is rebuilt from configuration at send time.
+ */
 async function scheduleIfConfigured(
   deps: InvitationDependencies,
   input: {
     invitationId: WorkspaceInvitationId; workspaceId: WorkspaceId;
     inviteeEmail: string; requestedRole: InvitableWorkspaceRole;
-    rawToken: string; expiresAt: number;
+    expiresAt: number;
   },
 ): Promise<void> {
   if (deps.scheduleDelivery === undefined) return;
@@ -332,9 +376,6 @@ async function scheduleIfConfigured(
     workspaceId: input.workspaceId,
     inviteeEmail: input.inviteeEmail,
     requestedRole: input.requestedRole,
-    // Built from CONFIGURED origin. The builder has no request in scope, so a
-    // Host header cannot reach it.
-    invitationUrl: deps.links.build(input.rawToken),
     expiresAt: input.expiresAt,
   });
 }
@@ -415,6 +456,9 @@ export async function resendWorkspaceInvitation(
         tokenDigest: token.digest,
         expiresAt,
         now,
+        // The new token's ciphertext moves with its digest. Leaving the old one
+        // would mail a link the row no longer accepts.
+        ...sealed(deps, token.raw),
       });
       // Lost a race with a concurrent revoke or accept. The conditional UPDATE
       // is what makes that safe rather than a lost update.
@@ -430,7 +474,6 @@ export async function resendWorkspaceInvitation(
         workspaceId: input.workspaceId,
         inviteeEmail: existing.inviteeEmail,
         requestedRole: existing.requestedRole,
-        rawToken: token.raw,
         expiresAt,
       });
 
