@@ -2,3 +2,4 @@
 export * from "./config.js";
 export * from "./postmark.js";
 export * from "./postmark-events.js";
+export * from "./composition.js";

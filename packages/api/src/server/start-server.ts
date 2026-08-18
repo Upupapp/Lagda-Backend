@@ -4,7 +4,11 @@
 // open a listener. This is the only place in the package that reads the
 // environment, constructs infrastructure, or binds a port.
 
-import { createDatabase, loadDatabaseConfig, type LagdaDatabase } from "@lagda/db";
+import {
+  createDatabase, loadDatabaseConfig, createTransactionManager,
+  type LagdaDatabase,
+} from "@lagda/db";
+import { createProviderEventConfirmerFromEnv } from "@lagda/email";
 import { loadApiConfig, type ApiConfig } from "../config/index.js";
 import { createApp } from "../app/create-app.js";
 import type { AppDependencies } from "../app/dependencies.js";
@@ -24,8 +28,49 @@ export function createProductionDependencies(database: LagdaDatabase): AppDepend
       // `ping()` from BACKEND-06. The API writes no SQL of its own.
       isReachable: () => database.ping(),
     },
+    // Spread, so an unconfigured deployment has the key ABSENT rather than
+    // present-and-undefined. Under `exactOptionalPropertyTypes` those are
+    // different things, and here the difference is whether a route exists.
+    ...buildProviderWebhook(database),
   };
 }
+
+/**
+ * The provider callback surface, if this deployment has a credential for it.
+ *
+ * ── Absent means the route does not exist ──────────────────────────────────
+ *
+ * Not "exists but rejects everything", and not "exists with authentication
+ * disabled" — the second being the failure mode an `ENABLE_WEBHOOK` boolean
+ * eventually produces, because a boolean can be set true by someone who has not
+ * set the secret.
+ *
+ * The consequence of leaving it unconfigured is bounded and honest: `DELIVERED`
+ * and `BOUNCED` stay unreachable, deliveries stop at `PROVIDER_ACCEPTED`, and
+ * nothing anywhere claims otherwise.
+ *
+ * ── Why this package does not know the provider ────────────────────────────
+ *
+ * `@lagda/email` decides whether the environment has a callback credential and
+ * what to build from it. This file learns only whether the answer was null.
+ * That keeps two rules that both matter: no vendor name outside the adapter,
+ * and no environment read outside the config loader.
+ */
+function buildProviderWebhook(
+  database: LagdaDatabase,
+): Pick<AppDependencies, "providerWebhook"> {
+  const confirm = createProviderEventConfirmerFromEnv();
+  if (confirm === null) return {};
+
+  const transactions = createTransactionManager(database.db);
+  return {
+    providerWebhook: () => ({
+      confirm,
+      eventDependencies: { transactions, clock: { now: () => Date.now() } },
+    }),
+  };
+}
+
 
 export interface StartedServer {
   readonly config: ApiConfig;

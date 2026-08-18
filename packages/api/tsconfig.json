@@ -32,6 +32,9 @@
     },
     {
       "path": "../security"
+    },
+    {
+      "path": "../email"
     }
   ],
   "exclude": [
