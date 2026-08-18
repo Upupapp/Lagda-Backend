@@ -89,6 +89,16 @@ export interface NewWorkspaceInvitation {
   readonly tokenDigest: InvitationTokenDigest;
   readonly createdAt: number;
   readonly expiresAt: number;
+  /**
+   * The raw token, sealed, so the invitation EMAIL can carry it (OD-184).
+   *
+   * Both fields or neither — a CHECK constraint enforces it, because a
+   * ciphertext with no key version cannot be opened after a rotation. Absent
+   * is a working state: the invitation is created and cannot be mailed, which
+   * surfaces as a SUPPRESSED delivery rather than as silence.
+   */
+  readonly sealedSecret?: string;
+  readonly sealedKeyVersion?: string;
 }
 
 /**
@@ -147,7 +157,29 @@ export interface ScopedInvitationRepository {
     readonly tokenDigest: InvitationTokenDigest;
     readonly expiresAt: number;
     readonly now: number;
+    /**
+     * The NEW token, sealed. Replaces whatever the row carried.
+     *
+     * Passed together with the digest rather than in a separate call, so the
+     * two halves of one credential cannot disagree — a resend that updated the
+     * digest and left the old ciphertext would mail a link that no longer
+     * works.
+     */
+    readonly sealedSecret?: string;
+    readonly sealedKeyVersion?: string;
   }): Promise<boolean>;
+
+  /**
+   * Reads back the sealed token for an invitation that is still open.
+   *
+   * Null for unknown, accepted, revoked, declined, superseded and expired
+   * alike — the renderer suppresses the message in every case, and the
+   * lifecycle belongs to this row rather than to transport (S74).
+   */
+  findSealedIfActive(input: {
+    readonly invitationId: WorkspaceInvitationId;
+    readonly now: number;
+  }): Promise<{ readonly sealed: string; readonly keyVersion: string } | null>;
 
   /** Conditional on being live. Returns whether it applied. */
   revokeIfLive(input: {

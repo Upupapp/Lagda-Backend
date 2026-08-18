@@ -21,6 +21,7 @@ import {
   type DeliverNotificationDependencies, type NotificationDeliveryId,
   type NotificationTransportRepository, type NotificationDeliveryUnitOfWork,
   type CompleteAttemptInput, type ClaimDeliveryInput,
+  type NotificationScope,
 } from "@lagda/application";
 import { createTransactionManager } from "@lagda/db";
 import { loadPostmarkConfig, createPostmarkEmailProvider, EmailConfigError } from "@lagda/email";
@@ -173,12 +174,37 @@ export async function startWorker(): Promise<StartedWorker> {
     // record belongs to a person, not a workspace -- so it is read on the plain
     // connection rather than through a scoped unit of work.
     const passwordResets = createPasswordResetRepository(database.db);
-    const challengeSecrets = createChallengeSecretResolver(
+
+    /**
+     * Built per delivery, because one of the lookups needs the delivery's own
+     * workspace. A single shared resolver would either read invitations
+     * unscoped or guess at a tenant.
+     */
+    const challengeSecretsFor = (deliveryScope: NotificationScope) =>
+      createChallengeSecretResolver(
       config.signingDeliveryKey, config.signingDeliveryKeyVersion,
       {
-        findSealedIfActive: (sourceId, now) => passwordResets.findSealedIfActive({
-          challengeId: sourceId as never, now,
-        }),
+        // Account security challenges. Read on the plain connection: an
+        // account record belongs to a person rather than a workspace, and
+        // password_reset_challenges carries no tenant column.
+        SECURITY_CHALLENGE: {
+          findSealedIfActive: (sourceId: string, now: number) =>
+            passwordResets.findSealedIfActive({ challengeId: sourceId as never, now }),
+        },
+        // Invitations are workspace-scoped, so the read happens inside the
+        // delivery's own workspace transaction rather than on the bare
+        // connection -- RLS is the control here, not the caller's care.
+        WORKSPACE_INVITATION: {
+          findSealedIfActive: (sourceId: string, now: number) =>
+            deliveryScope.kind === "WORKSPACE"
+              ? transactions.runForWorkspace(deliveryScope.workspaceId, uow =>
+                uow.invitations.findSealedIfActive({
+                  invitationId: sourceId as never, now,
+                }))
+              // An invitation credential under an account scope is a
+              // composition error, not a runtime condition.
+              : Promise.resolve(null),
+        },
       },
       clock,
     );
@@ -221,7 +247,7 @@ export async function startWorker(): Promise<StartedWorker> {
         secrets: createNotificationSecretResolver(
           createSealedSecretResolver(
             config.signingDeliveryKey, config.signingDeliveryKeyVersion, validity),
-          challengeSecrets),
+          challengeSecretsFor(ref.scope)),
         links,
         provider,
         ids: {

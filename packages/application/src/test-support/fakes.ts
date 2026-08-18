@@ -431,6 +431,15 @@ export class InMemoryStore {
   signingRequestRecipients: SigningRequestRecipientRecord[] = [];
   signingRequestFields: SigningRequestFieldRecord[] = [];
   signingAccessGrants: NewSigningAccessGrant[] = [];
+  /**
+   * Invitation ciphertexts, keyed by invitation id.
+   *
+   * A side map rather than a field on `WorkspaceInvitationRecord`, and
+   * deliberately: that record is a read model which reaches API projections,
+   * and a sealed credential on it would be one careless serializer away from a
+   * response body.
+   */
+  sealedInvitations = new Map<string, { sealed: string; keyVersion: string }>();
   activations: ActivationRow[] = [];
   workflowIntents: WorkflowIntentRow[] = [];
   completionRuns: CompletionRunRow[] = [];
@@ -693,12 +702,16 @@ function scopedInvitations(
   store: InMemoryStore, scope: WorkspaceId,
 ): ScopedInvitationRepository {
   const inScope = () => store.invitations.filter(i => i.workspaceId === scope);
+  const sealedInvitations = store.sealedInvitations;
   const replaceLive = (
     id: WorkspaceInvitationId,
     change: (current: WorkspaceInvitationRecord) => WorkspaceInvitationRecord,
   ): boolean => {
     const index = store.invitations.findIndex(
       i => i.workspaceId === scope && i.invitationId === id && isLive(i));
+    // Every terminal transition drops the ciphertext, mirroring the CHECK
+    // constraint that makes it impossible in PostgreSQL.
+    if (index !== -1) sealedInvitations.delete(id);
     const current = index === -1 ? undefined : store.invitations[index];
     if (current === undefined) return false;
     store.invitations[index] = change(current);
@@ -707,6 +720,13 @@ function scopedInvitations(
 
   return {
     insert: (invitation: NewWorkspaceInvitation) => {
+      if (invitation.sealedSecret !== undefined
+        && invitation.sealedKeyVersion !== undefined) {
+        sealedInvitations.set(invitation.invitationId, {
+          sealed: invitation.sealedSecret,
+          keyVersion: invitation.sealedKeyVersion,
+        });
+      }
       if (invitation.workspaceId !== scope) {
         throw new FakeScopeMismatchError(
           "WorkspaceInvitation", scope, invitation.workspaceId);
@@ -745,6 +765,22 @@ function scopedInvitations(
     list: () => Promise.resolve(
       [...inScope()].sort((a, b) =>
         b.createdAt - a.createdAt || a.invitationId.localeCompare(b.invitationId))),
+
+    findSealedIfActive: (input) => {
+      // Mirrors the SQL: live, unexpired, and carrying both halves.
+      //
+      // The ciphertext lives in a SIDE map rather than on the record, and
+      // deliberately: `WorkspaceInvitationRecord` is a read model that reaches
+      // API projections, and a sealed credential on it would be one careless
+      // serializer away from a response body.
+      const found = store.invitations.find(i =>
+        i.workspaceId === scope
+        && i.invitationId === input.invitationId
+        && isLive(i)
+        && i.expiresAt > input.now);
+      if (found === undefined) return Promise.resolve(null);
+      return Promise.resolve(sealedInvitations.get(input.invitationId) ?? null);
+    },
 
     supersedeActiveForEmail: (input) => {
       let count = 0;

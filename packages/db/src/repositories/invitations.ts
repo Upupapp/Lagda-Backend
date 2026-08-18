@@ -116,6 +116,12 @@ export function createScopedInvitationRepository(
           revoked_at: null,
           declined_at: null,
           superseded_at: null,
+          // OD-184. The raw token, sealed, so the invitation EMAIL can carry
+          // it. Absent when no key is configured, which produces an invitation
+          // that exists and cannot be mailed -- visible as a SUPPRESSED
+          // delivery rather than as silence.
+          sealed_secret: invitation.sealedSecret ?? null,
+          sealed_key_version: invitation.sealedKeyVersion ?? null,
         }).execute();
       } catch (error) {
         throw translatePersistenceError(error);
@@ -149,7 +155,11 @@ export function createScopedInvitationRepository(
 
     async supersedeActiveForEmail(input) {
       const result = await trx.updateTable("workspace_invitations")
-        .set({ superseded_at: new Date(input.now) })
+        .set({
+          superseded_at: new Date(input.now),
+          sealed_secret: null,
+          sealed_key_version: null,
+        })
         .where("workspace_id", "=", scope)
         .where("invitee_normalized_email", "=", input.email)
         .where(LIVE)
@@ -163,6 +173,11 @@ export function createScopedInvitationRepository(
           .set({
             token_digest: input.tokenDigest,
             expires_at: new Date(input.expiresAt),
+            // A resend mints a NEW token, so the old ciphertext must go with
+            // the old digest. Passing the new sealed value here keeps the two
+            // halves of one credential from ever disagreeing.
+            sealed_secret: input.sealedSecret ?? null,
+            sealed_key_version: input.sealedKeyVersion ?? null,
           })
           .where("workspace_id", "=", scope)
           .where("invitation_id", "=", input.invitationId)
@@ -176,7 +191,11 @@ export function createScopedInvitationRepository(
 
     async revokeIfLive(input) {
       const result = await trx.updateTable("workspace_invitations")
-        .set({ revoked_at: new Date(input.now) })
+        .set({
+          revoked_at: new Date(input.now),
+          sealed_secret: null,
+          sealed_key_version: null,
+        })
         .where("workspace_id", "=", scope)
         .where("invitation_id", "=", input.invitationId)
         .where(LIVE)
@@ -192,6 +211,11 @@ export function createScopedInvitationRepository(
         .set({
           accepted_at: new Date(input.now),
           accepted_by_user_id: input.acceptedByUserId,
+          // Cleared with the acceptance itself. A CHECK constraint rejects the
+          // row otherwise, so a spent invitation left openable is impossible
+          // rather than merely unintended.
+          sealed_secret: null,
+          sealed_key_version: null,
         })
         .where("workspace_id", "=", scope)
         .where("invitation_id", "=", input.invitationId)
@@ -200,9 +224,34 @@ export function createScopedInvitationRepository(
       return Number(result.numUpdatedRows) === 1;
     },
 
+    async findSealedIfActive(input) {
+      // One null for unknown, accepted, revoked, declined, superseded and
+      // expired alike. The renderer suppresses the message in every case, and
+      // telling it which would hand transport an invitation lifecycle it has
+      // no use for.
+      const row = await trx.selectFrom("workspace_invitations")
+        .select(["sealed_secret", "sealed_key_version"])
+        .where("workspace_id", "=", scope)
+        .where("invitation_id", "=", input.invitationId)
+        .where(LIVE)
+        .where("expires_at", ">", new Date(input.now))
+        .executeTakeFirst();
+
+      if (row === undefined
+        || row.sealed_secret === null
+        || row.sealed_key_version === null) {
+        return null;
+      }
+      return { sealed: row.sealed_secret, keyVersion: row.sealed_key_version };
+    },
+
     async declineIfLive(input) {
       const result = await trx.updateTable("workspace_invitations")
-        .set({ declined_at: new Date(input.now) })
+        .set({
+          declined_at: new Date(input.now),
+          sealed_secret: null,
+          sealed_key_version: null,
+        })
         .where("workspace_id", "=", scope)
         .where("invitation_id", "=", input.invitationId)
         .where(LIVE)

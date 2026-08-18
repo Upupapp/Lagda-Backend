@@ -146,7 +146,19 @@ export interface ChallengeCredentialLookup {
 export function createChallengeSecretResolver(
   key: string | null,
   keyVersion: string,
-  lookup: ChallengeCredentialLookup,
+  /**
+   * One lookup per source kind that can own a challenge credential.
+   *
+   * Keyed rather than chained, because `resolve` already receives the source
+   * and the source already says which domain minted the thing. A resolver that
+   * tried each lookup in turn would ask a reset table about an invitation, and
+   * "not found" would be indistinguishable from "not yours".
+   *
+   * Partial: a deployment wires the domains it has. A kind with no lookup is
+   * UNUSABLE, which is the same answer as an unconfigured key and produces the
+   * same visible SUPPRESSED delivery.
+   */
+  lookups: Partial<Record<string, ChallengeCredentialLookup>>,
   clock: { now(): number },
 ): NotificationSecretResolver {
   const box = key === null ? null : createSecretBox({ keyBase64: key, keyVersion });
@@ -154,8 +166,13 @@ export function createChallengeSecretResolver(
   return {
     async resolve(
       secretRef: NotificationSecretRef,
+      source: NotificationSource,
     ): Promise<NotificationSecretResolution> {
       if (secretRef.kind !== "CHALLENGE") {
+        return { status: "UNUSABLE", reason: "SECRET_REVOKED" };
+      }
+      const lookup = lookups[source.kind];
+      if (lookup === undefined) {
         return { status: "UNUSABLE", reason: "SECRET_REVOKED" };
       }
       if (box === null) {

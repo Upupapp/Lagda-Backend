@@ -1055,6 +1055,15 @@ export interface WorkspaceInvitationsTable {
   revoked_at: ColumnType<Date | null, Date | null, Date | null>;
   declined_at: ColumnType<Date | null, Date | null, Date | null>;
   superseded_at: ColumnType<Date | null, Date | null, Date | null>;
+  /**
+   * AES-256-GCM ciphertext of the raw token (OD-184, migration 036).
+   *
+   * Present only while the invitation is OPEN. A CHECK constraint enumerates
+   * all four terminal columns, so a fifth terminal state added later fails
+   * loudly rather than silently leaving a live credential behind it.
+   */
+  sealed_secret: ColumnType<string | null, string | null, string | null>;
+  sealed_key_version: ColumnType<string | null, string | null, string | null>;
 }
 
 /**

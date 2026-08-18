@@ -21,8 +21,10 @@ const challengeSource: NotificationSource =
 
 const clock = { now: () => AT };
 const lookup = (sealed: string | null) => ({
-  findSealedIfActive: () => Promise.resolve(
-    sealed === null ? null : { sealed, keyVersion: VERSION }),
+  SECURITY_CHALLENGE: {
+    findSealedIfActive: () => Promise.resolve(
+      sealed === null ? null : { sealed, keyVersion: VERSION }),
+  },
 });
 
 describe("challenge credentials", () => {
@@ -135,5 +137,41 @@ describe("signing credentials", () => {
       grantSource);
 
     expect(order).toEqual(["validity"]);
+  });
+});
+
+describe("dispatch by owning domain", () => {
+  it("asks the domain the source names, not every domain in turn", async () => {
+    // A resolver that tried each lookup would ask the reset table about an
+    // invitation, and "not found" would be indistinguishable from "not yours".
+    const asked: string[] = [];
+    const named = (name: string) => ({
+      findSealedIfActive: () => {
+        asked.push(name);
+        return Promise.resolve({ sealed: box.seal(name), keyVersion: VERSION });
+      },
+    });
+    const resolver = createChallengeSecretResolver(KEY, VERSION, {
+      SECURITY_CHALLENGE: named("reset"),
+      WORKSPACE_INVITATION: named("invitation"),
+    }, clock);
+
+    const resolution = await resolver.resolve(
+      { kind: "CHALLENGE", challengeId: "inv_1" },
+      { kind: "WORKSPACE_INVITATION", sourceId: "inv_1" });
+
+    expect(asked).toEqual(["invitation"]);
+    expect(resolution.secret).toBe("invitation");
+  });
+
+  it("refuses a source kind this deployment wired no lookup for", async () => {
+    // Same answer as an unconfigured key, and the same visible outcome: a
+    // SUPPRESSED delivery rather than a message with a missing link.
+    const resolver = createChallengeSecretResolver(KEY, VERSION, {}, clock);
+
+    const resolution = await resolver.resolve(
+      { kind: "CHALLENGE", challengeId: "chal_1" }, challengeSource);
+
+    expect(resolution.status).toBe("UNUSABLE");
   });
 });
