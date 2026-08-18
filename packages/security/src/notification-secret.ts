@@ -17,6 +17,7 @@
 
 import type {
   NotificationSecretResolver, NotificationSecretResolution, NotificationSecretRef,
+  NotificationSource,
 } from "@lagda/application";
 import { createSecretBox, SecretBoxError } from "./secret-box.js";
 
@@ -31,6 +32,16 @@ import { createSecretBox, SecretBoxError } from "./secret-box.js";
 export interface CredentialValidityCheck {
   isStillUsable(sourceId: string): Promise<boolean>;
 }
+
+/**
+ * Which source kinds this resolver is willing to answer for.
+ *
+ * `SEALED` credentials are minted by the signing-access domain, so a sealed
+ * reference arriving under any other source is a composition error rather than
+ * a runtime condition — and answering it would mean asking the wrong domain
+ * whether its credential is still good.
+ */
+const SEALED_SOURCE_KIND = "SIGNING_ACCESS_GRANT";
 
 /**
  * Resolves SEALED references by decrypting them.
@@ -58,6 +69,7 @@ export function createSealedSecretResolver(
   return {
     async resolve(
       secretRef: NotificationSecretRef,
+      source: NotificationSource,
     ): Promise<NotificationSecretResolution> {
       if (secretRef.kind !== "SEALED") {
         // CHALLENGE references are resolved by the auth domain. Reaching here
@@ -73,7 +85,15 @@ export function createSealedSecretResolver(
         return { status: "UNUSABLE", reason: "SECRET_REVOKED" };
       }
 
-      if (!(await validity.isStillUsable(secretRef.sealed))) {
+      if (source.kind !== SEALED_SOURCE_KIND) {
+        return { status: "UNUSABLE", reason: "SECRET_REVOKED" };
+      }
+
+      // The SOURCE id, not the ciphertext. "Is this credential still usable" is
+      // a question about the grant that issued it; the sealed blob is only how
+      // transport carries the value, and a domain asked to look one up by
+      // ciphertext can only answer no.
+      if (!(await validity.isStillUsable(source.sourceId))) {
         return { status: "UNUSABLE", reason: "SECRET_REVOKED" };
       }
 

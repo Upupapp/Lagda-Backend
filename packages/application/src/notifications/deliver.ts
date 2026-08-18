@@ -31,7 +31,7 @@
 
 import type {
   NotificationTransportRepository,
-  NotificationSecretRef, NotificationDeliveryId,
+  NotificationSecretRef, NotificationSource, NotificationDeliveryId,
   NotificationDeliveryAttemptIdGenerator, NotificationFailureCode,
   EmailDeliveryProvider, EmailMessage, AttemptOutcome, AttemptFailureCode,
 } from "../common/ports/notifications.js";
@@ -60,8 +60,16 @@ export interface NotificationSecretResolution {
 }
 
 export interface NotificationSecretResolver {
+  /**
+   * @param secretRef  how the credential is referenced — sealed, or a pointer.
+   * @param source     the record that OWNS the credential. Required, because a
+   *                   validity check is a question about the grant, the reset
+   *                   challenge or the invitation — not about the ciphertext,
+   *                   which is only how transport carries it.
+   */
   resolve(
     secretRef: NotificationSecretRef,
+    source: NotificationSource,
     transaction?: unknown,
   ): Promise<NotificationSecretResolution>;
 }
@@ -134,7 +142,7 @@ export function deliverNotification(deps: DeliverNotificationDependencies) {
     // reaches a message body even transiently (S58).
     const resolution = intent.secretRef === undefined
       ? { status: "AVAILABLE" as const, secret: undefined }
-      : await deps.secrets.resolve(intent.secretRef);
+      : await deps.secrets.resolve(intent.secretRef, intent.source);
 
     if (resolution.status === "UNUSABLE") {
       const reason = resolution.reason ?? "SECRET_EXPIRED";

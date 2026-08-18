@@ -52,6 +52,8 @@ const claimedAt = (attemptNumber: number): ClaimedDelivery => ({
 
 interface Harness {
   readonly deps: DeliverNotificationDependencies;
+  /** Which source ids the resolver was asked about. */
+  readonly resolvedSources: string[];
   readonly completions: CompleteAttemptInput[];
   readonly sent: EmailMessage[];
   readonly order: string[];
@@ -68,10 +70,11 @@ function harness(over: {
   const completions: CompleteAttemptInput[] = [];
   const sent: EmailMessage[] = [];
   const order: string[] = [];
+  const resolvedSources: string[] = [];
   const claim = over.claim === undefined ? claimedAt(1) : over.claim;
 
   return {
-    completions, sent, order,
+    completions, sent, order, resolvedSources,
     deps: {
       transport: {
         claimForDelivery: () => {
@@ -91,8 +94,11 @@ function harness(over: {
       },
       templates: createTemplateRegistry(ALL_TEMPLATES),
       secrets: {
-        resolve: () => Promise.resolve(
-          over.secret ?? { status: "AVAILABLE", secret: "raw-token" }),
+        resolve: (_ref, source) => {
+          resolvedSources.push(source.sourceId);
+          return Promise.resolve(
+            over.secret ?? { status: "AVAILABLE", secret: "raw-token" });
+        },
       },
       links: { build: (path, token) => `https://app.lagda.test${path}?token=${token}` },
       provider: {
@@ -302,5 +308,19 @@ describe("credential refusal", () => {
 
     expect(h.completions[0]?.nextAttemptAt).toBeUndefined();
     expect(h.completions[0]?.outcome).toBe("TERMINAL");
+  });
+});
+
+describe("credential ownership", () => {
+  it("asks the owning source about validity, not the ciphertext", async () => {
+    // The question "is this credential still usable" belongs to the grant that
+    // issued it. Passing the sealed blob instead would ask a domain to look up
+    // a credential by the bytes transport happens to be carrying it in, which
+    // it can only answer no to -- suppressing every message silently.
+    const h = harness();
+
+    await deliverNotification(h.deps)(DELIVERY);
+
+    expect(h.resolvedSources).toEqual(["sag_1"]);
   });
 });
