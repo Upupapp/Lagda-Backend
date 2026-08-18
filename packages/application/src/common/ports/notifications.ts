@@ -591,3 +591,129 @@ export type EmailDeliveryResult =
   | { readonly outcome: "ACCEPTED"; readonly providerMessageReference?: string }
   | { readonly outcome: "FAILED_RETRYABLE" }
   | { readonly outcome: "FAILED_TERMINAL" };
+
+// ── Claiming and attempts (BACKEND-45) ───────────────────────────────────────
+
+export type NotificationDeliveryAttemptId = string & {
+  readonly __brand: "NotificationDeliveryAttemptId";
+};
+
+export interface NotificationDeliveryAttemptIdGenerator {
+  nextNotificationDeliveryAttemptId(): NotificationDeliveryAttemptId;
+}
+
+/**
+ * What one transport attempt concluded. Mirrors the core vocabulary.
+ *
+ * Re-declared here rather than imported from `@lagda/core` because a port must
+ * not force every adapter to depend on the domain package to name a value it
+ * persists. A test asserts the two lists cannot drift.
+ */
+export const ATTEMPT_OUTCOMES = [
+  "ACCEPTED", "RETRYABLE", "TERMINAL", "AMBIGUOUS",
+] as const;
+export type AttemptOutcome = (typeof ATTEMPT_OUTCOMES)[number];
+
+/** Why an attempt failed. Bounded; never a provider's response body (S17). */
+export const ATTEMPT_FAILURE_CODES = [
+  "PROVIDER_TIMEOUT", "PROVIDER_RATE_LIMITED", "PROVIDER_UNAVAILABLE",
+  "PROVIDER_REJECTED", "DESTINATION_INVALID", "CONFIGURATION_INVALID",
+  "CONNECTION_LOST",
+] as const;
+export type AttemptFailureCode = (typeof ATTEMPT_FAILURE_CODES)[number];
+
+export interface NotificationDeliveryAttemptRecord {
+  readonly notificationDeliveryAttemptId: NotificationDeliveryAttemptId;
+  readonly notificationDeliveryId: NotificationDeliveryId;
+  readonly attemptNumber: number;
+  readonly startedAt: number;
+  readonly completedAt?: number;
+  readonly outcome?: AttemptOutcome;
+  readonly failureCode?: AttemptFailureCode;
+  /** Provider-neutral operational metadata. Never evidence (S11). */
+  readonly providerMessageReference?: string;
+}
+
+/** A delivery a worker now holds a lease on, with everything a send needs. */
+export interface ClaimedDelivery {
+  readonly delivery: NotificationDeliveryRecord;
+  readonly intent: NotificationIntentRecord;
+  readonly attempt: NotificationDeliveryAttemptRecord;
+}
+
+export interface ClaimDeliveryInput {
+  readonly notificationDeliveryId: NotificationDeliveryId;
+  readonly attemptId: NotificationDeliveryAttemptId;
+  readonly now: number;
+  /** How long the lease lasts. A dead worker's row is reclaimable after it. */
+  readonly leaseMs: number;
+}
+
+export interface CompleteAttemptInput {
+  readonly notificationDeliveryId: NotificationDeliveryId;
+  readonly attemptId: NotificationDeliveryAttemptId;
+  readonly outcome: AttemptOutcome;
+  readonly failureCode?: AttemptFailureCode;
+  readonly providerMessageReference?: string;
+  /** The state the outcome implies, decided by the domain, not the adapter. */
+  readonly nextState: NotificationDeliveryState;
+  /** When this delivery may be tried again. Absent for terminal outcomes. */
+  readonly nextAttemptAt?: number;
+  readonly now: number;
+}
+
+/**
+ * Claiming, attempts, and lease recovery.
+ *
+ * Separated from `NotificationRepository` because these exist only once a
+ * provider does. Keeping them apart means BACKEND-44's substrate does not grow
+ * methods nothing can call, and a reader can see which half of the system a
+ * given capability belongs to.
+ */
+export interface NotificationTransportRepository {
+  /**
+   * Atomically takes a lease on one delivery and opens an attempt.
+   *
+   * Returns null when the row was not claimable — already claimed, already
+   * terminal, cancelled, suppressed, or not yet due. Null rather than a throw
+   * because at-least-once queue delivery makes losing a claim race the ordinary
+   * case, not a defect (S66, S67).
+   *
+   * The claim and the attempt row are written together (S70), so a provider
+   * call can never happen without a durable record that it was about to.
+   */
+  claimForDelivery(
+    input: ClaimDeliveryInput,
+    transaction: unknown,
+  ): Promise<ClaimedDelivery | null>;
+
+  /**
+   * Closes the attempt and moves the delivery, in one statement each.
+   *
+   * Called AFTER the provider call and in its own short transaction — the
+   * network call must never happen inside a held transaction (S71, S73).
+   */
+  completeAttempt(
+    input: CompleteAttemptInput,
+    transaction: unknown,
+  ): Promise<boolean>;
+
+  /**
+   * Returns leases that expired without completing, so their deliveries can be
+   * retried.
+   *
+   * This is the worker-crash path (S109): a process that dies between claiming
+   * and completing leaves a row in PROCESSING that no queue job will revisit.
+   * The lease is what makes that recoverable without a human.
+   */
+  reclaimExpiredLeases(
+    now: number,
+    limit: number,
+    transaction: unknown,
+  ): Promise<readonly NotificationDeliveryId[]>;
+
+  listAttempts(
+    notificationDeliveryId: NotificationDeliveryId,
+    transaction?: unknown,
+  ): Promise<readonly NotificationDeliveryAttemptRecord[]>;
+}

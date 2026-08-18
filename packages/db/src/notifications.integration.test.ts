@@ -19,12 +19,15 @@ import { sql } from "kysely";
 import type { UserId, WorkspaceId, WorkspaceMemberId } from "@lagda/contracts";
 import type {
   NotificationIntentId, NotificationDeliveryId, NewNotificationIntent,
-  SigningRequestRecipientId,
+  NotificationDeliveryAttemptId, SigningRequestRecipientId,
 } from "@lagda/application";
 import { createDatabase, type LagdaDatabase } from "./client/index.js";
 import { loadDatabaseConfig } from "./config/index.js";
 import { createTransactionManager } from "./transactions/index.js";
 import { createNotificationRepository } from "./repositories/notifications.js";
+import {
+  createNotificationTransportRepository,
+} from "./repositories/notification-transport.js";
 import {
   createTestDatabase, truncateAll, hasIntegrationDatabase, seedUser,
 } from "./testing/harness.js";
@@ -326,6 +329,105 @@ suite("notifications (RLS, runtime role)", () => {
         r => r.findDeliveryById(created.delivery.notificationDeliveryId));
 
       expect(delivery?.destination).toBe("alice@example.test");
+    });
+  });
+
+  describe("claiming (BACKEND-45)", () => {
+    const claimIn = async <T>(
+      workspaceId: WorkspaceId,
+      body: (repo: ReturnType<typeof createNotificationTransportRepository>) => Promise<T>,
+    ): Promise<T> =>
+      app.db.transaction().execute(async trx => {
+        await sql`select set_config('lagda.workspace_id', ${workspaceId}, true)`.execute(trx);
+        return body(createNotificationTransportRepository(trx));
+      });
+
+    const claim = (attemptId: string, now = AT) => ({
+      notificationDeliveryId: "ndel_a" as NotificationDeliveryId,
+      attemptId: attemptId as NotificationDeliveryAttemptId,
+      now,
+      leaseMs: 60_000,
+    });
+
+    it("lets exactly one of two CONCURRENT workers claim a delivery", async () => {
+      // S66, S128. The race a fake cannot model, and the reason the claim is
+      // one conditional UPDATE rather than a read followed by a write.
+      await inWorkspace(WS_A, "a", r => r.createIfAbsent(workspaceIntent("grant_1", "a"), null));
+
+      const [first, second] = await Promise.all([
+        claimIn(WS_A, r => r.claimForDelivery(claim("nda_1"), null)),
+        claimIn(WS_A, r => r.claimForDelivery(claim("nda_2"), null)),
+      ]);
+
+      expect([first, second].filter(result => result !== null)).toHaveLength(1);
+    });
+
+    it("refuses to claim a cancelled delivery", async () => {
+      const created = await inWorkspace(WS_A, "a",
+        r => r.createIfAbsent(workspaceIntent("grant_1", "a"), null));
+      await inWorkspace(WS_A, "b", r => r.stopPendingDelivery(
+        created.delivery.notificationDeliveryId, "CANCELLED", "SOURCE_CANCELLED", null));
+
+      expect(await claimIn(WS_A, r => r.claimForDelivery(claim("nda_1"), null))).toBeNull();
+    });
+
+    it("burns an attempt on claim, not on completion", async () => {
+      // A crash mid-send still consumes the budget. The alternative retries
+      // forever against a provider that keeps timing out.
+      await inWorkspace(WS_A, "a", r => r.createIfAbsent(workspaceIntent("grant_1", "a"), null));
+      const claimed = await claimIn(WS_A, r => r.claimForDelivery(claim("nda_1"), null));
+
+      expect(claimed?.attempt.attemptNumber).toBe(1);
+      const row = await owner.db.selectFrom("notification_deliveries")
+        .select(["attempt_count", "state"]).executeTakeFirstOrThrow();
+      expect(row.attempt_count).toBe(1);
+      expect(row.state).toBe("PROCESSING");
+    });
+
+    it("refuses a second completion of one attempt", async () => {
+      // A retried job whose first pass succeeded after the connection dropped
+      // must not write a second outcome over the first.
+      await inWorkspace(WS_A, "a", r => r.createIfAbsent(workspaceIntent("grant_1", "a"), null));
+      await claimIn(WS_A, r => r.claimForDelivery(claim("nda_1"), null));
+
+      const complete = {
+        notificationDeliveryId: "ndel_a" as NotificationDeliveryId,
+        attemptId: "nda_1" as NotificationDeliveryAttemptId,
+        outcome: "ACCEPTED" as const,
+        providerMessageReference: "ref-1",
+        nextState: "PROVIDER_ACCEPTED" as const,
+        now: AT + 1_000,
+      };
+
+      expect(await claimIn(WS_A, r => r.completeAttempt(complete, null))).toBe(true);
+      expect(await claimIn(WS_A, r => r.completeAttempt(complete, null))).toBe(false);
+    });
+
+    it("reclaims a lease its worker died holding", async () => {
+      // S109. A process that dies between claim and completion leaves a row no
+      // queue job revisits; the lease is what makes that recoverable.
+      await inWorkspace(WS_A, "a", r => r.createIfAbsent(workspaceIntent("grant_1", "a"), null));
+      await claimIn(WS_A, r => r.claimForDelivery(claim("nda_1"), null));
+
+      const reclaimed = await claimIn(WS_A,
+        r => r.reclaimExpiredLeases(AT + 120_000, 10, null));
+
+      expect(reclaimed).toHaveLength(1);
+      const row = await owner.db.selectFrom("notification_deliveries")
+        .select(["state", "claim_expires_at"]).executeTakeFirstOrThrow();
+      // FAILED_RETRYABLE, not PENDING: the attempt was made and its budget
+      // consumed, and calling it pending would present a crashed send as work
+      // that had never been tried.
+      expect(row.state).toBe("FAILED_RETRYABLE");
+      expect(row.claim_expires_at).toBeNull();
+    });
+
+    it("leaves a live lease alone", async () => {
+      await inWorkspace(WS_A, "a", r => r.createIfAbsent(workspaceIntent("grant_1", "a"), null));
+      await claimIn(WS_A, r => r.claimForDelivery(claim("nda_1"), null));
+
+      expect(await claimIn(WS_A, r => r.reclaimExpiredLeases(AT + 1_000, 10, null)))
+        .toHaveLength(0);
     });
   });
 

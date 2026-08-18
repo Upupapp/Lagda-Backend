@@ -7,7 +7,13 @@ import type {
 } from "../common/ports/notifications.js";
 import type { SealedDeliverySecret } from "../common/ports/signing-access.js";
 import type { SigningRequestRecipientId } from "../common/ports/signing-requests.js";
-import { NOTIFICATION_TYPES, NOTIFICATION_CHANNELS } from "../common/ports/notifications.js";
+import {
+  NOTIFICATION_TYPES, NOTIFICATION_CHANNELS, NOTIFICATION_DELIVERY_STATES,
+  ATTEMPT_OUTCOMES,
+} from "../common/ports/notifications.js";
+import {
+  ATTEMPT_OUTCOMES as CORE_ATTEMPT_OUTCOMES, deliveryStateForOutcome,
+} from "@lagda/core";
 import type { WorkspaceId, UserId } from "@lagda/contracts";
 import { createTemplateRegistry } from "./template-registry.js";
 import { ALL_TEMPLATES } from "./templates.js";
@@ -343,5 +349,21 @@ describe("reconciliation", () => {
 
     expect(report.stranded).toHaveLength(1);
     expect(mutations).toBe(0);
+  });
+});
+
+describe("attempt vocabulary", () => {
+  it("cannot drift from the domain's", () => {
+    // The port re-declares these rather than importing from `@lagda/core`, so
+    // an adapter need not depend on the domain package to name a value it
+    // persists. That is only safe while the two lists agree.
+    expect([...ATTEMPT_OUTCOMES]).toEqual([...CORE_ATTEMPT_OUTCOMES]);
+  });
+
+  it("maps every outcome to a state the delivery states declare", () => {
+    for (const outcome of ATTEMPT_OUTCOMES) {
+      expect(NOTIFICATION_DELIVERY_STATES as readonly string[])
+        .toContain(deliveryStateForOutcome(outcome));
+    }
   });
 });
