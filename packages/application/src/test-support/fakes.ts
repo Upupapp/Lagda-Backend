@@ -91,6 +91,7 @@ import type {
 } from "../common/ports/signing-requests.js";
 import type {
   NotificationRepository, NewNotificationIntent, NotificationIntentRecord,
+  NotificationDispatchRepository,
   NotificationDeliveryRecord, NotificationIntentId, NotificationDeliveryId,
   NotificationIntentIdGenerator, NotificationDeliveryIdGenerator,
   NotificationTransportRepository,
@@ -1328,6 +1329,28 @@ function toIntentRefRow(row: WorkflowIntentRow): WorkflowAdvanceIntentRef {
   };
 }
 
+/**
+ * The dispatch index, which this store does not model.
+ *
+ * Throws rather than returning an empty list. The in-memory store holds no
+ * notification deliveries at all, so "nothing is due" would be a fabricated
+ * answer indistinguishable from a real one — and a dispatcher test that passed
+ * against it would prove nothing. A test that needs this needs real
+ * PostgreSQL, where the trigger that maintains the index actually runs.
+ */
+function dispatchIndex(): NotificationDispatchRepository {
+  const unmodelled = (): never => {
+    throw new Error(
+      "The in-memory store does not model notification deliveries. "
+      + "Dispatch behaviour is integration-tested against PostgreSQL.");
+  };
+  return {
+    listDue: unmodelled,
+    listExpiredClaims: unmodelled,
+    findByProviderReference: unmodelled,
+  };
+}
+
 function workflowReconciliation(
   store: InMemoryStore,
 ): SigningWorkflowReconciliationRepository {
@@ -2390,6 +2413,7 @@ export class FakeTransactionManager implements TransactionManager {
       const result = await operation({
         scope: "global",
         signingWorkflowReconciliation: workflowReconciliation(this.store),
+        notificationDispatch: dispatchIndex(),
       });
       this.committed++;
       return result;

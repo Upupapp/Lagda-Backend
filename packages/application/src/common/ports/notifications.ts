@@ -680,6 +680,63 @@ export interface CompleteAttemptInput {
  * methods nothing can call, and a reader can see which half of the system a
  * given capability belongs to.
  */
+/**
+ * A delivery a background process knows by id, and the scope it must be
+ * touched in.
+ *
+ * Identifiers only, deliberately. This is what a caller with no tenant is
+ * allowed to learn: that some delivery needs attention, and where to go to
+ * attend to it. Everything else about the message stays behind RLS.
+ */
+export interface DispatchRef {
+  readonly notificationDeliveryId: NotificationDeliveryId;
+  readonly scope: NotificationScope;
+}
+
+/**
+ * Finding transport work without a tenant. **Global scope only** (OD-174, S36).
+ *
+ * ── Why this exists at all ────────────────────────────────────────────────
+ *
+ * A dispatcher must find due deliveries across every workspace; a reclaim sweep
+ * must find abandoned leases the same way; and a provider webhook arrives with
+ * one message reference and no session, no workspace and no user. Under
+ * `tenant_isolation` all three see nothing, which is correct fail-closed
+ * behaviour and is why this cannot simply be "run it in `runGlobal`".
+ *
+ * ── What makes it safe ────────────────────────────────────────────────────
+ *
+ * Not a predicate — the CONTENT of the table behind it. Opaque identifiers, a
+ * bounded state and three timestamps. No destination, no subject, no body, no
+ * failure reason, no credential. The same argument `idempotency_records` and
+ * `signing_workflow_advance_intents` already make.
+ *
+ * Every method returns a `DispatchRef` and nothing richer. The caller then
+ * enters the named scope properly and does the work under ordinary tenancy —
+ * so a global read never becomes a global write.
+ */
+export interface NotificationDispatchRepository {
+  /** Deliveries that are sendable and whose backoff has elapsed. */
+  listDue(now: number, limit: number): Promise<readonly DispatchRef[]>;
+
+  /**
+   * Deliveries whose lease expired without completing.
+   *
+   * The worker-crash path (S109). Returned so the caller can reclaim each one
+   * inside its own scope rather than reclaiming across tenants in one statement.
+   */
+  listExpiredClaims(now: number, limit: number): Promise<readonly DispatchRef[]>;
+
+  /**
+   * Resolves a provider callback to a scope.
+   *
+   * By message reference and never by the destination address the provider
+   * reports (S39): an attacker who guesses an address must not be able to reach
+   * the delivery belonging to it.
+   */
+  findByProviderReference(reference: string): Promise<DispatchRef | null>;
+}
+
 export interface NotificationTransportRepository {
   /**
    * Atomically takes a lease on one delivery and opens an attempt.

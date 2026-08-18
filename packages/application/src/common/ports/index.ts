@@ -38,6 +38,7 @@ import type {
 import type { NormalizedEmail } from "../../auth/email-identity.js";
 import type {
   NotificationRepository, NotificationTransportRepository,
+  NotificationDispatchRepository,
 } from "./notifications.js";
 
 // ── Time ─────────────────────────────────────────────────────────────────────
@@ -423,17 +424,28 @@ export interface GlobalUnitOfWork {
   /**
    * Outstanding signing-workflow advances, across every tenant (BACKEND-37).
    *
-   * The ONE exception to "global mode is not a route to workspace data", and it
-   * is narrow enough to state exactly: the table it reads carries no policy
-   * because a cross-tenant scan cannot have one without `BYPASSRLS`, and it
-   * returns IDENTIFIERS ONLY. The caller then enters each workspace properly
-   * and does the work under normal tenancy.
+   * One of TWO exceptions to "global mode is not a route to workspace data",
+   * and both are narrow enough to state exactly: the table each reads carries
+   * no policy because a cross-tenant scan cannot have one without `BYPASSRLS`,
+   * and each returns IDENTIFIERS ONLY. The caller then enters each workspace
+   * properly and does the work under normal tenancy.
    *
    * `idempotency_records` established the shape. Nothing here can read a name,
    * an address, a field value or a credential, because none of those is in the
    * table.
    */
   readonly signingWorkflowReconciliation: SigningWorkflowReconciliationRepository;
+
+  /**
+   * Transport work that needs finding without a tenant (BACKEND-45, OD-174).
+   *
+   * The second exception, and the same shape as the first by design rather than
+   * by coincidence: `notification_dispatch_index` is derived, unpoliced and
+   * made of identifiers. It answers "which deliveries are due", "which leases
+   * expired" and "which delivery does this provider reference name" — and
+   * nothing else about any of them.
+   */
+  readonly notificationDispatch: NotificationDispatchRepository;
 }
 
 /**

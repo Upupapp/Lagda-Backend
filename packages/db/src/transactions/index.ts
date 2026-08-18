@@ -51,6 +51,9 @@ import { createNotificationRepository } from "../repositories/notifications.js";
 import {
   createNotificationTransportRepository,
 } from "../repositories/notification-transport.js";
+import {
+  createNotificationDispatchRepository,
+} from "../repositories/notification-dispatch.js";
 import { createRecipientCeremonyRepository } from "../repositories/signing-ceremony.js";
 import { createRecipientSubmissionRepository } from "../repositories/signing-submission.js";
 import type {
@@ -316,6 +319,11 @@ export function createTransactionManager(db: Kysely<Database>): TransactionManag
           // because a cross-tenant scan cannot have one without BYPASSRLS.
           signingWorkflowReconciliation:
             createSigningWorkflowReconciliationRepository(trx),
+          // The second identifiers-only exception, and the same shape as the
+          // first: `notification_dispatch_index` is derived, unpoliced and made
+          // of ids. It says which deliveries need attention and where to go to
+          // attend to them, and nothing about the messages themselves.
+          notificationDispatch: createNotificationDispatchRepository(trx),
         });
       });
     },

@@ -545,6 +545,29 @@ export interface NotificationDeliveriesTable {
 }
 
 /**
+ * The map from a delivery to the scope it must be touched in.
+ *
+ * DERIVED from `notification_deliveries` by a trigger, and the only notification
+ * table with **no** row level security. A dispatcher, a reclaim sweep and a
+ * provider webhook all have to find work without a tenant, and a cross-tenant
+ * scan of a policied table would need `BYPASSRLS` (INV-334). The control is the
+ * column list: opaque identifiers, a bounded state, three timestamps, and
+ * nothing about anybody.
+ *
+ * Read globally to learn a scope; every mutation still happens in a scoped
+ * transaction. See `db/SYSTEM_CONTEXT_OPTIONS.md` and migration 034.
+ */
+export interface NotificationDispatchIndexTable {
+  notification_delivery_id: string;
+  workspace_id: ColumnType<string | null, string | null, never>;
+  user_id: ColumnType<string | null, string | null, never>;
+  state: ColumnType<string, string, string>;
+  next_attempt_at: ColumnType<Date | null, Date | null, Date | null>;
+  claim_expires_at: ColumnType<Date | null, Date | null, Date | null>;
+  provider_message_reference: ColumnType<string | null, string | null, string | null>;
+}
+
+/**
  * One transport attempt against a provider.
  *
  * Deliberately thin: no response blob, no rendered body, no secret. A raw
@@ -1157,6 +1180,7 @@ export interface Database {
   notification_intents: NotificationIntentsTable;
   notification_deliveries: NotificationDeliveriesTable;
   notification_delivery_attempts: NotificationDeliveryAttemptsTable;
+  notification_dispatch_index: NotificationDispatchIndexTable;
   recipient_signing_sessions: RecipientSigningSessionsTable;
   document_artifacts: DocumentArtifactsTable;
   evidence_events: EvidenceEventsTable;
