@@ -9,6 +9,13 @@
 //   no delivery state is claimed without a provider (S267, S312)
 //   no body, address or high-cardinality id is logged or measured (S280-S282)
 //
+// BACKEND-45 adds three more, all of which were true by inspection when the
+// transport was written and none of which stays true on its own:
+//
+//   the transport cannot reach the domain it reports on (S37, S38, S295)
+//   the provider credential is never interpolated anywhere (S96, S217, S218)
+//   the transport logs nothing at all                    (S214-S216)
+//
 // Each of these is one careless commit away from being false, and none of them
 // is visible in a diff that looks like a feature.
 
@@ -38,6 +45,30 @@ function sourceFiles(dir: string): string[] {
 }
 
 const read = (file: string): string => readFileSync(file, "utf8");
+
+/**
+ * Source with comments removed.
+ *
+ * The transport files explain at length what they must not touch, naming
+ * `SigningRequest` and `EvidenceEvent` in order to say they are unreachable. A
+ * check that read those sentences as violations would punish the documentation
+ * that makes the rule legible.
+ */
+const code = (file: string): string =>
+  read(file).replace(/\/\*[\s\S]*?\*\//gu, "").replace(/^\s*\/\/.*$/gmu, "");
+
+/** Every import specifier in a source, including dynamic and `require` forms. */
+function importsOf(source: string): string[] {
+  const specifiers: string[] = [];
+  const pattern = /(?:from\s*|import\s*\(\s*|require\s*\(\s*|import\s+)["']([^"']+)["']/gu;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(source)) !== null) {
+    const specifier = match[1];
+    if (specifier !== undefined) specifiers.push(specifier);
+  }
+  return specifiers;
+}
+
 const allSources = sourceFiles(PACKAGES);
 const productionSources = allSources.filter(file => !file.endsWith(".test.ts"));
 const notificationSources = productionSources.filter(file =>
@@ -313,5 +344,101 @@ describe("layering", () => {
       expect(source).not.toContain("@lagda/db");
       expect(source).not.toContain("kysely");
     }
+  });
+});
+
+// ── BACKEND-45 ──────────────────────────────────────────────────────────────
+
+const emailSources = productionSources.filter(file =>
+  file.includes(path.join("email", "src")));
+
+/** The transport files: the vendor adapter, and the use case that drives it. */
+const transportSources = [
+  ...emailSources,
+  path.join(PACKAGES, "application", "src", "notifications", "deliver.ts"),
+];
+
+describe("the transport cannot reach the domain it reports on", () => {
+  it("has an adapter package to check", () => {
+    // A filter that silently matched nothing would make every assertion below
+    // pass by vacuum -- the failure mode an architecture test is least able to
+    // notice about itself.
+    expect(emailSources.length).toBeGreaterThan(0);
+  });
+
+  it("imports nothing from a signing, evidence or audit module", () => {
+    // S37, S38. A delivery outcome is not a fact about a signer. The rule is
+    // held by the import graph rather than by care: a file that cannot name a
+    // SigningRequest cannot update one under deadline pressure.
+    const offenders: string[] = [];
+    for (const file of transportSources) {
+      for (const specifier of importsOf(code(file))) {
+        if (/signing|evidence|audit|ceremony|submission|recipients/u.test(specifier)) {
+          offenders.push(`${path.relative(ROOT, file)} -> ${specifier}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("names no signing, recipient or evidence record", () => {
+    // The import check alone would miss a repository reached through an
+    // injected dependency, so the identifiers themselves are banned too.
+    const forbidden = [
+      "SigningRequest", "EvidenceEvent", "RecipientProgress",
+      "RecipientSubmission", "signingRequestId", "recipientId",
+    ];
+    for (const file of transportSources) {
+      const source = code(file);
+      for (const name of forbidden) {
+        expect({ file: path.relative(ROOT, file), name, found: source.includes(name) })
+          .toEqual({ file: path.relative(ROOT, file), name, found: false });
+      }
+    }
+  });
+
+  it("confirms a webhook event into two transport states and no others", () => {
+    // S37. A confirmed provider event may establish DELIVERED or BOUNCED.
+    // PROVIDER_ACCEPTED is established synchronously by the send call, and a
+    // callback claiming it later would be a provider narrating LAGDA's past.
+    const confirmer = code(path.join(PACKAGES, "email", "src", "postmark-events.ts"));
+    const states = new Set(
+      [...confirmer.matchAll(/"(PENDING|PROCESSING|PROVIDER_ACCEPTED|DELIVERED|BOUNCED|FAILED_RETRYABLE|FAILED_TERMINAL|SUPPRESSED|CANCELLED)"/gu)]
+        .map(match => match[1]));
+    expect([...states].sort()).toEqual(["BOUNCED", "DELIVERED"]);
+  });
+});
+
+describe("the provider credential never leaves its header", () => {
+  it("is never interpolated into a string", () => {
+    // S96, S217, S218. The token is a header value and nothing else. An
+    // interpolation is how it reaches a URL, a log line or an error message --
+    // all three of which are retained somewhere LAGDA does not control.
+    for (const file of emailSources) {
+      expect(code(file)).not.toMatch(/\$\{[^}]*(serverToken|webhookSecret)/u);
+    }
+  });
+
+  it("logs nothing at all", () => {
+    // S214-S216, S220. The transport handles a destination address, a subject,
+    // a rendered body and a credential. It has no logger dependency, which is
+    // the only version of this rule that cannot be got wrong in a hurry.
+    for (const file of transportSources) {
+      const source = code(file);
+      expect(source).not.toContain("console.");
+      expect(source).not.toMatch(/log(ger)?\.(info|warn|error|debug|trace)\(/u);
+    }
+  });
+
+  it("returns no provider text to its caller", () => {
+    // S219. Provider errors routinely echo the destination address, the
+    // subject and the request payload. None of that can be redacted later if
+    // it never crosses the boundary -- so the result carries an outcome and a
+    // reference, and the response body is read for nothing else.
+    const adapter = code(path.join(PACKAGES, "email", "src", "postmark.ts"));
+    // `MessageID` is read and returned; `Message` -- Postmark's human-readable
+    // error text -- is not read at all, and is not even declared.
+    expect(adapter).not.toMatch(/\bMessage\b(?!ID|Stream)/u);
+    expect(adapter).not.toContain("statusText");
   });
 });

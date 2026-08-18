@@ -43,10 +43,15 @@ const TERMINAL_ERROR_CODES = new Set([
   409, // JSON required
 ]);
 
+/**
+ * The two fields LAGDA reads. `Message` -- Postmark's human-readable error
+ * text -- is deliberately not declared: it routinely echoes the destination
+ * address, the subject and the request payload, and a field that is not in the
+ * type cannot be returned by accident (S219).
+ */
 interface PostmarkResponse {
   readonly ErrorCode?: number;
   readonly MessageID?: string;
-  readonly Message?: string;
 }
 
 /**
