@@ -71,8 +71,15 @@ describe("the provider stays inside its adapter", () => {
    */
   const ADAPTER_PATH = path.join("db", "src", "email");
 
-  /** The SDK ADR-036 selected. Everything else stays forbidden outright. */
-  const SELECTED_PROVIDER_PACKAGES = ["@aws-sdk/client-sesv2", "@aws-sdk/client-ses"];
+  /**
+   * The SDK ADR-037 selected. Everything else stays forbidden outright.
+   *
+   * ADR-036 chose Amazon SES and was superseded the same day when the
+   * deployment stack turned out to contain no AWS. The AWS packages are
+   * therefore back in the forbidden set, not merely unused — a rejected vendor
+   * appearing anywhere would mean a second transport path.
+   */
+  const SELECTED_PROVIDER_PACKAGES = ["postmark"];
 
   const isAdapter = (file: string): boolean => file.includes(ADAPTER_PATH);
 
@@ -141,6 +148,9 @@ describe("the provider stays inside its adapter", () => {
 
     for (const file of insulated) {
       const source = read(file).toLowerCase();
+      // Substrings, so each must be distinctive. A bare "ses" would match
+      // "responses" and "uses" and make this test a nuisance rather than a
+      // guard; "@aws-sdk" and "sesv2" identify the SDK unambiguously.
       for (const vendor of ["sendgrid", "postmark", "mailgun", "nodemailer",
         "@aws-sdk", "sesv2"]) {
         expect(source, `${file} names ${vendor}`).not.toContain(vendor);
