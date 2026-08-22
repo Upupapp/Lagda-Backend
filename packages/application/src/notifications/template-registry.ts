@@ -262,11 +262,6 @@ export const PasswordResetModelV1 = Type.Object(
   { additionalProperties: false },
 );
 
-export const MfaOtpModelV1 = Type.Object(
-  { recipientName: DisplayName },
-  { additionalProperties: false },
-);
-
 export const WorkspaceInvitationModelV1 = Type.Object(
   {
     inviterDisplayName: DisplayName,

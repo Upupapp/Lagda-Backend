@@ -85,15 +85,6 @@ export const NOTIFICATION_POLICIES: Record<NotificationType, NotificationPolicy>
     secretKind: "CHALLENGE",
     scopeKind: "GLOBAL_USER",
   },
-  MFA_OTP: {
-    notificationType: "MFA_OTP",
-    templateKey: "mfa-otp",
-    channel: "EMAIL",
-    sourceKind: "SECURITY_CHALLENGE",
-    audienceKind: "USER",
-    secretKind: "CHALLENGE",
-    scopeKind: "GLOBAL_USER",
-  },
   WORKSPACE_INVITATION: {
     notificationType: "WORKSPACE_INVITATION",
     templateKey: "workspace-invitation",

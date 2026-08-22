@@ -31,8 +31,7 @@
 import type { Static } from "@sinclair/typebox";
 import { defineTemplate } from "./template-registry.js";
 import {
-  AccountEmailVerificationModelV1, PasswordResetModelV1, MfaOtpModelV1,
-  WorkspaceInvitationModelV1, SigningInvitationModelV1,
+  AccountEmailVerificationModelV1, PasswordResetModelV1, WorkspaceInvitationModelV1, SigningInvitationModelV1,
 } from "./template-registry.js";
 import { escapeHtml } from "./rendering.js";
 
@@ -130,39 +129,6 @@ export const passwordResetV1 = defineTemplate({
   },
 });
 
-export const mfaOtpV1 = defineTemplate({
-  key: "mfa-otp",
-  version: 1,
-  locale: "en",
-  schema: MfaOtpModelV1,
-  secretBearing: true,
-  render: (input, context) => {
-    const name = input.recipientName;
-    // A code, not a link: there is nothing to click, and `buildLink` is
-    // deliberately not called. A one-time code in a URL would be a code the
-    // recipient's browser history keeps.
-    const code = context.secret as string;
-    return {
-      subject: `Your ${PRODUCT} verification code`,
-      textBody: [
-        `Hello ${name},`,
-        ``,
-        `Your verification code is: ${code}`,
-        ``,
-        `Do not share this code with anyone. ${PRODUCT} staff will never ask for it.`,
-      ].join("\n"),
-      htmlBody: htmlDocument(
-        `Your verification code`,
-        `<p>Hello ${escapeHtml(name)},</p>` +
-          `<p style="font-size:28px;letter-spacing:4px"><strong>` +
-          `${escapeHtml(code)}</strong></p>` +
-          `<p>Do not share this code with anyone. ${PRODUCT} staff will never ` +
-          `ask for it.</p>`,
-      ),
-    };
-  },
-});
-
 export const workspaceInvitationV1 = defineTemplate({
   key: "workspace-invitation",
   version: 1,
@@ -241,13 +207,11 @@ export const signingInvitationV1 = defineTemplate({
 export const ALL_TEMPLATES = [
   accountEmailVerificationV1,
   passwordResetV1,
-  mfaOtpV1,
   workspaceInvitationV1,
   signingInvitationV1,
 ] as const;
 
 export type AccountEmailVerificationModel = Static<typeof AccountEmailVerificationModelV1>;
 export type PasswordResetModel = Static<typeof PasswordResetModelV1>;
-export type MfaOtpModel = Static<typeof MfaOtpModelV1>;
 export type WorkspaceInvitationModel = Static<typeof WorkspaceInvitationModelV1>;
 export type SigningInvitationModel = Static<typeof SigningInvitationModelV1>;

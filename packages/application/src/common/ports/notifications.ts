@@ -88,7 +88,6 @@ export interface NotificationDeliveryIdGenerator {
 export const NOTIFICATION_TYPES = [
   "ACCOUNT_EMAIL_VERIFICATION",
   "PASSWORD_RESET",
-  "MFA_OTP",
   "WORKSPACE_INVITATION",
   "SIGNING_INVITATION",
 ] as const;
@@ -295,7 +294,6 @@ export interface NotificationTemplateRef {
 export const NOTIFICATION_TEMPLATE_KEYS = [
   "account-email-verification",
   "password-reset",
-  "mfa-otp",
   "workspace-invitation",
   "signing-invitation",
 ] as const;

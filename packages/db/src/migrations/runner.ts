@@ -45,6 +45,7 @@ import * as m034 from "./034_notification_dispatch_index.js";
 import * as m035 from "./035_password_reset_sealed_credential.js";
 import * as m036 from "./036_invitation_sealed_credential.js";
 import * as m037 from "./037_verification_sealed_credential.js";
+import * as m038 from "./038_retire_mfa_otp_notification.js";
 
 /**
  * Migrations listed explicitly rather than read from disk.
@@ -94,6 +95,7 @@ const MIGRATIONS: Record<string, Migration> = {
   "035_password_reset_sealed_credential": m035,
   "036_invitation_sealed_credential": m036,
   "037_verification_sealed_credential": m037,
+  "038_retire_mfa_otp_notification": m038,
 };
 
 class ExplicitMigrationProvider implements MigrationProvider {

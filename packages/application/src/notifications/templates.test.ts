@@ -189,18 +189,6 @@ describe("secrets", () => {
     expect(rendered.textBody).toContain("https://app.lagda.test/sign?token=raw-secret-value");
   });
 
-  it("puts the OTP in the body and never in a URL", () => {
-    // A code in a link is a code the recipient's browser history keeps.
-    const rendered = registry.render(
-      { key: "mfa-otp", version: 1 },
-      { recipientName: "Maria Santos" },
-      context("482913"),
-    );
-
-    expect(rendered.textBody).toContain("482913");
-    expect(rendered.textBody).not.toContain("http");
-  });
-
   it("never places a secret in a template's persisted input", () => {
     // S253. The frozen model holds display data only; the credential arrives
     // as a render-time argument and is gone when the call returns.

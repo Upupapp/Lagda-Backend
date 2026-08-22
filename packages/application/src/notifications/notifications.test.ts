@@ -138,7 +138,7 @@ describe("the policy table", () => {
   it("scopes account security messages to the user, never a workspace", () => {
     // S46, S186. Filing a password reset under a workspace would leak it to
     // that workspace's admins and orphan it when the workspace is deleted.
-    for (const type of ["PASSWORD_RESET", "MFA_OTP", "ACCOUNT_EMAIL_VERIFICATION"] as const) {
+    for (const type of ["PASSWORD_RESET", "ACCOUNT_EMAIL_VERIFICATION"] as const) {
       expect(policyFor(type).scopeKind).toBe("GLOBAL_USER");
     }
   });
@@ -153,8 +153,17 @@ describe("the policy table", () => {
     // S102, S233. Auth flows persist digests and never raw values; forcing them
     // to SEALED would start storing secrets that today are not stored at all.
     expect(policyFor("PASSWORD_RESET").secretKind).toBe("CHALLENGE");
-    expect(policyFor("MFA_OTP").secretKind).toBe("CHALLENGE");
+    expect(policyFor("ACCOUNT_EMAIL_VERIFICATION").secretKind).toBe("CHALLENGE");
     expect(policyFor("SIGNING_INVITATION").secretKind).toBe("SEALED");
+  });
+
+  it("declares no account-login OTP type", () => {
+    // Removed by BACKEND-45. BACKEND-16's own inventory found there is no
+    // email-OTP login flow in the product: the factor is TOTP, computed from a
+    // shared secret and never issued or delivered. The "Email OTP" the product
+    // advertises is SIGNER authentication -- a recipient, not a user -- and it
+    // would need its own type with its own audience and scope.
+    expect(NOTIFICATION_TYPES as readonly string[]).not.toContain("MFA_OTP");
   });
 
   it("declares no reminder or expiration type", () => {
@@ -216,11 +225,11 @@ describe("creating an intent", () => {
     // key is built on source identity and not on the user.
     const { run } = create();
     const first = await run(
-      { ...passwordReset, notificationType: "MFA_OTP", sourceId: "chal_1" },
+      { ...passwordReset, sourceId: "chal_1" },
       undefined,
     );
     const second = await run(
-      { ...passwordReset, notificationType: "MFA_OTP", sourceId: "chal_2" },
+      { ...passwordReset, sourceId: "chal_2" },
       undefined,
     );
 
