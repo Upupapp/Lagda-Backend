@@ -52,6 +52,7 @@ import { registerCancelRoutes } from "../signing-requests/cancel-routes.js";
 import {
   registerPublicVerificationRoutes,
 } from "../verification/public-verification-routes.js";
+import { registerAuditRoutes } from "../audit/audit-routes.js";
 import {
   registerProviderWebhookRoutes,
 } from "../notifications/provider-webhook-routes.js";
@@ -532,6 +533,42 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
           workflowDependencies: cancel,
           ...(limiter === undefined ? {} : { rateLimit: { limiter, metrics } }),
           metrics,
+        });
+      }
+
+      // BACKEND-43's audit read. Inside the authenticated scope, so it takes
+      // session validation and CSRF from WHERE it is registered, like every
+      // other workspace read.
+      //
+      // Found unwired by the system sweep -- written, exported, and referenced
+      // by nothing, so a workspace's own audit trail was unreachable over HTTP.
+      // The same defect as the identity surface, in a different corner.
+      if (workspaces.audit !== undefined) {
+        const audit = workspaces.audit;
+        registerAuditRoutes(scope, {
+          auditDependencies: audit,
+          actorOf: (request: FastifyRequest) => Promise.resolve(
+            request.auth.status === "authenticated"
+              ? { userId: request.auth.actor.userId }
+              : null,
+          ),
+          // Unreachable in practice: the scope's `requireSession` has already
+          // refused an anonymous caller. Supplied anyway rather than thrown,
+          // because a route that depends on a hook for its own correctness is
+          // a route that breaks silently when somebody moves it.
+          unauthenticated: reply => reply.code(401).send({
+            error: {
+              code: "AUTHENTICATION_REQUIRED",
+              message: "Sign in to continue.",
+            },
+          }),
+          // An audit trail is who did what and when, for one legal document.
+          // `no-store`, not `no-cache`: the latter lets a shared cache KEEP the
+          // response and merely revalidate it.
+          noStore: reply => {
+            void reply.header("Cache-Control", "no-store");
+            void reply.header("Pragma", "no-cache");
+          },
         });
       }
 

@@ -21,6 +21,7 @@ import type {
   SendSigningRequestDependencies, SigningAccessDependencies,
   SigningCeremonyDependencies, SigningSubmissionDependencies,
   SigningDeclineDependencies, SigningWorkflowDependencies,
+  AuditTrailDependencies,
 } from "@lagda/application";
 
 /**
@@ -213,6 +214,14 @@ export interface WorkspaceDependencies {
    * at the point of use rather than at boot.
    */
   readonly sendSigningRequest?: () => SendSigningRequestDependencies;
+  /**
+   * The private audit trail for one signing request (BACKEND-43).
+   *
+   * Optional like every other group. Found UNWIRED by the system sweep: the
+   * registrar existed, was exported, and was referenced by nothing, so a
+   * workspace could not read its own audit trail over HTTP.
+   */
+  readonly audit?: () => AuditTrailDependencies;
   /** BACKEND-37, routed by OD-154. The sender's withdrawal. */
   readonly cancelSigningRequest?: () => SigningWorkflowDependencies;
 }
