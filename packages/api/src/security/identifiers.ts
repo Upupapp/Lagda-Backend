@@ -1,0 +1,188 @@
+// Production identifier generators.
+//
+// Every domain id the application layer mints has, until now, had exactly ONE
+// implementation: a `Sequential*` fake in `@lagda/application/test-support`,
+// counting `doc_1`, `doc_2`, `doc_3`. Those fakes are correct for tests — a
+// test that cannot predict the id it is about to create is a test that has to
+// read the id back before it can assert anything.
+//
+// They are catastrophic in production, in three separate ways:
+//
+//   RESTART   the counter lives in process memory, so every deploy and every
+//             crash restarts it at 1 and the next insert collides with a row
+//             created before the restart.
+//   REPLICAS  two API processes behind a load balancer both mint `doc_1`.
+//             There is no coordination, so the collision is immediate rather
+//             than eventual.
+//   GUESSABLE `doc_41` tells the holder that `doc_1..40` exist and how to ask
+//             for them. Authorization is what actually stops that read, but an
+//             enumerable identifier turns any authorization slip into a
+//             complete inventory rather than a single leaked row.
+//
+// This module is what the composition uses instead. It is deliberately in the
+// same directory as `crypto.ts` and follows its construction exactly, because
+// the two answer the same question — what does the real deployment use where a
+// test uses a double — and splitting that answer across two conventions is how
+// one of them ends up unmaintained.
+
+import { randomUUID } from "node:crypto";
+import type {
+  WorkspaceIdGenerator, WorkspaceMemberIdGenerator,
+  ContactIdGenerator,
+  DocumentIdGenerator,
+  PreparationIdGenerator,
+  RecipientIdGenerator,
+  SigningRequestIdGenerator,
+  SigningAccessIdGenerator,
+  EvidenceEventIdGenerator,
+  ArtifactIdGenerator,
+  SealIdGenerator,
+  NotificationIntentIdGenerator,
+  NotificationDeliveryIdGenerator,
+  RecipientSigningSessionIdGenerator,
+  SigningWorkflowIdGenerator,
+  PreparationId, PreparationFieldId,
+  RecipientId,
+  SigningRequestId, SigningRequestRecipientId, SigningRequestFieldId,
+  SigningAccessGrantId,
+  EvidenceEventId,
+  ArtifactId,
+  SealId,
+  NotificationIntentId,
+  NotificationDeliveryId,
+  RecipientSigningSessionId,
+  SigningWorkflowIntentId,
+} from "@lagda/application";
+// Four id types come from the contracts package rather than the application
+// one, and the split is not a tidy rule -- it is where each identifier first
+// appeared on the wire. A workspace, a member, a contact and a document are all
+// named in request paths the client constructs, so the contract owns them; the
+// rest are minted server-side and never parsed from a client, so they live with
+// the use cases. Worth stating because the import list looks arbitrary
+// otherwise, and the next person to add a generator has to pick a side.
+import type {
+  WorkspaceId, WorkspaceMemberId, ContactId, DocumentId,
+} from "@lagda/contracts";
+
+/**
+ * A prefixed, unguessable identifier.
+ *
+ * ── Why a UUID and not a counter, a timestamp or a ULID ────────────────────
+ *
+ * `randomUUID()` is a CSPRNG draw — 122 bits of entropy, which is not
+ * enumerable by any means available to anyone. A ULID or a Snowflake would sort
+ * by creation time and give the database better index locality, and both were
+ * rejected for the same reason: the time component is readable by whoever holds
+ * the id. For a signing grant that is a disclosure — it says when a document
+ * was sent — and having two id shapes in one system, one time-bearing and one
+ * not, is precisely the distinction nobody remembers at the point of use.
+ *
+ * ── Why the prefix survives into production ────────────────────────────────
+ *
+ * It is not decoration and it is not for the database. A prefix makes the id
+ * self-describing in a log line, an error report and a support conversation,
+ * and it makes a mis-wired generator obvious on sight: a `doc_` where a `sr_`
+ * belongs is a visible defect rather than an opaque string that happens to
+ * resolve to nothing. The fakes already use these exact prefixes, so a value
+ * that appears in a test reads the same as one from production.
+ *
+ * Hyphens are stripped: 4-6 characters of prefix plus 32 hex is 36-38
+ * characters, comfortably inside the `varchar(64)` every id column declares,
+ * with room for a longer prefix later. The stripped form is also safe in a URL
+ * path segment without escaping, which several of these ids are.
+ */
+function mint(prefix: string): string {
+  return `${prefix}_${randomUUID().replace(/-/g, "")}`;
+}
+
+export function createWorkspaceIdGenerator(): WorkspaceIdGenerator {
+  return { nextWorkspaceId: () => mint("ws") as WorkspaceId };
+}
+
+export function createWorkspaceMemberIdGenerator(): WorkspaceMemberIdGenerator {
+  return { nextWorkspaceMemberId: () => mint("mem") as WorkspaceMemberId };
+}
+
+export function createContactIdGenerator(): ContactIdGenerator {
+  return { nextContactId: () => mint("con") as ContactId };
+}
+
+export function createDocumentIdGenerator(): DocumentIdGenerator {
+  return { nextDocumentId: () => mint("doc") as DocumentId };
+}
+
+/**
+ * Preparations and their fields.
+ *
+ * Two methods on one generator because the port declares them together, and
+ * one draw per call rather than a shared value: a field id that embedded its
+ * preparation id would make the parent recoverable from the child, which is the
+ * kind of derivable relationship that turns one leaked id into two.
+ */
+export function createPreparationIdGenerator(): PreparationIdGenerator {
+  return {
+    nextPreparationId: () => mint("prep") as PreparationId,
+    nextPreparationFieldId: () => mint("pf") as PreparationFieldId,
+  };
+}
+
+export function createRecipientIdGenerator(): RecipientIdGenerator {
+  return { nextRecipientId: () => mint("rcp") as RecipientId };
+}
+
+export function createSigningRequestIdGenerator(): SigningRequestIdGenerator {
+  return {
+    nextSigningRequestId: () => mint("sr") as SigningRequestId,
+    nextSigningRequestRecipientId: () =>
+      mint("srr") as SigningRequestRecipientId,
+    nextSigningRequestFieldId: () => mint("srf") as SigningRequestFieldId,
+  };
+}
+
+/**
+ * The signing access grant.
+ *
+ * An INTERNAL handle, not the recipient's credential. The credential is minted
+ * by `createSigningAccessTokenFactory` and is a secret; this is the row it
+ * points at. Keeping them separate matters: the grant id appears in evidence
+ * records and audit output, and if it were the credential every audit reader
+ * would hold the means to sign.
+ */
+export function createSigningAccessIdGenerator(): SigningAccessIdGenerator {
+  return { nextSigningAccessGrantId: () => mint("sag") as SigningAccessGrantId };
+}
+
+export function createEvidenceEventIdGenerator(): EvidenceEventIdGenerator {
+  return { nextEvidenceEventId: () => mint("ev") as EvidenceEventId };
+}
+
+export function createArtifactIdGenerator(): ArtifactIdGenerator {
+  return { nextArtifactId: () => mint("art") as ArtifactId };
+}
+
+export function createSealIdGenerator(): SealIdGenerator {
+  return { nextSealId: () => mint("seal") as SealId };
+}
+
+export function createNotificationIntentIdGenerator(): NotificationIntentIdGenerator {
+  return { nextNotificationIntentId: () => mint("nint") as NotificationIntentId };
+}
+
+export function createNotificationDeliveryIdGenerator(): NotificationDeliveryIdGenerator {
+  return {
+    nextNotificationDeliveryId: () => mint("ndel") as NotificationDeliveryId,
+  };
+}
+
+export function createRecipientSigningSessionIdGenerator(): RecipientSigningSessionIdGenerator {
+  return {
+    nextRecipientSigningSessionId: () =>
+      mint("rss") as RecipientSigningSessionId,
+  };
+}
+
+export function createSigningWorkflowIdGenerator(): SigningWorkflowIdGenerator {
+  return {
+    nextSigningWorkflowIntentId: () => mint("swi") as SigningWorkflowIntentId,
+  };
+}
