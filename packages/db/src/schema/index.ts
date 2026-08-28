@@ -103,6 +103,35 @@ export interface DocumentsTable {
   created_by_user_id: string;
   created_at: Timestamptz;
   updated_at: Timestamptz;
+  /** Where it is filed. NULL is the workspace root, not "unfiled". */
+  folder_id: ColumnType<string | null, string | null, string | null>;
+  /**
+   * Two lifecycle states, and they are exclusive by CHECK constraint.
+   *
+   * Archived means finished and out of the way -- a document can live archived
+   * forever. Trashed means somebody meant to remove it. A single status column
+   * would make one overwrite the other, and restoring from trash would have to
+   * guess whether the document had been archived before it was thrown away.
+   */
+  archived_at: ColumnType<Date | null, Date | null, Date | null>;
+  deleted_at: ColumnType<Date | null, Date | null, Date | null>;
+}
+
+/**
+ * A place a document sits. One folder per document -- filing is not tagging.
+ *
+ * Nests through a compound self-FK, so a parent in another workspace is
+ * unrepresentable. The no-cycles rule lives in `@lagda/core`, shared with
+ * organization units, because the two trees obey identical arithmetic.
+ */
+export interface DocumentFoldersTable {
+  folder_id: string;
+  workspace_id: string;
+  parent_folder_id: ColumnType<string | null, string | null, string | null>;
+  name: ColumnType<string, string, string>;
+  created_by_user_id: string;
+  created_at: Timestamptz;
+  archived_at: ColumnType<Date | null, Date | null, Date | null>;
 }
 
 /**
@@ -1249,6 +1278,7 @@ export interface Database {
   notification_deliveries: NotificationDeliveriesTable;
   notification_delivery_attempts: NotificationDeliveryAttemptsTable;
   notification_dispatch_index: NotificationDispatchIndexTable;
+  document_folders: DocumentFoldersTable;
   organization_units: OrganizationUnitsTable;
   organization_unit_members: OrganizationUnitMembersTable;
   recipient_signing_sessions: RecipientSigningSessionsTable;

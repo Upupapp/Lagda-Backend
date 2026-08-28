@@ -29,6 +29,11 @@
 // nesting, and the real constraint enforced here is that a unit may not contain
 // itself, directly or transitively.
 
+import {
+  checkPlacement, descendantIds,
+  type HierarchyNode, type PlacementRejection,
+} from "../hierarchy/index.js";
+
 /**
  * What an organization unit is called.
  *
@@ -67,15 +72,13 @@ export const MAX_UNIT_DEPTH = 6;
 
 export const UNIT_NAME_MAX_LENGTH = 120;
 
-export type UnitPlacementRejection =
-  /** A unit cannot be its own parent. */
-  | "self-parent"
-  /** The proposed parent is somewhere below this unit already. */
-  | "cycle"
-  /** The chain would exceed `MAX_UNIT_DEPTH`. */
-  | "too-deep"
-  /** The proposed parent belongs to a different workspace. */
-  | "cross-workspace";
+/**
+ * Why a placement was refused.
+ *
+ * An alias rather than its own union: the rules are the shared hierarchy rules,
+ * and a second vocabulary for the same four answers would drift from them.
+ */
+export type UnitPlacementRejection = PlacementRejection;
 
 /** One unit as the domain reasons about it. No timestamps, no persistence. */
 export interface UnitNode {
@@ -84,22 +87,18 @@ export interface UnitNode {
   readonly parentUnitId: string | null;
 }
 
+const toHierarchy = (unit: UnitNode): HierarchyNode => ({
+  nodeId: unit.unitId,
+  workspaceId: unit.workspaceId,
+  parentId: unit.parentUnitId,
+});
+
 /**
  * Whether `unitId` may be placed under `parentUnitId`.
  *
- * Takes the whole set of units in the workspace rather than a repository,
- * because this is a pure structural question and the answer must be the same
- * whether it is asked of the database, a test fixture or a form preview.
- *
- * ── Why the cycle check walks UP and not DOWN ──────────────────────────────
- *
- * Walking down from the unit to see whether the parent is a descendant visits
- * the whole subtree. Walking up from the proposed parent to a root visits at
- * most `MAX_UNIT_DEPTH` nodes and answers the same question: if this unit
- * appears anywhere in the parent's ancestry, the move would close a loop.
- *
- * The walk is also bounded independently of the depth check, so a cycle that
- * somehow already exists in the data cannot spin here.
+ * Delegates to the shared checker. Organization units and document folders nest
+ * identically, and a second copy of a cycle walk is a second place for it to be
+ * subtly wrong.
  */
 export function checkUnitPlacement(
   unitId: string | null,
@@ -107,67 +106,14 @@ export function checkUnitPlacement(
   workspaceId: string,
   units: readonly UnitNode[],
 ): UnitPlacementRejection | null {
-  if (parentUnitId === null) return null;
-  if (unitId !== null && parentUnitId === unitId) return "self-parent";
-
-  const byId = new Map(units.map(unit => [unit.unitId, unit]));
-  const parent = byId.get(parentUnitId);
-  if (parent === undefined || parent.workspaceId !== workspaceId) {
-    // Absent and foreign are ONE answer. A caller who could tell them apart
-    // would learn that a unit id exists in some other workspace.
-    return "cross-workspace";
-  }
-
-  let depth = 1;
-  let cursor: UnitNode | undefined = parent;
-  const seen = new Set<string>();
-
-  while (cursor !== undefined) {
-    if (unitId !== null && cursor.unitId === unitId) return "cycle";
-    // Guards against a pre-existing loop in the data rather than one this move
-    // would create. Either way the walk must terminate.
-    if (seen.has(cursor.unitId)) return "cycle";
-    seen.add(cursor.unitId);
-
-    if (cursor.parentUnitId === null) break;
-    depth += 1;
-    if (depth > MAX_UNIT_DEPTH) return "too-deep";
-    cursor = byId.get(cursor.parentUnitId);
-  }
-
-  return null;
+  return checkPlacement(
+    unitId, parentUnitId, workspaceId, units.map(toHierarchy), MAX_UNIT_DEPTH);
 }
 
-/**
- * Every unit at or below `rootId`, nearest first.
- *
- * Used to decide what an archive affects and what a department-scoped query
- * covers. Returns the root itself: "documents in this department" means the
- * department AND its divisions, which is what a person filing under it expects.
- */
+/** Every unit at or below `rootId`, the root included. */
 export function descendantsOf(
   rootId: string,
   units: readonly UnitNode[],
 ): readonly string[] {
-  const children = new Map<string, string[]>();
-  for (const unit of units) {
-    if (unit.parentUnitId === null) continue;
-    const siblings = children.get(unit.parentUnitId) ?? [];
-    siblings.push(unit.unitId);
-    children.set(unit.parentUnitId, siblings);
-  }
-
-  const out: string[] = [];
-  const queue = [rootId];
-  const seen = new Set<string>();
-
-  while (queue.length > 0) {
-    const current = queue.shift();
-    if (current === undefined || seen.has(current)) continue;
-    seen.add(current);
-    out.push(current);
-    queue.push(...(children.get(current) ?? []));
-  }
-
-  return out;
+  return descendantIds(rootId, units.map(toHierarchy));
 }
