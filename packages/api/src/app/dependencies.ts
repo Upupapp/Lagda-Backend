@@ -10,6 +10,7 @@
 import type { ProviderWebhookRouteOptions } from "../notifications/provider-webhook-routes.js";
 import type { IdentityDependencies } from "./identity-routes.js";
 import type { PublicVerificationDependencies } from "@lagda/application";
+import type { UploadRouteOptions } from "../upload/upload-route.js";
 import type {
   SessionService, AbuseLimiter,
   CreateWorkspaceDependencies, GetWorkspaceDependencies,
@@ -106,6 +107,20 @@ export interface AppDependencies {
    * signature-image machinery.
    */
   readonly signingDecline?: () => SigningDeclineDependencies;
+
+  /**
+   * Document upload (BACKEND-17).
+   *
+   * The route module has existed, with its own tests, since before documents
+   * did -- and was never composed. That is why the emitted contract carried no
+   * multipart endpoint and why `saveDocumentPreparation` refused every document
+   * with `document_has_no_source`: the precondition was real and the only route
+   * that could satisfy it was not mounted.
+   *
+   * Optional like every other group, so absent still means "not composed"
+   * rather than a silently disabled control.
+   */
+  readonly upload?: () => UploadRouteOptions;
 
   readonly sessions?: SessionService;
   /**

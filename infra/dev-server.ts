@@ -23,9 +23,10 @@
 //   .../recipients             REAL: add, list, patch, remove, reorder
 //   .../signing-requests       REAL: create
 //
-// There is NO upload leg, and that is the contract's shape rather than an
-// omission here: the 55-path document has ZERO multipart endpoints, and
-// POST /documents takes a title and nothing else.
+//   .../upload                 REAL: the upload route, now COMPOSED. It was
+//                              built and tested and never mounted, which is
+//                              why the contract had no multipart endpoint and
+//                              why preparation refused every document.
 //
 // WHAT IS NOT, and why it is not a matter of adding a line here:
 //   Every other surface needs its dependency group, and the identity surface
@@ -45,6 +46,7 @@ import {
   createSessionService,
   type SessionRepository, type SessionRecord, type NewSession,
 } from "@lagda/application";
+import { createInMemoryObjectStorage } from "@lagda/storage";
 import {
   fakeNotifications, createIdempotencyRecordIds,
   FakeTransactionManager, SequentialWorkspaceIds, SequentialMemberIds,
@@ -72,12 +74,15 @@ const notificationStore = {
 // The workspace side of the world. Same in-memory transaction manager the
 // route tests use, so the graphs below are wired the way those tests wire them.
 const transactions = new FakeTransactionManager();
+const objectStorage = createInMemoryObjectStorage();
 const workspaceIds = new SequentialWorkspaceIds();
 const memberIds = new SequentialMemberIds();
 const documentIds = new SequentialDocumentIds();
 const preparationIds = new SequentialPreparationIds();
 const recipientIds = new SequentialRecipientIds();
 const signingRequestIds = new SequentialSigningRequestIds();
+
+let uploadSequence = 0;
 
 const idempotency = () => ({
   digester: createIdempotencyKeyDigester(),
@@ -171,6 +176,71 @@ const app = await createApp({
         transactions, clock, ids: signingRequestIds, idempotency: idempotency(),
       }),
     },
+    // Upload. The pipeline is real -- inspection, scanning, storage, then the
+    // acceptance transaction -- with an in-memory object store underneath.
+    upload: () => ({
+      path: "/workspaces/:workspaceId/documents/:documentId/upload",
+      limits: { maxBytes: 25 * 1024 * 1024, maxPages: 500 },
+      // Tenancy comes from the SESSION and the PATH, never from a multipart
+      // field: a body field is chosen by the client (INV-224).
+      resolveContext: (request) => {
+        const auth = (request as { auth?: { status?: string; actor?: { userId?: string } } }).auth;
+        if (auth?.status !== "authenticated" || auth.actor?.userId === undefined) return null;
+        const params = request.params as { workspaceId?: string; documentId?: string };
+        if (!params.workspaceId || !params.documentId) return null;
+        return {
+          workspaceId: params.workspaceId as never,
+          userId: auth.actor.userId,
+          documentId: params.documentId as never,
+        };
+      },
+      dependenciesFor: ({ workspaceId, userId: _userId }) => ({
+        storage: objectStorage,
+        keys: {
+          artifactKey: ({ workspaceId: ws, documentId, artifactId }) => ({
+            zone: "artifacts",
+            key: `workspaces/${ws}/documents/${documentId}/artifacts/${artifactId}.pdf` as never,
+          }),
+          quarantineKey: ({ workspaceId: ws, uploadId }) => ({
+            zone: "quarantine",
+            key: `quarantine/${ws}/uploads/${uploadId}` as never,
+          }),
+        },
+        // No real PDF parser here, so the geometry is declared rather than
+        // measured. It is the ONE fact this pipeline does not establish, and it
+        // is what preparation validates field positions against.
+        inspector: {
+          inspect: () => Promise.resolve({
+            outcome: "ok", detectedMediaType: "application/pdf",
+            pageCount: 1, pageSizes: [{ width: 612, height: 792 }], rotatedPageCount: 0,
+          }),
+        },
+        // Reports clean and says so. A scanner that answered "clean" while
+        // pretending to be real would be worse than none.
+        scanner: {
+          scan: () => Promise.resolve({ outcome: "clean" }),
+          isAvailable: () => Promise.resolve(true),
+        },
+        uploads: {
+          insert: () => Promise.resolve(),
+          find: () => Promise.resolve(null),
+          complete: () => Promise.resolve(),
+        },
+        // The acceptance step. The route test leaves this a no-op, which is why
+        // its passing never demonstrated that a document ends up with bytes.
+        // Here it writes the artifact row the preparation gate reads.
+        commitAcceptance: ({ artifact }) => {
+          transactions.store.artifacts.push({ ...artifact, workspaceId });
+          return Promise.resolve();
+        },
+        newUploadId: () => `upl_${++uploadSequence}` as never,
+        newArtifactId: () => `art_${uploadSequence}` as never,
+        clock,
+        digestOf: (bytes: Uint8Array) =>
+          createHash("sha256").update(bytes).digest("hex") as never,
+      }),
+    }),
+
     identity: () => ({
       register: () => ({
         users: identity.users,

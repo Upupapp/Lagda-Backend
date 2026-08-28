@@ -8292,6 +8292,186 @@
         }
       }
     },
+    "/public/verifications/{verificationId}": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "verificationId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "schemaVersion",
+                    "verificationId",
+                    "completedAt",
+                    "participantCount",
+                    "finalDocument",
+                    "seal"
+                  ],
+                  "properties": {
+                    "schemaVersion": {
+                      "type": "string"
+                    },
+                    "verificationId": {
+                      "type": "string"
+                    },
+                    "completedAt": {
+                      "type": "number"
+                    },
+                    "participantCount": {
+                      "type": "number"
+                    },
+                    "finalDocument": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "digestAlgorithm",
+                        "digest"
+                      ],
+                      "properties": {
+                        "digestAlgorithm": {
+                          "type": "string",
+                          "enum": [
+                            "sha-256"
+                          ]
+                        },
+                        "digest": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "seal": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "scheme",
+                        "version",
+                        "digestAlgorithm",
+                        "description"
+                      ],
+                      "properties": {
+                        "scheme": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "number"
+                        },
+                        "digestAlgorithm": {
+                          "type": "string",
+                          "enum": [
+                            "sha-256"
+                          ]
+                        },
+                        "description": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/public/verifications/{verificationId}/file-check": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "verificationId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "verificationId",
+                    "matches",
+                    "digestAlgorithm",
+                    "authoritativeDigest",
+                    "uploadedDigest"
+                  ],
+                  "properties": {
+                    "verificationId": {
+                      "type": "string"
+                    },
+                    "matches": {
+                      "type": "boolean"
+                    },
+                    "digestAlgorithm": {
+                      "type": "string",
+                      "enum": [
+                        "sha-256"
+                      ]
+                    },
+                    "authoritativeDigest": {
+                      "type": "string"
+                    },
+                    "uploadedDigest": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/documents/{documentId}/upload": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "documentId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/signing-access/bootstrap": {
       "post": {
         "requestBody": {
@@ -9743,159 +9923,6 @@
                     "applied": {
                       "description": "False when a concurrent decline had already been recorded.",
                       "type": "boolean"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/public/verifications/{verificationId}": {
-      "get": {
-        "parameters": [
-          {
-            "schema": {
-              "minLength": 1,
-              "maxLength": 64,
-              "type": "string"
-            },
-            "in": "path",
-            "name": "verificationId",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Default Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": false,
-                  "type": "object",
-                  "required": [
-                    "schemaVersion",
-                    "verificationId",
-                    "completedAt",
-                    "participantCount",
-                    "finalDocument",
-                    "seal"
-                  ],
-                  "properties": {
-                    "schemaVersion": {
-                      "type": "string"
-                    },
-                    "verificationId": {
-                      "type": "string"
-                    },
-                    "completedAt": {
-                      "type": "number"
-                    },
-                    "participantCount": {
-                      "type": "number"
-                    },
-                    "finalDocument": {
-                      "additionalProperties": false,
-                      "type": "object",
-                      "required": [
-                        "digestAlgorithm",
-                        "digest"
-                      ],
-                      "properties": {
-                        "digestAlgorithm": {
-                          "type": "string",
-                          "enum": [
-                            "sha-256"
-                          ]
-                        },
-                        "digest": {
-                          "type": "string"
-                        }
-                      }
-                    },
-                    "seal": {
-                      "additionalProperties": false,
-                      "type": "object",
-                      "required": [
-                        "scheme",
-                        "version",
-                        "digestAlgorithm",
-                        "description"
-                      ],
-                      "properties": {
-                        "scheme": {
-                          "type": "string"
-                        },
-                        "version": {
-                          "type": "number"
-                        },
-                        "digestAlgorithm": {
-                          "type": "string",
-                          "enum": [
-                            "sha-256"
-                          ]
-                        },
-                        "description": {
-                          "type": "string"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/public/verifications/{verificationId}/file-check": {
-      "post": {
-        "parameters": [
-          {
-            "schema": {
-              "minLength": 1,
-              "maxLength": 64,
-              "type": "string"
-            },
-            "in": "path",
-            "name": "verificationId",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Default Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": false,
-                  "type": "object",
-                  "required": [
-                    "verificationId",
-                    "matches",
-                    "digestAlgorithm",
-                    "authoritativeDigest",
-                    "uploadedDigest"
-                  ],
-                  "properties": {
-                    "verificationId": {
-                      "type": "string"
-                    },
-                    "matches": {
-                      "type": "boolean"
-                    },
-                    "digestAlgorithm": {
-                      "type": "string",
-                      "enum": [
-                        "sha-256"
-                      ]
-                    },
-                    "authoritativeDigest": {
-                      "type": "string"
-                    },
-                    "uploadedDigest": {
-                      "type": "string"
                     }
                   }
                 }

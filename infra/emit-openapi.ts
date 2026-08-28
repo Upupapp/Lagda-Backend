@@ -64,6 +64,13 @@ const app = await createApp({
     // session, and no route in it able to issue one.
     identity: () => stub("identity"),
     limiter: stub("limiter"),
+    // Registration-time only: the route reads its limits and path from here.
+    upload: () => ({
+      path: "/workspaces/:workspaceId/documents/:documentId/upload",
+      limits: { maxBytes: 25 * 1024 * 1024, maxPages: 500 },
+      resolveContext: () => null,
+      dependenciesFor: () => stub("upload.dependencies"),
+    }),
     signingAccess: () => stub("signingAccess"),
     publicVerification: () => stub("publicVerification"),
     signingCeremony: () => stub("signingCeremony"),

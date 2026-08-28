@@ -57,6 +57,7 @@ import {
   registerProviderWebhookRoutes,
 } from "../notifications/provider-webhook-routes.js";
 import { registerIdentityRoutes } from "./identity-routes.js";
+import { registerUploadRoute } from "../upload/upload-route.js";
 
 export interface CreateAppOptions {
   readonly config: ApiConfig;
@@ -663,6 +664,17 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
   // anonymous.
   if (dependencies.identity !== undefined) {
     registerIdentityRoutes(app, config, dependencies.identity());
+  }
+
+  // ── Document upload (BACKEND-17) ──────────────────────────────────────────
+  //
+  // The route resolves its own tenant and actor through `resolveContext`, and
+  // NEVER reads a workspace or user id from a multipart field -- a body field
+  // is chosen by the client, and letting it name the tenant would be a complete
+  // tenancy bypass (INV-224). So it is mounted here rather than inside the
+  // workspace scope, which resolves tenancy from the path.
+  if (dependencies.upload !== undefined) {
+    await registerUploadRoute(app, dependencies.upload());
   }
 
   // ── The provider callback (BACKEND-45) ────────────────────────────────────
