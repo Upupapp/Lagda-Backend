@@ -9,8 +9,9 @@ import Fastify, { type FastifyInstance } from "fastify";
 import cookie from "@fastify/cookie";
 import type {
   AuthUserRecord, IssuedCredentials, LoginDependencies, NormalizedEmail,
-  PasswordHash, SessionId, UserId,
+  PasswordHash, SessionId, UserId, SessionRecord, TokenDigest,
 } from "@lagda/application";
+import type { RequestAuth } from "../security/session-plugin.js";
 import {
   registerSessionRoutes, SignInResponseSchema, MfaRequiredResponseSchema,
 } from "./session-routes.js";
@@ -45,6 +46,26 @@ interface Built {
   readonly verifyCalls: string[];
 }
 
+/**
+ * A complete SessionRecord.
+ *
+ * Spelled out rather than cast, so the compiler is the thing keeping this
+ * double honest. The previous version of this harness invented
+ * `{ sessionId }` behind a cast and every sign-out test passed against a
+ * shape the session plugin has never produced.
+ */
+function sessionRecord(sessionId: string): SessionRecord {
+  return {
+    sessionId: sessionId as SessionId,
+    userId: "usr_test" as UserId,
+    tokenHash: "a".repeat(64) as TokenDigest,
+    csrfTokenHash: "b".repeat(64) as TokenDigest,
+    createdAt: 1_700_000_000_000,
+    lastSeenAt: 1_700_000_000_000,
+    expiresAt: 1_700_000_000_000 + 3_600_000,
+  };
+}
+
 async function build(options: {
   found?: AuthUserRecord | null;
   passwordCorrect?: boolean;
@@ -72,14 +93,25 @@ async function build(options: {
       // `{ sessionId }`, which RequestAuth has never had -- so the handler's
       // real branch was never exercised and a sign-out that revoked nothing
       // passed every test here.
-      // Anonymous when the case has no session -- again, what the plugin does.
-      (request as { auth?: unknown }).auth = options.sessionId === undefined
+      // Typed as RequestAuth, and assigned WITHOUT a cast, so the compiler
+      // checks this double against the shape the plugin really produces.
+      //
+      // It used to be `(request as { auth?: unknown }).auth = { sessionId }`.
+      // That cast is what let the double invent a field RequestAuth has never
+      // had, and twenty-one tests then described a sign-out that does not
+      // exist. A double is only worth its type check.
+      const auth: RequestAuth = options.sessionId === undefined
         ? { status: "anonymous" }
         : {
             status: "authenticated",
-            actor: { userId: "usr_test" },
-            session: { sessionId: options.sessionId },
+            actor: {
+              actorType: "user",
+              userId: "usr_test" as UserId,
+              sessionId: options.sessionId as SessionId,
+            },
+            session: sessionRecord(options.sessionId),
           };
+      request.auth = auth;
       done();
     });
   }
