@@ -102,37 +102,8 @@ const idempotency = {
   policy: { retentionMs: 24 * 3_600_000 },
 };
 
-/**
- * Sessions in a Map. Copied in shape from the route tests, which each declare
- * their own -- there is no shared one to import.
- */
-function memorySessionRepository(): SessionRepository {
-  const rows = new Map<string, SessionRecord>();
-  return {
-    findByTokenHash: (hash) =>
-      Promise.resolve([...rows.values()].find((r) => r.tokenHash === hash) ?? null),
-    create: (s: NewSession) => {
-      rows.set(s.sessionId, { ...s, lastSeenAt: s.createdAt });
-      return Promise.resolve();
-    },
-    touch: (id, at) => {
-      const row = rows.get(id);
-      if (row) rows.set(id, { ...row, lastSeenAt: at });
-      return Promise.resolve();
-    },
-    revoke: (id, at, reason) => {
-      const row = rows.get(id);
-      if (row && row.revokedAt === undefined) {
-        rows.set(id, { ...row, revokedAt: at, revocationReason: reason });
-      }
-      return Promise.resolve();
-    },
-    revokeAllForUser: () => Promise.resolve(0),
-  };
-}
-
 const sessions = createSessionService({
-  sessions: memorySessionRepository(),
+  sessions: identity.sessionRepository,
   tokens, digester, clock,
   policy: {
     absoluteLifetimeMs: 7 * 24 * 3_600_000,
@@ -332,12 +303,30 @@ const app = await createApp({
       beginEnrolment: () => unwired("beginEnrolment"),
       confirmEnrolment: () => unwired("confirmEnrolment"),
       disableMfa: () => unwired("disableMfa"),
-      updateProfile: () => unwired("updateProfile"),
-      updatePreferences: () => unwired("updatePreferences"),
-      changePassword: () => unwired("changePassword"),
-      listSessions: () => unwired("listSessions"),
-      revokeSession: () => unwired("revokeSession"),
-      revokeOtherSessions: () => unwired("revokeOtherSessions"),
+      updateProfile: () => ({
+        clock,
+        commit: (operation) => operation({ accounts: identity.accounts }),
+      }),
+      updatePreferences: () => ({
+        clock,
+        // The real one validates against the IANA database. Intl.supportedValuesOf
+        // is the platform's own list, so this rejects a made-up zone rather than
+        // accepting anything shaped like a string.
+        isKnownTimezone: (value: string) =>
+          Intl.supportedValuesOf("timeZone").includes(value),
+        commit: (operation) => operation({ accounts: identity.accounts }),
+      }),
+      changePassword: () => ({
+        clock, hasher,
+        credentials: identity.credentials,
+        commit: (operation) => operation({
+          credentials: identity.credentials,
+          sessions: identity.accountSessions,
+        }),
+      }),
+      listSessions: () => ({ sessions: identity.accountSessions }),
+      revokeSession: () => ({ clock, sessions: identity.accountSessions }),
+      revokeOtherSessions: () => ({ clock, sessions: identity.accountSessions }),
 
       // The real delivery seam. Nothing sends mail here, so the link is
       // printed -- which is also the only way to see that registration issued a
@@ -368,7 +357,27 @@ const app = await createApp({
 
       endSession: (sessionId) => sessions.revoke(sessionId),
       issueSession: (userId) => sessions.issue(userId),
-      authenticatedUser: (request) => sessions.resolve(request),
+      // Reads what sessionResolution already resolved, and maps it to the port's
+      // shape. The obvious `sessions.resolve(request)` is wrong twice over:
+      // resolve() takes a RAW TOKEN STRING, and it returns
+      // { outcome, actor, session } rather than { userId, sessionId }. Both
+      // were reported by tsc, both were dismissible as noise because infra/ is
+      // outside the build graph, and both showed up as GET /me answering 401
+      // to a request holding a perfectly good session.
+      authenticatedUser: (request) => {
+        const auth = (request as {
+          auth?: {
+            status?: string;
+            actor?: { userId?: string };
+            session?: { sessionId?: string };
+          };
+        }).auth;
+        if (auth?.status !== "authenticated") return Promise.resolve(null);
+        const userId = auth.actor?.userId;
+        const sessionId = auth.session?.sessionId;
+        if (userId === undefined || sessionId === undefined) return Promise.resolve(null);
+        return Promise.resolve({ userId, sessionId } as never);
+      },
     }),
     publicVerification: () => ({
       lookup: {

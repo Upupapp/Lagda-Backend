@@ -19,7 +19,11 @@ import {
   type NewUser, type UserRecord, type AuthUserRecord, type NormalizedEmail,
   type UserId, type NewVerificationChallenge,
 } from "@lagda/application";
-import type { AccountProfileRepository, CurrentUser } from "@lagda/application";
+import type {
+  AccountProfileRepository, CurrentUser, UserProfileFields, UserPreferences,
+  AccountSessionRepository, AccountCredentialRepository,
+  SessionRepository, SessionRecord, NewSession, SessionId, PasswordHash,
+} from "@lagda/application";
 
 export class InMemoryIdentity {
   readonly #byEmail = new Map<string, NewUser>();
@@ -34,6 +38,20 @@ export class InMemoryIdentity {
   }>();
   /** userId -> when the address was verified. Null until it is. */
   readonly #verifiedAt = new Map<string, number>();
+  /** Profile and preference columns, written only by their own use cases. */
+  readonly #profiles = new Map<string, UserProfileFields>();
+  readonly #preferences = new Map<string, UserPreferences>();
+  /** userId -> current password hash, once changed away from registration's. */
+  readonly #passwords = new Map<string, PasswordHash>();
+  /**
+   * Sessions, shared.
+   *
+   * ONE map behind both ports on purpose: createSessionService writes through
+   * SessionRepository and the account surface reads through
+   * AccountSessionRepository. Two stores would let "sign out everywhere"
+   * report success against rows the authenticator never consulted.
+   */
+  readonly #sessions = new Map<string, SessionRecord>();
   #sequence = 0;
 
   nextUserId(): UserId {
@@ -77,7 +95,9 @@ export class InMemoryIdentity {
       const record: AuthUserRecord = {
         ...this.#toRecord(user),
         normalizedEmail: user.normalizedEmail,
-        passwordHash: user.passwordHash,
+        // The CHANGED hash wins. Reading the registration hash here would let
+        // an old password keep working after a change.
+        passwordHash: this.#passwords.get(user.userId) ?? user.passwordHash,
       };
       return Promise.resolve(record);
     },
@@ -200,15 +220,15 @@ export class InMemoryIdentity {
       const current: CurrentUser = {
         userId: user.userId,
         email: user.email,
-        emailVerified: false,
-        profile: {
+        emailVerified: this.#verifiedAt.has(userId),
+        profile: this.#profiles.get(userId) ?? {
           fullName: null,
           displayName: user.displayName,
           jobTitle: null,
           department: null,
           preferredSenderName: null,
         },
-        preferences: {
+        preferences: this.#preferences.get(userId) ?? {
           timezone: null, locale: null, language: null,
           dateFormat: null, timeFormat: null, numberFormat: null,
           appearance: null, density: null, documentListView: null,
@@ -218,8 +238,88 @@ export class InMemoryIdentity {
       };
       return Promise.resolve(current);
     },
-    updateProfile: () => Promise.resolve(false),
-    updatePreferences: () => Promise.resolve(false),
+    // Both return false for an unknown user, which is how the use cases tell
+    // "nothing written" from "written nothing new".
+    updateProfile: ({ userId, profile }) => {
+      if (!this.#byId.has(userId)) return Promise.resolve(false);
+      this.#profiles.set(userId, profile);
+      return Promise.resolve(true);
+    },
+    updatePreferences: ({ userId, preferences }) => {
+      if (!this.#byId.has(userId)) return Promise.resolve(false);
+      this.#preferences.set(userId, preferences);
+      return Promise.resolve(true);
+    },
+  };
+
+  /** What createSessionService writes through. */
+  readonly sessionRepository: SessionRepository = {
+    findByTokenHash: (hash) =>
+      Promise.resolve([...this.#sessions.values()].find((r) => r.tokenHash === hash) ?? null),
+    create: (session: NewSession) => {
+      this.#sessions.set(session.sessionId, { ...session, lastSeenAt: session.createdAt });
+      return Promise.resolve();
+    },
+    touch: (id, at) => {
+      const row = this.#sessions.get(id);
+      if (row) this.#sessions.set(id, { ...row, lastSeenAt: at });
+      return Promise.resolve();
+    },
+    revoke: (id, at, reason) => {
+      const row = this.#sessions.get(id);
+      if (row && row.revokedAt === undefined) {
+        this.#sessions.set(id, { ...row, revokedAt: at, revocationReason: reason });
+      }
+      return Promise.resolve();
+    },
+    revokeAllForUser: () => Promise.resolve(0),
+  };
+
+  /** What the account surface reads and revokes through. Same rows. */
+  readonly accountSessions: AccountSessionRepository = {
+    listActiveForUser: (userId) => Promise.resolve(
+      [...this.#sessions.values()]
+        .filter((r) => r.userId === userId && r.revokedAt === undefined)
+        .map((r) => ({
+          sessionId: r.sessionId,
+          createdAt: r.createdAt,
+          lastSeenAt: r.lastSeenAt,
+          expiresAt: r.expiresAt,
+        })),
+    ),
+    revokeOwnedByUser: ({ userId, sessionId, at, reason }) => {
+      const row = this.#sessions.get(sessionId);
+      // Ownership is checked HERE, not by the caller: a revoke that trusted a
+      // client-supplied id could end someone else's session.
+      if (!row || row.userId !== userId || row.revokedAt !== undefined) {
+        return Promise.resolve(false);
+      }
+      this.#sessions.set(sessionId, { ...row, revokedAt: at, revocationReason: reason });
+      return Promise.resolve(true);
+    },
+    revokeAllForUserExcept: ({ userId, keepSessionId, at, reason }) => {
+      let count = 0;
+      for (const [id, row] of this.#sessions) {
+        if (row.userId !== userId || id === keepSessionId || row.revokedAt !== undefined) continue;
+        this.#sessions.set(id, { ...row, revokedAt: at, revocationReason: reason });
+        count += 1;
+      }
+      return Promise.resolve(count);
+    },
+  };
+
+  readonly credentials: AccountCredentialRepository = {
+    findPasswordHash: (userId) => {
+      const changed = this.#passwords.get(userId);
+      if (changed !== undefined) return Promise.resolve(changed);
+      const user = this.#byId.get(userId);
+      return Promise.resolve(user?.passwordHash ?? null);
+    },
+    replacePasswordHash: ({ userId, passwordHash }) => {
+      if (!this.#byId.has(userId)) return Promise.resolve(false);
+      this.#passwords.set(userId, passwordHash);
+      return Promise.resolve(true);
+    },
   };
 
   /**
