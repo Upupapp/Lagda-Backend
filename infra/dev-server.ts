@@ -16,6 +16,8 @@
 //   /auth/register             REAL: real Argon2 hashing, real duplicate
 //   /auth/sessions             refusal, real session issue, real cookies
 //   /auth/sessions/current     and CSRF. Only persistence is in memory.
+//   /workspaces                REAL: create, list and read, with real
+//   /workspaces/{id}           idempotency and real ownership.
 //
 // WHAT IS NOT, and why it is not a matter of adding a line here:
 //   Every other surface needs its dependency group, and the identity surface
@@ -29,12 +31,16 @@ import { createHash, randomBytes } from "node:crypto";
 import {
   createApp, loadApiConfig, createArgon2PasswordHasher,
   createSecurityTokenGenerator, createSecurityTokenDigester,
+  createIdempotencyKeyDigester,
 } from "@lagda/api";
 import {
   createSessionService,
   type SessionRepository, type SessionRecord, type NewSession,
 } from "@lagda/application";
-import { fakeNotifications } from "@lagda/application/test-support";
+import {
+  fakeNotifications, createIdempotencyRecordIds,
+  FakeTransactionManager, SequentialWorkspaceIds, SequentialMemberIds,
+} from "@lagda/application/test-support";
 import { InMemoryIdentity } from "./identity-memory.ts";
 
 const port = Number(process.argv[2] ?? 8787);
@@ -52,6 +58,12 @@ const notificationStore = {
   notificationIntents: new Map(),
   notificationDeliveries: new Map(),
 };
+
+// The workspace side of the world. Same in-memory transaction manager the
+// route tests use, so the graphs below are wired the way those tests wire them.
+const transactions = new FakeTransactionManager();
+const workspaceIds = new SequentialWorkspaceIds();
+const memberIds = new SequentialMemberIds();
 const hasher = createArgon2PasswordHasher();
 const tokens = createSecurityTokenGenerator();
 const digester = createSecurityTokenDigester();
@@ -118,6 +130,19 @@ const app = await createApp({
   dependencies: {
     databaseHealth: { isReachable: () => Promise.resolve(true) },
     sessions,
+    workspaces: {
+      create: () => ({
+        transactions, clock, workspaceIds, memberIds,
+        idempotency: {
+          digester: createIdempotencyKeyDigester(),
+          ids: createIdempotencyRecordIds(),
+          clock,
+          policy: { retentionMs: 24 * 3_600_000 },
+        },
+      }),
+      list: () => ({ transactions }),
+      workspace: () => ({ transactions }),
+    },
     identity: () => ({
       register: () => ({
         users: identity.users,
