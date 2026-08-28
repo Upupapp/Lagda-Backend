@@ -43,6 +43,8 @@ import {
   createSecurityTokenGenerator, createSecurityTokenDigester,
   createIdempotencyKeyDigester, createSigningAccessTokenFactory,
   createDeliverySecretSealer, createSigningLinkBuilder,
+  createVerificationTokenFactory, digestSubmittedCode,
+  createResetTokenFactory, digestSubmittedResetToken,
 } from "@lagda/api";
 import {
   createSessionService,
@@ -68,6 +70,7 @@ const config = loadApiConfig({
 });
 
 const identity = new InMemoryIdentity();
+const resetTokens = createResetTokenFactory();
 const notificationStore = {
   notificationIntents: new Map(),
   notificationDeliveries: new Map(),
@@ -242,21 +245,12 @@ const app = await createApp({
         users: identity.users,
         challenges: identity.verificationChallenges,
         hasher, clock,
-        // SecurityTokenGenerator and VerificationTokenFactory are different
-        // ports: the former mints session/CSRF tokens, the latter issues a
-        // verification token WITH its digest. Built here from node:crypto,
-        // the same sha256-over-a-domain-prefix shape the digester uses.
-        tokens: {
-          issue: () => {
-            const raw = randomBytes(32).toString("base64url");
-            return {
-              raw,
-              digest: createHash("sha256")
-                .update(`lagda.verification:${raw}`)
-                .digest("hex") as never,
-            };
-          },
-        },
+        // The real factory. An earlier version of this file hand-rolled one --
+        // sha256 over a domain prefix -- which worked only because it also
+        // hand-rolled the matching digestSubmitted. createVerificationTokenFactory
+        // ships both halves AND the canonicalisation and well-formedness rules
+        // that a hand-rolled pair silently omits.
+        tokens: createVerificationTokenFactory(),
         newUserId: () => identity.nextUserId(),
         newChallengeId: () => `evc_${Date.now()}`,
         commit: identity.commit,
@@ -277,13 +271,9 @@ const app = await createApp({
       // registration digested the issued one, find the row, consume it under
       // the row's own condition, and verify the account once.
       verifyEmail: () => ({
-        digestSubmitted: (raw: string) => {
-          const canonical = raw.trim();
-          if (canonical.length === 0) return null;
-          return createHash("sha256")
-            .update(`lagda.verification:${canonical}`)
-            .digest("hex") as never;
-        },
+        // Canonicalises before digesting, so a code typed with spaces or in
+        // the wrong case still redeems. `raw.trim()` did not.
+        digestSubmitted: digestSubmittedCode,
         clock,
         commit: (operation) => operation({
           challenges: identity.verificationChallengesFull as never,
@@ -299,23 +289,18 @@ const app = await createApp({
       resendVerification: () => unwired("resendVerification"),
       requestPasswordReset: () => ({
         clock,
-        // A DIFFERENT domain prefix from the verification token. Same secret
-        // under two prefixes would give one link two meanings, and an email
-        // that confirms an address could then change a password.
+        // The real factory, wrapped only to print what it issued. There is no
+        // deliverReset hook to hand the raw token to -- unlike verification --
+        // and a digest cannot be turned back into a link, so without this the
+        // flow is unverifiable locally.
         tokens: {
           issue: () => {
-            const raw = randomBytes(32).toString("base64url");
-            // Printed because IdentityDependencies has no deliverReset hook to
-            // hand it to -- unlike verification, which has deliverVerification.
-            // Nothing sends mail here, and without this the token exists only
-            // as a digest, which cannot be turned back into a link.
+            const issued = resetTokens.issue();
             console.log(JSON.stringify({
-              level: "info", msg: "reset token issued (not sent)", rawResetToken: raw,
+              level: "info", msg: "reset token issued (not sent)",
+              rawResetToken: issued.raw,
             }));
-            return {
-              raw,
-              digest: createHash("sha256").update(`lagda.reset:${raw}`).digest("hex") as never,
-            };
+            return issued;
           },
         },
         newChallengeId: () => `prc_${randomBytes(8).toString("hex")}` as never,
@@ -326,11 +311,7 @@ const app = await createApp({
         }),
       }),
       resetPassword: () => ({
-        digestSubmitted: (raw: string) => {
-          const canonical = raw.trim();
-          if (canonical.length === 0) return null;
-          return createHash("sha256").update(`lagda.reset:${canonical}`).digest("hex") as never;
-        },
+        digestSubmitted: digestSubmittedResetToken,
         hasher, clock,
         peek: (digest) => identity.resetChallenges.findByTokenDigest(digest as string) as never,
         commit: (operation) => operation({
