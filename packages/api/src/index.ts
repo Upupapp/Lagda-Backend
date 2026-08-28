@@ -83,6 +83,9 @@ export {
   registerIdentityRoutes, IDENTITY_PATHS, type IdentityDependencies,
 } from "./app/identity-routes.js";
 export {
+  registerOrganizationRoutes, type OrganizationRouteOptions,
+} from "./organization/organization-routes.js";
+export {
   registerProviderWebhookRoutes, presentedSecret,
   type ProviderWebhookRouteOptions, type ProviderEventConfirmer,
 } from "./notifications/provider-webhook-routes.js";

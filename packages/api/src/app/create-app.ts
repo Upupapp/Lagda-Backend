@@ -54,6 +54,9 @@ import {
 } from "../verification/public-verification-routes.js";
 import { registerAuditRoutes } from "../audit/audit-routes.js";
 import {
+  registerOrganizationRoutes,
+} from "../organization/organization-routes.js";
+import {
   registerProviderWebhookRoutes,
 } from "../notifications/provider-webhook-routes.js";
 import { registerIdentityRoutes } from "./identity-routes.js";
@@ -533,6 +536,25 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
           ),
           workflowDependencies: cancel,
           ...(limiter === undefined ? {} : { rateLimit: { limiter, metrics } }),
+          metrics,
+        });
+      }
+
+      // The org chart (TENANT_CORE). Inside the authenticated scope, so
+      // session validation and CSRF come from WHERE it is registered.
+      //
+      // A unit is a container rather than a permission, so these routes edit
+      // routing and reporting structure -- never access. `unit.view` is the one
+      // capability an ordinary member holds here, because an org chart is a
+      // directory.
+      if (workspaces.organization !== undefined) {
+        registerOrganizationRoutes(scope, {
+          authenticatedUser: (request: FastifyRequest) => Promise.resolve(
+            request.auth.status === "authenticated"
+              ? { userId: request.auth.actor.userId }
+              : null,
+          ),
+          organizationDependencies: workspaces.organization(),
           metrics,
         });
       }

@@ -95,6 +95,7 @@ const app = await createApp({
       signingRequests: () => stub("workspaces.signingRequests"),
       sendSigningRequest: () => stub("workspaces.sendSigningRequest"),
       audit: () => stub("workspaces.audit"),
+      organization: () => stub("workspaces.organization"),
       cancelSigningRequest: () => stub("workspaces.cancelSigningRequest"),
     },
   },
@@ -114,7 +115,7 @@ const paths = Object.keys((document as { paths?: Record<string, unknown> }).path
 // So it now asserts a FLOOR and a required set. The floor catches a group going
 // missing wholesale; the required paths catch the case the floor cannot see, by
 // naming the surfaces whose absence is not a smaller contract but a broken one.
-const MINIMUM_PATHS = 46;
+const MINIMUM_PATHS = 49;
 const REQUIRED_PATHS = [
   "/auth/register",
   "/auth/sessions",
@@ -122,6 +123,7 @@ const REQUIRED_PATHS = [
   "/workspaces",
   "/signing-access/bootstrap",
   "/workspaces/{workspaceId}/signing-requests/{signingRequestId}/audit",
+  "/workspaces/{workspaceId}/units",
 ];
 
 const missingRequired = REQUIRED_PATHS.filter(path => !paths.includes(path));

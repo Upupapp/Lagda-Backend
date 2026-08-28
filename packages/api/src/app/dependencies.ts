@@ -22,7 +22,7 @@ import type {
   SendSigningRequestDependencies, SigningAccessDependencies,
   SigningCeremonyDependencies, SigningSubmissionDependencies,
   SigningDeclineDependencies, SigningWorkflowDependencies,
-  AuditTrailDependencies,
+  AuditTrailDependencies, OrganizationDependencies,
 } from "@lagda/application";
 
 /**
@@ -237,6 +237,14 @@ export interface WorkspaceDependencies {
    * workspace could not read its own audit trail over HTTP.
    */
   readonly audit?: () => AuditTrailDependencies;
+  /**
+   * The org chart (TENANT_CORE): departments, offices, teams.
+   *
+   * Optional as a whole, like every other group. Absent means the routes do not
+   * exist, which is a workspace with no hierarchy rather than one with an
+   * unprotected hierarchy.
+   */
+  readonly organization?: () => OrganizationDependencies;
   /** BACKEND-37, routed by OD-154. The sender's withdrawal. */
   readonly cancelSigningRequest?: () => SigningWorkflowDependencies;
 }

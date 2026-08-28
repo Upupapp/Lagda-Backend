@@ -1579,6 +1579,36 @@
                             "enum": [
                               "workspace.ownership.transfer"
                             ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "unit.view"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "unit.create"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "unit.update"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "unit.archive"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "unit.member.manage"
+                            ]
                           }
                         ]
                       }
@@ -5876,6 +5906,602 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/units": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "units"
+                  ],
+                  "properties": {
+                    "units": {
+                      "type": "array",
+                      "items": {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "unitId",
+                          "parentUnitId",
+                          "kind",
+                          "name",
+                          "createdAt",
+                          "archivedAt"
+                        ],
+                        "properties": {
+                          "unitId": {
+                            "type": "string"
+                          },
+                          "parentUnitId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "kind": {
+                            "title": "OrganizationUnitKind",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "department"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "office"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "division"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "branch"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "team"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "committee"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "project_group"
+                                ]
+                              }
+                            ]
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "number"
+                          },
+                          "archivedAt": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "name",
+                  "kind"
+                ],
+                "properties": {
+                  "name": {
+                    "minLength": 1,
+                    "maxLength": 120,
+                    "type": "string"
+                  },
+                  "kind": {
+                    "title": "OrganizationUnitKind",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "department"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "office"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "division"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "branch"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "team"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "committee"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "project_group"
+                        ]
+                      }
+                    ]
+                  },
+                  "parentUnitId": {
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "unitId",
+                    "parentUnitId",
+                    "kind",
+                    "name",
+                    "createdAt",
+                    "archivedAt"
+                  ],
+                  "properties": {
+                    "unitId": {
+                      "type": "string"
+                    },
+                    "parentUnitId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "kind": {
+                      "title": "OrganizationUnitKind",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "department"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "office"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "division"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "branch"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "team"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "committee"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "project_group"
+                          ]
+                        }
+                      ]
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "number"
+                    },
+                    "archivedAt": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/units/{unitId}": {
+      "patch": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "minLength": 1,
+                    "maxLength": 120,
+                    "type": "string"
+                  },
+                  "parentUnitId": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "unitId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "unitId",
+                    "parentUnitId",
+                    "kind",
+                    "name",
+                    "createdAt",
+                    "archivedAt"
+                  ],
+                  "properties": {
+                    "unitId": {
+                      "type": "string"
+                    },
+                    "parentUnitId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "kind": {
+                      "title": "OrganizationUnitKind",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "department"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "office"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "division"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "branch"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "team"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "committee"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "project_group"
+                          ]
+                        }
+                      ]
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "number"
+                    },
+                    "archivedAt": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/units/{unitId}/archive": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "unitId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/units/{unitId}/members": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "userId"
+                ],
+                "properties": {
+                  "userId": {
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "unitId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/units/{unitId}/members/{userId}": {
+      "delete": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "unitId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "userId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Default Response"
           }
         }
       }
