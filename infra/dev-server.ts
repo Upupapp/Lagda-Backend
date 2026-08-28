@@ -22,6 +22,7 @@
 //   .../preparation            REAL: read and save
 //   .../recipients             REAL: add, list, patch, remove, reorder
 //   .../signing-requests       REAL: create
+//   .../signing-requests/:id/send  REAL: provisioning, sealing, links
 //
 //   .../upload                 REAL: the upload route, now COMPOSED. It was
 //                              built and tested and never mounted, which is
@@ -40,7 +41,8 @@ import { createHash, randomBytes } from "node:crypto";
 import {
   createApp, loadApiConfig, createArgon2PasswordHasher,
   createSecurityTokenGenerator, createSecurityTokenDigester,
-  createIdempotencyKeyDigester,
+  createIdempotencyKeyDigester, createSigningAccessTokenFactory,
+  createDeliverySecretSealer, createSigningLinkBuilder,
 } from "@lagda/api";
 import {
   createSessionService,
@@ -51,7 +53,7 @@ import {
   fakeNotifications, createIdempotencyRecordIds,
   FakeTransactionManager, SequentialWorkspaceIds, SequentialMemberIds,
   SequentialDocumentIds, SequentialPreparationIds, SequentialRecipientIds,
-  SequentialSigningRequestIds,
+  SequentialSigningRequestIds, SequentialSigningAccessIds, fakeTemplateRegistry,
 } from "@lagda/application/test-support";
 import { InMemoryIdentity } from "./identity-memory.ts";
 
@@ -81,19 +83,24 @@ const documentIds = new SequentialDocumentIds();
 const preparationIds = new SequentialPreparationIds();
 const recipientIds = new SequentialRecipientIds();
 const signingRequestIds = new SequentialSigningRequestIds();
+const signingAccessIds = new SequentialSigningAccessIds();
 
 let uploadSequence = 0;
 
-const idempotency = () => ({
-  digester: createIdempotencyKeyDigester(),
-  ids: createIdempotencyRecordIds(),
-  clock,
-  policy: { retentionMs: 24 * 3_600_000 },
-});
 const hasher = createArgon2PasswordHasher();
 const tokens = createSecurityTokenGenerator();
 const digester = createSecurityTokenDigester();
 const clock = { now: () => Date.now() };
+
+// ONE instance, shared. The record-id generator is stateful, so building a
+// fresh one per request restarts its sequence and the second request mints a
+// record id the first already used.
+const idempotency = {
+  digester: createIdempotencyKeyDigester(),
+  ids: createIdempotencyRecordIds(),
+  clock,
+  policy: { retentionMs: 24 * 3_600_000 },
+};
 
 /**
  * Sessions in a Map. Copied in shape from the route tests, which each declare
@@ -157,7 +164,7 @@ const app = await createApp({
     databaseHealth: { isReachable: () => Promise.resolve(true) },
     sessions,
     workspaces: {
-      create: () => ({ transactions, clock, workspaceIds, memberIds, idempotency: idempotency() }),
+      create: () => ({ transactions, clock, workspaceIds, memberIds, idempotency }),
       list: () => ({ transactions }),
       workspace: () => ({ transactions }),
       documents: () => ({ transactions, clock, ids: documentIds }),
@@ -173,7 +180,25 @@ const app = await createApp({
         },
       }),
       signingRequests: () => ({
-        transactions, clock, ids: signingRequestIds, idempotency: idempotency(),
+        transactions, clock, ids: signingRequestIds, idempotency,
+      }),
+      // Send. Provisioning mints the recipient's bootstrap credential, seals it
+      // for the renderer, and freezes the invitation's template version -- all
+      // real implementations, not stubs.
+      sendSigningRequest: () => ({
+        transactions, clock,
+        ids: signingAccessIds,
+        tokens: createSigningAccessTokenFactory(),
+        // A key generated at boot and kept nowhere. The real one comes from the
+        // environment; with no key the sealer REFUSES rather than storing a
+        // recoverable secret in the clear, so exercising this path needs a real
+        // 32-byte key. Regenerating per boot is correct here: the sealed
+        // secrets live in the same memory and die with it.
+        sealer: createDeliverySecretSealer(randomBytes(32).toString("base64"), "dev-v1"),
+        links: createSigningLinkBuilder("http://localhost:4173"),
+        templates: fakeTemplateRegistry,
+        policy: { bootstrapLifetimeMs: 7 * 24 * 3_600_000 },
+        idempotency,
       }),
     },
     // Upload. The pipeline is real -- inspection, scanning, storage, then the
