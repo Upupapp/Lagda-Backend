@@ -39,6 +39,7 @@ function app() {
     listSessions: () => stub("listSessions"),
     revokeSession: () => stub("revokeSession"),
     revokeOtherSessions: () => stub("revokeOtherSessions"),
+    validateCsrf: () => true,
     endSession: () => Promise.resolve(),
     issueSession: () => Promise.resolve({
       sessionToken: "t", csrfToken: "c", expiresAt: 0,

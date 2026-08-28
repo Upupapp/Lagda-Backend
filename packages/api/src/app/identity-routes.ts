@@ -100,6 +100,8 @@ export interface IdentityDependencies {
     readonly csrfToken: string;
     readonly expiresAt: number;
   }>;
+  /** Validates double-submit CSRF for an authenticated request. See sign-out. */
+  readonly validateCsrf: (request: FastifyRequest) => boolean;
   /** Resolves a FULL session. Null for anonymous and for pre-auth credentials. */
   readonly authenticatedUser: (request: FastifyRequest) => Promise<{
     readonly userId: UserId;
@@ -145,6 +147,7 @@ export function registerIdentityRoutes(
     config,
     dependencies: deps.login,
     revokeSession: deps.endSession,
+    validateCsrf: deps.validateCsrf,
   });
 
   registerVerificationRoutes(app, {

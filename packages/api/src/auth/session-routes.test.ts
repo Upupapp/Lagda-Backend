@@ -51,6 +51,7 @@ async function build(options: {
   sessionId?: string;
   failRevoke?: boolean;
   failIssue?: boolean;
+  csrfValid?: boolean;
 } = {}): Promise<Built> {
   const app = Fastify({
     logger: false,
@@ -65,9 +66,20 @@ async function build(options: {
 
   // Stands in for BACKEND-13's session plugin: whatever `auth` the request has
   // been decorated with by the time the handler runs.
-  if (options.sessionId !== undefined) {
+  {
     app.addHook("onRequest", (request, _reply, done) => {
-      (request as { auth?: unknown }).auth = { sessionId: options.sessionId };
+      // The shape the session plugin ACTUALLY produces. This used to be
+      // `{ sessionId }`, which RequestAuth has never had -- so the handler's
+      // real branch was never exercised and a sign-out that revoked nothing
+      // passed every test here.
+      // Anonymous when the case has no session -- again, what the plugin does.
+      (request as { auth?: unknown }).auth = options.sessionId === undefined
+        ? { status: "anonymous" }
+        : {
+            status: "authenticated",
+            actor: { userId: "usr_test" },
+            session: { sessionId: options.sessionId },
+          };
       done();
     });
   }
@@ -109,6 +121,11 @@ async function build(options: {
     signOutPath: "/auth/sign-out",
     config: CONFIG,
     dependencies,
+    // Sign-out is an authenticated mutation and now checks CSRF itself,
+    // because the scope hook that checks every other one does not reach the
+    // identity surface. Default true so the existing cases still describe
+    // sign-out rather than CSRF.
+    validateCsrf: () => options.csrfValid ?? true,
     revokeSession(sessionId: string) {
       if (options.failRevoke === true) return Promise.reject(new Error("db down"));
       revoked.push(sessionId);
@@ -339,6 +356,7 @@ describe("POST /auth/sign-in", () => {
         clock: { now: () => 0 },
         dummyPasswordHash: DUMMY,
       }),
+      validateCsrf: () => true,
       revokeSession: () => Promise.resolve(),
     });
     await app.ready();
@@ -385,6 +403,42 @@ describe("POST /auth/sign-in", () => {
 describe("POST /auth/sign-out", () => {
   const signOut = (app: FastifyInstance) =>
     app.inject({ method: "POST", url: "/auth/sign-out" });
+
+  // ── CSRF ──────────────────────────────────────────────────────────────
+  //
+  // Sign-out is mounted on the ROOT instance with the rest of the identity
+  // surface, so `requireSession`'s CSRF hook -- which covers every other
+  // authenticated mutation -- never applied to it. The route's own comment
+  // claimed otherwise. Measured before the fix: a valid session cookie with no
+  // X-CSRF-Token revoked the session and answered 204.
+  //
+  // Not exploitable at the time, because lagda_session is SameSite=Lax and a
+  // cross-site POST does not carry it. That is the point: the control the
+  // route claimed was not the control protecting it, so a later change to
+  // SameSite would have removed the only real defence silently.
+
+  it("REFUSES an authenticated sign-out with no valid CSRF token", async () => {
+    const { app, revoked } = await build({ sessionId: "ses_active", csrfValid: false });
+    const response = await signOut(app);
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json<{ error: { code: string } }>().error.code)
+      .toBe("csrf_validation_failed");
+    // And the session SURVIVES. A refused request must not do the thing it
+    // refused to verify.
+    expect(revoked).toEqual([]);
+  });
+
+  it("still succeeds with no session at all, CSRF or not", async () => {
+    // Repeated logouts, a second tab, and a retry after a dropped response must
+    // stay safe (§60, §65). The CSRF check sits AFTER that branch on purpose:
+    // refusing here would punish the case the branch exists to protect.
+    const { app, revoked } = await build({ csrfValid: false });
+    const response = await signOut(app);
+
+    expect(response.statusCode).toBe(204);
+    expect(revoked).toEqual([]);
+  });
 
   it("REVOKES the server session and clears both cookies", async () => {
     // Clearing a cookie alone leaves a credential that still authenticates if

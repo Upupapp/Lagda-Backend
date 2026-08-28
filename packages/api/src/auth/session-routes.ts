@@ -26,6 +26,7 @@ import {
   type LoginDependencies, type UserId,
 } from "@lagda/application";
 import type { ApiConfig } from "../config/index.js";
+import type { RequestAuth } from "../security/session-plugin.js";
 import {
   SESSION_COOKIE_NAME, CSRF_COOKIE_NAME,
   sessionCookieOptions, csrfCookieOptions,
@@ -92,6 +93,19 @@ export interface SessionRouteOptions {
   readonly dependencies: () => LoginDependencies;
   /** Revokes the current session server-side. Provided by BACKEND-13's service. */
   readonly revokeSession: (sessionId: string) => Promise<void>;
+  /**
+   * Validates the double-submit CSRF token for an authenticated request.
+   *
+   * REQUIRED, not optional. `requireSession` installs the CSRF hook on the
+   * AUTHENTICATED SCOPE, and the identity surface is mounted on the root
+   * instance -- correctly, because most of its routes are pre-session. Sign-out
+   * is the one route here that is reached WITH a session and mutates state, so
+   * it is the one route the scope's hook was supposed to cover and never did.
+   *
+   * Optional would have been worse than absent: a security control that a
+   * composition can silently omit is one that eventually is omitted.
+   */
+  readonly validateCsrf: (request: FastifyRequest) => boolean;
 }
 
 export function registerSessionRoutes(
@@ -208,20 +222,55 @@ export function registerSessionRoutes(
   // page on the internet (§61). It is an authenticated state mutation, so it
   // carries the same CSRF requirement as every other mutation.
   app.post(options.signOutPath, async (request: FastifyRequest, reply: FastifyReply) => {
-    const auth = (request as { auth?: { sessionId?: string } }).auth;
+    // `request.auth`, as the session plugin actually decorates it.
+    //
+    // This used to read `auth.sessionId`. RequestAuth has no such field -- the
+    // authenticated arm is { status, actor, session } -- so the check was
+    // ALWAYS true, sign-out always took the no-session branch below, and
+    // revokeSession was never called in a composed application. The cookie was
+    // cleared and 204 returned, which looks exactly like success.
+    //
+    // That is the failure INV-257 names: clearing a cookie alone leaves a
+    // credential that still authenticates if it was ever copied. Measured
+    // against the running API before this fix -- sign out, then reuse the same
+    // cookie: 200.
+    //
+    // The tests did not catch it because the harness decorated
+    // `request.auth = { sessionId }`, a shape the real plugin never produces.
+    // A double that invents its own contract can only test itself.
+    // Optional because the session plugin is only registered when a session
+    // service is composed; with none, there is nothing to sign out of.
+    const auth = request.auth as RequestAuth | undefined;
 
     // No session at all. The cookie is cleared and success is returned:
     // repeated logouts, a second browser tab, and a retry after a dropped
     // response must all be safe rather than a 500 (§60, §65).
-    if (auth?.sessionId === undefined) {
+    if (auth?.status !== "authenticated") {
       clearCredentials(reply, options.config);
       return reply.status(204).send();
+    }
+
+    // There IS a session, so this is an authenticated state mutation and
+    // carries the same CSRF requirement as every other one. Checked here
+    // because the scope hook that checks it everywhere else does not reach
+    // this route.
+    //
+    // Deliberately AFTER the no-session branch: a repeated logout still has to
+    // succeed, and refusing one for a missing token would punish the safe case
+    // the branch above exists to protect.
+    if (!options.validateCsrf(request)) {
+      return reply.status(403).send({
+        error: {
+          code: "csrf_validation_failed",
+          message: "The request could not be verified. Please retry from the application.",
+        },
+      });
     }
 
     try {
       // SERVER-SIDE revocation. Clearing a cookie alone leaves a credential
       // that still authenticates if it was ever copied (INV-257).
-      await options.revokeSession(auth.sessionId);
+      await options.revokeSession(auth.session.sessionId);
     } catch {
       // The browser credential is cleared regardless — that is locally
       // defensive and costs nothing. But the failure is NOT reported as a

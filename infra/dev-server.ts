@@ -350,6 +350,22 @@ const app = await createApp({
         return Promise.resolve();
       },
 
+      // The same double-submit check requireSession installs on the
+      // authenticated scope, applied to the one identity route that mutates
+      // state with a session in hand.
+      validateCsrf: (request) => {
+        const auth = (request as { auth?: { status?: string; session?: unknown } }).auth;
+        if (auth?.status !== "authenticated" || auth.session === undefined) return false;
+        const header = request.headers["x-csrf-token"];
+        if (typeof header !== "string") return false;
+        try {
+          sessions.validateCsrf(auth.session as never, header);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+
       endSession: (sessionId) => sessions.revoke(sessionId),
       issueSession: (userId) => sessions.issue(userId),
       authenticatedUser: (request) => sessions.resolve(request),
