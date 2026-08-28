@@ -56,6 +56,22 @@ export class InMemoryIdentity {
    * Password-reset challenges. Same lifecycle as verification, separate rows:
    * a token that could redeem either would let an email link change a password.
    */
+  /** TOTP factors, one active per user; the secret is stored SEALED. */
+  readonly #factors = new Map<string, {
+    factorId: string; userId: UserId; factorType: string;
+    secretCiphertext: string | null; secretKeyVersion: string | null;
+    createdAt: number; verifiedAt: number | null; disabledAt: number | null;
+    lastUsedTimeStep: number | null;
+  }>();
+  /** Recovery codes, digested. userId -> the current set. */
+  readonly #recovery = new Map<string, { id: string; digest: string; consumedAt: number | null }[]>();
+  /** Pre-authentication credentials: password accepted, second factor pending. */
+  readonly #pending = new Map<string, {
+    pendingId: string; userId: UserId; credentialDigest: string;
+    createdAt: number; expiresAt: number; consumedAt: number | null;
+    revokedAt: number | null; failedAttempts: number; maxAttempts: number;
+    authenticationMethod: string;
+  }>();
   readonly #resetRows = new Map<string, {
     challengeId: string; userId: UserId; tokenDigest: string;
     createdAt: number; expiresAt: number;
@@ -399,6 +415,116 @@ export class InMemoryIdentity {
         if (row.userId !== userId || row.revokedAt !== undefined) continue;
         this.#sessions.set(id, { ...row, revokedAt: at, revocationReason: reason as never });
         count += 1;
+      }
+      return Promise.resolve(count);
+    },
+  };
+
+  readonly mfaFactors = {
+    // One ACTIVE factor: created-but-unverified counts, disabled does not.
+    findActiveForUser: (userId: UserId) => {
+      const row = [...this.#factors.values()].find(
+        (f) => f.userId === userId && f.disabledAt === null);
+      return Promise.resolve(row ? { ...row } as never : null);
+    },
+    create: (input: {
+      factorId: string; userId: UserId; factorType: string;
+      secretCiphertext: string; secretKeyVersion: string; createdAt: number;
+    }) => {
+      this.#factors.set(input.factorId, {
+        ...input, verifiedAt: null, disabledAt: null, lastUsedTimeStep: null,
+      });
+      return Promise.resolve();
+    },
+    markVerifiedIfPending: ({ factorId, verifiedAt }: { factorId: string; verifiedAt: number }) => {
+      const row = this.#factors.get(factorId);
+      if (!row || row.verifiedAt !== null || row.disabledAt !== null) return Promise.resolve(false);
+      row.verifiedAt = verifiedAt;
+      return Promise.resolve(true);
+    },
+    /**
+     * Replay defence. A TOTP code stays valid for its whole window, so the
+     * step is recorded and a code from the same or an older step is refused --
+     * otherwise an observed code works twice.
+     */
+    advanceTimeStepIfNewer: ({ factorId, timeStep }: { factorId: string; timeStep: number }) => {
+      const row = this.#factors.get(factorId);
+      if (!row) return Promise.resolve(false);
+      if (row.lastUsedTimeStep !== null && row.lastUsedTimeStep >= timeStep) {
+        return Promise.resolve(false);
+      }
+      row.lastUsedTimeStep = timeStep;
+      return Promise.resolve(true);
+    },
+    disable: ({ factorId, disabledAt }: { factorId: string; disabledAt: number }) => {
+      const row = this.#factors.get(factorId);
+      if (!row || row.disabledAt !== null) return Promise.resolve(false);
+      row.disabledAt = disabledAt;
+      return Promise.resolve(true);
+    },
+  };
+
+  readonly recoveryCodes = {
+    // Replaces the whole set: a partially rotated set would leave old codes live.
+    replaceAllForUser: ({ userId, codes }: {
+      userId: UserId; codes: readonly { id: string; digest: string }[]; createdAt: number;
+    }) => {
+      this.#recovery.set(userId, codes.map((c) => ({ ...c, consumedAt: null })));
+      return Promise.resolve();
+    },
+    consumeForUser: ({ userId, digest, now }: { userId: UserId; digest: string; now: number }) => {
+      const set = this.#recovery.get(userId);
+      const code = set?.find((c) => c.digest === digest && c.consumedAt === null);
+      if (!code) return Promise.resolve(false);
+      code.consumedAt = now;
+      return Promise.resolve(true);
+    },
+    deleteAllForUser: (userId: UserId) => {
+      this.#recovery.delete(userId);
+      return Promise.resolve();
+    },
+    /** How many are left, so the account surface can warn before they run out. */
+    countUnusedForUser: (userId: UserId) =>
+      Promise.resolve((this.#recovery.get(userId) ?? []).filter((c) => c.consumedAt === null).length),
+  };
+
+  readonly pendingAuth = {
+    create: (input: {
+      pendingId: string; userId: UserId; credentialDigest: string;
+      createdAt: number; expiresAt: number; maxAttempts: number;
+      authenticationMethod: string;
+    }) => {
+      this.#pending.set(input.pendingId, {
+        ...input, consumedAt: null, revokedAt: null, failedAttempts: 0,
+      });
+      return Promise.resolve();
+    },
+    findByCredentialDigest: (digest: string) => {
+      const row = [...this.#pending.values()].find((p) => p.credentialDigest === digest);
+      return Promise.resolve(row ? { ...row } as never : null);
+    },
+    recordFailedAttempt: ({ pendingId }: { pendingId: string }) => {
+      const row = this.#pending.get(pendingId);
+      if (!row) return Promise.resolve({ failedAttempts: 0, exhausted: true });
+      row.failedAttempts += 1;
+      return Promise.resolve({
+        failedAttempts: row.failedAttempts,
+        exhausted: row.failedAttempts >= row.maxAttempts,
+      });
+    },
+    consumeIfUsable: ({ pendingId, now }: { pendingId: string; now: number }) => {
+      const row = this.#pending.get(pendingId);
+      if (!row || row.consumedAt !== null || row.revokedAt !== null || row.expiresAt <= now) {
+        return Promise.resolve(false);
+      }
+      row.consumedAt = now;
+      return Promise.resolve(true);
+    },
+    revokeAllForUser: ({ userId, now }: { userId: UserId; now: number }) => {
+      let count = 0;
+      for (const row of this.#pending.values()) {
+        if (row.userId !== userId || row.consumedAt !== null || row.revokedAt !== null) continue;
+        row.revokedAt = now; count += 1;
       }
       return Promise.resolve(count);
     },

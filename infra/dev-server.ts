@@ -45,6 +45,9 @@ import {
   createDeliverySecretSealer, createSigningLinkBuilder,
   createVerificationTokenFactory, digestSubmittedCode,
   createResetTokenFactory, digestSubmittedResetToken,
+  createSecretBox, generateSecretBoxKey, createPreAuthCredentialFactory,
+  generateTotpSecret, buildProvisioningUri, verifyTotp, isWellFormedTotpCode,
+  issueRecoveryCodes, digestSubmittedRecoveryCode,
 } from "@lagda/api";
 import {
   createSessionService,
@@ -71,6 +74,46 @@ const config = loadApiConfig({
 
 const identity = new InMemoryIdentity();
 const resetTokens = createResetTokenFactory();
+
+// TOTP secrets are stored SEALED, never in the clear -- the one recoverable
+// secret besides a delivery payload. The key is generated per boot and kept
+// nowhere, which is right here: the sealed secrets live in the same memory.
+// In production this is MFA_SECRET_KEY, and OD-081 records that it has no KMS,
+// no rotation and no escrow.
+const mfaSecrets = createSecretBox({
+  keyBase64: generateSecretBoxKey(),
+  keyVersion: "dev-v1",
+});
+
+const totpEngine = {
+  generateSecret: () => generateTotpSecret(),
+  buildProvisioningUri: (secret: string, accountLabel: string) =>
+    buildProvisioningUri(secret as never, accountLabel),
+  verify: (input: { secret: string; code: string; nowMs: number; accountLabel: string }) =>
+    verifyTotp({ ...input, secret: input.secret as never }),
+  // Cheap shape check before any crypto: the port asks for it so a malformed
+  // submission costs nothing. Missing it surfaced only as a 500.
+  isWellFormedCode: isWellFormedTotpCode,
+};
+
+const recoveryCodeFactory = {
+  issue: () => {
+    const issued = issueRecoveryCodes();
+    // Printed because recovery codes are shown ONCE, at enrolment, and there is
+    // no second chance to read them. Dev only.
+    console.log(JSON.stringify({
+      level: "info", msg: "recovery codes issued (shown once)", codes: issued.display,
+    }));
+    return issued;
+  },
+  digestSubmitted: digestSubmittedRecoveryCode,
+};
+
+const preAuthCredentials = createPreAuthCredentialFactory();
+
+/** The account label an authenticator app shows. Its email, as registered. */
+const accountLabelFor = (userId: string) =>
+  identity.accounts.findCurrentUser(userId as never).then((u) => u?.email ?? null);
 const notificationStore = {
   notificationIntents: new Map(),
   notificationDeliveries: new Map(),
@@ -260,6 +303,37 @@ const app = await createApp({
       login: () => ({
         users: identity.users,
         hasher, sessions, clock, dummyPasswordHash,
+        // WITHOUT this, enrolling MFA changes nothing at sign-in: the password
+        // alone still issues a full session. `mfa` is optional so that an
+        // account with no second factor takes the path it always did -- which
+        // means omitting it is indistinguishable from having no MFA at all,
+        // and I omitted it. Enrol-then-sign-in-with-password-only returned
+        // status "authenticated" until this was added.
+        mfa: {
+          isRequired: async (userId) => {
+            const factor = await identity.mfaFactors.findActiveForUser(userId);
+            // Enrolled but UNCONFIRMED must not challenge: the user could not
+            // answer it, and would be locked out of their own account.
+            return factor !== null && (factor as { verifiedAt: number | null }).verifiedAt !== null;
+          },
+          beginCeremony: async (userId) => {
+            const issued = preAuthCredentials.issue();
+            const now = clock.now();
+            const expiresAt = now + 5 * 60 * 1000;
+            await identity.pendingAuth.create({
+              pendingId: `pna_${randomBytes(8).toString("hex")}`,
+              userId,
+              credentialDigest: issued.digest as never,
+              createdAt: now,
+              expiresAt,
+              maxAttempts: 5,
+              // One of PASSWORD | PASSWORD_PLUS_TOTP | PASSWORD_PLUS_RECOVERY_CODE.
+              // "totp" passed silently because types are stripped at runtime.
+              authenticationMethod: "PASSWORD_PLUS_TOTP" as never,
+            });
+            return { raw: issued.raw, expiresAt };
+          },
+        },
       }),
       currentUser: () => ({ accounts: identity.accounts }),
 
@@ -320,10 +394,48 @@ const app = await createApp({
           sessions: identity.resetSessionRevoker as never,
         }),
       }),
-      completeMfa: () => unwired("completeMfa"),
-      beginEnrolment: () => unwired("beginEnrolment"),
-      confirmEnrolment: () => unwired("confirmEnrolment"),
-      disableMfa: () => unwired("disableMfa"),
+      completeMfa: () => ({
+        clock,
+        totp: totpEngine,
+        sealer: mfaSecrets,
+        recoveryCodes: recoveryCodeFactory,
+        pendingCredentials: preAuthCredentials,
+        accountLabelFor: accountLabelFor as never,
+        commit: (operation) => operation({
+          pending: identity.pendingAuth as never,
+          factors: identity.mfaFactors as never,
+          recovery: identity.recoveryCodes as never,
+        }),
+      }),
+      beginEnrolment: () => ({
+        clock,
+        totp: totpEngine,
+        sealer: mfaSecrets,
+        newFactorId: () => `mfa_${randomBytes(8).toString("hex")}` as never,
+        accountLabelFor: accountLabelFor as never,
+        commit: (operation) => operation({ factors: identity.mfaFactors as never }),
+      }),
+      confirmEnrolment: () => ({
+        clock,
+        totp: totpEngine,
+        sealer: mfaSecrets,
+        recoveryCodes: recoveryCodeFactory,
+        newRecoveryCodeId: () => `rc_${randomBytes(8).toString("hex")}` as never,
+        accountLabelFor: accountLabelFor as never,
+        commit: (operation) => operation({
+          factors: identity.mfaFactors as never,
+          recovery: identity.recoveryCodes as never,
+        }),
+      }),
+      disableMfa: () => ({
+        clock, hasher,
+        passwordHashFor: (userId) => identity.credentials.findPasswordHash(userId),
+        commit: (operation) => operation({
+          factors: identity.mfaFactors as never,
+          recovery: identity.recoveryCodes as never,
+          pending: identity.pendingAuth as never,
+        }),
+      }),
       updateProfile: () => ({
         clock,
         commit: (operation) => operation({ accounts: identity.accounts }),
