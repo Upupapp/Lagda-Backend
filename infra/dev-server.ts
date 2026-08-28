@@ -18,6 +18,14 @@
 //   /auth/sessions/current     and CSRF. Only persistence is in memory.
 //   /workspaces                REAL: create, list and read, with real
 //   /workspaces/{id}           idempotency and real ownership.
+//   .../documents              REAL: create, list, read, patch
+//   .../preparation            REAL: read and save
+//   .../recipients             REAL: add, list, patch, remove, reorder
+//   .../signing-requests       REAL: create
+//
+// There is NO upload leg, and that is the contract's shape rather than an
+// omission here: the 55-path document has ZERO multipart endpoints, and
+// POST /documents takes a title and nothing else.
 //
 // WHAT IS NOT, and why it is not a matter of adding a line here:
 //   Every other surface needs its dependency group, and the identity surface
@@ -40,6 +48,8 @@ import {
 import {
   fakeNotifications, createIdempotencyRecordIds,
   FakeTransactionManager, SequentialWorkspaceIds, SequentialMemberIds,
+  SequentialDocumentIds, SequentialPreparationIds, SequentialRecipientIds,
+  SequentialSigningRequestIds,
 } from "@lagda/application/test-support";
 import { InMemoryIdentity } from "./identity-memory.ts";
 
@@ -64,6 +74,17 @@ const notificationStore = {
 const transactions = new FakeTransactionManager();
 const workspaceIds = new SequentialWorkspaceIds();
 const memberIds = new SequentialMemberIds();
+const documentIds = new SequentialDocumentIds();
+const preparationIds = new SequentialPreparationIds();
+const recipientIds = new SequentialRecipientIds();
+const signingRequestIds = new SequentialSigningRequestIds();
+
+const idempotency = () => ({
+  digester: createIdempotencyKeyDigester(),
+  ids: createIdempotencyRecordIds(),
+  clock,
+  policy: { retentionMs: 24 * 3_600_000 },
+});
 const hasher = createArgon2PasswordHasher();
 const tokens = createSecurityTokenGenerator();
 const digester = createSecurityTokenDigester();
@@ -131,17 +152,24 @@ const app = await createApp({
     databaseHealth: { isReachable: () => Promise.resolve(true) },
     sessions,
     workspaces: {
-      create: () => ({
-        transactions, clock, workspaceIds, memberIds,
-        idempotency: {
-          digester: createIdempotencyKeyDigester(),
-          ids: createIdempotencyRecordIds(),
-          clock,
-          policy: { retentionMs: 24 * 3_600_000 },
-        },
-      }),
+      create: () => ({ transactions, clock, workspaceIds, memberIds, idempotency: idempotency() }),
       list: () => ({ transactions }),
       workspace: () => ({ transactions }),
+      documents: () => ({ transactions, clock, ids: documentIds }),
+      preparation: () => ({ transactions, clock, ids: preparationIds }),
+      // Both generators: a recipient cannot exist without a preparation to hold
+      // it, and the first recipient on a never-prepared document creates one.
+      recipients: () => ({
+        transactions, clock,
+        ids: {
+          nextRecipientId: () => recipientIds.nextRecipientId(),
+          nextPreparationId: () => preparationIds.nextPreparationId(),
+          nextPreparationFieldId: () => preparationIds.nextPreparationFieldId(),
+        },
+      }),
+      signingRequests: () => ({
+        transactions, clock, ids: signingRequestIds, idempotency: idempotency(),
+      }),
     },
     identity: () => ({
       register: () => ({
