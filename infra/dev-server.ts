@@ -74,6 +74,7 @@ const config = loadApiConfig({
 
 const identity = new InMemoryIdentity();
 const resetTokens = createResetTokenFactory();
+const verificationTokens = createVerificationTokenFactory();
 
 // TOTP secrets are stored SEALED, never in the clear -- the one recoverable
 // secret besides a delivery payload. The key is generated per boot and kept
@@ -293,7 +294,7 @@ const app = await createApp({
         // hand-rolled the matching digestSubmitted. createVerificationTokenFactory
         // ships both halves AND the canonicalisation and well-formedness rules
         // that a hand-rolled pair silently omits.
-        tokens: createVerificationTokenFactory(),
+        tokens: verificationTokens,
         newUserId: () => identity.nextUserId(),
         newChallengeId: () => `evc_${Date.now()}`,
         commit: identity.commit,
@@ -360,7 +361,43 @@ const app = await createApp({
           }),
         }),
       }),
-      resendVerification: () => unwired("resendVerification"),
+      // The LAST stub gone. Resend supersedes every active challenge and mints
+      // a fresh one, so the old link must stop working -- that is the property
+      // worth having, and the one a "it returned 202" check would miss.
+      resendVerification: () => ({
+        clock,
+        // Wrapped to print, because resend delivers through scheduleDelivery
+        // rather than the deliverVerification hook registration uses, and
+        // scheduleDelivery is handed a challengeId, never the raw token. In
+        // production the renderer recovers it from the SEALED secret on the
+        // row; here there is nothing to render into.
+        tokens: {
+          issue: () => {
+            const issued = verificationTokens.issue();
+            console.log(JSON.stringify({
+              level: "info", msg: "verification resent (not sent)", rawToken: issued.raw,
+            }));
+            return issued;
+          },
+        },
+        newChallengeId: () => `evc_${randomBytes(8).toString("hex")}`,
+        verificationTtlMs: 24 * 3_600_000,
+        commit: (operation) => operation({
+          challenges: identity.verificationChallengesFull as never,
+          users: identity.verifiableUsers as never,
+          adoptUser: () => Promise.resolve({
+            notifications: fakeNotifications(notificationStore),
+            transaction: {},
+          }),
+        }),
+        scheduleDelivery: (input) => {
+          console.log(JSON.stringify({
+            level: "info", msg: "verification delivery scheduled",
+            challengeId: input.challengeId, destination: input.destination,
+          }));
+          return Promise.resolve();
+        },
+      }),
       requestPasswordReset: () => ({
         clock,
         // The real factory, wrapped only to print what it issued. There is no
