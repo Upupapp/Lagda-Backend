@@ -297,8 +297,48 @@ const app = await createApp({
         }),
       }),
       resendVerification: () => unwired("resendVerification"),
-      requestPasswordReset: () => unwired("requestPasswordReset"),
-      resetPassword: () => unwired("resetPassword"),
+      requestPasswordReset: () => ({
+        clock,
+        // A DIFFERENT domain prefix from the verification token. Same secret
+        // under two prefixes would give one link two meanings, and an email
+        // that confirms an address could then change a password.
+        tokens: {
+          issue: () => {
+            const raw = randomBytes(32).toString("base64url");
+            // Printed because IdentityDependencies has no deliverReset hook to
+            // hand it to -- unlike verification, which has deliverVerification.
+            // Nothing sends mail here, and without this the token exists only
+            // as a digest, which cannot be turned back into a link.
+            console.log(JSON.stringify({
+              level: "info", msg: "reset token issued (not sent)", rawResetToken: raw,
+            }));
+            return {
+              raw,
+              digest: createHash("sha256").update(`lagda.reset:${raw}`).digest("hex") as never,
+            };
+          },
+        },
+        newChallengeId: () => `prc_${randomBytes(8).toString("hex")}` as never,
+        resetTtlMs: 60 * 60 * 1000,
+        commit: (operation) => operation({
+          challenges: identity.resetChallenges as never,
+          users: identity.resettableUsers as never,
+        }),
+      }),
+      resetPassword: () => ({
+        digestSubmitted: (raw: string) => {
+          const canonical = raw.trim();
+          if (canonical.length === 0) return null;
+          return createHash("sha256").update(`lagda.reset:${canonical}`).digest("hex") as never;
+        },
+        hasher, clock,
+        peek: (digest) => identity.resetChallenges.findByTokenDigest(digest as string) as never,
+        commit: (operation) => operation({
+          challenges: identity.resetChallenges as never,
+          users: identity.resettableUsers as never,
+          sessions: identity.resetSessionRevoker as never,
+        }),
+      }),
       completeMfa: () => unwired("completeMfa"),
       beginEnrolment: () => unwired("beginEnrolment"),
       confirmEnrolment: () => unwired("confirmEnrolment"),

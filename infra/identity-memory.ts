@@ -52,6 +52,16 @@ export class InMemoryIdentity {
    * report success against rows the authenticator never consulted.
    */
   readonly #sessions = new Map<string, SessionRecord>();
+  /**
+   * Password-reset challenges. Same lifecycle as verification, separate rows:
+   * a token that could redeem either would let an email link change a password.
+   */
+  readonly #resetRows = new Map<string, {
+    challengeId: string; userId: UserId; tokenDigest: string;
+    createdAt: number; expiresAt: number;
+    consumedAt: number | null; supersededAt: number | null;
+    sealedSecret?: string; sealedKeyVersion?: string;
+  }>();
   #sequence = 0;
 
   nextUserId(): UserId {
@@ -302,6 +312,92 @@ export class InMemoryIdentity {
       for (const [id, row] of this.#sessions) {
         if (row.userId !== userId || id === keepSessionId || row.revokedAt !== undefined) continue;
         this.#sessions.set(id, { ...row, revokedAt: at, revocationReason: reason });
+        count += 1;
+      }
+      return Promise.resolve(count);
+    },
+  };
+
+  /** The reset side of the same account, mirroring verificationChallengesFull. */
+  readonly resetChallenges = {
+    findByTokenDigest: (digest: string) => {
+      const row = [...this.#resetRows.values()].find((r) => r.tokenDigest === digest);
+      return Promise.resolve(row
+        ? {
+            challengeId: row.challengeId as never,
+            userId: row.userId,
+            createdAt: row.createdAt,
+            expiresAt: row.expiresAt,
+            consumedAt: row.consumedAt,
+            supersededAt: row.supersededAt,
+          }
+        : null);
+    },
+    consumeIfActive: ({ challengeId, now }: { challengeId: string; now: number }) => {
+      const row = this.#resetRows.get(challengeId);
+      if (!row || row.consumedAt !== null || row.supersededAt !== null || row.expiresAt <= now) {
+        return Promise.resolve(false);
+      }
+      row.consumedAt = now;
+      return Promise.resolve(true);
+    },
+    supersedeActiveForUser: ({ userId, now }: { userId: UserId; now: number }) => {
+      let count = 0;
+      for (const row of this.#resetRows.values()) {
+        if (row.userId === userId && row.consumedAt === null && row.supersededAt === null) {
+          row.supersededAt = now; count += 1;
+        }
+      }
+      return Promise.resolve(count);
+    },
+    create: (input: {
+      challengeId: string; userId: UserId; tokenDigest: string;
+      createdAt: number; expiresAt: number;
+      sealedSecret?: string; sealedKeyVersion?: string;
+    }) => {
+      this.#resetRows.set(input.challengeId, { ...input, consumedAt: null, supersededAt: null });
+      return Promise.resolve();
+    },
+    findSealedIfActive: ({ challengeId, now }: { challengeId: string; now: number }) => {
+      const row = this.#resetRows.get(challengeId);
+      if (!row || row.consumedAt !== null || row.supersededAt !== null || row.expiresAt <= now) {
+        return Promise.resolve(null);
+      }
+      return Promise.resolve(
+        row.sealedSecret !== undefined && row.sealedKeyVersion !== undefined
+          ? { sealed: row.sealedSecret, keyVersion: row.sealedKeyVersion }
+          : null,
+      );
+    },
+    scrubExpiredSecrets: ({ now, limit }: { now: number; limit: number }) => {
+      let scrubbed = 0;
+      for (const row of this.#resetRows.values()) {
+        if (scrubbed >= limit) break;
+        if (row.expiresAt <= now && row.sealedSecret !== undefined) {
+          delete row.sealedSecret; delete row.sealedKeyVersion; scrubbed += 1;
+        }
+      }
+      return Promise.resolve(scrubbed);
+    },
+  };
+
+  /** The account write reset needs, and the lookup that finds who to reset. */
+  readonly resettableUsers = {
+    findByNormalizedEmail: this.users.findByNormalizedEmail,
+    replacePasswordHash: ({ userId, passwordHash }: { userId: UserId; passwordHash: PasswordHash }) => {
+      if (!this.#byId.has(userId)) return Promise.resolve(false);
+      this.#passwords.set(userId, passwordHash);
+      return Promise.resolve(true);
+    },
+  };
+
+  /** Reset ends every session: a password change must not leave one behind. */
+  readonly resetSessionRevoker = {
+    revokeAllForUser: (userId: UserId, at: number, reason: string) => {
+      let count = 0;
+      for (const [id, row] of this.#sessions) {
+        if (row.userId !== userId || row.revokedAt !== undefined) continue;
+        this.#sessions.set(id, { ...row, revokedAt: at, revocationReason: reason as never });
         count += 1;
       }
       return Promise.resolve(count);
