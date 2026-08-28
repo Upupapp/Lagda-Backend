@@ -56,6 +56,9 @@ import type {
 } from "../common/ports/completion.js";
 import type { WorkspaceInvitationId } from "@lagda/contracts";
 import type { NormalizedEmail } from "../auth/email-identity.js";
+import type {
+  ScopedOrganizationUnitRepository, OrganizationUnitRecord, OrganizationUnitId,
+} from "../organization/index.js";
 import type { TransactionId, DocumentId, ContactId } from "@lagda/contracts";
 import type {
   ScopedContactRepository, ContactRecord, NewContact, ContactIdGenerator,
@@ -440,6 +443,11 @@ export class InMemoryStore {
    * response body.
    */
   sealedInvitations = new Map<string, { sealed: string; keyVersion: string }>();
+  organizationUnits: OrganizationUnitRecord[] = [];
+  organizationUnitMembers: {
+    unitId: OrganizationUnitId; workspaceId: WorkspaceId;
+    userId: UserId; createdAt: number;
+  }[] = [];
   activations: ActivationRow[] = [];
   workflowIntents: WorkflowIntentRow[] = [];
   completionRuns: CompletionRunRow[] = [];
@@ -697,6 +705,107 @@ function scopedMemberships(store: InMemoryStore, scope: WorkspaceId): ScopedMemb
 const isLive = (i: WorkspaceInvitationRecord): boolean =>
   i.acceptedAt === null && i.revokedAt === null
   && i.declinedAt === null && i.supersededAt === null;
+
+
+/**
+ * The org chart, in memory.
+ *
+ * Reproduces the two constraints that carry the rules: sibling names are unique
+ * under one parent, and unit membership requires workspace membership. Without
+ * them a duplicate-name bug or an orphan member would pass here and be caught
+ * only by PostgreSQL.
+ */
+function scopedOrganizationUnits(
+  store: InMemoryStore, scope: WorkspaceId,
+): ScopedOrganizationUnitRepository {
+  const mine = () => store.organizationUnits.filter(u => u.workspaceId === scope);
+
+  return {
+    list: () => Promise.resolve(mine()),
+    findById: unitId => Promise.resolve(
+      mine().find(u => u.unitId === unitId) ?? null),
+
+    insert: unit => {
+      if (unit.workspaceId !== scope) {
+        throw new FakeScopeMismatchError(
+          "OrganizationUnit", scope, unit.workspaceId);
+      }
+      const clash = mine().some(u =>
+        u.archivedAt === null
+        && u.parentUnitId === unit.parentUnitId
+        && u.name.toLowerCase() === unit.name.toLowerCase());
+      if (clash) {
+        throw new Error("A unit with that name already exists here.");
+      }
+      store.organizationUnits.push(unit);
+      return Promise.resolve();
+    },
+
+    updateIfLive: input => {
+      const index = store.organizationUnits.findIndex(u =>
+        u.workspaceId === scope && u.unitId === input.unitId
+        && u.archivedAt === null);
+      if (index === -1) return Promise.resolve(false);
+      const current = store.organizationUnits[index];
+      if (current === undefined) return Promise.resolve(false);
+      store.organizationUnits[index] = {
+        ...current, name: input.name, parentUnitId: input.parentUnitId,
+      };
+      return Promise.resolve(true);
+    },
+
+    archiveIfLive: input => {
+      const index = store.organizationUnits.findIndex(u =>
+        u.workspaceId === scope && u.unitId === input.unitId
+        && u.archivedAt === null);
+      if (index === -1) return Promise.resolve(false);
+      const current = store.organizationUnits[index];
+      if (current === undefined) return Promise.resolve(false);
+      store.organizationUnits[index] = { ...current, archivedAt: input.now };
+      return Promise.resolve(true);
+    },
+
+    listMembers: unitId => Promise.resolve(
+      store.organizationUnitMembers
+        .filter(m => m.workspaceId === scope && m.unitId === unitId)
+        .map(m => m.userId)),
+
+    addMember: input => {
+      // The real table enforces this with a compound FK to
+      // workspace_memberships. Reproduced, so a use case that files a
+      // non-member into a department fails here rather than in an integration
+      // run nobody has executed.
+      const isMember = store.memberships.some(m =>
+        m.workspaceId === scope && m.userId === input.userId);
+      if (!isMember) {
+        throw new Error("That person is not a member of this workspace.");
+      }
+      const already = store.organizationUnitMembers.some(m =>
+        m.workspaceId === scope && m.unitId === input.unitId
+        && m.userId === input.userId);
+      if (!already) {
+        store.organizationUnitMembers.push({
+          unitId: input.unitId, workspaceId: scope,
+          userId: input.userId, createdAt: input.now,
+        });
+      }
+      return Promise.resolve();
+    },
+
+    removeMember: input => {
+      const before = store.organizationUnitMembers.length;
+      store.organizationUnitMembers = store.organizationUnitMembers.filter(m =>
+        !(m.workspaceId === scope && m.unitId === input.unitId
+          && m.userId === input.userId));
+      return Promise.resolve(store.organizationUnitMembers.length < before);
+    },
+
+    unitsForUser: userId => Promise.resolve(
+      store.organizationUnitMembers
+        .filter(m => m.workspaceId === scope && m.userId === userId)
+        .map(m => m.unitId)),
+  };
+}
 
 function scopedInvitations(
   store: InMemoryStore, scope: WorkspaceId,
@@ -2093,6 +2202,7 @@ export class FakeTransactionManager implements TransactionManager {
         // than fabricated. Null exercises the caller's fallback, which is the
         // path a deleted inviter takes.
         actorProfiles: { displayNameOf: () => Promise.resolve(null) },
+        organizationUnits: scopedOrganizationUnits(this.store, workspaceId),
         workspaces: scopedWorkspaces(this.store, workspaceId),
         memberships: scopedMemberships(this.store, workspaceId),
         evidence: scopedEvidence(this.store, workspaceId),
@@ -2171,6 +2281,7 @@ export class FakeTransactionManager implements TransactionManager {
           return inner({
             workspaceId,
             actorProfiles: { displayNameOf: () => Promise.resolve(null) },
+            organizationUnits: scopedOrganizationUnits(store, workspaceId),
             workspaces: scopedWorkspaces(store, workspaceId),
             memberships: scopedMemberships(store, workspaceId),
             evidence: scopedEvidence(store, workspaceId),

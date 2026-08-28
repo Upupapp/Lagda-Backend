@@ -50,6 +50,9 @@ import { createScopedSigningRequestRepository } from "../repositories/signing-re
 import { createScopedSigningAccessRepository } from "../repositories/signing-access.js";
 import { createNotificationRepository } from "../repositories/notifications.js";
 import {
+  createScopedOrganizationUnitRepository,
+} from "../repositories/organization.js";
+import {
   createNotificationTransportRepository,
 } from "../repositories/notification-transport.js";
 import {
@@ -125,6 +128,9 @@ function buildUnitOfWork(
         return row?.display_name ?? null;
       },
     },
+    // The org chart (TENANT_CORE). Scoped like every other tenant repository:
+    // a unit is a container for routing and reporting, never a permission.
+    organizationUnits: createScopedOrganizationUnitRepository(trx, workspaceId),
     notifications: createNotificationRepository(trx),
     notificationTransport: createNotificationTransportRepository(trx),
     signingWorkflow: createScopedSigningWorkflowRepository(trx, workspaceId),

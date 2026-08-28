@@ -200,8 +200,13 @@ describe("the capability projection cannot exceed the policy", () => {
     }
   });
 
-  it("gives an ordinary member exactly one capability", () => {
+  it("gives an ordinary member two capabilities and no more", () => {
     // The concrete shape of "member is not everything except ownership" (§4).
-    expect(capabilitiesFor("member")).toEqual(["workspace.view"]);
+    //
+    // `unit.view` joined it with TENANT_CORE: an org chart is a directory, and
+    // a member who cannot read it cannot route a document to the right office.
+    // It carries no email address and no document, which is what separates it
+    // from `membership.view` -- still withheld (OD-100).
+    expect(capabilitiesFor("member")).toEqual(["workspace.view", "unit.view"]);
   });
 });

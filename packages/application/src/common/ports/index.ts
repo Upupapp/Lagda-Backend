@@ -40,6 +40,7 @@ import type {
   NotificationRepository, NotificationTransportRepository,
   NotificationDispatchRepository, NotificationScope,
 } from "./notifications.js";
+import type { ScopedOrganizationUnitRepository } from "../../organization/index.js";
 
 // ── Time ─────────────────────────────────────────────────────────────────────
 
@@ -292,6 +293,15 @@ export interface WorkspaceUnitOfWork {
    * member could become readable to the workspace rather than to themselves.
    */
   readonly actorProfiles: ActorProfileRepository;
+  /**
+   * The org chart (TENANT_CORE): departments, offices, teams and four more
+   * labels for the same structural thing.
+   *
+   * Scoped like every other tenant repository. A unit is a CONTAINER rather
+   * than a permission, so nothing in the authorization path reads it — the org
+   * chart routes and reports, and roles decide access.
+   */
+  readonly organizationUnits: ScopedOrganizationUnitRepository;
   readonly evidence: ScopedEvidenceRepository;
   readonly artifacts: ScopedArtifactRepository;
   readonly finalizations: ScopedFinalizationRepository;

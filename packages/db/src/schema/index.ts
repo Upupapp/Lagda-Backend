@@ -545,6 +545,43 @@ export interface NotificationDeliveriesTable {
 }
 
 /**
+ * A named container inside a workspace: department, office, team, and four
+ * more labels for the same structural thing.
+ *
+ * `parent_unit_id` is a self-reference constrained on the COMPOUND key, so a
+ * parent in another workspace is unrepresentable rather than merely refused.
+ * The no-cycles rule is not here: PostgreSQL cannot express it without a
+ * tree-walking trigger, so it lives in `@lagda/core` where it is pure.
+ *
+ * Archived, never deleted. Documents, workflow assignments and audit records
+ * reference units, and "this department was dissolved" is information.
+ */
+export interface OrganizationUnitsTable {
+  unit_id: string;
+  workspace_id: string;
+  parent_unit_id: ColumnType<string | null, string | null, string | null>;
+  kind: string;
+  name: ColumnType<string, string, string>;
+  created_at: Timestamptz;
+  archived_at: ColumnType<Date | null, Date | null, Date | null>;
+}
+
+/**
+ * Which people belong to which unit.
+ *
+ * Its own table because a person may sit in several: a records officer belongs
+ * to Records and to the Bids Committee. The compound FK to
+ * `workspace_memberships` makes unit membership a SUBDIVISION of workspace
+ * membership rather than a way into one.
+ */
+export interface OrganizationUnitMembersTable {
+  unit_id: string;
+  workspace_id: string;
+  user_id: string;
+  created_at: Timestamptz;
+}
+
+/**
  * The map from a delivery to the scope it must be touched in.
  *
  * DERIVED from `notification_deliveries` by a trigger, and the only notification
@@ -1212,6 +1249,8 @@ export interface Database {
   notification_deliveries: NotificationDeliveriesTable;
   notification_delivery_attempts: NotificationDeliveryAttemptsTable;
   notification_dispatch_index: NotificationDispatchIndexTable;
+  organization_units: OrganizationUnitsTable;
+  organization_unit_members: OrganizationUnitMembersTable;
   recipient_signing_sessions: RecipientSigningSessionsTable;
   document_artifacts: DocumentArtifactsTable;
   evidence_events: EvidenceEventsTable;

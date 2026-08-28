@@ -71,18 +71,37 @@ const ADMIN_CAPABILITIES: readonly WorkspaceCapability[] = [
   "invitation.view", "invitation.create", "invitation.resend", "invitation.revoke",
 ];
 
+/**
+ * The org chart (TENANT_CORE).
+ *
+ * `unit.view` is separated from the write set deliberately: it is the one unit
+ * capability an ordinary member holds, because an org chart is a DIRECTORY.
+ * Knowing which department a colleague sits in is what lets somebody route a
+ * document to the right office, and the tree carries no email address and no
+ * document -- which is why it is safe here while `membership.view` is withheld
+ * (OD-100).
+ */
+const UNIT_WRITE = [
+  "unit.create", "unit.update", "unit.archive", "unit.member.manage",
+] as const;
+
 const EXPECTED: Readonly<Record<WorkspaceRole, readonly WorkspaceCapability[]>> = {
   owner: [
     ...ADMIN_CAPABILITIES, ...CONTACT_CAPABILITIES,
     ...DOCUMENT_READ, ...DOCUMENT_WRITE, "workspace.ownership.transfer",
+    "unit.view", ...UNIT_WRITE,
   ],
   administrator: [
     ...ADMIN_CAPABILITIES, ...CONTACT_CAPABILITIES,
     ...DOCUMENT_READ, ...DOCUMENT_WRITE,
+    // Editing the org chart is workspace administration. The only thing an
+    // administrator is withheld remains ownership transfer.
+    "unit.view", ...UNIT_WRITE,
   ],
-  // The only role with NOTHING beyond `workspace.view`. Not a PlatformRole, so
-  // it holds neither `manage_contacts` nor `view_documents` (OD-100).
-  member: ["workspace.view"],
+  // Beyond `workspace.view`, a member holds exactly one capability: reading
+  // the org chart. Still not a PlatformRole, so it holds neither
+  // `manage_contacts` nor `view_documents` (OD-100).
+  member: ["workspace.view", "unit.view"],
   // The two rows that make this matrix worth having. Both hold every contact
   // capability and NO membership capability — a shape no `owner ||
   // administrator` check could have produced, and the product's own answer:
@@ -139,7 +158,7 @@ describe("role to capability matrix", () => {
     // EXPECTED table not updated, this fails rather than the matrix silently
     // testing fewer combinations.
     expect(Object.keys(EXPECTED).sort()).toEqual([...WORKSPACE_ROLES].sort());
-    expect(WORKSPACE_CAPABILITIES.length).toBe(22);
+    expect(WORKSPACE_CAPABILITIES.length).toBe(27);
   });
 });
 
@@ -161,9 +180,10 @@ describe("default deny", () => {
   });
 
   it("never grants a capability through a wildcard or an inherited role", () => {
-    // `member` holds exactly one capability. If a hierarchy or a fallback were
-    // ever introduced, this is where it would show up.
-    expect(capabilitiesFor("member")).toEqual(["workspace.view"]);
+    // `member` holds two capabilities and both are explicit. If a hierarchy or
+    // a fallback were ever introduced, this is where it would show up -- the
+    // number is small enough that any inheritance would visibly inflate it.
+    expect(capabilitiesFor("member")).toEqual(["workspace.view", "unit.view"]);
   });
 });
 

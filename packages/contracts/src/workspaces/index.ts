@@ -160,6 +160,15 @@ export const WORKSPACE_CAPABILITY_NAMES = [
   "signing-request.send",
   "signing-request.cancel",
   "workspace.ownership.transfer",
+
+  // Organization units (TENANT_CORE). Editing the org chart, never reading
+  // through it: a unit is a container for routing and reporting, and
+  // authorization stays with roles.
+  "unit.view",
+  "unit.create",
+  "unit.update",
+  "unit.archive",
+  "unit.member.manage",
 ] as const;
 
 export type WorkspaceCapabilityName = (typeof WORKSPACE_CAPABILITY_NAMES)[number];

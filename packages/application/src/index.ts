@@ -52,4 +52,5 @@ export * from "./evidence/events.js";
 // from evidence events, never materialized and never from logs.
 export * from "./audit/audit-trail.js";
 export * from "./notifications/index.js";
+export * from "./organization/index.js";
 export * from "./observability/metrics.js";

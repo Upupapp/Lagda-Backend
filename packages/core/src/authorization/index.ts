@@ -214,6 +214,21 @@ export const WORKSPACE_CAPABILITIES = [
    * called out here rather than left for a reader to discover.
    */
   "workspace.ownership.transfer",
+
+  // ── Organization units ────────────────────────────────────────────────────
+  //
+  // A unit is a container, not a permission: belonging to a department grants
+  // nothing. So these capabilities govern who may EDIT the org chart, and
+  // nothing consults a unit to answer an access question.
+  //
+  // That separation is the point. If unit membership implied access, every
+  // reorganisation would be a security change, and an administrator editing an
+  // org chart would be granting themselves documents.
+  "unit.view",
+  "unit.create",
+  "unit.update",
+  "unit.archive",
+  "unit.member.manage",
 ] as const;
 
 export type WorkspaceCapability = (typeof WORKSPACE_CAPABILITIES)[number];
@@ -274,6 +289,11 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "signing-request.send",
       "signing-request.cancel",
       "workspace.ownership.transfer",
+      "unit.view",
+      "unit.create",
+      "unit.update",
+      "unit.archive",
+      "unit.member.manage",
     ] as const),
 
     /**
@@ -305,6 +325,13 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "signing-request.view",
       "signing-request.send",
       "signing-request.cancel",
+      // The full org-chart set except nothing: an administrator runs the
+      // workspace, and the org chart is workspace administration.
+      "unit.view",
+      "unit.create",
+      "unit.update",
+      "unit.archive",
+      "unit.member.manage",
     ] as const),
 
     /**
@@ -331,7 +358,12 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
      * not hold `view_documents`. Same disagreement as OD-100, resolved the same
      * way: the table that gates reachability wins.
      */
-    member: Object.freeze(["workspace.view"] as const),
+    // `unit.view` and nothing else. An org chart is a DIRECTORY -- which
+    // department a colleague sits in -- and a member who cannot read it cannot
+    // route a document to the right office. It carries no email address and no
+    // document, which is what makes it safe here when `membership.view` is
+    // deliberately withheld (OD-100).
+    member: Object.freeze(["workspace.view", "unit.view"] as const),
 
     /**
      * Template administration, plus the address book.
