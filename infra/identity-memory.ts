@@ -25,6 +25,15 @@ export class InMemoryIdentity {
   readonly #byEmail = new Map<string, NewUser>();
   readonly #byId = new Map<string, NewUser>();
   readonly challenges: NewVerificationChallenge[] = [];
+  /** challengeId -> lifecycle. Verification reads and consumes through this. */
+  readonly #challengeRows = new Map<string, {
+    challengeId: string; userId: UserId; tokenDigest: string;
+    createdAt: number; expiresAt: number;
+    consumedAt: number | null; supersededAt: number | null;
+    sealedSecret?: string; sealedKeyVersion?: string;
+  }>();
+  /** userId -> when the address was verified. Null until it is. */
+  readonly #verifiedAt = new Map<string, number>();
   #sequence = 0;
 
   nextUserId(): UserId {
@@ -41,10 +50,8 @@ export class InMemoryIdentity {
       userId: user.userId,
       email: user.email,
       displayName: user.displayName,
-      // Registration issues a verification challenge; nothing in this store
-      // completes one, so an account here is genuinely unverified. Reporting it
-      // as verified would be inventing a fact the flow never established.
-      emailVerifiedAt: null,
+      // Set only by a real redemption through verificationChallengesFull.
+      emailVerifiedAt: this.#verifiedAt.get(user.userId) ?? null,
       createdAt: user.termsAcceptedAt ?? Date.now(),
     };
   }
@@ -79,7 +86,110 @@ export class InMemoryIdentity {
   readonly verificationChallenges: VerificationChallengeRepository = {
     create: (challenge: NewVerificationChallenge) => {
       this.challenges.push(challenge);
+      this.#challengeRows.set(challenge.challengeId, {
+        challengeId: challenge.challengeId,
+        userId: challenge.userId,
+        tokenDigest: challenge.tokenDigest,
+        createdAt: challenge.createdAt,
+        expiresAt: challenge.expiresAt,
+        consumedAt: null,
+        supersededAt: null,
+      });
       return Promise.resolve();
+    },
+  };
+
+  /**
+   * The verification side of the same rows.
+   *
+   * `consumeIfActive` decides on the row rather than on a preceding read: a
+   * read-then-write leaves a window where two redemptions both see an active
+   * challenge (§68), and a fake that split them would not reproduce the
+   * condition the database enforces.
+   */
+  readonly verificationChallengesFull = {
+    findByTokenDigest: (digest: string) => {
+      const row = [...this.#challengeRows.values()].find((r) => r.tokenDigest === digest);
+      return Promise.resolve(row
+        ? {
+            challengeId: row.challengeId as never,
+            userId: row.userId,
+            createdAt: row.createdAt,
+            expiresAt: row.expiresAt,
+            consumedAt: row.consumedAt,
+            supersededAt: row.supersededAt,
+          }
+        : null);
+    },
+    consumeIfActive: ({ challengeId, now }: { challengeId: string; now: number }) => {
+      const row = this.#challengeRows.get(challengeId);
+      if (!row) return Promise.resolve(false);
+      if (row.consumedAt !== null || row.supersededAt !== null || row.expiresAt <= now) {
+        return Promise.resolve(false);
+      }
+      row.consumedAt = now;
+      return Promise.resolve(true);
+    },
+    supersedeActiveForUser: ({ userId, now }: { userId: UserId; now: number }) => {
+      let count = 0;
+      for (const row of this.#challengeRows.values()) {
+        if (row.userId === userId && row.consumedAt === null && row.supersededAt === null) {
+          row.supersededAt = now;
+          count += 1;
+        }
+      }
+      return Promise.resolve(count);
+    },
+    create: (input: {
+      challengeId: string; userId: UserId; tokenDigest: string;
+      createdAt: number; expiresAt: number;
+      sealedSecret?: string; sealedKeyVersion?: string;
+    }) => {
+      this.#challengeRows.set(input.challengeId, {
+        ...input, consumedAt: null, supersededAt: null,
+      });
+      return Promise.resolve();
+    },
+    findSealedIfActive: ({ challengeId, now }: { challengeId: string; now: number }) => {
+      const row = this.#challengeRows.get(challengeId);
+      if (!row || row.consumedAt !== null || row.supersededAt !== null || row.expiresAt <= now) {
+        return Promise.resolve(null);
+      }
+      return Promise.resolve(
+        row.sealedSecret !== undefined && row.sealedKeyVersion !== undefined
+          ? { sealed: row.sealedSecret, keyVersion: row.sealedKeyVersion }
+          : null,
+      );
+    },
+    scrubExpiredSecrets: ({ now, limit }: { now: number; limit: number }) => {
+      let scrubbed = 0;
+      for (const row of this.#challengeRows.values()) {
+        if (scrubbed >= limit) break;
+        if (row.expiresAt <= now && row.sealedSecret !== undefined) {
+          delete row.sealedSecret; delete row.sealedKeyVersion; scrubbed += 1;
+        }
+      }
+      return Promise.resolve(scrubbed);
+    },
+  };
+
+  /** The user side verification needs: read one, and verify once. */
+  readonly verifiableUsers = {
+    findByNormalizedEmail: this.users.findByNormalizedEmail,
+    findById: (userId: UserId) => {
+      const user = this.#byId.get(userId);
+      return Promise.resolve(user
+        ? { userId: user.userId, emailVerifiedAt: this.#verifiedAt.get(userId) ?? null }
+        : null);
+    },
+    /**
+     * First verification wins. A second redemption must not rewrite the
+     * timestamp -- the original stays historically meaningful (§21, §70).
+     */
+    markEmailVerifiedIfUnverified: (input: { userId: UserId; verifiedAt: number }) => {
+      if (this.#verifiedAt.has(input.userId)) return Promise.resolve(false);
+      this.#verifiedAt.set(input.userId, input.verifiedAt);
+      return Promise.resolve(true);
     },
   };
 

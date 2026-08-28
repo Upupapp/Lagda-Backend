@@ -34,6 +34,7 @@ import {
   createSessionService,
   type SessionRepository, type SessionRecord, type NewSession,
 } from "@lagda/application";
+import { fakeNotifications } from "@lagda/application/test-support";
 import { InMemoryIdentity } from "./identity-memory.ts";
 
 const port = Number(process.argv[2] ?? 8787);
@@ -47,6 +48,10 @@ const config = loadApiConfig({
 });
 
 const identity = new InMemoryIdentity();
+const notificationStore = {
+  notificationIntents: new Map(),
+  notificationDeliveries: new Map(),
+};
 const hasher = createArgon2PasswordHasher();
 const tokens = createSecurityTokenGenerator();
 const digester = createSecurityTokenDigester();
@@ -149,7 +154,29 @@ const app = await createApp({
       // rather than answer: a stub that answered would let a mounted-but-broken
       // route pass as a working one, which is the trap identity-routes.test.ts
       // names explicitly.
-      verifyEmail: () => unwired("verifyEmail"),
+      // Redemption is real: digest the submitted token the same way
+      // registration digested the issued one, find the row, consume it under
+      // the row's own condition, and verify the account once.
+      verifyEmail: () => ({
+        digestSubmitted: (raw: string) => {
+          const canonical = raw.trim();
+          if (canonical.length === 0) return null;
+          return createHash("sha256")
+            .update(`lagda.verification:${canonical}`)
+            .digest("hex") as never;
+        },
+        clock,
+        commit: (operation) => operation({
+          challenges: identity.verificationChallengesFull as never,
+          users: identity.verifiableUsers as never,
+          // OD-185: user context is DISCOVERED by the address lookup, so it is
+          // adopted here rather than set at the top.
+          adoptUser: () => Promise.resolve({
+            notifications: fakeNotifications(notificationStore),
+            transaction: {},
+          }),
+        }),
+      }),
       resendVerification: () => unwired("resendVerification"),
       requestPasswordReset: () => unwired("requestPasswordReset"),
       resetPassword: () => unwired("resetPassword"),
