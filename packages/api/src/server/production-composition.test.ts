@@ -5,16 +5,21 @@
 // `dependencies.X !== undefined`, so a module can be mounted in the code and
 // absent from the running API because nothing supplies its dependencies.
 //
-// That is not hypothetical. `createProductionDependencies` supplies TWO of the
-// twelve groups -- `databaseHealth`, and `providerWebhook` only when a
-// credential exists. A deployment running `npm run start:api` serves /health,
-// /ready and possibly the provider callback. There is no sign-in, no
-// workspace, no document, no upload, no signing surface, and no rate limiter.
+// That was not hypothetical. `createProductionDependencies` supplied TWO
+// groups -- `databaseHealth`, and `providerWebhook` only when a credential
+// exists. A deployment running `npm run start:api` served /health, /ready and
+// possibly the provider callback: no sign-in, no workspace, no document, no
+// signing surface, no rate limiter.
 //
-// This test does not pretend that is fine. It pins it: the gap is enumerated
-// below, each entry has to say why, and a group added later without wiring --
-// or without a deliberate decision not to wire it -- fails here rather than
-// being discovered by someone deploying it.
+// Sessions and the workspace surface are now wired. The rest is still listed
+// below, and each entry has to say why.
+//
+// ── Why sub-groups are checked too ─────────────────────────────────────────
+//
+// `workspaces` being supplied says nothing about `workspaces.invitations`.
+// Every sub-group is independently gated the same way, so a composition that
+// supplies the parent and omits four children would read as "workspaces: wired"
+// while four route surfaces stayed unreachable. Both levels are enumerated.
 
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
@@ -31,9 +36,7 @@ const API_SRC = join(dirname(fileURLToPath(import.meta.url)), "..");
  * should require the same argument as any other decision to ship less.
  */
 const NOT_WIRED_IN_PRODUCTION: Record<string, string> = {
-  sessions: "No session service is constructed, so nothing can authenticate.",
   identity: "Seventeen use-case graphs; none built outside the dev server.",
-  workspaces: "Needs a real TransactionManager over the database.",
   upload: "Needs object storage, an inspector and a malware scanner.",
   signingAccess: "Depends on the signing-access graph.",
   signingCeremony: "Depends on the ceremony graph.",
@@ -46,12 +49,45 @@ const NOT_WIRED_IN_PRODUCTION: Record<string, string> = {
     "OD-069 and still open.",
 };
 
+/**
+ * Sub-groups of `workspaces` the composition does not supply, and why.
+ *
+ * The first two share ONE cause: both mint a link into the web app, and there
+ * is no `appBaseUrl` in `ApiConfig` for them to build it from. Adding that key
+ * is a deployment-facing decision -- a new required environment variable --
+ * rather than something to introduce as a side effect of wiring.
+ */
+const WORKSPACE_SUBGROUPS_NOT_WIRED: Record<string, string> = {
+  invitations:
+    "InvitationLinkBuilder needs an app base URL, and ApiConfig has no key " +
+    "for one. Also wants a DeliverySecretSealer for the sealed credential.",
+  sendSigningRequest:
+    "Same missing app base URL, for the signing link, plus a sealer keyed by " +
+    "SIGNING_DELIVERY_KEY and a real notification template registry.",
+  audit:
+    "AuditTrailDependencies is request-scoped -- it carries the actor, the " +
+    "workspace and the signing request -- so it cannot be built at boot the " +
+    "way the other thunks are.",
+  cancelSigningRequest:
+    "Depends on the signing-workflow graph, which is not composed anywhere " +
+    "outside its own tests.",
+};
+
+function dependencySource(): string {
+  return readFileSync(join(API_SRC, "app/dependencies.ts"), "utf8");
+}
+
 function optionalGroups(): string[] {
-  const source = readFileSync(join(API_SRC, "app/dependencies.ts"), "utf8");
-  const appBlock = source
+  const appBlock = dependencySource()
     .split("export interface AppDependencies")[1]
     ?.split("export interface WorkspaceDependencies")[0] ?? "";
   return [...appBlock.matchAll(/readonly ([a-zA-Z]+)\?:/g)].map((m) => m[1] as string);
+}
+
+function workspaceSubgroups(): string[] {
+  const block = dependencySource()
+    .split("export interface WorkspaceDependencies")[1] ?? "";
+  return [...block.matchAll(/readonly ([a-zA-Z]+)\?:/g)].map((m) => m[1] as string);
 }
 
 function productionBody(): string {
@@ -90,10 +126,36 @@ describe("production composition", () => {
     }
   });
 
+  it("accounts for every workspace sub-group, wired or explicitly not", () => {
+    const body = productionBody();
+    const unaccounted = workspaceSubgroups().filter((group) =>
+      !new RegExp(`\\b${group}\\s*:`).test(body)
+      && WORKSPACE_SUBGROUPS_NOT_WIRED[group] === undefined);
+
+    expect(
+      unaccounted,
+      "a workspace sub-group production neither supplies nor deliberately " +
+      "omits -- the parent being wired does not mount it",
+    ).toEqual([]);
+  });
+
+  it("keeps the sub-group omission list honest", () => {
+    const subgroups = workspaceSubgroups();
+    for (const omitted of Object.keys(WORKSPACE_SUBGROUPS_NOT_WIRED)) {
+      expect(
+        subgroups.includes(omitted), `${omitted} is listed but is not a sub-group`,
+      ).toBe(true);
+    }
+  });
+
   it("records how much of the API a deployment actually serves", () => {
     // Deliberately an assertion rather than a comment: when someone wires a
     // group, this number moves and the change is visible in the diff.
     const wired = groups.length - Object.keys(NOT_WIRED_IN_PRODUCTION).length;
-    expect(wired).toBe(1);
+    expect(wired).toBe(3);
+
+    const subWired =
+      workspaceSubgroups().length - Object.keys(WORKSPACE_SUBGROUPS_NOT_WIRED).length;
+    expect(subWired).toBe(7);
   });
 });

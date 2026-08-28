@@ -6,8 +6,21 @@
 
 import {
   createDatabase, loadDatabaseConfig, createTransactionManager,
+  createSessionRepository,
   type LagdaDatabase,
 } from "@lagda/db";
+import { createSessionService, type Clock } from "@lagda/application";
+import {
+  createSecurityTokenGenerator, createSecurityTokenDigester,
+  createIdempotencyKeyDigester, createIdempotencyRecordIdGenerator,
+} from "../security/crypto.js";
+import {
+  createWorkspaceIdGenerator, createWorkspaceMemberIdGenerator,
+  createContactIdGenerator, createDocumentIdGenerator,
+  createPreparationIdGenerator, createRecipientIdGenerator,
+  createSigningRequestIdGenerator, createEvidenceEventIdGenerator,
+  createOrganizationUnitIdGenerator,
+} from "../security/identifiers.js";
 import { createProviderEventConfirmerFromEnv } from "@lagda/email";
 import { loadApiConfig, type ApiConfig } from "../config/index.js";
 import { createApp } from "../app/create-app.js";
@@ -15,18 +28,117 @@ import type { AppDependencies } from "../app/dependencies.js";
 import { createShutdown, type ShutdownTarget } from "./shutdown.js";
 
 /**
+ * How long a settled idempotency record is kept.
+ *
+ * 24 hours, matching the window the API documents to clients. Not a config key
+ * on purpose: the retention and the promise made to callers have to agree, and
+ * an environment variable lets one deployment quietly answer differently from
+ * the contract everyone else reads.
+ */
+const IDEMPOTENCY_RETENTION_MS = 24 * 3_600_000;
+
+/**
  * Builds the real infrastructure.
  *
- * Only what the API foundation actually needs. `NodeDocumentSealer` exists and
- * is deliberately NOT constructed: no use case takes it yet, and instantiating
- * a dependency because it is available is how a process acquires a startup
- * failure mode for a feature it does not have.
+ * ── What changed, and why it could not have been done before ───────────────
+ *
+ * This supplied TWO of twelve groups: `databaseHealth`, and `providerWebhook`
+ * when a credential existed. A deployment served /health, /ready and nothing
+ * else -- no sign-in, no workspace, no document, no signing surface.
+ *
+ * The blocker was NOT that the wiring was unwritten. It was that most of what
+ * the wiring needs had no production implementation to reach for: every domain
+ * id generator existed only as a `Sequential*` fake in test-support. See
+ * `../security/identifiers.ts`. The wiring below is possible because those now
+ * exist, and it deliberately imports none of the doubles -- a rule the
+ * identifier tests enforce against this file's source text.
+ *
+ * `NodeDocumentSealer` is still deliberately NOT constructed: no use case wired
+ * here takes it, and instantiating a dependency because it is available is how
+ * a process acquires a startup failure mode for a feature it does not have.
  */
-export function createProductionDependencies(database: LagdaDatabase): AppDependencies {
+export function createProductionDependencies(
+  database: LagdaDatabase,
+  config: ApiConfig,
+): AppDependencies {
+  // The REAL transaction manager, over the real pool. It is what composes the
+  // twenty-odd scoped repositories into a unit of work and what applies the
+  // tenant context every RLS policy reads -- which is why the repositories are
+  // not exported individually and why no route can reach one directly.
+  const transactions = createTransactionManager(database.db);
+  const clock: Clock = { now: () => Date.now() };
+
+  const sessions = createSessionService({
+    sessions: createSessionRepository(database.db),
+    tokens: createSecurityTokenGenerator(),
+    digester: createSecurityTokenDigester(),
+    clock,
+    // From config, not literals. The dev server hard-codes these; a deployment
+    // that cannot shorten its own session lifetime has no answer to an incident.
+    policy: {
+      absoluteLifetimeMs: config.sessionAbsoluteLifetimeMs,
+      idleTimeoutMs: config.sessionIdleTimeoutMs,
+      touchIntervalMs: config.sessionTouchIntervalMs,
+    },
+  });
+
+  // ONE instance, shared by every group that claims a key. Building it per
+  // request would be wrong even now that the record-id generator is stateless:
+  // the claim has to commit on the SAME transaction as the mutation, and a
+  // per-request object invites the reading that it is per-request state.
+  const idempotency = {
+    digester: createIdempotencyKeyDigester(),
+    ids: createIdempotencyRecordIdGenerator(),
+    clock,
+    policy: { retentionMs: IDEMPOTENCY_RETENTION_MS },
+  };
+
+  const workspaceIds = createWorkspaceIdGenerator();
+  const memberIds = createWorkspaceMemberIdGenerator();
+  const contactIds = createContactIdGenerator();
+  const documentIds = createDocumentIdGenerator();
+  const preparationIds = createPreparationIdGenerator();
+  const recipientIds = createRecipientIdGenerator();
+  const unitIds = createOrganizationUnitIdGenerator();
+  // Creating a signing request also APPENDS evidence, so the port asks for both
+  // capabilities in one object. Composed by spread rather than by one class
+  // implementing both, so neither can be changed without the other being seen.
+  const signingRequestIds = {
+    ...createSigningRequestIdGenerator(),
+    ...createEvidenceEventIdGenerator(),
+  };
+
   return {
     databaseHealth: {
       // `ping()` from BACKEND-06. The API writes no SQL of its own.
       isReachable: () => database.ping(),
+    },
+    sessions,
+    workspaces: {
+      create: () => ({ transactions, clock, workspaceIds, memberIds, idempotency }),
+      list: () => ({ transactions }),
+      workspace: () => ({ transactions }),
+      contacts: () => ({ transactions, clock, ids: contactIds }),
+      documents: () => ({ transactions, clock, ids: documentIds }),
+      preparation: () => ({ transactions, clock, ids: preparationIds }),
+      // Both generators: a recipient cannot exist without a preparation to hold
+      // it, and the first recipient on a never-prepared document creates one.
+      recipients: () => ({
+        transactions, clock,
+        ids: {
+          nextRecipientId: () => recipientIds.nextRecipientId(),
+          nextPreparationId: () => preparationIds.nextPreparationId(),
+          nextPreparationFieldId: () => preparationIds.nextPreparationFieldId(),
+        },
+      }),
+      signingRequests: () => ({
+        transactions, clock, ids: signingRequestIds, idempotency,
+      }),
+      members: {
+        administration: () => ({ transactions, clock }),
+        access: () => ({ transactions }),
+      },
+      organization: () => ({ transactions, clock, unitIds }),
     },
     // Spread, so an unconfigured deployment has the key ABSENT rather than
     // present-and-undefined. Under `exactOptionalPropertyTypes` those are
@@ -100,7 +212,7 @@ export async function startServer(): Promise<StartedServer> {
 
   const app = await createApp({
     config,
-    dependencies: createProductionDependencies(database),
+    dependencies: createProductionDependencies(database, config),
   });
 
   await app.listen({ host: config.host, port: config.port });

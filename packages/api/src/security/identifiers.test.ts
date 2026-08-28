@@ -11,6 +11,7 @@ import {
   createSealIdGenerator, createNotificationIntentIdGenerator,
   createNotificationDeliveryIdGenerator,
   createRecipientSigningSessionIdGenerator, createSigningWorkflowIdGenerator,
+  createWorkspaceInvitationIdGenerator, createOrganizationUnitIdGenerator,
 } from "./identifiers.js";
 
 /** Every mint on every generator, as `[expected prefix, produce]` pairs. */
@@ -37,6 +38,10 @@ const MINTS: ReadonlyArray<readonly [string, () => string]> = (() => {
     ["rss", () =>
       createRecipientSigningSessionIdGenerator().nextRecipientSigningSessionId()],
     ["swi", () => createSigningWorkflowIdGenerator().nextSigningWorkflowIntentId()],
+    ["inv", () =>
+      createWorkspaceInvitationIdGenerator().nextWorkspaceInvitationId()],
+    ["unit", () =>
+      createOrganizationUnitIdGenerator().nextOrganizationUnitId()],
   ];
 })();
 
@@ -84,9 +89,16 @@ describe("production identifiers", () => {
     const source = readFileSync(
       new URL("../server/start-server.ts", import.meta.url), "utf8",
     );
-    expect(source).not.toMatch(/test-support/);
-    expect(source).not.toMatch(/Sequential[A-Za-z]*Ids/);
-    expect(source).not.toMatch(/Fake[A-Za-z]*/);
-    expect(source).not.toMatch(/InMemory[A-Za-z]*/);
+    // Comments are stripped before matching. That file now EXPLAINS why it uses
+    // none of these, and a gate that a correct explanation trips is a gate
+    // people delete. Stripping keeps all four assertions at full strength
+    // rather than softening them to accommodate prose.
+    const code = source
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    expect(code).not.toMatch(/test-support/);
+    expect(code).not.toMatch(/Sequential[A-Za-z]*Ids/);
+    expect(code).not.toMatch(/Fake[A-Za-z]*/);
+    expect(code).not.toMatch(/InMemory[A-Za-z]*/);
   });
 });

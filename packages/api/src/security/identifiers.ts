@@ -41,6 +41,8 @@ import type {
   NotificationDeliveryIdGenerator,
   RecipientSigningSessionIdGenerator,
   SigningWorkflowIdGenerator,
+  OrganizationUnitIdGenerator, OrganizationUnitId,
+  WorkspaceInvitationIdGenerator,
   PreparationId, PreparationFieldId,
   RecipientId,
   SigningRequestId, SigningRequestRecipientId, SigningRequestFieldId,
@@ -62,6 +64,7 @@ import type {
 // otherwise, and the next person to add a generator has to pick a side.
 import type {
   WorkspaceId, WorkspaceMemberId, ContactId, DocumentId,
+  WorkspaceInvitationId,
 } from "@lagda/contracts";
 
 /**
@@ -184,5 +187,25 @@ export function createRecipientSigningSessionIdGenerator(): RecipientSigningSess
 export function createSigningWorkflowIdGenerator(): SigningWorkflowIdGenerator {
   return {
     nextSigningWorkflowIntentId: () => mint("swi") as SigningWorkflowIntentId,
+  };
+}
+
+export function createWorkspaceInvitationIdGenerator(): WorkspaceInvitationIdGenerator {
+  return {
+    nextWorkspaceInvitationId: () => mint("inv") as WorkspaceInvitationId,
+  };
+}
+
+/**
+ * Organization units: departments, offices, teams.
+ *
+ * One generator for all three, because a unit's KIND is a column and not a
+ * separate entity -- the hierarchy is one table and a department may hold a
+ * team. Prefixing by kind would put that classification inside the identifier,
+ * where it could not be changed without rewriting every row that referenced it.
+ */
+export function createOrganizationUnitIdGenerator(): OrganizationUnitIdGenerator {
+  return {
+    nextOrganizationUnitId: () => mint("unit") as OrganizationUnitId,
   };
 }
