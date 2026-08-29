@@ -6,13 +6,15 @@
 
 import {
   createDatabase, loadDatabaseConfig, createTransactionManager,
-  createSessionRepository,
+  createSessionRepository, createRateLimitCounterRepository,
   type LagdaDatabase,
 } from "@lagda/db";
 import {
-  createSessionService, createTemplateRegistry, ALL_TEMPLATES,
+  createSessionService, createAbuseLimiter,
+  createTemplateRegistry, ALL_TEMPLATES,
   type Clock, type NormalizedEmail, type UserId,
 } from "@lagda/application";
+import { createRateLimitScopeDigester } from "../security/rate-limit-plugin.js";
 import { createInvitationTokenFactory } from "../security/invitation-token.js";
 import { createInvitationLinkBuilder } from "../workspaces/invitation-link.js";
 import { createSigningAccessTokenFactory } from "../security/signing-access-token.js";
@@ -146,6 +148,21 @@ export async function createProductionDependencies(
       // `ping()` from BACKEND-06. The API writes no SQL of its own.
       isReachable: () => database.ping(),
     },
+    // The abuse limiter. Absent, the fourteen policies defined across the
+    // codebase attached to nothing: nine route modules call
+    // `checkSemanticLimits`, and every one of those calls was a no-op because
+    // the option it reads was never supplied.
+    //
+    // Counters live in PostgreSQL rather than in memory, which is what makes
+    // the limit hold across replicas. An in-process counter would multiply
+    // every limit by the number of API processes -- and would reset each one
+    // to zero on deploy, which is when an attacker is least likely to notice
+    // and most likely to be running.
+    limiter: createAbuseLimiter({
+      counters: createRateLimitCounterRepository(database.db),
+      digester: createRateLimitScopeDigester(),
+      clock,
+    }),
     sessions,
     workspaces: {
       create: () => ({ transactions, clock, workspaceIds, memberIds, idempotency }),

@@ -45,10 +45,6 @@ const NOT_WIRED_IN_PRODUCTION: Record<string, string> = {
   signingSubmission: "Depends on the submission graph.",
   signingDecline: "Depends on the decline graph.",
   publicVerification: "Needs the evidence projection lookup.",
-  limiter:
-    "No AbuseLimiter is constructed, so the fourteen rate-limit policies " +
-    "defined across the codebase are attached to nothing. Raised as part of " +
-    "OD-069 and still open.",
 };
 
 /**
@@ -172,7 +168,7 @@ describe("production composition", () => {
     // Deliberately an assertion rather than a comment: when someone wires a
     // group, this number moves and the change is visible in the diff.
     const wired = groups.length - Object.keys(NOT_WIRED_IN_PRODUCTION).length;
-    expect(wired).toBe(4);
+    expect(wired).toBe(5);
 
     const subWired =
       workspaceSubgroups().length - Object.keys(WORKSPACE_SUBGROUPS_NOT_WIRED).length;
@@ -251,5 +247,14 @@ describe("what a deployment serves", () => {
     expect(deps.workspaces?.documents).toBeDefined();
     expect(deps.workspaces?.audit).toBeDefined();
     expect(deps.workspaces?.organization).toBeDefined();
+  });
+
+  it("always limits, because a limiter needs no configuration to be correct", async () => {
+    // Unconditional on purpose. Every other optional group here is gated on a
+    // key or an origin; this one is gated on nothing, because there is no
+    // deployment that is better off unthrottled and the counters live in the
+    // database the API already has.
+    const deps = await build({});
+    expect(deps.limiter).toBeDefined();
   });
 });
