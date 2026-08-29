@@ -369,6 +369,31 @@ export async function startServer(): Promise<StartedServer> {
     dependencies: await createProductionDependencies(database, config),
   });
 
+  // ── One warning, and why it is worth a line at boot ──────────────────────
+  //
+  // The auth surface is IP-limited now, and `request.ip` is Fastify's
+  // proxy-aware resolution governed by TRUST_PROXY. Trusting nothing is the
+  // correct DEFAULT -- it stops a client choosing its own bucket with a forged
+  // X-Forwarded-For -- but behind a load balancer it means every request
+  // reports the BALANCER's address, so every user in the world shares one
+  // bucket and `auth.signin.ip` becomes a global cap of five sign-ins a
+  // minute.
+  //
+  // A warning rather than a refusal: a deployment reached directly is a real
+  // and correct configuration, and this cannot tell the two apart. What it can
+  // do is make sure the failure is not diagnosed from scratch at 3am.
+  if (config.environment === "production" && config.trustProxy.mode === "none") {
+    app.log.warn(
+      {
+        event: "config.trust_proxy_unset",
+        effect: "all clients share one rate-limit bucket",
+      },
+      "TRUST_PROXY is unset: if this API is behind a proxy, every client "
+      + "appears as the proxy address and IP rate limits apply to the whole "
+      + "deployment at once. Set a hop count or trusted addresses.",
+    );
+  }
+
   await app.listen({ host: config.host, port: config.port });
 
   const targets: ShutdownTarget[] = [

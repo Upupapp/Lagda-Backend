@@ -60,6 +60,7 @@ import {
   registerProviderWebhookRoutes,
 } from "../notifications/provider-webhook-routes.js";
 import { registerIdentityRoutes } from "./identity-routes.js";
+import { applyIdentityRateLimits } from "../security/identity-rate-limit.js";
 import { registerUploadRoute } from "../upload/upload-route.js";
 
 export interface CreateAppOptions {
@@ -685,7 +686,23 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
   // `authenticatedUser`, because they sit beside routes that must stay
   // anonymous.
   if (dependencies.identity !== undefined) {
-    registerIdentityRoutes(app, config, dependencies.identity());
+    const identity = dependencies.identity();
+    const identityLimiter = dependencies.limiter;
+    // A CHILD SCOPE, and only for the limits. Identity must stay outside the
+    // authenticated scope -- `requireSession` would reject the caller before
+    // sign-in could run -- but it must not sit on the root instance either,
+    // because a hook there would count /health and /ready against a policy and
+    // throttle the probes that decide whether this process stays in the load
+    // balancer.
+    // Not `async`: the body registers a hook and the routes synchronously, and
+    // an async callback with nothing to await is a promise that exists only to
+    // satisfy a signature -- the same reasoning as the workspace scope above.
+    await app.register((scope) => {
+      if (identityLimiter !== undefined) {
+        applyIdentityRateLimits(scope, { limiter: identityLimiter, metrics });
+      }
+      registerIdentityRoutes(scope, config, identity);
+    });
   }
 
   // ── Document upload (BACKEND-17) ──────────────────────────────────────────
