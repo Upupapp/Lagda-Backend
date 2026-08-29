@@ -14,6 +14,9 @@ import {
   createSecurityTokenGenerator, createSecurityTokenDigester,
   createIdempotencyKeyDigester, createIdempotencyRecordIdGenerator,
 } from "../security/crypto.js";
+import { randomBytes } from "node:crypto";
+import { createArgon2PasswordHasher } from "../security/password-hasher.js";
+import { buildIdentity } from "./identity-composition.js";
 import {
   createWorkspaceIdGenerator, createWorkspaceMemberIdGenerator,
   createContactIdGenerator, createDocumentIdGenerator,
@@ -57,10 +60,10 @@ const IDEMPOTENCY_RETENTION_MS = 24 * 3_600_000;
  * here takes it, and instantiating a dependency because it is available is how
  * a process acquires a startup failure mode for a feature it does not have.
  */
-export function createProductionDependencies(
+export async function createProductionDependencies(
   database: LagdaDatabase,
   config: ApiConfig,
-): AppDependencies {
+): Promise<AppDependencies> {
   // The REAL transaction manager, over the real pool. It is what composes the
   // twenty-odd scoped repositories into a unit of work and what applies the
   // tenant context every RLS policy reads -- which is why the repositories are
@@ -92,6 +95,17 @@ export function createProductionDependencies(
     clock,
     policy: { retentionMs: IDEMPOTENCY_RETENTION_MS },
   };
+
+  // A valid Argon2id hash that authenticates nobody, computed once from a
+  // secret nobody keeps. Login verifies against it when an account does not
+  // exist, so a missing account costs the same time as a wrong password --
+  // without it, response latency answers "does this address have an account?"
+  //
+  // This one await is why the composition root is async. Hard-coding a hash
+  // would be faster and wrong: it has to carry THIS deployment's Argon2
+  // parameters, or the timing it is there to equalise does not match.
+  const dummyPasswordHash = await createArgon2PasswordHasher()
+    .hash(randomBytes(32).toString("hex"));
 
   const workspaceIds = createWorkspaceIdGenerator();
   const memberIds = createWorkspaceMemberIdGenerator();
@@ -143,6 +157,7 @@ export function createProductionDependencies(
     // Spread, so an unconfigured deployment has the key ABSENT rather than
     // present-and-undefined. Under `exactOptionalPropertyTypes` those are
     // different things, and here the difference is whether a route exists.
+    ...buildIdentity(database, config, sessions, dummyPasswordHash),
     ...buildProviderWebhook(database),
   };
 }
@@ -212,7 +227,7 @@ export async function startServer(): Promise<StartedServer> {
 
   const app = await createApp({
     config,
-    dependencies: createProductionDependencies(database, config),
+    dependencies: await createProductionDependencies(database, config),
   });
 
   await app.listen({ host: config.host, port: config.port });

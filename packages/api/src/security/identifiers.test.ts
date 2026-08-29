@@ -12,6 +12,8 @@ import {
   createNotificationDeliveryIdGenerator,
   createRecipientSigningSessionIdGenerator, createSigningWorkflowIdGenerator,
   createWorkspaceInvitationIdGenerator, createOrganizationUnitIdGenerator,
+  nextUserId, nextVerificationChallengeId, nextPasswordResetChallengeId,
+  nextMfaFactorId, nextRecoveryCodeId, nextPendingAuthenticationId,
 } from "./identifiers.js";
 
 /** Every mint on every generator, as `[expected prefix, produce]` pairs. */
@@ -42,6 +44,14 @@ const MINTS: ReadonlyArray<readonly [string, () => string]> = (() => {
       createWorkspaceInvitationIdGenerator().nextWorkspaceInvitationId()],
     ["unit", () =>
       createOrganizationUnitIdGenerator().nextOrganizationUnitId()],
+    // The identity ids are bare functions rather than generator objects,
+    // because the identity use cases declare them that way. Same rules apply.
+    ["usr", () => nextUserId()],
+    ["evc", () => nextVerificationChallengeId()],
+    ["prc", () => nextPasswordResetChallengeId()],
+    ["mfa", () => nextMfaFactorId()],
+    ["rc", () => nextRecoveryCodeId()],
+    ["pna", () => nextPendingAuthenticationId()],
   ];
 })();
 

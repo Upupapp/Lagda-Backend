@@ -11,8 +11,8 @@
 // possibly the provider callback: no sign-in, no workspace, no document, no
 // signing surface, no rate limiter.
 //
-// Sessions and the workspace surface are now wired. The rest is still listed
-// below, and each entry has to say why.
+// Sessions, identity and the workspace surface are now wired. The rest is
+// still listed below, and each entry has to say why.
 //
 // ── Why sub-groups are checked too ─────────────────────────────────────────
 //
@@ -36,7 +36,6 @@ const API_SRC = join(dirname(fileURLToPath(import.meta.url)), "..");
  * should require the same argument as any other decision to ship less.
  */
 const NOT_WIRED_IN_PRODUCTION: Record<string, string> = {
-  identity: "Seventeen use-case graphs; none built outside the dev server.",
   upload: "Needs object storage, an inspector and a malware scanner.",
   signingAccess: "Depends on the signing-access graph.",
   signingCeremony: "Depends on the ceremony graph.",
@@ -91,7 +90,11 @@ function workspaceSubgroups(): string[] {
 }
 
 function productionBody(): string {
-  const source = readFileSync(join(API_SRC, "server/start-server.ts"), "utf8");
+  // Both files: identity is composed in its own module because inline it would
+  // be four times the length of everything else, and a group must not read as
+  // unwired merely because it was moved somewhere legible.
+  const source = readFileSync(join(API_SRC, "server/start-server.ts"), "utf8")
+    + readFileSync(join(API_SRC, "server/identity-composition.ts"), "utf8");
   // The factory plus its helpers: a group may be supplied by a spread.
   return source.split("createProductionDependencies")[1] ?? "";
 }
@@ -152,7 +155,7 @@ describe("production composition", () => {
     // Deliberately an assertion rather than a comment: when someone wires a
     // group, this number moves and the change is visible in the diff.
     const wired = groups.length - Object.keys(NOT_WIRED_IN_PRODUCTION).length;
-    expect(wired).toBe(3);
+    expect(wired).toBe(4);
 
     const subWired =
       workspaceSubgroups().length - Object.keys(WORKSPACE_SUBGROUPS_NOT_WIRED).length;

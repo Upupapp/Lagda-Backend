@@ -42,6 +42,8 @@ import type {
   RecipientSigningSessionIdGenerator,
   SigningWorkflowIdGenerator,
   OrganizationUnitIdGenerator, OrganizationUnitId,
+  VerificationChallengeId, PasswordResetChallengeId,
+  MfaFactorId, RecoveryCodeId,
   WorkspaceInvitationIdGenerator,
   PreparationId, PreparationFieldId,
   RecipientId,
@@ -64,7 +66,7 @@ import type {
 // otherwise, and the next person to add a generator has to pick a side.
 import type {
   WorkspaceId, WorkspaceMemberId, ContactId, DocumentId,
-  WorkspaceInvitationId,
+  WorkspaceInvitationId, UserId,
 } from "@lagda/contracts";
 
 /**
@@ -209,3 +211,41 @@ export function createOrganizationUnitIdGenerator(): OrganizationUnitIdGenerator
     nextOrganizationUnitId: () => mint("unit") as OrganizationUnitId,
   };
 }
+
+// ── Identity ─────────────────────────────────────────────────────────────────
+//
+// These are not grouped behind generator INTERFACES the way the entity ids are:
+// the identity use cases each declare a bare `newUserId: () => UserId`, so the
+// ports are function types rather than objects. They are minted the same way
+// regardless, and they live here for the same reason -- production must not
+// reach for the dev server's `usr_dev_1`.
+
+/** The account. Appears in logs, in evidence and in every session row. */
+export const nextUserId = (): UserId => mint("usr") as UserId;
+
+/**
+ * The email-verification challenge.
+ *
+ * The challenge id is NOT the credential -- the emailed token is, and it is
+ * stored only as a digest. This id identifies the row, so it is safe in a log
+ * line, and the dev server's `evc_${Date.now()}` was not merely predictable but
+ * COLLIDING: two registrations in the same millisecond produced one id.
+ */
+export const nextVerificationChallengeId = (): VerificationChallengeId =>
+  mint("evc") as VerificationChallengeId;
+
+export const nextPasswordResetChallengeId = (): PasswordResetChallengeId =>
+  mint("prc") as PasswordResetChallengeId;
+
+export const nextMfaFactorId = (): MfaFactorId => mint("mfa") as MfaFactorId;
+
+export const nextRecoveryCodeId = (): RecoveryCodeId =>
+  mint("rc") as RecoveryCodeId;
+
+/**
+ * The pre-authentication record, between password and second factor.
+ *
+ * Short-lived and holding a digest of a credential the client must return, so
+ * it is the one identity id where guessability would matter directly.
+ */
+export const nextPendingAuthenticationId = (): string => mint("pna");

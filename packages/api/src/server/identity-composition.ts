@@ -1,0 +1,407 @@
+// The identity surface, built from real infrastructure.
+//
+// Seventeen use-case graphs plus the four functions the route layer needs to
+// issue, read and end a session. Until now every one of them existed only in
+// `infra/dev-server.ts`, against `InMemoryIdentity` -- so a deployment had 38
+// published identity paths and no route that could issue a session.
+//
+// Kept out of `start-server.ts` deliberately. Composed inline it would be four
+// times the length of everything else in that file, and the thing that file
+// exists to make readable is WHICH groups a deployment serves.
+
+import {
+  createUserRepository, createVerificationChallengeRepository,
+  createVerificationRepository, createVerifiableUserRepository,
+  createPasswordResetRepository, createPasswordResettableUserRepository,
+  createUserAdopter,
+  createMfaFactorRepository, createRecoveryCodeRepository,
+  createPendingAuthenticationRepository,
+  createAccountProfileRepository, createAccountCredentialRepository,
+  createAccountSessionRepository, createSessionRepository,
+  type LagdaDatabase,
+} from "@lagda/db";
+import type { SessionService, UserId, PasswordHash } from "@lagda/application";
+import type { ApiConfig } from "../config/index.js";
+import type { AppDependencies } from "../app/dependencies.js";
+import type { RequestAuth } from "../security/session-plugin.js";
+import { createArgon2PasswordHasher } from "../security/password-hasher.js";
+import {
+  createVerificationTokenFactory, digestSubmittedCode,
+} from "../security/verification-token.js";
+import {
+  createResetTokenFactory, digestSubmittedResetToken,
+} from "../security/reset-token.js";
+import { createSecretBox } from "@lagda/security";
+import { createPreAuthCredentialFactory } from "../security/pre-auth-token.js";
+import {
+  generateTotpSecret, buildProvisioningUri, verifyTotp, isWellFormedTotpCode,
+} from "../security/totp.js";
+import {
+  issueRecoveryCodes, digestSubmittedRecoveryCode,
+} from "../security/recovery-codes.js";
+import {
+  nextUserId, nextVerificationChallengeId, nextPasswordResetChallengeId,
+  nextMfaFactorId, nextRecoveryCodeId, nextPendingAuthenticationId,
+} from "../security/identifiers.js";
+
+/**
+ * The RLS setting a transaction sets to act as one user.
+ *
+ * Duplicated from `@lagda/db`'s private constant, which is the least bad of
+ * three options: exporting it invites a caller to set it directly, and adding
+ * an identity unit of work to `TransactionManager` would put the account tables
+ * behind an interface whose entire documented purpose is TENANT scoping.
+ *
+ * The duplication is safe to the extent that it is pinned, so it is: see
+ * `identity-composition.test.ts`, which reads the constant out of the db
+ * package's source and fails if the two ever disagree.
+ */
+const USER_CONTEXT_SETTING = "lagda.user_id";
+
+/**
+ * How long a verification link and a reset link stay valid.
+ *
+ * Literals rather than config, matching `IDEMPOTENCY_RETENTION_MS`: both
+ * numbers are quoted to the user in the message that carries the link, and an
+ * environment variable lets one deployment quietly contradict its own email.
+ */
+const VERIFICATION_TTL_MS = 24 * 3_600_000;
+const RESET_TTL_MS = 60 * 60 * 1000;
+/** The window between a correct password and a second factor. */
+const PENDING_AUTH_TTL_MS = 5 * 60 * 1000;
+const PENDING_AUTH_MAX_ATTEMPTS = 5;
+
+/**
+ * The terms version a new account accepts.
+ *
+ * A literal, and the fact that it is one is the point: the column exists
+ * because "accepted some terms" is worthless the day the documents change, and
+ * a value read from the environment could not be trusted to name the document
+ * the user was actually shown.
+ */
+const TERMS_VERSION = "2026-01-01";
+
+/**
+ * Identity, if this deployment can hold a TOTP secret.
+ *
+ * ── Why the MFA key gates the WHOLE surface ────────────────────────────────
+ *
+ * Three graphs -- completeMfa, beginEnrolment, confirmEnrolment -- seal and
+ * unseal a TOTP secret, and none can be built without a key. `identity` is
+ * all-or-nothing by design (see `dependencies.ts`: registration without
+ * sessions is an account nobody can use), so the honest options are to wire
+ * all seventeen or none.
+ *
+ * Absent therefore means the identity routes DO NOT EXIST, exactly as an
+ * absent webhook credential means no callback route. The alternative -- mount
+ * sign-in and let enrolment throw -- ships an account that can be created and
+ * then locked out of, which is worse than an account that cannot be created.
+ */
+export function buildIdentity(
+  database: LagdaDatabase,
+  config: ApiConfig,
+  sessions: SessionService,
+  dummyPasswordHash: PasswordHash,
+): Pick<AppDependencies, "identity"> {
+  if (config.mfaSecretKey === null) return {};
+
+  const db = database.db;
+  const clock = { now: () => Date.now() };
+  const hasher = createArgon2PasswordHasher();
+  const verificationTokens = createVerificationTokenFactory();
+  const resetTokens = createResetTokenFactory();
+  const preAuthCredentials = createPreAuthCredentialFactory();
+
+  // OD-081 stands: one key, no KMS, no rotation, no escrow. The version column
+  // is what makes rotation possible later without rewriting stored secrets.
+  const mfaSecrets = createSecretBox({
+    keyBase64: config.mfaSecretKey,
+    keyVersion: config.mfaSecretKeyVersion,
+  });
+
+  const totp = {
+    generateSecret: () => generateTotpSecret(),
+    buildProvisioningUri: (secret: string, accountLabel: string) =>
+      buildProvisioningUri(secret as never, accountLabel),
+    verify: (input: {
+      secret: string; code: string; nowMs: number; accountLabel: string;
+    }) => verifyTotp({ ...input, secret: input.secret as never }),
+    // A shape check before any crypto, so a malformed submission costs
+    // nothing. Its absence surfaced only as a 500.
+    isWellFormedCode: isWellFormedTotpCode,
+  };
+
+  const recoveryCodes = {
+    issue: () => issueRecoveryCodes(),
+    digestSubmitted: digestSubmittedRecoveryCode,
+  };
+
+  /** The email an authenticator app labels its entry with. */
+  const accountLabelFor = async (userId: string): Promise<string | null> => {
+    const row = await db.selectFrom("users").select("email")
+      .where("user_id", "=", userId).executeTakeFirst();
+    return row?.email ?? null;
+  };
+
+  // ── Units of work ──────────────────────────────────────────────────────────
+  //
+  // The account tables carry NO row-level security, and migration 008 says why:
+  // a user exists before any workspace, so requiring a tenant to look one up
+  // would make login impossible. These transactions therefore set no tenant
+  // context, and `adoptUser` sets USER context only where a graph reaches the
+  // notification tables, which are policed.
+
+  const verificationCommit = <T>(
+    operation: (uow: {
+      challenges: ReturnType<typeof createVerificationRepository>;
+      users: ReturnType<typeof createVerifiableUserRepository>;
+      adoptUser: ReturnType<typeof createUserAdopter>;
+    }) => Promise<T>,
+  ): Promise<T> => db.transaction().execute((trx) => operation({
+    challenges: createVerificationRepository(trx),
+    users: createVerifiableUserRepository(trx),
+    adoptUser: createUserAdopter(trx, USER_CONTEXT_SETTING),
+  }));
+
+  // TWO reset commits, not one, because the two halves of the flow need
+  // different things and the port says so. Requesting a reset NOTIFIES, so it
+  // adopts user context to reach the policed notification tables; performing
+  // one REVOKES every session, in the same transaction as the credential
+  // change, so there is no window in which the new password is live and the old
+  // sessions still are.
+  const requestResetCommit = <T>(
+    operation: (uow: {
+      challenges: ReturnType<typeof createPasswordResetRepository>;
+      users: ReturnType<typeof createPasswordResettableUserRepository>;
+      adoptUser: ReturnType<typeof createUserAdopter>;
+    }) => Promise<T>,
+  ): Promise<T> => db.transaction().execute((trx) => operation({
+    challenges: createPasswordResetRepository(trx),
+    users: createPasswordResettableUserRepository(trx),
+    adoptUser: createUserAdopter(trx, USER_CONTEXT_SETTING),
+  }));
+
+  const resetPasswordCommit = <T>(
+    operation: (uow: {
+      challenges: ReturnType<typeof createPasswordResetRepository>;
+      users: ReturnType<typeof createPasswordResettableUserRepository>;
+      sessions: ReturnType<typeof createSessionRepository>;
+      pendingAuth: ReturnType<typeof createPendingAuthenticationRepository>;
+    }) => Promise<T>,
+  ): Promise<T> => db.transaction().execute((trx) => operation({
+    challenges: createPasswordResetRepository(trx),
+    users: createPasswordResettableUserRepository(trx),
+    // The SESSION repository, not the account one: only this carries
+    // `revokeAllForUser`, and the account repository's lookalike
+    // `revokeAllForUserExcept` deliberately spares the caller's own session --
+    // which is the opposite of what a reset needs.
+    sessions: createSessionRepository(trx),
+    // Optional in the port and supplied anyway. Someone resetting a password
+    // may be doing it because they are locked out mid-ceremony, and leaving a
+    // pending second-factor record alive would let a half-finished
+    // authentication outlive the credential it was started with.
+    pendingAuth: createPendingAuthenticationRepository(trx),
+  }));
+
+  const mfaCommit = <T>(
+    operation: (uow: {
+      factors: ReturnType<typeof createMfaFactorRepository>;
+      recovery: ReturnType<typeof createRecoveryCodeRepository>;
+      pending: ReturnType<typeof createPendingAuthenticationRepository>;
+    }) => Promise<T>,
+  ): Promise<T> => db.transaction().execute((trx) => operation({
+    factors: createMfaFactorRepository(trx),
+    recovery: createRecoveryCodeRepository(trx),
+    pending: createPendingAuthenticationRepository(trx),
+  }));
+
+  const accountCommit = <T>(
+    operation: (uow: {
+      accounts: ReturnType<typeof createAccountProfileRepository>;
+      credentials: ReturnType<typeof createAccountCredentialRepository>;
+      sessions: ReturnType<typeof createAccountSessionRepository>;
+    }) => Promise<T>,
+  ): Promise<T> => db.transaction().execute((trx) => operation({
+    accounts: createAccountProfileRepository(trx),
+    credentials: createAccountCredentialRepository(trx),
+    sessions: createAccountSessionRepository(trx),
+  }));
+
+  const registrationCommit = <T>(
+    operation: (uow: {
+      users: ReturnType<typeof createUserRepository>;
+      challenges: ReturnType<typeof createVerificationChallengeRepository>;
+    }) => Promise<T>,
+  ): Promise<T> => db.transaction().execute((trx) => operation({
+    users: createUserRepository(trx),
+    challenges: createVerificationChallengeRepository(trx),
+  }));
+
+  return {
+    identity: () => ({
+      register: () => ({
+        users: createUserRepository(db),
+        challenges: createVerificationChallengeRepository(db),
+        hasher, clock,
+        tokens: verificationTokens,
+        newUserId: () => nextUserId(),
+        newChallengeId: () => nextVerificationChallengeId(),
+        commit: registrationCommit,
+        termsVersion: TERMS_VERSION,
+        verificationTtlMs: VERIFICATION_TTL_MS,
+      }),
+
+      login: () => ({
+        users: createUserRepository(db),
+        hasher, sessions, clock, dummyPasswordHash,
+        // WITHOUT this, enrolling a second factor changes nothing at sign-in:
+        // the password alone still issues a full session. `mfa` is optional, so
+        // omitting it is indistinguishable from having no MFA at all.
+        mfa: {
+          isRequired: async (userId: UserId) => {
+            const factor = await createMfaFactorRepository(db)
+              .findActiveForUser(userId, "TOTP");
+            // Enrolled but UNCONFIRMED must not challenge: the user could not
+            // answer it and would be locked out of their own account.
+            return factor !== null && factor.verifiedAt !== null;
+          },
+          beginCeremony: async (userId: UserId) => {
+            const issued = preAuthCredentials.issue();
+            const now = clock.now();
+            const expiresAt = now + PENDING_AUTH_TTL_MS;
+            await createPendingAuthenticationRepository(db).create({
+              pendingId: nextPendingAuthenticationId(),
+              userId,
+              credentialDigest: issued.digest,
+              createdAt: now,
+              expiresAt,
+              maxAttempts: PENDING_AUTH_MAX_ATTEMPTS,
+              authenticationMethod: "PASSWORD_PLUS_TOTP",
+            } as never);
+            return { raw: issued.raw, expiresAt };
+          },
+        },
+      }),
+
+      verifyEmail: () => ({
+        // Canonicalises before digesting, so a code typed with spaces or in the
+        // wrong case still redeems.
+        digestSubmitted: digestSubmittedCode,
+        clock,
+        commit: verificationCommit,
+      }),
+
+      resendVerification: () => ({
+        clock,
+        tokens: verificationTokens,
+        newChallengeId: () => nextVerificationChallengeId(),
+        verificationTtlMs: VERIFICATION_TTL_MS,
+        commit: verificationCommit,
+        // The worker delivers. This hands the row to the queue and returns --
+        // the raw token is never in scope here, because the renderer recovers
+        // it from the sealed secret on the challenge row.
+        scheduleDelivery: () => Promise.resolve(),
+      }),
+
+      requestPasswordReset: () => ({
+        clock,
+        tokens: resetTokens,
+        newChallengeId: () => nextPasswordResetChallengeId(),
+        resetTtlMs: RESET_TTL_MS,
+        commit: requestResetCommit,
+      }),
+
+      resetPassword: () => ({
+        digestSubmitted: digestSubmittedResetToken,
+        hasher, clock,
+        peek: (digest) => createPasswordResetRepository(db).findByTokenDigest(digest),
+        commit: resetPasswordCommit,
+      }),
+
+      completeMfa: () => ({
+        clock, totp,
+        sealer: mfaSecrets,
+        recoveryCodes,
+        pendingCredentials: preAuthCredentials,
+        accountLabelFor,
+        commit: mfaCommit,
+      }),
+
+      beginEnrolment: () => ({
+        clock, totp,
+        sealer: mfaSecrets,
+        newFactorId: () => nextMfaFactorId(),
+        accountLabelFor,
+        commit: mfaCommit,
+      }),
+
+      confirmEnrolment: () => ({
+        clock, totp,
+        sealer: mfaSecrets,
+        recoveryCodes,
+        newRecoveryCodeId: () => nextRecoveryCodeId(),
+        accountLabelFor,
+        commit: mfaCommit,
+      }),
+
+      disableMfa: () => ({
+        clock, hasher,
+        passwordHashFor: (userId: UserId) =>
+          createAccountCredentialRepository(db).findPasswordHash(userId),
+        commit: mfaCommit,
+      }),
+
+      currentUser: () => ({ accounts: createAccountProfileRepository(db) }),
+      updateProfile: () => ({ clock, commit: accountCommit }),
+      updatePreferences: () => ({
+        clock,
+        // The platform's own IANA list, so a made-up zone is rejected rather
+        // than stored.
+        isKnownTimezone: (value: string) =>
+          Intl.supportedValuesOf("timeZone").includes(value),
+        commit: accountCommit,
+      }),
+      changePassword: () => ({
+        clock, hasher,
+        credentials: createAccountCredentialRepository(db),
+        commit: accountCommit,
+      }),
+
+      listSessions: () => ({ sessions: createAccountSessionRepository(db) }),
+      revokeSession: () => ({ clock, sessions: createAccountSessionRepository(db) }),
+      revokeOtherSessions: () => ({
+        clock, sessions: createAccountSessionRepository(db),
+      }),
+
+      endSession: (sessionId: string) => sessions.revoke(sessionId as never, "signed_out" as never),
+      issueSession: (userId: UserId) => sessions.issue(userId),
+
+      // The same double-submit check `requireSession` installs, applied to the
+      // one identity route that mutates state with a session in hand.
+      validateCsrf: (request) => {
+        const auth: RequestAuth = request.auth;
+        if (auth.status !== "authenticated") return false;
+        const header = request.headers["x-csrf-token"];
+        if (typeof header !== "string") return false;
+        try {
+          sessions.validateCsrf(auth.session, header);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+
+      // Reads what the session plugin already resolved. `sessions.resolve()` is
+      // wrong twice over here: it takes a RAW TOKEN and returns
+      // { outcome, actor, session } rather than { userId, sessionId }.
+      authenticatedUser: (request) => {
+        const auth: RequestAuth = request.auth;
+        if (auth.status !== "authenticated") return Promise.resolve(null);
+        return Promise.resolve({
+          userId: auth.actor.userId,
+          sessionId: auth.session.sessionId,
+        });
+      },
+    }),
+  };
+}
