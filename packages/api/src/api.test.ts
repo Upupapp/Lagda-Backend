@@ -52,6 +52,37 @@ describe("configuration", () => {
     expect(() => config({ CORS_ORIGINS: "https://app.lagda.io/app" })).toThrow(ApiConfigError);
   });
 
+  it("has no app origin unless one is configured", () => {
+    // Null rather than a guessed default. Every link the system emits is built
+    // from this, and a wrong origin produces mail nobody can act on -- worse
+    // than a surface that is simply absent.
+    expect(config({}).appBaseUrl).toBeNull();
+  });
+
+  it("accepts a bare app origin", () => {
+    expect(config({ APP_BASE_URL: "https://app.lagda.io" }).appBaseUrl)
+      .toBe("https://app.lagda.io");
+  });
+
+  it("rejects an app origin carrying a path", () => {
+    // The two link builders disagree about what a base path means: the
+    // invitation builder resolves an absolute path against it and DISCARDS it,
+    // the signing builder concatenates and KEEPS it. One value would produce
+    // two roots, and the invitation link would 404.
+    expect(() => config({ APP_BASE_URL: "https://app.lagda.io/portal" }))
+      .toThrow(ApiConfigError);
+  });
+
+  it("rejects a trailing slash, which is not the canonical origin", () => {
+    expect(() => config({ APP_BASE_URL: "https://app.lagda.io/" }))
+      .toThrow(ApiConfigError);
+  });
+
+  it("rejects an app origin that is not http or https", () => {
+    expect(() => config({ APP_BASE_URL: "ftp://app.lagda.io" }))
+      .toThrow(ApiConfigError);
+  });
+
   it("rejects a non-numeric port rather than defaulting", () => {
     expect(() => config({ API_PORT: "8080abc" })).toThrow(ApiConfigError);
   });

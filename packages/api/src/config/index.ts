@@ -89,6 +89,28 @@ export interface ApiConfig {
   readonly signingDeliveryKeyVersion: string;
 
   /**
+   * Where the web application lives, e.g. `https://app.lagda.io`.
+   *
+   * An ORIGIN, with no path. Enforced rather than merely expected, because the
+   * two builders that consume it disagree about what a path means:
+   *
+   *   invitation  `new URL("/invitations/accept", base)` — DISCARDS a base path
+   *   signing     concatenates onto `base.pathname`     — KEEPS it
+   *
+   * Given `https://app.example.com/portal` those produce
+   * `https://app.example.com/invitations/accept` and
+   * `https://app.example.com/portal/sign/…` — one config value, two roots, and
+   * the invitation link 404s. Rejecting the path at boot is the only place that
+   * discrepancy can be caught before it is an email nobody can act on.
+   *
+   * NULL when unset, and the two surfaces that need it are then not registered
+   * at all — the same shape as an absent webhook credential. A link builder
+   * cannot be given a placeholder: every URL it produced would be wrong, and
+   * wrong links are worse than absent routes because they look like they work.
+   */
+  readonly appBaseUrl: string | null;
+
+  /**
    * How long a signing bootstrap credential stays usable.
    *
    * 14 days. Long enough that a counterparty who reads email weekly is not
@@ -195,6 +217,42 @@ function parseTrustProxy(raw: string | undefined): TrustProxySetting {
  * either be ignored by the browser or, if combined with credentials, would be a
  * serious hole. There is no configuration in which it is the right answer here.
  */
+/**
+ * Parses the application origin.
+ *
+ * The same rules as a CORS origin and for a related reason: this value is used
+ * to CONSTRUCT urls rather than to compare them, so a trailing slash or a
+ * stray path silently changes every link the system emits.
+ */
+function parseAppBaseUrl(raw: string | undefined): string | null {
+  if (raw === undefined || raw.trim() === "") return null;
+  const value = raw.trim();
+
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new ApiConfigError(`APP_BASE_URL is not a valid URL: ${JSON.stringify(value)}.`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new ApiConfigError(
+      `APP_BASE_URL must be http or https: ${JSON.stringify(value)}.`);
+  }
+  if (parsed.pathname !== "/" || parsed.search !== "" || parsed.hash !== "") {
+    throw new ApiConfigError(
+      "APP_BASE_URL must be scheme://host[:port] with no path, query or "
+      + `fragment: ${JSON.stringify(value)}. A path is honoured by the signing `
+      + "link builder and discarded by the invitation one, so one value would "
+      + "produce two different link roots.");
+  }
+  if (parsed.origin !== value) {
+    throw new ApiConfigError(
+      `APP_BASE_URL must be written canonically as ${JSON.stringify(parsed.origin)}, `
+      + `not ${JSON.stringify(value)}.`);
+  }
+  return parsed.origin;
+}
+
 function parseCorsOrigins(raw: string | undefined): readonly string[] {
   if (raw === undefined || raw.trim() === "") return [];
 
@@ -287,6 +345,7 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     // invalidate every enrolled factor.
     mfaSecretKey: env["MFA_SECRET_KEY"] ?? null,
     mfaSecretKeyVersion: env["MFA_SECRET_KEY_VERSION"] ?? "v1",
+    appBaseUrl: parseAppBaseUrl(env["APP_BASE_URL"]),
     signingDeliveryKey: env["SIGNING_DELIVERY_KEY"] ?? null,
     signingDeliveryKeyVersion: env["SIGNING_DELIVERY_KEY_VERSION"] ?? "v1",
     signingAccessLifetimeMs: readInt(

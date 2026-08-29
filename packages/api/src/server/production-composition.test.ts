@@ -22,6 +22,9 @@
 // while four route surfaces stayed unreachable. Both levels are enumerated.
 
 import { describe, it, expect } from "vitest";
+import { createProductionDependencies } from "./start-server.js";
+import { loadApiConfig } from "../config/index.js";
+import type { LagdaDatabase } from "@lagda/db";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -51,25 +54,23 @@ const NOT_WIRED_IN_PRODUCTION: Record<string, string> = {
 /**
  * Sub-groups of `workspaces` the composition does not supply, and why.
  *
- * The first two share ONE cause: both mint a link into the web app, and there
- * is no `appBaseUrl` in `ApiConfig` for them to build it from. Adding that key
- * is a deployment-facing decision -- a new required environment variable --
- * rather than something to introduce as a side effect of wiring.
+ * `invitations` and `sendSigningRequest` were both listed here and are now
+ * wired: `APP_BASE_URL` exists, and both are CONDITIONAL on it rather than
+ * absent. That conditionality is why they still cannot be asserted as
+ * unconditionally present -- see the deployment-shape test below.
+ *
+ * `audit` was listed with a reason that was simply WRONG: it was called
+ * request-scoped because `AuditTrailDependencies` sits next to a type carrying
+ * an actor and a signing-request id. Those belong to the use case's INPUT. The
+ * dependency object is `{ transactions }` and always could have been built.
+ * Recorded rather than quietly deleted, because a confidently-worded excuse is
+ * how a wireable group stays unwired.
  */
 const WORKSPACE_SUBGROUPS_NOT_WIRED: Record<string, string> = {
-  invitations:
-    "InvitationLinkBuilder needs an app base URL, and ApiConfig has no key " +
-    "for one. Also wants a DeliverySecretSealer for the sealed credential.",
-  sendSigningRequest:
-    "Same missing app base URL, for the signing link, plus a sealer keyed by " +
-    "SIGNING_DELIVERY_KEY and a real notification template registry.",
-  audit:
-    "AuditTrailDependencies is request-scoped -- it carries the actor, the " +
-    "workspace and the signing request -- so it cannot be built at boot the " +
-    "way the other thunks are.",
   cancelSigningRequest:
-    "Depends on the signing-workflow graph, which is not composed anywhere " +
-    "outside its own tests.",
+    "Needs a CompletionIdGenerator, which has no production implementation, " +
+    "and the send provisioner's `access` slice -- so it follows send rather " +
+    "than standing alone.",
 };
 
 function dependencySource(): string {
@@ -87,6 +88,26 @@ function workspaceSubgroups(): string[] {
   const block = dependencySource()
     .split("export interface WorkspaceDependencies")[1] ?? "";
   return [...block.matchAll(/readonly ([a-zA-Z]+)\?:/g)].map((m) => m[1] as string);
+}
+
+/**
+ * Does the composition supply this group?
+ *
+ * Comments are STRIPPED first: this file's prose names every group it
+ * discusses, and matching raw text made a documented omission read as a
+ * wiring.
+ *
+ * Shorthand counts. `return { invitations }` supplies the group exactly as
+ * `invitations: x` does, and an earlier version of this matched only the
+ * colon -- so a correctly wired surface reported as missing, which is the
+ * failure that teaches people to distrust the gate.
+ */
+function supplies(body: string, group: string): boolean {
+  const code = body
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+  return new RegExp(`\\b${group}\\s*[:,}]`).test(code)
+    || new RegExp(`build${group[0]?.toUpperCase() ?? ""}${group.slice(1)}`, "i").test(code);
 }
 
 function productionBody(): string {
@@ -108,11 +129,8 @@ describe("production composition", () => {
 
   it("accounts for every optional group, wired or explicitly not", () => {
     const body = productionBody();
-    const unaccounted = groups.filter((group) => {
-      const supplied = new RegExp(`\\b${group}\\s*:`).test(body)
-        || new RegExp(`build${group[0]?.toUpperCase()}${group.slice(1)}`, "i").test(body);
-      return !supplied && NOT_WIRED_IN_PRODUCTION[group] === undefined;
-    });
+    const unaccounted = groups.filter((group) =>
+      !supplies(body, group) && NOT_WIRED_IN_PRODUCTION[group] === undefined);
 
     expect(
       unaccounted,
@@ -132,8 +150,7 @@ describe("production composition", () => {
   it("accounts for every workspace sub-group, wired or explicitly not", () => {
     const body = productionBody();
     const unaccounted = workspaceSubgroups().filter((group) =>
-      !new RegExp(`\\b${group}\\s*:`).test(body)
-      && WORKSPACE_SUBGROUPS_NOT_WIRED[group] === undefined);
+      !supplies(body, group) && WORKSPACE_SUBGROUPS_NOT_WIRED[group] === undefined);
 
     expect(
       unaccounted,
@@ -159,6 +176,80 @@ describe("production composition", () => {
 
     const subWired =
       workspaceSubgroups().length - Object.keys(WORKSPACE_SUBGROUPS_NOT_WIRED).length;
-    expect(subWired).toBe(7);
+    expect(subWired).toBe(10);
+  });
+});
+
+/**
+ * What a deployment actually gets, asked of the composition root itself.
+ *
+ * The tests above read source text, which is the only way to check a group that
+ * is absent. These BUILD the object -- no database is touched, because every
+ * repository factory only wraps a handle and none of them queries at
+ * construction -- so a group that is wired but mis-shaped fails here rather
+ * than passing a grep.
+ */
+describe("what a deployment serves", () => {
+  const BASE_ENV = {
+    NODE_ENV: "production", API_HOST: "127.0.0.1", API_PORT: "3000",
+    CORS_ORIGINS: "https://app.example.com", SESSION_COOKIE_SECURE: "true",
+  } as const;
+
+  // Never queried: construction wraps, it does not connect.
+  const database = {
+    db: {} as never,
+    ping: () => Promise.resolve(true),
+    close: () => Promise.resolve(),
+    describe: () => "test",
+  } as unknown as LagdaDatabase;
+
+  // Real keys: the secret box decodes and length-checks at construction, so a
+  // 44-character placeholder fails for the wrong reason.
+  const KEY = Buffer.alloc(32, 7).toString("base64");
+
+  const build = async (extra: Record<string, string>) =>
+    createProductionDependencies(
+      database, loadApiConfig({ ...BASE_ENV, ...extra }));
+
+  it("serves no identity surface without an MFA key", async () => {
+    const deps = await build({});
+    // Three of the seventeen graphs seal a TOTP secret. Half a surface would
+    // be an account that can be created and then locked out of.
+    expect(deps.identity).toBeUndefined();
+  });
+
+  it("serves identity once an MFA key exists", async () => {
+    const deps = await build({ MFA_SECRET_KEY: KEY });
+    expect(deps.identity).toBeDefined();
+  });
+
+  it("mints no links without an app origin", async () => {
+    const deps = await build({});
+    expect(deps.workspaces?.invitations).toBeUndefined();
+    expect(deps.workspaces?.sendSigningRequest).toBeUndefined();
+  });
+
+  it("serves invitations, but not send, on the origin alone", async () => {
+    const deps = await build({ APP_BASE_URL: "https://app.example.com" });
+    expect(deps.workspaces?.invitations).toBeDefined();
+    // Send's sealer protects the recipient credential. Without a key it would
+    // refuse at every call, so the route does not exist instead.
+    expect(deps.workspaces?.sendSigningRequest).toBeUndefined();
+  });
+
+  it("serves send once the delivery key joins the origin", async () => {
+    const deps = await build({
+      APP_BASE_URL: "https://app.example.com",
+      SIGNING_DELIVERY_KEY: KEY,
+    });
+    expect(deps.workspaces?.sendSigningRequest).toBeDefined();
+  });
+
+  it("always serves the surfaces that need no configuration", async () => {
+    const deps = await build({});
+    expect(deps.sessions).toBeDefined();
+    expect(deps.workspaces?.documents).toBeDefined();
+    expect(deps.workspaces?.audit).toBeDefined();
+    expect(deps.workspaces?.organization).toBeDefined();
   });
 });

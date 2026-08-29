@@ -9,7 +9,16 @@ import {
   createSessionRepository,
   type LagdaDatabase,
 } from "@lagda/db";
-import { createSessionService, type Clock } from "@lagda/application";
+import {
+  createSessionService, createTemplateRegistry, ALL_TEMPLATES,
+  type Clock, type NormalizedEmail, type UserId,
+} from "@lagda/application";
+import { createInvitationTokenFactory } from "../security/invitation-token.js";
+import { createInvitationLinkBuilder } from "../workspaces/invitation-link.js";
+import { createSigningAccessTokenFactory } from "../security/signing-access-token.js";
+import {
+  createDeliverySecretSealer, createSigningLinkBuilder,
+} from "../security/signing-delivery.js";
 import {
   createSecurityTokenGenerator, createSecurityTokenDigester,
   createIdempotencyKeyDigester, createIdempotencyRecordIdGenerator,
@@ -22,12 +31,14 @@ import {
   createContactIdGenerator, createDocumentIdGenerator,
   createPreparationIdGenerator, createRecipientIdGenerator,
   createSigningRequestIdGenerator, createEvidenceEventIdGenerator,
-  createOrganizationUnitIdGenerator,
+  createOrganizationUnitIdGenerator, createWorkspaceInvitationIdGenerator,
+  createSigningAccessIdGenerator, createNotificationIntentIdGenerator,
+  createNotificationDeliveryIdGenerator,
 } from "../security/identifiers.js";
 import { createProviderEventConfirmerFromEnv } from "@lagda/email";
 import { loadApiConfig, type ApiConfig } from "../config/index.js";
 import { createApp } from "../app/create-app.js";
-import type { AppDependencies } from "../app/dependencies.js";
+import type { AppDependencies, WorkspaceDependencies } from "../app/dependencies.js";
 import { createShutdown, type ShutdownTarget } from "./shutdown.js";
 
 /**
@@ -39,6 +50,14 @@ import { createShutdown, type ShutdownTarget } from "./shutdown.js";
  * the contract everyone else reads.
  */
 const IDEMPOTENCY_RETENTION_MS = 24 * 3_600_000;
+
+/** The shared idempotency slice every claiming group receives. */
+interface IdempotencyComposition {
+  readonly digester: ReturnType<typeof createIdempotencyKeyDigester>;
+  readonly ids: ReturnType<typeof createIdempotencyRecordIdGenerator>;
+  readonly clock: Clock;
+  readonly policy: { readonly retentionMs: number };
+}
 
 /**
  * Builds the real infrastructure.
@@ -89,7 +108,7 @@ export async function createProductionDependencies(
   // request would be wrong even now that the record-id generator is stateless:
   // the claim has to commit on the SAME transaction as the mutation, and a
   // per-request object invites the reading that it is per-request state.
-  const idempotency = {
+  const idempotency: IdempotencyComposition = {
     digester: createIdempotencyKeyDigester(),
     ids: createIdempotencyRecordIdGenerator(),
     clock,
@@ -153,12 +172,115 @@ export async function createProductionDependencies(
         access: () => ({ transactions }),
       },
       organization: () => ({ transactions, clock, unitIds }),
+      // The private audit trail for one signing request. It needs the
+      // transaction manager and nothing else -- an earlier reading of this
+      // called it request-scoped, which was wrong: the actor and the request
+      // id belong to the use case's INPUT, not to its dependencies.
+      audit: () => ({ transactions }),
+      ...buildLinkedSurfaces({
+        config, transactions, clock, idempotency, memberIds, database,
+      }),
     },
     // Spread, so an unconfigured deployment has the key ABSENT rather than
     // present-and-undefined. Under `exactOptionalPropertyTypes` those are
     // different things, and here the difference is whether a route exists.
     ...buildIdentity(database, config, sessions, dummyPasswordHash),
     ...buildProviderWebhook(database),
+  };
+}
+
+/**
+ * The two surfaces that mint a link into the web application.
+ *
+ * Grouped because they share ONE precondition -- `APP_BASE_URL` -- and because
+ * grouping makes the deployment story a single sentence: configure the app
+ * origin and both appear, leave it unset and neither does.
+ *
+ * Send needs strictly more. Its sealer protects the recipient credential the
+ * renderer later opens, and `createDeliverySecretSealer(null, ...)` returns a
+ * sealer that REFUSES rather than storing a recoverable secret in the clear.
+ * Composing it without a key would therefore mount a route that fails at every
+ * use, which is the "exists but rejects everything" state this codebase
+ * consistently declines to ship.
+ */
+function buildLinkedSurfaces(input: {
+  config: ApiConfig;
+  transactions: ReturnType<typeof createTransactionManager>;
+  clock: Clock;
+  idempotency: IdempotencyComposition;
+  memberIds: ReturnType<typeof createWorkspaceMemberIdGenerator>;
+  database: LagdaDatabase;
+}): Partial<Pick<WorkspaceDependencies, "invitations" | "sendSigningRequest">> {
+  const { config, transactions, clock, idempotency, memberIds, database } = input;
+  const appBaseUrl = config.appBaseUrl;
+  if (appBaseUrl === null) return {};
+
+  const invitationTokens = createInvitationTokenFactory();
+
+  /**
+   * The caller's CURRENT canonical address.
+   *
+   * Read from the account at acceptance time, never from the session: a session
+   * carries no email claim, and if it did it would be stale the moment the user
+   * changed their address.
+   */
+  const currentNormalizedEmail = async (
+    userId: UserId,
+  ): Promise<NormalizedEmail | null> => {
+    const row = await database.db.selectFrom("users").select("normalized_email")
+      .where("user_id", "=", userId).executeTakeFirst();
+    return (row?.normalized_email ?? null) as NormalizedEmail | null;
+  };
+
+  const invitations = {
+    management: () => ({
+      transactions, clock,
+      invitationIds: createWorkspaceInvitationIdGenerator(),
+      tokens: invitationTokens,
+      links: createInvitationLinkBuilder({ appBaseUrl }),
+      // Inviting the same address twice on a retry would send two credentials
+      // and leave one of them unaccounted for.
+      idempotency,
+      // Optional in the port. Supplied only with a key, because the sealed
+      // credential is what lets the worker render the invitation later; without
+      // one the invitation still works, it simply cannot be re-rendered.
+      ...(config.signingDeliveryKey === null ? {} : {
+        sealer: createDeliverySecretSealer(
+          config.signingDeliveryKey, config.signingDeliveryKeyVersion),
+      }),
+    }),
+    redemption: () => ({
+      transactions, clock, tokens: invitationTokens, memberIds,
+      currentNormalizedEmail,
+    }),
+  };
+
+  if (config.signingDeliveryKey === null) return { invitations };
+
+  return {
+    invitations,
+    sendSigningRequest: () => ({
+      transactions, clock,
+      // Send mints a grant, appends evidence, and raises a notification intent
+      // with its delivery. Four capabilities, composed by spread so none can be
+      // changed without the others being seen.
+      ids: {
+        ...createSigningAccessIdGenerator(),
+        ...createEvidenceEventIdGenerator(),
+        ...createNotificationIntentIdGenerator(),
+        ...createNotificationDeliveryIdGenerator(),
+      },
+      tokens: createSigningAccessTokenFactory(),
+      sealer: createDeliverySecretSealer(
+        config.signingDeliveryKey, config.signingDeliveryKeyVersion),
+      links: createSigningLinkBuilder(appBaseUrl),
+      // The real templates, the same set the worker renders from. A registry
+      // built from a different list would let the API freeze a template version
+      // the worker cannot resolve.
+      templates: createTemplateRegistry(ALL_TEMPLATES),
+      policy: { bootstrapLifetimeMs: config.signingAccessLifetimeMs },
+      idempotency,
+    }),
   };
 }
 
