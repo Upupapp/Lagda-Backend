@@ -26,6 +26,11 @@ import {
   createIdempotencyKeyDigester, createIdempotencyRecordIdGenerator,
 } from "../security/crypto.js";
 import { randomBytes } from "node:crypto";
+import {
+  createS3ObjectStorage, createStorageKeyStrategy, loadStorageConfig,
+} from "@lagda/storage";
+import { createClamAvScanner, loadScannerConfig } from "@lagda/scanning";
+import { createPdfInspector, sha256 } from "@lagda/sealing";
 import { createArgon2PasswordHasher } from "../security/password-hasher.js";
 import { buildIdentity } from "./identity-composition.js";
 import {
@@ -35,12 +40,14 @@ import {
   createSigningRequestIdGenerator, createEvidenceEventIdGenerator,
   createOrganizationUnitIdGenerator, createWorkspaceInvitationIdGenerator,
   createSigningAccessIdGenerator, createNotificationIntentIdGenerator,
-  createNotificationDeliveryIdGenerator,
+  createNotificationDeliveryIdGenerator, createArtifactIdGenerator, nextUploadId,
 } from "../security/identifiers.js";
 import { createProviderEventConfirmerFromEnv } from "@lagda/email";
 import { loadApiConfig, type ApiConfig } from "../config/index.js";
 import { createApp } from "../app/create-app.js";
 import type { AppDependencies, WorkspaceDependencies } from "../app/dependencies.js";
+import type { RequestAuth } from "../security/session-plugin.js";
+import type { WorkspaceId, DocumentId } from "@lagda/contracts";
 import { createShutdown, type ShutdownTarget } from "./shutdown.js";
 
 /**
@@ -52,6 +59,17 @@ import { createShutdown, type ShutdownTarget } from "./shutdown.js";
  * the contract everyone else reads.
  */
 const IDEMPOTENCY_RETENTION_MS = 24 * 3_600_000;
+
+/**
+ * What one upload may be.
+ *
+ * 25 MB and 500 pages, matching the dev server so a document accepted in
+ * development is not refused in production. The page bound exists because page
+ * count is what preparation places fields against: a 5,000-page file is a
+ * denial-of-service against the inspector, not a document anyone is signing.
+ */
+const UPLOAD_MAX_BYTES = 25 * 1024 * 1024;
+const UPLOAD_MAX_PAGES = 500;
 
 /** The shared idempotency slice every claiming group receives. */
 interface IdempotencyComposition {
@@ -202,7 +220,132 @@ export async function createProductionDependencies(
     // present-and-undefined. Under `exactOptionalPropertyTypes` those are
     // different things, and here the difference is whether a route exists.
     ...buildIdentity(database, config, sessions, dummyPasswordHash),
+    ...buildUpload(database, transactions, clock),
     ...buildProviderWebhook(database),
+  };
+}
+
+/**
+ * Document upload, if this deployment has somewhere to put bytes and something
+ * to scan them with.
+ *
+ * ── Absent means the route does not exist ──────────────────────────────────
+ *
+ * Both loaders THROW when unconfigured, and that is the signal used here. The
+ * alternative -- mounting the route and failing at the first upload -- gives a
+ * user a working-looking control that rejects their document.
+ *
+ * ── There is no way to run this without a scanner ──────────────────────────
+ *
+ * `loadScannerConfig` says so in as many words: "Uploads require malware
+ * scanning and there is no configuration that disables it." So a deployment
+ * with object storage and no scanner gets NO upload route, rather than an
+ * upload route that stores unscanned bytes. That is the right trade and it is
+ * not this file's decision to revisit.
+ */
+function buildUpload(
+  database: LagdaDatabase,
+  transactions: ReturnType<typeof createTransactionManager>,
+  clock: Clock,
+): Pick<AppDependencies, "upload"> {
+  let storageConfig;
+  let scannerConfig;
+  try {
+    storageConfig = loadStorageConfig();
+    scannerConfig = loadScannerConfig();
+  } catch {
+    // Names only are ever reported by those loaders, and neither value is
+    // logged here: between them they read four secrets.
+    return {};
+  }
+
+  const storage = createS3ObjectStorage(storageConfig);
+  const keys = createStorageKeyStrategy();
+  const inspector = createPdfInspector();
+  const scanner = createClamAvScanner(scannerConfig);
+  const artifactIds = createArtifactIdGenerator();
+
+  return {
+    upload: () => ({
+      path: "/workspaces/:workspaceId/documents/:documentId/upload",
+      limits: { maxBytes: UPLOAD_MAX_BYTES, maxPages: UPLOAD_MAX_PAGES },
+
+      // Tenancy comes from the SESSION and the PATH, never from a multipart
+      // field: a body field is chosen by the client, and letting it name the
+      // tenant would be a complete tenancy bypass.
+      resolveContext: (request) => {
+        const auth: RequestAuth = request.auth;
+        if (auth.status !== "authenticated") return null;
+        const params = request.params as { workspaceId?: string; documentId?: string };
+        if (!params.workspaceId || !params.documentId) return null;
+        return {
+          workspaceId: params.workspaceId as WorkspaceId,
+          userId: auth.actor.userId,
+          documentId: params.documentId as DocumentId,
+        };
+      },
+
+      dependenciesFor: ({ workspaceId }) => ({
+        storage, keys, inspector, scanner, clock,
+        // The SEALER's digest, not a second one. An upload digest and a seal
+        // digest are both digests of document bytes, and INV-080 exists so the
+        // two cannot disagree.
+        digestOf: sha256,
+        newUploadId: () => nextUploadId() as never,
+        newArtifactId: () => artifactIds.nextArtifactId(),
+
+        /**
+         * Each write in its OWN short transaction.
+         *
+         * The pipeline writes an upload row, then talks to object storage and
+         * a virus scanner over the network, then writes again. Holding one
+         * transaction across that would pin a database connection for the
+         * length of a file transfer and a malware scan -- with a pool of ten,
+         * a handful of concurrent uploads would starve every other request.
+         *
+         * Atomicity is only needed where two rows must agree, and that is
+         * `commitAcceptance` below, which takes its own transaction.
+         */
+        uploads: {
+          insert: (record) =>
+            transactions.runForWorkspace(workspaceId, uow => uow.uploads.insert(record)),
+          find: (uploadId) =>
+            transactions.runForWorkspace(workspaceId, uow => uow.uploads.find(uploadId)),
+          complete: (input) =>
+            transactions.runForWorkspace(workspaceId, uow => uow.uploads.complete(input)),
+        },
+
+        /**
+         * The write that makes the bytes real.
+         *
+         * ONE transaction: the artifact row and the upload's completion commit
+         * together or not at all. Written separately, a crash between them
+         * leaves either an artifact nothing points at or an upload marked
+         * accepted with no artifact -- and the second is the one that makes
+         * `saveDocumentPreparation` refuse a document that appears to have a
+         * file.
+         *
+         * The upload-route test supplies `() => Promise.resolve()` here, which
+         * type-checks and writes nothing. That double is why a fully tested
+         * upload route once left every document without bytes, and it is named
+         * in this repository's own request-typing test.
+         */
+        commitAcceptance: async (input) => {
+          await transactions.runForWorkspace(workspaceId, async uow => {
+            await uow.artifacts.insert(input.artifact);
+            await uow.uploads.complete({
+              uploadId: input.uploadId,
+              status: "accepted",
+              digest: input.digest,
+              detectedMediaType: input.detectedMediaType,
+              scanOutcome: input.scanOutcome,
+              scannedAt: input.scannedAt,
+              completedAt: input.completedAt,
+            });
+          });
+        },
+      }),
+    }),
   };
 }
 

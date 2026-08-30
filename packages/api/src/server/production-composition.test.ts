@@ -21,7 +21,7 @@
 // supplies the parent and omits four children would read as "workspaces: wired"
 // while four route surfaces stayed unreachable. Both levels are enumerated.
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { createProductionDependencies } from "./start-server.js";
 import { loadApiConfig } from "../config/index.js";
 import type { LagdaDatabase } from "@lagda/db";
@@ -39,7 +39,6 @@ const API_SRC = join(dirname(fileURLToPath(import.meta.url)), "..");
  * should require the same argument as any other decision to ship less.
  */
 const NOT_WIRED_IN_PRODUCTION: Record<string, string> = {
-  upload: "Needs object storage, an inspector and a malware scanner.",
   signingAccess: "Depends on the signing-access graph.",
   signingCeremony: "Depends on the ceremony graph.",
   signingSubmission: "Depends on the submission graph.",
@@ -168,7 +167,7 @@ describe("production composition", () => {
     // Deliberately an assertion rather than a comment: when someone wires a
     // group, this number moves and the change is visible in the diff.
     const wired = groups.length - Object.keys(NOT_WIRED_IN_PRODUCTION).length;
-    expect(wired).toBe(5);
+    expect(wired).toBe(6);
 
     const subWired =
       workspaceSubgroups().length - Object.keys(WORKSPACE_SUBGROUPS_NOT_WIRED).length;
@@ -247,6 +246,53 @@ describe("what a deployment serves", () => {
     expect(deps.workspaces?.documents).toBeDefined();
     expect(deps.workspaces?.audit).toBeDefined();
     expect(deps.workspaces?.organization).toBeDefined();
+  });
+
+  /**
+   * Upload needs BOTH object storage and a scanner, and refuses on either.
+   *
+   * `loadScannerConfig` states there is no configuration that disables
+   * scanning, so a deployment with storage and no scanner must get NO upload
+   * route rather than one that stores unscanned bytes.
+   */
+  it("mounts no upload route without object storage", async () => {
+    const deps = await build({});
+    expect(deps.upload).toBeUndefined();
+  });
+
+  const STORAGE_ENV = {
+    OBJECT_STORAGE_REGION: "ap-southeast-1",
+    OBJECT_STORAGE_BUCKET_ARTIFACTS: "lagda-artifacts",
+    // Two buckets, not one. An accepted document and a file still being
+    // scanned must not share a namespace.
+    OBJECT_STORAGE_BUCKET_QUARANTINE: "lagda-quarantine",
+    OBJECT_STORAGE_ACCESS_KEY_ID: "key",
+    OBJECT_STORAGE_SECRET_ACCESS_KEY: "secret",
+  } as const;
+
+  /**
+   * Stubbed on `process.env`, not passed to `loadApiConfig`.
+   *
+   * Object storage and the scanner carry their own loaders, and each reads the
+   * environment itself -- the same shape as `loadDatabaseConfig`. The
+   * composition root is the one place allowed to read it, so a test of the
+   * composition root has to set it there too.
+   */
+  const stubEnv = (vars: Record<string, string>) => {
+    for (const [name, value] of Object.entries(vars)) vi.stubEnv(name, value);
+  };
+  afterEach(() => { vi.unstubAllEnvs(); });
+
+  it("mounts no upload route with storage but no scanner", async () => {
+    stubEnv(STORAGE_ENV);
+    const deps = await build({});
+    expect(deps.upload).toBeUndefined();
+  });
+
+  it("mounts upload once storage AND a scanner are configured", async () => {
+    stubEnv({ ...STORAGE_ENV, MALWARE_SCANNER_HOST: "clamav.internal" });
+    const deps = await build({});
+    expect(deps.upload).toBeDefined();
   });
 
   it("always limits, because a limiter needs no configuration to be correct", async () => {

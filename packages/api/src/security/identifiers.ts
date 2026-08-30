@@ -161,6 +161,15 @@ export function createEvidenceEventIdGenerator(): EvidenceEventIdGenerator {
   return { nextEvidenceEventId: () => mint("ev") as EvidenceEventId };
 }
 
+/**
+ * The upload attempt, distinct from the artifact it may produce.
+ *
+ * A rejected upload has an id and no artifact; an accepted one has both. One
+ * id serving as both would make "this upload failed scanning" and "this
+ * artifact exists" the same row.
+ */
+export const nextUploadId = (): string => mint("upl");
+
 export function createArtifactIdGenerator(): ArtifactIdGenerator {
   return { nextArtifactId: () => mint("art") as ArtifactId };
 }
