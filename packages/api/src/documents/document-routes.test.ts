@@ -81,6 +81,18 @@ function seedWorkspace(transactions: FakeTransactionManager): void {
       userId: AUDITOR, role: "auditor", createdAt: AT,
     },
   );
+  // Two live folders and one archived. Filing is only meaningful against real
+  // folders, and the archived one exists so the refusal has something to refuse.
+  transactions.store.folders.push(
+    {
+      folderId: "fld_live" as never, workspaceId: WORKSPACE, parentFolderId: null,
+      name: "Client Agreements", createdByUserId: OWNER, createdAt: AT, archivedAt: null,
+    },
+    {
+      folderId: "fld_gone" as never, workspaceId: WORKSPACE, parentFolderId: null,
+      name: "Closed Matters", createdByUserId: OWNER, createdAt: AT, archivedAt: AT,
+    },
+  );
 }
 
 async function build(): Promise<Harness> {
@@ -295,6 +307,82 @@ describe("GET and PATCH", () => {
     expect(body["documentId"]).toBe(created["documentId"]);
     expect(body["createdAt"]).toBe(created["createdAt"]);
     expect(body["createdByUserId"]).toBe(created["createdByUserId"]);
+  });
+
+  it("files a document in a folder, and back at the root", async () => {
+    const h = await harness();
+    await createOne(h);
+    const { cookie, csrf } = await h.signIn(OWNER);
+    const patch = (payload: Record<string, unknown>) => h.app.inject({
+      method: "PATCH", url: `${URL}/doc_1`,
+      headers: { cookie, [CSRF_TOKEN_HEADER]: csrf },
+      payload,
+    });
+
+    const filed = await patch({ folderId: "fld_live" });
+    expect(filed.statusCode).toBe(200);
+    expect(filed.json<Record<string, unknown>>()["folderId"]).toBe("fld_live");
+
+    // NULL IS A DESTINATION. If the handler used a truthiness or `undefined`
+    // test, this would come back still filed under fld_live with a 200 --
+    // a silent no-op, which is the worst available outcome.
+    const unfiled = await patch({ folderId: null });
+    expect(unfiled.statusCode).toBe(200);
+    expect(unfiled.json<Record<string, unknown>>()["folderId"]).toBeNull();
+  });
+
+  it("refuses an archived folder without changing anything", async () => {
+    const h = await harness();
+    await createOne(h);
+    const { cookie, csrf } = await h.signIn(OWNER);
+
+    const refused = await h.app.inject({
+      method: "PATCH", url: `${URL}/doc_1`,
+      headers: { cookie, [CSRF_TOKEN_HEADER]: csrf },
+      payload: { folderId: "fld_gone" },
+    });
+    // 422, not 400: this API maps the `validation` category to 422 throughout,
+    // asserted in the contracts' own tests. The DOCUMENT was found and the
+    // request was well-formed; what failed was a rule about its content.
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json<{ error: { code: string } }>().error.code).toBe("folder_unavailable");
+
+    const after = await h.app.inject({
+      method: "GET", url: `${URL}/doc_1`, headers: { cookie },
+    });
+    expect(after.json<Record<string, unknown>>()["folderId"]).toBeNull();
+  });
+
+  /**
+   * EXACTLY ONE field, enforced by the schema.
+   *
+   * Both is refused because renaming and filing are separate commands, and one
+   * body carrying both would apply two of them where the second can fail after
+   * the first has committed. Neither is refused because an empty PATCH is a
+   * request that asks for nothing and would return 200 as though it had done
+   * something.
+   */
+  it("refuses a body with both fields, or with neither", async () => {
+    const h = await harness();
+    await createOne(h);
+    const { cookie, csrf } = await h.signIn(OWNER);
+
+    for (const payload of [{ title: "Renamed", folderId: "fld_live" }, {}]) {
+      const response = await h.app.inject({
+        method: "PATCH", url: `${URL}/doc_1`,
+        headers: { cookie, [CSRF_TOKEN_HEADER]: csrf },
+        payload,
+      });
+      expect(response.statusCode, JSON.stringify(payload)).toBe(422);
+    }
+
+    // And the document is untouched by either attempt.
+    const after = await h.app.inject({
+      method: "GET", url: `${URL}/doc_1`, headers: { cookie },
+    });
+    const body = after.json<Record<string, unknown>>();
+    expect(body["title"]).toBe(SENSITIVE_TITLE);
+    expect(body["folderId"]).toBeNull();
   });
 
   it("paginates with the canonical envelope", async () => {

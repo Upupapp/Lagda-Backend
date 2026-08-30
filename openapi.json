@@ -3625,15 +3625,26 @@
             "application/json": {
               "schema": {
                 "additionalProperties": false,
+                "minProperties": 1,
+                "maxProperties": 1,
                 "type": "object",
-                "required": [
-                  "title"
-                ],
                 "properties": {
                   "title": {
                     "minLength": 1,
                     "maxLength": 300,
                     "type": "string"
+                  },
+                  "folderId": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 }
               }

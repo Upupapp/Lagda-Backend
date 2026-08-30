@@ -114,14 +114,14 @@ describe("DocumentId is not ArtifactId", () => {
     }
   });
 
-  it("the create and rename request schemas accept exactly one property", () => {
+  it("the create and update request schemas accept exactly one property", () => {
     // Scoped to the REQUEST SCHEMA declarations, not the whole file. The
     // response projection legitimately contains `createdByUserId`, and a guard
     // that could not tell a request from a response would either fail on
     // correct code or have to be weakened until it caught nothing.
     const routes = code(ROUTES);
     const schemas = [...routes.matchAll(
-      /const (?:Create|Rename)\w*RequestSchema = Type\.Object\(([\s\S]*?)\}, \{([\s\S]*?)\}\);/g,
+      /const (?:Create|Update)\w*RequestSchema = Type\.Object\(([\s\S]*?)\}, \{([\s\S]*?)\}\);/g,
     )];
     expect(schemas).toHaveLength(2);
 
@@ -134,10 +134,26 @@ describe("DocumentId is not ArtifactId", () => {
         expect(whole, `a request schema accepts ${forbidden}`)
           .not.toContain(forbidden);
       }
-      // Exactly one property, and unknown ones are rejected rather than stripped.
+      // Unknown properties are rejected rather than stripped.
       expect(whole).toContain("title:");
       expect(whole).toContain("additionalProperties: false");
     }
+
+    // The update schema offers TWO fields and accepts ONE, which the create
+    // schema achieves for free by having a single required field. Asserted on
+    // the schema text rather than by sending requests, because the value of
+    // this rule is that it is unconditional -- a handler check would apply to
+    // whichever paths remembered to run it.
+    //
+    // Why one and not both: renaming and filing are separate commands with
+    // separate rules, and a body carrying both would apply two of them to one
+    // document, where the second can fail after the first has committed.
+    const update = schemas
+      .map(m => m[0])
+      .find(whole => whole.includes("UpdateDocumentRequestSchema"));
+    expect(update).toBeDefined();
+    expect(update).toContain("minProperties: 1");
+    expect(update).toContain("maxProperties: 1");
   });
 });
 

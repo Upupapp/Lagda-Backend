@@ -117,11 +117,36 @@ export interface ScopedDocumentRepository {
   list(query: DocumentListQuery): Promise<DocumentPage>;
 
   /**
+   * Files the document in a folder, or at the workspace root.
+   *
+   * `file`, not `update(patch)`, for the same reason `rename` is — see below.
+   * Two narrow mutations, not one wide one.
+   *
+   * NULL IS THE ROOT, a real destination. Passing null is how a document is
+   * un-filed, so this method cannot use "absent means unchanged": the caller
+   * decides whether to call it at all.
+   *
+   * Does NOT validate the folder. Whether the folder exists, belongs to this
+   * workspace and is still live is a rule, and rules live in the use case
+   * where they can be stated once and tested without a database. The foreign
+   * key is the backstop, not the check.
+   *
+   * Returns whether it applied. Zero rows means absent or another tenant, and
+   * the caller reports neither.
+   */
+  file(input: {
+    readonly documentId: DocumentId;
+    readonly folderId: string | null;
+    readonly now: number;
+  }): Promise<boolean>;
+
+  /**
    * Changes the title. The only mutation a document has.
    *
    * `rename`, not `update(patch)`. A generic patch is how `{ workspaceId }`
    * moves a document between tenants and `{ createdAt }` rewrites history —
-   * §207 forbids it and INV-306 banned the same shape on accounts.
+   * §207 forbids it and INV-306 banned the same shape on accounts. `file` is a
+   * second narrow mutation for the same reason, not a first patch.
    *
    * Returns whether it applied. Zero rows means absent or another tenant, and
    * the caller reports neither.

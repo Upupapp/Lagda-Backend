@@ -124,6 +124,18 @@ export function createScopedDocumentRepository(
       return { items: rows.map(toRecord), total: Number(counted.total) };
     },
 
+    async file(input) {
+      // The workspace predicate is not redundant with RLS: it makes a
+      // cross-tenant write a zero-row no-op rather than something RLS has to
+      // refuse, and it is the same shape as every other mutation here.
+      const result = await trx.updateTable("documents")
+        .set({ folder_id: input.folderId, updated_at: new Date(input.now) })
+        .where("workspace_id", "=", scope)
+        .where("document_id", "=", input.documentId)
+        .executeTakeFirst();
+      return Number(result.numUpdatedRows) === 1;
+    },
+
     async rename(input) {
       // ONE column, plus the timestamp. Not a patch object — see the port.
       const result = await trx.updateTable("documents")

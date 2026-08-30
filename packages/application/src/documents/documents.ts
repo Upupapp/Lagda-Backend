@@ -35,7 +35,7 @@ import type {
 } from "../common/ports/index.js";
 import type { AuthenticatedActor } from "../common/ports/session.js";
 import {
-  ApplicationValidationError, ResourceNotFoundError,
+  ApplicationError, ApplicationValidationError, ResourceNotFoundError,
 } from "../common/errors/index.js";
 import { assertCapability, type WorkspaceAccessContext } from "../workspaces/workspace-access.js";
 
@@ -361,6 +361,86 @@ export async function listDocuments(
  * make with the state to make it. Inventing the restriction now would mean
  * inventing the state it depends on.
  */
+/**
+ * The folder named for a move does not exist, is another tenant's, or has been
+ * archived.
+ *
+ * ONE error for three causes, deliberately. "That folder is archived" and
+ * "that folder is not yours" are the same answer to a client that may not know
+ * the folder exists, and splitting them would let a caller enumerate another
+ * workspace's folder ids by watching which message comes back.
+ *
+ * `validation`, not `not-found`: the DOCUMENT was found and the request is
+ * about the document. A 404 here would say the document is missing.
+ */
+export class FolderUnavailableError extends ApplicationError {
+  readonly category = "validation" as const;
+  readonly code = "folder_unavailable";
+
+  constructor() {
+    super("That folder is not available. Choose a live folder in this workspace.");
+  }
+}
+
+/**
+ * Files a document in a folder, or at the workspace root.
+ *
+ * ── Null is a destination, not an omission ─────────────────────────────────
+ *
+ * `folderId: null` MOVES THE DOCUMENT TO THE ROOT. It does not mean "leave it
+ * alone". The route enforces that distinction: a body without the key does not
+ * reach here at all. Getting this backwards would make "unfile this" silently
+ * do nothing, which is the kind of no-op a user reads as a bug in their
+ * mouse.
+ *
+ * ── Why the folder is checked here and not left to the foreign key ─────────
+ *
+ * The FK would reject a non-existent folder, and the compound tenant FK would
+ * reject another workspace's — but it would arrive as a driver error mapped to
+ * a 500, and an ARCHIVED folder would pass the FK entirely. The rule is
+ * "somewhere a user could file into today", which no constraint states.
+ *
+ * Archived is refused because an archived folder is a drawer someone closed on
+ * purpose; filing into it hides the document behind a filter that exists to
+ * hide things. It is not a folder the client offers, so a request naming one
+ * is stale or hand-written.
+ *
+ * The whole tree is read for a single lookup, which is deliberate: the port
+ * exposes `list()` because a folder tree is bounded by construction
+ * (MAX_FOLDER_DEPTH is 10, and workspaces file documents, not folders), and a
+ * second read method is a second thing to keep tenant-safe for no measured
+ * gain.
+ */
+export async function fileDocument(
+  actor: AuthenticatedActor,
+  workspaceId: WorkspaceId,
+  documentId: DocumentId,
+  folderId: string | null,
+  deps: DocumentDependencies,
+): Promise<DocumentSummary> {
+  return deps.transactions.runForWorkspace(workspaceId, async uow => {
+    await authorize(uow, actor, "document.update");
+
+    if (folderId !== null) {
+      const folder = (await uow.folders.list())
+        .find(candidate => candidate.folderId === folderId);
+      if (folder === undefined || folder.archivedAt !== null) {
+        throw new FolderUnavailableError();
+      }
+    }
+
+    const applied = await uow.documents.file({
+      documentId, folderId, now: deps.clock.now(),
+    });
+    // Absent or another tenant. Deliberately one answer.
+    if (!applied) throw new ResourceNotFoundError("Document");
+
+    const filed = await uow.documents.findById(documentId);
+    if (filed === null) throw new ResourceNotFoundError("Document");
+    return summarize(filed, await originalArtifact(uow, documentId));
+  });
+}
+
 export async function renameDocument(
   actor: AuthenticatedActor,
   workspaceId: WorkspaceId,

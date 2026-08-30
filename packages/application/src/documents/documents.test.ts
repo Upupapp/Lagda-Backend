@@ -11,8 +11,8 @@ import type {
 } from "@lagda/contracts";
 import { WORKSPACE_ROLES } from "@lagda/contracts";
 import {
-  createDocument, listDocuments, getDocument, renameDocument,
-  recordDocumentFilename, type DocumentDependencies,
+  createDocument, listDocuments, getDocument, renameDocument, fileDocument,
+  recordDocumentFilename, FolderUnavailableError, type DocumentDependencies,
 } from "./documents.js";
 import { CreateWorkspace } from "../workspaces/create-workspace.js";
 import {
@@ -208,6 +208,12 @@ describe("capability enforcement", () => {
         .rejects.toBeInstanceOf(ResourceNotFoundError);
       await expect(renameDocument(
         actor(userId), h.workspaceId, created.documentId, "X", h.deps))
+        .rejects.toBeInstanceOf(ResourceNotFoundError);
+      // Filing is a WRITE and takes the same `document.update` capability, so
+      // it belongs in this matrix rather than in a test of its own -- a role
+      // that cannot rename must not be able to re-file either.
+      await expect(fileDocument(
+        actor(userId), h.workspaceId, created.documentId, "fld_any", h.deps))
         .rejects.toBeInstanceOf(ResourceNotFoundError);
 
       // And nothing was written.
@@ -476,4 +482,119 @@ describe("transaction behaviour", () => {
     expect(h.store.artifacts).toHaveLength(0);
     expect(h.store.uploads.size).toBe(0);
   });
+});
+
+// ── Filing ───────────────────────────────────────────────────────────────────
+
+describe("filing a document in a folder", () => {
+  /** Two live folders and one archived, all in the harness's workspace. */
+  function seedFolders(h: Harness): void {
+    for (const [folderId, name, archivedAt] of [
+      ["fld_live", "Client Agreements", null],
+      ["fld_other", "2026 Renewals", null],
+      ["fld_gone", "Closed Matters", AT],
+    ] as const) {
+      h.store.folders.push({
+        folderId: folderId as never,
+        workspaceId: h.workspaceId,
+        parentFolderId: null,
+        name,
+        createdByUserId: OWNER,
+        createdAt: AT,
+        archivedAt,
+      });
+    }
+  }
+
+  it("files a document, and the list filter then finds it there", async () => {
+    const h = await harness();
+    seedFolders(h);
+    const created = await createDocument(actor(OWNER), h.workspaceId, { title: "Lease" }, h.deps);
+
+    const filed = await fileDocument(
+      actor(OWNER), h.workspaceId, created.documentId, "fld_live", h.deps);
+    expect(filed.folderId).toBe("fld_live");
+
+    // The write and the READ agree. Asserting only the return value would pass
+    // even if the filter and the field disagreed about what "filed" means.
+    const inFolder = await listDocuments(
+      actor(OWNER), h.workspaceId, { folderId: "fld_live" }, h.deps);
+    expect(inFolder.items.map(d => d.documentId)).toEqual([created.documentId]);
+
+    const elsewhere = await listDocuments(
+      actor(OWNER), h.workspaceId, { folderId: "fld_other" }, h.deps);
+    expect(elsewhere.items).toHaveLength(0);
+  });
+
+  /**
+   * NULL IS A DESTINATION.
+   *
+   * The whole reason `fileDocument` takes null rather than treating it as
+   * "unchanged": un-filing has to be expressible, and every shorthand for "is
+   * it set" would turn this into a silent no-op.
+   */
+  it("moves a document back to the root", async () => {
+    const h = await harness();
+    seedFolders(h);
+    const created = await createDocument(actor(OWNER), h.workspaceId, { title: "Lease" }, h.deps);
+    await fileDocument(actor(OWNER), h.workspaceId, created.documentId, "fld_live", h.deps);
+
+    const unfiled = await fileDocument(
+      actor(OWNER), h.workspaceId, created.documentId, null, h.deps);
+    expect(unfiled.folderId).toBeNull();
+
+    const inFolder = await listDocuments(
+      actor(OWNER), h.workspaceId, { folderId: "fld_live" }, h.deps);
+    expect(inFolder.items).toHaveLength(0);
+  });
+
+  it("refuses an archived folder, and writes nothing", async () => {
+    const h = await harness();
+    seedFolders(h);
+    const created = await createDocument(actor(OWNER), h.workspaceId, { title: "Lease" }, h.deps);
+
+    await expect(fileDocument(
+      actor(OWNER), h.workspaceId, created.documentId, "fld_gone", h.deps))
+      .rejects.toBeInstanceOf(FolderUnavailableError);
+
+    const after = await getDocument(actor(OWNER), h.workspaceId, created.documentId, h.deps);
+    expect(after.folderId).toBeNull();
+  });
+
+  it("refuses a folder that does not exist", async () => {
+    const h = await harness();
+    seedFolders(h);
+    const created = await createDocument(actor(OWNER), h.workspaceId, { title: "Lease" }, h.deps);
+
+    await expect(fileDocument(
+      actor(OWNER), h.workspaceId, created.documentId, "fld_nope", h.deps))
+      .rejects.toBeInstanceOf(FolderUnavailableError);
+  });
+
+  /**
+   * The ONE answer that must not vary.
+   *
+   * A missing folder and another workspace's folder produce the same error, so
+   * a caller cannot enumerate another tenant's folder ids by watching which
+   * message comes back.
+   */
+  it("gives another workspace's folder the same answer as a missing one", async () => {
+    const h = await harness();
+    seedFolders(h);
+    h.store.folders.push({
+      folderId: "fld_theirs" as never,
+      workspaceId: "ws_someone_else" as WorkspaceId,
+      parentFolderId: null,
+      name: "Their Matters",
+      createdByUserId: OWNER,
+      createdAt: AT,
+      archivedAt: null,
+    });
+    const created = await createDocument(actor(OWNER), h.workspaceId, { title: "Lease" }, h.deps);
+
+    const theirs = fileDocument(
+      actor(OWNER), h.workspaceId, created.documentId, "fld_theirs", h.deps);
+    await expect(theirs).rejects.toBeInstanceOf(FolderUnavailableError);
+  });
+
 });

@@ -1112,10 +1112,11 @@ function scopedDocuments(store: InMemoryStore, scope: WorkspaceId): ScopedDocume
       const term = query.search === null ? null : query.search.toLowerCase();
       const matching = inScope()
         .filter(d => term === null || d.title.toLowerCase().includes(term))
-        // The fake's DocumentRecord carries no folder, so a folder filter
-        // matches nothing here rather than everything. Matching everything
-        // would let a filter test pass while the filter did nothing.
-        .filter(() => query.folderId === null);
+        // Real filtering now that the record carries a folder. Null is NO
+        // FILTER here -- the query's meaning, not the record's, where null is
+        // the root. Matching everything on a set filter would let a filter
+        // test pass while the filter did nothing.
+        .filter(d => query.folderId === null || d.folderId === query.folderId);
       const sorted = [...matching].sort((a, b) => {
         const cmp = query.sort === "title"
           ? a.title.localeCompare(b.title)
@@ -1129,6 +1130,10 @@ function scopedDocuments(store: InMemoryStore, scope: WorkspaceId): ScopedDocume
         total: sorted.length,
       });
     },
+
+    file: (input) => Promise.resolve(
+      replace(input.documentId, () => true,
+        d => ({ ...d, folderId: input.folderId, updatedAt: input.now }))),
 
     rename: (input) => Promise.resolve(
       replace(input.documentId, () => true,

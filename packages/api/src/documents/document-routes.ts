@@ -31,7 +31,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { Type, type Static } from "@sinclair/typebox";
 import {
-  createDocument, listDocuments, getDocument, renameDocument,
+  createDocument, listDocuments, getDocument, renameDocument, fileDocument,
   type DocumentDependencies, type DocumentSummary,
   type SessionId, type UserId,
 } from "@lagda/application";
@@ -81,12 +81,34 @@ const CreateDocumentRequestSchema = Type.Object({
   title: Type.String({ minLength: 1, maxLength: DOCUMENT_TITLE_MAX_LENGTH }),
 }, { additionalProperties: false });
 
-/** Renaming. The same single field, and the same exclusions. */
-const RenameDocumentRequestSchema = Type.Object({
-  title: Type.String({ minLength: 1, maxLength: DOCUMENT_TITLE_MAX_LENGTH }),
-}, { additionalProperties: false });
+/**
+ * Updating: EXACTLY ONE field, chosen from two.
+ *
+ * `minProperties`/`maxProperties` rather than a handler check, so the rule is
+ * in the schema where no handler can be the one that forgets it — the same
+ * argument this file already makes for `perPage` and the search term.
+ *
+ * Exactly one, not "at least one", and that is a correctness choice rather
+ * than a style one. Renaming and filing are separate commands with separate
+ * rules; accepting both in one body would mean applying two commands to one
+ * document, where the second can fail after the first has already committed.
+ * A client that wants to do both sends two requests and learns the outcome of
+ * each.
+ *
+ * `folderId: null` is a VALUE, meaning the workspace root — the way a document
+ * is un-filed. It is not "leave the folder alone": a body that omits the key
+ * entirely says that, and `maxProperties` means such a body carries a title
+ * instead.
+ */
+const UpdateDocumentRequestSchema = Type.Object({
+  title: Type.Optional(Type.String({ minLength: 1, maxLength: DOCUMENT_TITLE_MAX_LENGTH })),
+  folderId: Type.Optional(
+    Type.Union([Type.String({ minLength: 1, maxLength: 64 }), Type.Null()]),
+  ),
+}, { additionalProperties: false, minProperties: 1, maxProperties: 1 });
 
 export type DocumentTitleBody = Static<typeof CreateDocumentRequestSchema>;
+export type DocumentUpdateBody = Static<typeof UpdateDocumentRequestSchema>;
 
 const DocumentListQuerySchema = Type.Object({
   /**
@@ -195,14 +217,23 @@ export function registerDocumentRoutes(
    * documentId, no workspaceId, no title — the first two are unbounded
    * cardinality and the third would put matter names in a metrics store.
    */
+  const OPERATION = {
+    "document.created": "created",
+    "document.renamed": "renamed",
+    "document.filed": "filed",
+  } as const;
+
   const record = (
     request: FastifyRequest,
-    event: "document.created" | "document.renamed",
+    event: keyof typeof OPERATION,
     fields: Record<string, unknown>,
   ): void => {
     request.log.info({ event, result: "success", ...fields }, event);
     metrics?.increment("document_operations_total", {
-      operation: event === "document.created" ? "created" : "renamed",
+      // A total map rather than a ternary chain: the third event turned the
+      // two-way conditional into something where a fourth would silently
+      // inherit whichever branch was the fallback.
+      operation: OPERATION[event],
       result: "success",
       processRole: "api",
     });
@@ -311,11 +342,11 @@ export function registerDocumentRoutes(
     return reply.status(200).send(present(document));
   });
 
-  // ── Rename ──────────────────────────────────────────────────────────────
+  // ── Rename, or file in a folder ─────────────────────────────────────────
   app.patch("/workspaces/:workspaceId/documents/:documentId", {
     schema: {
       params: DocumentParamsSchema,
-      body: RenameDocumentRequestSchema,
+      body: UpdateDocumentRequestSchema,
       response: { 200: DocumentSchema },
     },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
@@ -324,10 +355,31 @@ export function registerDocumentRoutes(
     if (actor === null) return unauthenticated(reply);
 
     const { workspaceId, documentId } = request.params as Static<typeof DocumentParamsSchema>;
-    const body = request.body as DocumentTitleBody;
+    const body = request.body as DocumentUpdateBody;
+
+    // `in`, not a truthiness or undefined test. `folderId: null` is a real
+    // instruction — move to the root — and every shorthand for "is it set"
+    // reads null as absent, which would turn un-filing into a silent no-op.
+    if ("folderId" in body) {
+      const document = await fileDocument(
+        actor, workspaceId as WorkspaceId, documentId as DocumentId,
+        body.folderId ?? null, options.documentDependencies());
+
+      // The folder ID is an identifier, not content: it names a container the
+      // caller already knew, so logging it discloses nothing a title would.
+      record(request, "document.filed", {
+        workspaceId, documentId,
+        actorUserId: actor.userId,
+        folderId: document.folderId,
+      });
+
+      return reply.status(200).send(present(document));
+    }
 
     const document = await renameDocument(
-      actor, workspaceId as WorkspaceId, documentId as DocumentId, body.title,
+      actor, workspaceId as WorkspaceId, documentId as DocumentId,
+      // Narrowed by the schema: exactly one key, and it is not `folderId`.
+      body.title as string,
       options.documentDependencies());
 
     const titleLength = [...document.title].length;
