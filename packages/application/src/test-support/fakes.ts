@@ -1104,9 +1104,12 @@ function scopedDocuments(store: InMemoryStore, scope: WorkspaceId): ScopedDocume
       // a fake that ignored `search` would let a search test pass while the
       // filter did nothing.
       const term = query.search === null ? null : query.search.toLowerCase();
-      const matching = term === null
-        ? inScope()
-        : inScope().filter(d => d.title.toLowerCase().includes(term));
+      const matching = inScope()
+        .filter(d => term === null || d.title.toLowerCase().includes(term))
+        // The fake's DocumentRecord carries no folder, so a folder filter
+        // matches nothing here rather than everything. Matching everything
+        // would let a filter test pass while the filter did nothing.
+        .filter(() => query.folderId === null);
       const sorted = [...matching].sort((a, b) => {
         const cmp = query.sort === "title"
           ? a.title.localeCompare(b.title)

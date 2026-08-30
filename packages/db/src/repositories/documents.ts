@@ -91,10 +91,16 @@ export function createScopedDocumentRepository(
       // apply different filters. A count that disagrees with its page produces
       // pagination that runs off the end or stops early.
       const filtered = <T extends ReturnType<typeof scoped>>(builder: T) => {
-        if (query.search === null) return builder;
-        // ILIKE, so a search for `retainer` finds `Retainer Agreement`.
-        return builder.where(
-          "title", "ilike", `%${escapeLikePattern(query.search)}%`) as T;
+        let next = builder;
+        if (query.search !== null) {
+          // ILIKE, so a search for `retainer` finds `Retainer Agreement`.
+          next = next.where(
+            "title", "ilike", `%${escapeLikePattern(query.search)}%`) as T;
+        }
+        if (query.folderId !== null) {
+          next = next.where("folder_id", "=", query.folderId) as T;
+        }
+        return next;
       };
 
       const rows = await filtered(scoped())

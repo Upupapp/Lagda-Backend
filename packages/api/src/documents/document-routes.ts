@@ -98,6 +98,11 @@ const DocumentListQuerySchema = Type.Object({
    * CONTENTS is a different feature with different privacy consequences.
    */
   q: Type.Optional(Type.String({ maxLength: DOCUMENT_SEARCH_MAX_LENGTH })),
+  /**
+   * One folder. Absent means every folder, NOT "documents in no folder" --
+   * those are different questions and only the first has a caller.
+   */
+  folderId: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
   sort: Type.Optional(DocumentSortFieldSchema),
   direction: Type.Optional(Type.Union([Type.Literal("asc"), Type.Literal("desc")])),
   // Bounded HERE. `perPage=1000000` is a valid integer and an invalid request,
@@ -268,6 +273,7 @@ export function registerDocumentRoutes(
         // Each key passed only when supplied, so the use case's documented
         // defaults are the ones that apply rather than being restated here.
         ...(query.q === undefined ? {} : { search: query.q }),
+        ...(query.folderId === undefined ? {} : { folderId: query.folderId }),
         ...(query.sort === undefined ? {} : { sort: query.sort }),
         ...(query.direction === undefined ? {} : { direction: query.direction }),
         ...(query.page === undefined ? {} : { page: query.page }),

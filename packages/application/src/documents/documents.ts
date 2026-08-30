@@ -258,6 +258,8 @@ export interface ListDocumentsInput {
   readonly perPage?: number;
   /** Free-text over the title. Bounded by the contract. */
   readonly search?: string;
+  /** One folder, or absent for every folder. */
+  readonly folderId?: string;
 }
 
 export interface DocumentListResult {
@@ -304,6 +306,7 @@ export async function listDocuments(
       // Trimmed to null. A box containing only spaces is a cleared box, and
       // sending " " as a filter would match every title containing a space.
       search: input.search?.trim() ? input.search.trim() : null,
+      folderId: input.folderId ?? null,
     });
 
     // Artifact metadata IS included, because the product's list shows page

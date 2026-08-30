@@ -3246,6 +3246,16 @@
           },
           {
             "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "query",
+            "name": "folderId",
+            "required": false
+          },
+          {
+            "schema": {
               "title": "DocumentSortField",
               "anyOf": [
                 {

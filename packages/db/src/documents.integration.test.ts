@@ -227,6 +227,7 @@ suite("documents (RLS, runtime role)", () => {
 
       const listed = await tx.runForWorkspace(WS_B, uow => uow.documents.list({
         sort: "createdAt", direction: "desc", offset: 0, limit: 50,
+      search: null, folderId: null,
       }));
       expect(listed.items).toHaveLength(0);
       expect(listed.total).toBe(0);
@@ -330,12 +331,14 @@ suite("documents (RLS, runtime role)", () => {
 
     const page1 = await tx.runForWorkspace(WS_A, uow => uow.documents.list({
       sort: "title", direction: "asc", offset: 0, limit: 2,
+    search: null, folderId: null,
     }));
     expect(page1.items.map(d => d.title)).toEqual(["doc_1", "doc_2"]);
     expect(page1.total).toBe(3);
 
     const page2 = await tx.runForWorkspace(WS_A, uow => uow.documents.list({
       sort: "title", direction: "asc", offset: 2, limit: 2,
+    search: null, folderId: null,
     }));
     expect(page2.items.map(d => d.title)).toEqual(["doc_3"]);
     expect(page2.total).toBe(3);

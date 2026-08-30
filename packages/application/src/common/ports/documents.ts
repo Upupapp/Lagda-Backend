@@ -71,6 +71,14 @@ export interface DocumentListQuery {
    * expensive work.
    */
   readonly search: string | null;
+  /**
+   * Restrict to one folder, or null for every folder.
+   *
+   * NULL means NO FILTER, not "documents in no folder". Those are different
+   * questions and the second has no caller yet; conflating them would make
+   * "show me everything" silently mean "show me the unfiled".
+   */
+  readonly folderId: string | null;
 }
 
 export interface DocumentPage {
