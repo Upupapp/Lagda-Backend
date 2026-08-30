@@ -83,6 +83,32 @@ export class ApplicationValidationError extends ApplicationError {
 }
 
 /**
+ * A folder cannot take the operation asked of it.
+ *
+ * Shared between two domains rather than defined in each, because both mean
+ * the same thing to a client and must carry the SAME code. `fileDocument`
+ * raises it about a folder named as a destination; the folder commands raise
+ * it about the folder they are acting on.
+ *
+ * ONE error for every cause -- absent, another tenant's, or archived where the
+ * operation needs a live one -- so a caller cannot learn which folder ids
+ * exist in a workspace they cannot read by watching the messages differ.
+ *
+ * `validation`, not `not-found`: the request is about a document or a named
+ * operation, and a 404 would say THAT was missing.
+ */
+export class FolderUnavailableError extends ApplicationError {
+  readonly category = "validation" as const;
+  readonly code = "folder_unavailable";
+
+  constructor(
+    message = "That folder is not available. Choose a live folder in this workspace.",
+  ) {
+    super(message);
+  }
+}
+
+/**
  * The actor is known but may not perform this action.
  *
  * Distinct from not-found on purpose. Where revealing the difference would

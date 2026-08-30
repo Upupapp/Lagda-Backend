@@ -12,11 +12,11 @@ import type {
 import { WORKSPACE_ROLES } from "@lagda/contracts";
 import {
   createDocument, listDocuments, getDocument, renameDocument, fileDocument,
-  recordDocumentFilename, FolderUnavailableError, type DocumentDependencies,
+  recordDocumentFilename, type DocumentDependencies,
 } from "./documents.js";
 import { CreateWorkspace } from "../workspaces/create-workspace.js";
 import {
-  ApplicationValidationError, ResourceNotFoundError,
+  ApplicationValidationError, ResourceNotFoundError, FolderUnavailableError,
 } from "../common/errors/index.js";
 import type { AuthenticatedActor, SessionId } from "../common/ports/session.js";
 import type { ArtifactId } from "../common/ports/index.js";

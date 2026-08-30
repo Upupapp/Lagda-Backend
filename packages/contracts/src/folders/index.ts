@@ -37,6 +37,50 @@ export type Folder = Static<typeof FolderSchema>;
  * be on another page, and folder counts are small by construction: depth is
  * capped at 10 and a workspace files documents, not folders.
  */
+/**
+ * Creating a folder.
+ *
+ * `parentFolderId` is REQUIRED and nullable rather than optional. Null is the
+ * workspace root -- a real destination -- and an optional key would let a
+ * client omit it and mean either "the root" or "I forgot", which the server
+ * cannot tell apart.
+ */
+export const CreateFolderRequestSchema = Type.Object(
+  {
+    name: Type.String({ minLength: 1, maxLength: FOLDER_NAME_MAX_LENGTH }),
+    parentFolderId: Type.Union([Type.String({ minLength: 1, maxLength: 64 }), Type.Null()]),
+  },
+  { title: "CreateFolderRequest", additionalProperties: false },
+);
+export type CreateFolderRequest = Static<typeof CreateFolderRequestSchema>;
+
+/**
+ * Updating a folder: EXACTLY ONE field, chosen from two.
+ *
+ * The same rule the document PATCH takes, for the same reason -- renaming and
+ * archiving are separate commands with separate rules, and a body carrying
+ * both would apply two where the second can fail after the first committed.
+ *
+ * No `parentFolderId`. MOVING a folder re-parents a whole subtree and can push
+ * its descendants past the depth bound even when the folder itself lands
+ * legally; that rule is about a subtree, not a node, and does not exist yet.
+ * Accepting the field and ignoring it would be worse than refusing it.
+ */
+export const UpdateFolderRequestSchema = Type.Object(
+  {
+    name: Type.Optional(Type.String({ minLength: 1, maxLength: FOLDER_NAME_MAX_LENGTH })),
+    /** True archives, false restores. Archiving refuses a non-empty folder. */
+    archived: Type.Optional(Type.Boolean()),
+  },
+  {
+    title: "UpdateFolderRequest",
+    additionalProperties: false,
+    minProperties: 1,
+    maxProperties: 1,
+  },
+);
+export type UpdateFolderRequest = Static<typeof UpdateFolderRequestSchema>;
+
 export const FolderListSchema = Type.Object(
   { folders: Type.Array(FolderSchema) },
   { title: "FolderList", additionalProperties: false },

@@ -66,7 +66,7 @@ import type {
 import type {
   ScopedDocumentRepository, DocumentRecord, NewDocument, DocumentIdGenerator,
 } from "../common/ports/documents.js";
-import type { FolderRecord } from "../common/ports/folders.js";
+import type { FolderRecord, ScopedFolderRepository } from "../common/ports/folders.js";
 import type {
   ScopedPreparationRepository, PreparationRecord, NewPreparation,
   PreparationFieldRecord, PreparationId, PreparationFieldId,
@@ -2234,6 +2234,43 @@ function scopedFinalizations(
  * past a failure. It does **not** prove PostgreSQL atomicity, which needs a real
  * database.
  */
+/**
+ * The folder tree, scoped to one workspace.
+ *
+ * Writes are unconditional on the tree, exactly as the adapter's are: depth
+ * and cycles are the use case's decision, and a fake that ALSO enforced them
+ * would let a use case that forgot to check still pass its tests.
+ */
+function scopedFolders(store: InMemoryStore, workspaceId: WorkspaceId): ScopedFolderRepository {
+  const inScope = () => store.folders.filter(f => f.workspaceId === workspaceId);
+  const patch = (
+    folderId: string,
+    change: (folder: FolderRecord) => FolderRecord,
+  ): boolean => {
+    const index = store.folders.findIndex(
+      f => f.folderId === folderId && f.workspaceId === workspaceId);
+    if (index === -1) return false;
+    const current = store.folders[index];
+    if (current === undefined) return false;
+    store.folders[index] = change(current);
+    return true;
+  };
+
+  return {
+    list: () => Promise.resolve(inScope()),
+    create: (folder) => {
+      // The SCOPE's workspace, matching the adapter: a record carrying another
+      // tenant's id cannot smuggle itself in through this repository.
+      store.folders.push({ ...folder, workspaceId });
+      return Promise.resolve();
+    },
+    rename: (input) => Promise.resolve(
+      patch(input.folderId, f => ({ ...f, name: input.name }))),
+    setArchived: (input) => Promise.resolve(
+      patch(input.folderId, f => ({ ...f, archivedAt: input.archivedAt }))),
+  };
+}
+
 export class FakeTransactionManager implements TransactionManager {
   started = 0;
   committed = 0;
@@ -2277,8 +2314,7 @@ export class FakeTransactionManager implements TransactionManager {
         // Empty rather than absent. A workspace with no folders is the
         // ordinary case, and every test that does not care about folders
         // should not have to build one.
-        folders: { list: () => Promise.resolve(this.store.folders.filter(
-          f => f.workspaceId === workspaceId)) },
+        folders: scopedFolders(this.store, workspaceId),
         preparations: scopedPreparations(this.store, workspaceId),
         recipients: scopedRecipients(this.store, workspaceId),
         signingRequests: scopedSigningRequests(this.store, workspaceId),
@@ -2348,8 +2384,7 @@ export class FakeTransactionManager implements TransactionManager {
             workspaceId,
             actorProfiles: { displayNameOf: () => Promise.resolve(null) },
             organizationUnits: scopedOrganizationUnits(store, workspaceId),
-            folders: { list: () => Promise.resolve(
-              store.folders.filter(f => f.workspaceId === workspaceId)) },
+            folders: scopedFolders(store, workspaceId),
             workspaces: scopedWorkspaces(store, workspaceId),
             memberships: scopedMemberships(store, workspaceId),
             evidence: scopedEvidence(store, workspaceId),

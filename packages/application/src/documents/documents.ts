@@ -35,7 +35,7 @@ import type {
 } from "../common/ports/index.js";
 import type { AuthenticatedActor } from "../common/ports/session.js";
 import {
-  ApplicationError, ApplicationValidationError, ResourceNotFoundError,
+  ApplicationValidationError, ResourceNotFoundError, FolderUnavailableError,
 } from "../common/errors/index.js";
 import { assertCapability, type WorkspaceAccessContext } from "../workspaces/workspace-access.js";
 
@@ -361,27 +361,6 @@ export async function listDocuments(
  * make with the state to make it. Inventing the restriction now would mean
  * inventing the state it depends on.
  */
-/**
- * The folder named for a move does not exist, is another tenant's, or has been
- * archived.
- *
- * ONE error for three causes, deliberately. "That folder is archived" and
- * "that folder is not yours" are the same answer to a client that may not know
- * the folder exists, and splitting them would let a caller enumerate another
- * workspace's folder ids by watching which message comes back.
- *
- * `validation`, not `not-found`: the DOCUMENT was found and the request is
- * about the document. A 404 here would say the document is missing.
- */
-export class FolderUnavailableError extends ApplicationError {
-  readonly category = "validation" as const;
-  readonly code = "folder_unavailable";
-
-  constructor() {
-    super("That folder is not available. Choose a live folder in this workspace.");
-  }
-}
-
 /**
  * Files a document in a folder, or at the workspace root.
  *

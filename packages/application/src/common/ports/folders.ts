@@ -44,4 +44,41 @@ export interface ScopedFolderRepository {
    * archived, and a caller that wants only live folders can say so.
    */
   list(): Promise<readonly FolderRecord[]>;
+
+  /**
+   * Creates a folder. Placement is the USE CASE's job, not this one.
+   *
+   * Depth and cycles are decided against the tree the use case already read;
+   * re-deciding them here would mean reading it twice and having two places
+   * that could disagree. The compound foreign key is the backstop.
+   */
+  create(folder: FolderRecord): Promise<void>;
+
+  /**
+   * Renames a folder. The name, and nothing else.
+   *
+   * `rename`, not `update(patch)` -- the same argument the document repository
+   * makes: a generic patch is how `{ parentFolderId }` silently becomes a
+   * MOVE, which has depth and cycle rules a rename does not.
+   *
+   * Returns whether it applied. Zero rows means absent or another tenant.
+   */
+  rename(input: {
+    readonly folderId: FolderId;
+    readonly name: string;
+  }): Promise<boolean>;
+
+  /**
+   * Archives or restores, by setting or clearing the timestamp.
+   *
+   * ONE method for both directions, because they are one column. Two methods
+   * would be two places to get the "already in that state" case wrong, and the
+   * caller has to decide which direction it wants either way.
+   *
+   * Returns whether it applied. Zero rows means absent or another tenant.
+   */
+  setArchived(input: {
+    readonly folderId: FolderId;
+    readonly archivedAt: number | null;
+  }): Promise<boolean>;
 }

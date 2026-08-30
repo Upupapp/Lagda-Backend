@@ -29,7 +29,7 @@ import { randomUUID } from "node:crypto";
 import type {
   WorkspaceIdGenerator, WorkspaceMemberIdGenerator,
   ContactIdGenerator,
-  DocumentIdGenerator,
+  DocumentIdGenerator, FolderIdGenerator, FolderId,
   PreparationIdGenerator,
   RecipientIdGenerator,
   SigningRequestIdGenerator,
@@ -114,6 +114,10 @@ export function createContactIdGenerator(): ContactIdGenerator {
 
 export function createDocumentIdGenerator(): DocumentIdGenerator {
   return { nextDocumentId: () => mint("doc") as DocumentId };
+}
+
+export function createFolderIdGenerator(): FolderIdGenerator {
+  return { nextFolderId: () => mint("fld") as FolderId };
 }
 
 /**
