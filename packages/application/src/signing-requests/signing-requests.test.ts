@@ -89,6 +89,7 @@ async function harness(): Promise<Harness> {
   store.documents.push({
     documentId: DOC, workspaceId: created.workspaceId, title: "Office Lease",
     originalFilename: "lease.pdf", createdByUserId: OWNER,
+    folderId: null,
     createdAt: AT, updatedAt: AT,
   });
   store.artifacts.push({

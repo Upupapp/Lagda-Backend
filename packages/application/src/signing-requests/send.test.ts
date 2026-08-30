@@ -118,6 +118,7 @@ async function harness(over: { sealerFails?: boolean } = {}): Promise<Harness> {
   store.documents.push({
     documentId: DOC, workspaceId: created.workspaceId, title: "Office Lease",
     originalFilename: "lease.pdf", createdByUserId: OWNER, createdAt: AT, updatedAt: AT,
+    folderId: null,
   });
   store.artifacts.push({
     artifactId: "art_original" as ArtifactId, workspaceId: created.workspaceId,

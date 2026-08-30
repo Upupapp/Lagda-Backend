@@ -3148,6 +3148,7 @@
                     "title",
                     "originalFilename",
                     "createdByUserId",
+                    "folderId",
                     "createdAt",
                     "updatedAt",
                     "source"
@@ -3175,6 +3176,16 @@
                     },
                     "createdByUserId": {
                       "type": "string"
+                    },
+                    "folderId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "createdAt": {
                       "format": "date-time",
@@ -3357,6 +3368,7 @@
                           "title",
                           "originalFilename",
                           "createdByUserId",
+                          "folderId",
                           "createdAt",
                           "updatedAt",
                           "source"
@@ -3384,6 +3396,16 @@
                           },
                           "createdByUserId": {
                             "type": "string"
+                          },
+                          "folderId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "createdAt": {
                             "format": "date-time",
@@ -3500,6 +3522,7 @@
                     "title",
                     "originalFilename",
                     "createdByUserId",
+                    "folderId",
                     "createdAt",
                     "updatedAt",
                     "source"
@@ -3527,6 +3550,16 @@
                     },
                     "createdByUserId": {
                       "type": "string"
+                    },
+                    "folderId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "createdAt": {
                       "format": "date-time",
@@ -3644,6 +3677,7 @@
                     "title",
                     "originalFilename",
                     "createdByUserId",
+                    "folderId",
                     "createdAt",
                     "updatedAt",
                     "source"
@@ -3671,6 +3705,16 @@
                     },
                     "createdByUserId": {
                       "type": "string"
+                    },
+                    "folderId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "createdAt": {
                       "format": "date-time",

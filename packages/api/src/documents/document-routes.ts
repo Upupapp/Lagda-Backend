@@ -165,6 +165,7 @@ const present = (document: DocumentSummary) => ({
   title: document.title,
   originalFilename: document.originalFilename,
   createdByUserId: document.createdByUserId,
+  folderId: document.folderId,
   createdAt: iso(document.createdAt),
   updatedAt: iso(document.updatedAt),
   source: document.source === null ? null : {

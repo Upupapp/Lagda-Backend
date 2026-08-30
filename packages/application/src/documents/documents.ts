@@ -64,6 +64,9 @@ export interface DocumentSummary {
   readonly title: string;
   readonly originalFilename: string | null;
   readonly createdByUserId: string;
+  /** Where it is filed, or null for the workspace root. Not a secret: the
+      folders route already lists every folder the caller may see. */
+  readonly folderId: string | null;
   readonly createdAt: number;
   readonly updatedAt: number;
   /** Null until the secure upload pipeline has accepted this document's bytes. */
@@ -94,6 +97,7 @@ const summarize = (
   title: record.title,
   originalFilename: record.originalFilename,
   createdByUserId: record.createdByUserId,
+  folderId: record.folderId,
   createdAt: record.createdAt,
   updatedAt: record.updatedAt,
   source: toSource(original),

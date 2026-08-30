@@ -130,6 +130,21 @@ export const DocumentSchema = Type.Object(
     originalFilename: Type.Union([Type.String(), Type.Null()]),
     /** Audit metadata. NOT authorization — documents are owned by the workspace. */
     createdByUserId: Type.String(),
+    /**
+     * Where it is filed, or null for the workspace ROOT.
+     *
+     * NULL IS A PLACE, NOT AN ABSENCE. Migration 040 gives a workspace one
+     * root and defines it as the absence of a parent, so null here means
+     * "filed at the top level", not "we do not know" and not "unfiled".
+     *
+     * The list query's `folderId` is the same name meaning the opposite: there
+     * null means NO FILTER. A client that copies one into the other turns
+     * "show me everything" into "show me the root".
+     *
+     * Discloses nothing new. The folders route already lists every folder the
+     * caller may see, and a folder id is not a capability.
+     */
+    folderId: Type.Union([Type.String(), Type.Null()]),
     createdAt: Type.String({ format: "date-time" }),
     updatedAt: Type.String({ format: "date-time" }),
     /** Null until the secure upload pipeline has accepted this document's bytes. */

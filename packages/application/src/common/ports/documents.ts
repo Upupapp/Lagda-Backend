@@ -42,6 +42,15 @@ export interface DocumentRecord {
   readonly originalFilename: string | null;
   /** Audit metadata. Documents are owned by the workspace, not by this user. */
   readonly createdByUserId: UserId;
+  /**
+   * Where it is filed, or null for the workspace ROOT.
+   *
+   * Null is a place, not an absence: migration 040 has one root and it is the
+   * absence of a parent. That is the opposite of `DocumentListQuery.folderId`,
+   * where null means NO FILTER -- the same name in two layers asking two
+   * questions, which is worth the sentence it takes to say so.
+   */
+  readonly folderId: string | null;
   readonly createdAt: number;
   readonly updatedAt: number;
 }

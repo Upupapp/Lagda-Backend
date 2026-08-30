@@ -35,6 +35,7 @@ function toRecord(row: DocumentRow): DocumentRecord {
     title: row.title,
     originalFilename: row.original_filename,
     createdByUserId: row.created_by_user_id as UserId,
+    folderId: row.folder_id,
     createdAt: row.created_at.getTime(),
     updatedAt: row.updated_at.getTime(),
   };

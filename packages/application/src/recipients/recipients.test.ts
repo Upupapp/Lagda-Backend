@@ -93,6 +93,7 @@ async function harness(): Promise<Harness> {
       documentId, workspaceId: created.workspaceId, title,
       originalFilename: `${documentId}.pdf`,
       createdByUserId: OWNER, createdAt: AT, updatedAt: AT,
+      folderId: null,
     });
     store.artifacts.push({
       artifactId: `art_${documentId}` as ArtifactId,

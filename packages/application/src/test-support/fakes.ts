@@ -1089,6 +1089,12 @@ function scopedDocuments(store: InMemoryStore, scope: WorkspaceId): ScopedDocume
         title: document.title,
         originalFilename: document.originalFilename,
         createdByUserId: document.createdByUserId,
+        // Root, exactly as the adapter does it: `NewDocument` carries no
+        // folder and the insert names no `folder_id`, so the column takes its
+        // NULL default -- which migration 040 defines as the workspace root.
+        // Nothing files a document into a folder yet; when something does, this
+        // fake must gain the field at the same time or it will disagree.
+        folderId: null,
         createdAt: document.createdAt,
         // Equal to createdAt, exactly as the adapter does it.
         updatedAt: document.createdAt,

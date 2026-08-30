@@ -86,6 +86,7 @@ async function harness(
     title: "Office Lease",
     originalFilename: "lease.pdf",
     createdByUserId: OWNER,
+    folderId: null,
     createdAt: AT,
     updatedAt: AT,
   });

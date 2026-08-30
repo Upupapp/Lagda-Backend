@@ -77,6 +77,7 @@ function seed(transactions: FakeTransactionManager): void {
   transactions.store.documents.push({
     documentId: DOC, workspaceId: WORKSPACE, title: "Office Lease",
     originalFilename: "lease.pdf", createdByUserId: OWNER,
+    folderId: null,
     createdAt: AT, updatedAt: AT,
   });
   transactions.store.artifacts.push({

@@ -228,9 +228,13 @@ describe("POST /documents", () => {
   it("exposes no artifact, storage or digest field", async () => {
     const h = await harness();
     const body = (await createOne(h)).json<Record<string, unknown>>();
+    // An EXHAUSTIVE list, so a new field has to be added here on purpose. It
+    // caught `folderId` on the way in, which is the point: a folder id is safe
+    // to disclose (the folders route already lists them all) but that is a
+    // judgement someone has to make, not one a projection makes silently.
     expect(Object.keys(body).sort()).toEqual([
-      "createdAt", "createdByUserId", "documentId", "originalFilename",
-      "source", "title", "updatedAt",
+      "createdAt", "createdByUserId", "documentId", "folderId",
+      "originalFilename", "source", "title", "updatedAt",
     ]);
   });
 
