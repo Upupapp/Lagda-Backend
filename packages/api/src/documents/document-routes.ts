@@ -37,7 +37,7 @@ import {
 } from "@lagda/application";
 import {
   DocumentSchema, DocumentSortFieldSchema,
-  DOCUMENT_TITLE_MAX_LENGTH, MAX_PER_PAGE, DEFAULT_PER_PAGE,
+  DOCUMENT_TITLE_MAX_LENGTH, DOCUMENT_SEARCH_MAX_LENGTH, MAX_PER_PAGE, DEFAULT_PER_PAGE,
   type DocumentId, type WorkspaceId,
 } from "@lagda/contracts";
 import type { MetricsRecorder } from "../observability/metrics.js";
@@ -89,6 +89,15 @@ const RenameDocumentRequestSchema = Type.Object({
 export type DocumentTitleBody = Static<typeof CreateDocumentRequestSchema>;
 
 const DocumentListQuerySchema = Type.Object({
+  /**
+   * Free text over the TITLE.
+   *
+   * Bounded in the schema, so no handler can be the one that forgets: an
+   * unbounded term is an unbounded LIKE pattern. Only the title is searched --
+   * a document has no other text the API holds, and searching the file's
+   * CONTENTS is a different feature with different privacy consequences.
+   */
+  q: Type.Optional(Type.String({ maxLength: DOCUMENT_SEARCH_MAX_LENGTH })),
   sort: Type.Optional(DocumentSortFieldSchema),
   direction: Type.Optional(Type.Union([Type.Literal("asc"), Type.Literal("desc")])),
   // Bounded HERE. `perPage=1000000` is a valid integer and an invalid request,
@@ -258,6 +267,7 @@ export function registerDocumentRoutes(
       {
         // Each key passed only when supplied, so the use case's documented
         // defaults are the ones that apply rather than being restated here.
+        ...(query.q === undefined ? {} : { search: query.q }),
         ...(query.sort === undefined ? {} : { sort: query.sort }),
         ...(query.direction === undefined ? {} : { direction: query.direction }),
         ...(query.page === undefined ? {} : { page: query.page }),

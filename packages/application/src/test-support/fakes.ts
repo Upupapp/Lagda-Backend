@@ -1095,7 +1095,14 @@ function scopedDocuments(store: InMemoryStore, scope: WorkspaceId): ScopedDocume
       Promise.resolve(inScope().find(d => d.documentId === documentId) ?? null),
 
     list: (query) => {
-      const sorted = [...inScope()].sort((a, b) => {
+      // Filtered BEFORE sorting and counting, exactly as the real one does --
+      // a fake that ignored `search` would let a search test pass while the
+      // filter did nothing.
+      const term = query.search === null ? null : query.search.toLowerCase();
+      const matching = term === null
+        ? inScope()
+        : inScope().filter(d => d.title.toLowerCase().includes(term));
+      const sorted = [...matching].sort((a, b) => {
         const cmp = query.sort === "title"
           ? a.title.localeCompare(b.title)
           : a.createdAt - b.createdAt;

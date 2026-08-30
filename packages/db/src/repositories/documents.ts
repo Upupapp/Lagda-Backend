@@ -14,6 +14,20 @@ import { WorkspaceScopeMismatchError, translatePersistenceError } from "../error
 
 type DocumentRow = Selectable<DocumentsTable>;
 
+/**
+ * Escapes the LIKE metacharacters so a typed `%` means a literal `%`.
+ *
+ * Without it a search for `%` matches every document in the workspace, and one
+ * for `_` matches every single-character difference.
+ *
+ * Note what this is NOT: it is not SQL-injection defence. The value is a bound
+ * parameter and was never interpolated. This is pattern escaping inside an
+ * already-safe parameter -- a different and less famous problem.
+ */
+function escapeLikePattern(raw: string): string {
+  return raw.replace(/[\\%_]/g, match => `\\${match}`);
+}
+
 function toRecord(row: DocumentRow): DocumentRecord {
   return {
     documentId: row.document_id as DocumentId,
@@ -73,7 +87,17 @@ export function createScopedDocumentRepository(
     async list(query: DocumentListQuery): Promise<DocumentPage> {
       const column = SORT_COLUMNS[query.sort];
 
-      const rows = await scoped()
+      // Built once and reused by the page AND the count, so the two can never
+      // apply different filters. A count that disagrees with its page produces
+      // pagination that runs off the end or stops early.
+      const filtered = <T extends ReturnType<typeof scoped>>(builder: T) => {
+        if (query.search === null) return builder;
+        // ILIKE, so a search for `retainer` finds `Retainer Agreement`.
+        return builder.where(
+          "title", "ilike", `%${escapeLikePattern(query.search)}%`) as T;
+      };
+
+      const rows = await filtered(scoped())
         .selectAll()
         .orderBy(column, query.direction)
         // The tie-breaker, always. Without it two documents sharing a title —
@@ -86,7 +110,7 @@ export function createScopedDocumentRepository(
         .limit(query.limit)
         .execute();
 
-      const counted = await scoped()
+      const counted = await filtered(scoped())
         .select(eb => eb.fn.countAll<string>().as("total"))
         .executeTakeFirstOrThrow();
 

@@ -256,6 +256,8 @@ export interface ListDocumentsInput {
   readonly direction?: "asc" | "desc";
   readonly page?: number;
   readonly perPage?: number;
+  /** Free-text over the title. Bounded by the contract. */
+  readonly search?: string;
 }
 
 export interface DocumentListResult {
@@ -299,6 +301,9 @@ export async function listDocuments(
       direction: input.direction ?? "desc",
       offset: (page - 1) * perPage,
       limit: perPage,
+      // Trimmed to null. A box containing only spaces is a cleared box, and
+      // sending " " as a filter would match every title containing a space.
+      search: input.search?.trim() ? input.search.trim() : null,
     });
 
     // Artifact metadata IS included, because the product's list shows page

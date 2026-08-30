@@ -3237,6 +3237,15 @@
         "parameters": [
           {
             "schema": {
+              "maxLength": 200,
+              "type": "string"
+            },
+            "in": "query",
+            "name": "q",
+            "required": false
+          },
+          {
+            "schema": {
               "title": "DocumentSortField",
               "anyOf": [
                 {

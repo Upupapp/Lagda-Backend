@@ -40,6 +40,14 @@ export const DOCUMENT_TITLE_MIN_LENGTH = 1;
 /** Matches `document_uploads.original_filename`. Display metadata only. */
 export const DOCUMENT_FILENAME_MAX_LENGTH = 255;
 
+/**
+ * Free-text search is bounded, for the same reason a contact search is.
+ *
+ * An unbounded term is an unbounded `ILIKE` pattern, which is a cheap way for
+ * a caller to make the database do expensive work.
+ */
+export const DOCUMENT_SEARCH_MAX_LENGTH = 200;
+
 // ── Sorting ──────────────────────────────────────────────────────────────────
 
 /**

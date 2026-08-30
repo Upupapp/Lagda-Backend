@@ -60,6 +60,17 @@ export interface DocumentListQuery {
   readonly direction: "asc" | "desc";
   readonly offset: number;
   readonly limit: number;
+  /**
+   * Free-text over the title, or null for no filter.
+   *
+   * NULL rather than an empty string: "" is a search that matches everything,
+   * and a caller who cleared the box should not be sending one.
+   *
+   * Bounded by the contract before it reaches here -- an unbounded term is an
+   * unbounded LIKE pattern, which is a cheap way to make the database do
+   * expensive work.
+   */
+  readonly search: string | null;
 }
 
 export interface DocumentPage {
