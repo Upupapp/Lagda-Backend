@@ -20,7 +20,9 @@ import {
   createAccountSessionRepository, createSessionRepository,
   type LagdaDatabase,
 } from "@lagda/db";
-import type { SessionService, UserId, PasswordHash } from "@lagda/application";
+import type {
+  SessionService, UserId, PasswordHash, SessionId,
+} from "@lagda/application";
 import type { ApiConfig } from "../config/index.js";
 import type { AppDependencies } from "../app/dependencies.js";
 import type { RequestAuth } from "../security/session-plugin.js";
@@ -373,7 +375,17 @@ export function buildIdentity(
         clock, sessions: createAccountSessionRepository(db),
       }),
 
-      endSession: (sessionId: string) => sessions.revoke(sessionId as never, "signed_out" as never),
+      // "logout", from REVOCATION_REASONS. NOT "signed_out": that value is not
+      // in the vocabulary, so the CHECK constraint added by migration 004
+      // rejects the update, the repository throws, and the route answers 503
+      // SESSION_REVOCATION_FAILED -- while the session stays valid and the
+      // browser is told it signed out.
+      //
+      // The `as never` that used to sit on this argument is what stopped the
+      // compiler saying so: the parameter is typed `RevocationReason`, and
+      // "signed_out" would never have compiled without it.
+      endSession: (sessionId: string) =>
+        sessions.revoke(sessionId as SessionId, "logout"),
       issueSession: (userId: UserId) => sessions.issue(userId),
 
       // The same double-submit check `requireSession` installs, applied to the
