@@ -136,6 +136,31 @@ export interface SigningRequestRecord {
 }
 
 /** Everything one request is, written in one statement group. */
+/**
+ * One request as a LIST row: enough to render it, nothing that belongs to
+ * opening it.
+ *
+ * No recipient names, no emails, no field geometry. A list is read by anyone
+ * with document.view, and a participant list is not theirs to see in aggregate.
+ */
+export interface SigningRequestSummary {
+  readonly signingRequestId: SigningRequestId;
+  readonly documentId: DocumentId;
+  readonly state: SigningRequestState;
+  readonly documentTitle: string;
+  readonly participantCount: number;
+  readonly completedParticipantCount: number;
+  readonly createdAt: number;
+  readonly sentAt: number | null;
+  readonly completedAt: number | null;
+}
+
+export interface SigningRequestListPage {
+  readonly items: readonly SigningRequestSummary[];
+  /** Counted in the same transaction as the page, so the two cannot disagree. */
+  readonly total: number;
+}
+
 export interface NewSigningRequestSnapshot {
   readonly request: SigningRequestRecord;
   readonly recipients: readonly SigningRequestRecipientRecord[];
@@ -157,6 +182,29 @@ export interface ScopedSigningRequestRepository {
 
   /** One request of this workspace, or null. */
   find(signingRequestId: SigningRequestId): Promise<SigningRequestRecord | null>;
+
+  /**
+   * Every signing request in the workspace, latest first.
+   *
+   * ── Why this exists now, having been deferred ──────────────────────────
+   *
+   * `listSigningRequests` was deferred with "no product surface needs it".
+   * One does: the document list shows a status chip per row and groups by
+   * Draft / Sent / Completed, and a DOCUMENT has no status of its own --
+   * lifecycle belongs to the request. Without a list, a client can read a
+   * request only by an id it does not have, so it cannot discover which of
+   * its documents were sent.
+   *
+   * Returned from the SIGNING domain rather than added to the document read
+   * model, because the document domain references nothing about signing and
+   * an architecture test enforces that. The client joins on `documentId`.
+   *
+   * Counts are included because the alternative is one round trip per row.
+   */
+  listForWorkspace(query: {
+    readonly limit: number;
+    readonly offset: number;
+  }): Promise<SigningRequestListPage>;
 
   /** Ordered by `orderIndex`, then id. Ordered in SQL. */
   listRecipients(

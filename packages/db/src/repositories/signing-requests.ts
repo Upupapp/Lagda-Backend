@@ -5,7 +5,7 @@
 // that tried to change a recipient or a field would fail at the database, not
 // merely be absent from an interface.
 
-import type { Selectable, Transaction } from "kysely";
+import { sql, type Selectable, type Transaction } from "kysely";
 import type {
   DocumentId, PreparationFieldType, RecipientType, SigningRequestState,
   UserId, WorkspaceId,
@@ -14,7 +14,7 @@ import {
   PREPARATION_FIELD_TYPES, RECIPIENT_TYPES, SIGNING_REQUEST_STATES,
 } from "@lagda/contracts";
 import type {
-  ScopedSigningRequestRepository, NewSigningRequestSnapshot,
+  ScopedSigningRequestRepository, NewSigningRequestSnapshot, SigningRequestSummary,
   SigningRequestRecord, SigningRequestRecipientRecord, SigningRequestFieldRecord,
   SigningRequestId, SigningRequestRecipientId, SigningRequestFieldId,
   ArtifactId, PreparationId, PreparationFieldId, RecipientId,
@@ -114,6 +114,67 @@ export function createScopedSigningRequestRepository(
   scope: WorkspaceId,
 ): ScopedSigningRequestRepository {
   return {
+    /**
+     * The workspace's requests, latest first, with recipient counts.
+     *
+     * ONE query, not one per row. The counts are correlated subqueries rather
+     * than joins: joining both recipients and their activation rows would
+     * multiply the result set and need a second grouping to undo.
+     *
+     * Recipient state lives on the ACTIVATION row, not the recipient. A
+     * recipient exists from the moment the request is created and only becomes
+     * `signed` once activated, so counting recipient rows would report every
+     * participant as complete.
+     */
+    async listForWorkspace(query) {
+      const rows = await sql<{
+        signing_request_id: string;
+        document_id: string;
+        state: string;
+        document_title: string;
+        created_at: Date;
+        sent_at: Date | null;
+        completed_at: Date | null;
+        participant_count: string;
+        completed_participant_count: string;
+      }>`
+        select
+          sr.signing_request_id, sr.document_id, sr.state, sr.document_title,
+          sr.created_at, sr.sent_at, sr.completed_at,
+          (select count(*) from signing_request_recipients r
+             where r.signing_request_id = sr.signing_request_id)
+            as participant_count,
+          (select count(*) from signing_request_recipient_activation a
+             where a.signing_request_id = sr.signing_request_id
+               and a.recipient_state = 'signed')
+            as completed_participant_count
+        from signing_requests sr
+        where sr.workspace_id = ${scope}
+        order by sr.created_at desc, sr.signing_request_id desc
+        limit ${query.limit} offset ${query.offset}
+      `.execute(trx);
+
+      const counted = await trx.selectFrom("signing_requests")
+        .select(eb => eb.fn.countAll<string>().as("total"))
+        .where("workspace_id", "=", scope)
+        .executeTakeFirstOrThrow();
+
+      return {
+        items: rows.rows.map(row => ({
+          signingRequestId: row.signing_request_id as SigningRequestId,
+          documentId: row.document_id as DocumentId,
+          state: row.state as SigningRequestSummary["state"],
+          documentTitle: row.document_title,
+          participantCount: Number(row.participant_count),
+          completedParticipantCount: Number(row.completed_participant_count),
+          createdAt: row.created_at.getTime(),
+          sentAt: row.sent_at === null ? null : row.sent_at.getTime(),
+          completedAt: row.completed_at === null ? null : row.completed_at.getTime(),
+        })),
+        total: Number(counted.total),
+      };
+    },
+
     async createSnapshot(snapshot: NewSigningRequestSnapshot): Promise<void> {
       const { request, recipients, fields } = snapshot;
       if (request.workspaceId !== scope) {

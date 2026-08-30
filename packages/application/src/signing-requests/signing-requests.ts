@@ -32,9 +32,12 @@ import type {
   DocumentId, WorkspaceId, IdempotencyKey, TransactionId,
 } from "@lagda/contracts";
 import type { EvidenceEventIdGenerator } from "../common/ports/index.js";
+// The list row shape lives with the port that produces it.
+import type { SigningRequestSummary } from "../common/ports/signing-requests.js";
 // BACKEND-43. Factory, never a hand-built event literal.
 import { requestCreated } from "../evidence/events.js";
 import type { SigningRequestState } from "@lagda/contracts";
+import { DEFAULT_PER_PAGE, MAX_PER_PAGE } from "@lagda/contracts";
 import {
   assessSnapshotReadiness, describeBlocker, canPlaceFields,
   type WorkspaceCapability,
@@ -558,6 +561,56 @@ async function resolveSourceArtifact(
  * architecture guard asserts it: a detail endpoint that resolved a name through
  * the current contact would silently undo the entire snapshot.
  */
+/**
+ * The workspace's signing requests, latest first.
+ *
+ * ── Why this is here and not on the document read model ────────────────────
+ *
+ * The document list needs a status per row, and a DOCUMENT has no status: it
+ * is a title and a file, and it outlives every request that references it.
+ * Lifecycle belongs here.
+ *
+ * Putting the answer on the document would also cross a boundary the
+ * architecture tests enforce -- the document domain references nothing about
+ * signing. The client joins these rows to its documents on `documentId`.
+ *
+ * `signing-request.view` is the same capability the single read requires. A
+ * list must not be a way to see what opening each one would refuse.
+ */
+export async function listSigningRequests(
+  actor: AuthenticatedActor,
+  workspaceId: WorkspaceId,
+  input: { readonly page?: number; readonly perPage?: number },
+  deps: SigningRequestDependencies,
+): Promise<SigningRequestListView> {
+  const page = Math.max(1, input.page ?? 1);
+  const perPage = Math.min(Math.max(1, input.perPage ?? DEFAULT_PER_PAGE), MAX_PER_PAGE);
+
+  return deps.transactions.runForWorkspace(workspaceId, async uow => {
+    await authorize(uow, actor, "signing-request.view");
+
+    const result = await uow.signingRequests.listForWorkspace({
+      limit: perPage, offset: (page - 1) * perPage,
+    });
+
+    return {
+      items: result.items,
+      total: result.total,
+      page,
+      perPage,
+      hasNextPage: page * perPage < result.total,
+    };
+  });
+}
+
+export interface SigningRequestListView {
+  readonly items: readonly SigningRequestSummary[];
+  readonly total: number;
+  readonly page: number;
+  readonly perPage: number;
+  readonly hasNextPage: boolean;
+}
+
 export async function getSigningRequest(
   actor: AuthenticatedActor,
   workspaceId: WorkspaceId,

@@ -251,6 +251,50 @@ export type SigningRequestField = Static<typeof SigningRequestFieldSchema>;
  * `documentTitle` is the SNAPSHOT, not the document's current title. Renaming
  * the document does not rename a transaction someone was asked to sign.
  */
+/**
+ * One request as a LIST row.
+ *
+ * Deliberately NARROWER than `SigningRequestSchema`: no recipients, no fields,
+ * no geometry. A list is read by anyone holding `signing-request.view`, and an
+ * aggregate of participant names and addresses is not something a list needs
+ * to disclose to show a status chip.
+ *
+ * `documentId` is the join key. A DOCUMENT has no status of its own -- it
+ * outlives every request about it -- so a client showing "Draft / Sent /
+ * Completed" per document reads it from here.
+ */
+export const SigningRequestSummarySchema = Type.Object(
+  {
+    signingRequestId: Type.String({ minLength: 1, maxLength: 64 }),
+    documentId: Type.String({ minLength: 1, maxLength: 64 }),
+    state: SigningRequestStateSchema,
+    /** The title as it WAS when the request was created, not the document's now. */
+    documentTitle: Type.String(),
+    participantCount: Type.Integer({ minimum: 0 }),
+    completedParticipantCount: Type.Integer({ minimum: 0 }),
+    createdAt: Type.String({ format: "date-time" }),
+    sentAt: Type.Union([Type.String({ format: "date-time" }), Type.Null()]),
+    completedAt: Type.Union([Type.String({ format: "date-time" }), Type.Null()]),
+  },
+  {
+    title: "SigningRequestSummary",
+    additionalProperties: false,
+    description: "A signing request as a list row, joined to a document by documentId.",
+  },
+);
+export type SigningRequestSummaryView = Static<typeof SigningRequestSummarySchema>;
+
+export const SigningRequestListSchema = Type.Object(
+  {
+    items: Type.Array(SigningRequestSummarySchema),
+    total: Type.Integer({ minimum: 0 }),
+    page: Type.Integer({ minimum: 1 }),
+    perPage: Type.Integer({ minimum: 1 }),
+    hasNextPage: Type.Boolean(),
+  },
+  { title: "SigningRequestList", additionalProperties: false },
+);
+
 export const SigningRequestSchema = Type.Object(
   {
     signingRequestId: Type.String({ minLength: 1, maxLength: 64 }),

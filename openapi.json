@@ -5456,6 +5456,208 @@
         }
       }
     },
+    "/workspaces/{workspaceId}/signing-requests": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "type": "integer"
+            },
+            "in": "query",
+            "name": "perPage",
+            "required": false
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "SigningRequestList",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "items",
+                    "total",
+                    "page",
+                    "perPage",
+                    "hasNextPage"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "title": "SigningRequestSummary",
+                        "additionalProperties": false,
+                        "description": "A signing request as a list row, joined to a document by documentId.",
+                        "type": "object",
+                        "required": [
+                          "signingRequestId",
+                          "documentId",
+                          "state",
+                          "documentTitle",
+                          "participantCount",
+                          "completedParticipantCount",
+                          "createdAt",
+                          "sentAt",
+                          "completedAt"
+                        ],
+                        "properties": {
+                          "signingRequestId": {
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "type": "string"
+                          },
+                          "documentId": {
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "type": "string"
+                          },
+                          "state": {
+                            "title": "SigningRequestState",
+                            "description": "The request's lifecycle state. BACKEND-32 can only produce `draft`.",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "draft"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "ready-to-send"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "sent"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "partially-completed"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "completion-ready"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "completed"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "declined"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "cancelled"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "expired"
+                                ]
+                              }
+                            ]
+                          },
+                          "documentTitle": {
+                            "type": "string"
+                          },
+                          "participantCount": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "completedParticipantCount": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "createdAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "sentAt": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "completedAt": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "total": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "page": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "perPage": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "hasNextPage": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/workspaces/{workspaceId}/signing-requests/{signingRequestId}": {
       "get": {
         "parameters": [

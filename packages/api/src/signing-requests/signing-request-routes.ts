@@ -24,13 +24,13 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { Type, type Static } from "@sinclair/typebox";
 import {
-  createSigningRequest, getSigningRequest, assertValidKey,
+  createSigningRequest, getSigningRequest, listSigningRequests, assertValidKey,
   type SigningRequestDependencies,
   type SigningRequestView, type SigningRequestCreatedView,
   type SessionId, type UserId,
 } from "@lagda/application";
 import {
-  SigningRequestSchema, SigningRequestCreatedSchema,
+  SigningRequestSchema, SigningRequestCreatedSchema, SigningRequestListSchema,
   IDEMPOTENCY_KEY_HEADER,
   type DocumentId, type WorkspaceId,
 } from "@lagda/contracts";
@@ -41,6 +41,15 @@ import type { MetricsRecorder } from "../observability/metrics.js";
 const CreateParamsSchema = Type.Object({
   workspaceId: Type.String({ minLength: 1, maxLength: 64 }),
   documentId: Type.String({ minLength: 1, maxLength: 64 }),
+});
+
+const ListParamsSchema = Type.Object({
+  workspaceId: Type.String({ minLength: 1, maxLength: 64 }),
+});
+
+const ListQuerySchema = Type.Object({
+  page: Type.Optional(Type.Integer({ minimum: 1 })),
+  perPage: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
 });
 
 const ReadParamsSchema = Type.Object({
@@ -227,6 +236,55 @@ export function registerSigningRequestRoutes(
   });
 
   // ── Read ────────────────────────────────────────────────────────────────
+  /**
+   * The workspace's signing requests.
+   *
+   * Registered BEFORE the by-id route. Fastify's router is not order-sensitive
+   * for static versus parametric segments, but reading them in this order
+   * makes the pair obvious -- and this is the one a document list calls.
+   *
+   * Answers the question a client could not previously ask: which of my
+   * documents have been sent? A request was readable only by an id the client
+   * had no way to discover.
+   */
+  app.get("/workspaces/:workspaceId/signing-requests", {
+    schema: {
+      params: ListParamsSchema,
+      querystring: ListQuerySchema,
+      response: { 200: SigningRequestListSchema },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await actorOf(request);
+    if (actor === null) return unauthenticated(reply);
+
+    const { workspaceId } = request.params as Static<typeof ListParamsSchema>;
+    const query = request.query as Static<typeof ListQuerySchema>;
+
+    const result = await listSigningRequests(
+      actor, workspaceId as WorkspaceId,
+      { ...(query.page === undefined ? {} : { page: query.page }),
+        ...(query.perPage === undefined ? {} : { perPage: query.perPage }) },
+      options.signingRequestDependencies());
+
+    return reply.status(200).send({
+      ...result,
+      items: result.items.map(item => ({
+        signingRequestId: item.signingRequestId,
+        documentId: item.documentId,
+        state: item.state,
+        documentTitle: item.documentTitle,
+        participantCount: item.participantCount,
+        completedParticipantCount: item.completedParticipantCount,
+        createdAt: iso(item.createdAt),
+        // Nullable timestamps stay null. A draft has not been sent, and the
+        // epoch is a date rather than an absence.
+        sentAt: item.sentAt === null ? null : iso(item.sentAt),
+        completedAt: item.completedAt === null ? null : iso(item.completedAt),
+      })),
+    });
+  });
+
   app.get("/workspaces/:workspaceId/signing-requests/:signingRequestId", {
     schema: {
       params: ReadParamsSchema,

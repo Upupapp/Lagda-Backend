@@ -1874,6 +1874,41 @@ function scopedSigningRequests(
         && request.signingRequestId === signingRequestId);
 
   return {
+    /**
+     * Counted from the same store the real one queries, not returned as zero.
+     *
+     * `snapshotOwners` is the linkage between a flat recipient row and its
+     * request; `activations` carries recipient state. A fake that reported
+     * "0 of 0 signed" would type-check, pass, and describe every request as
+     * untouched.
+     */
+    listForWorkspace: (query: { limit: number; offset: number }) => {
+      const mine = store.signingRequests
+        .filter(request => request.workspaceId === scope)
+        .sort((a, b) => b.createdAt - a.createdAt);
+
+      const items = mine.slice(query.offset, query.offset + query.limit).map(request => {
+        const recipients = store.signingRequestRecipients.filter(
+          r => store.snapshotOwners.get(String(r.recipientId)) === request.signingRequestId);
+        const signed = store.activations.filter(
+          a => a.signingRequestId === request.signingRequestId && a.state === "signed");
+        return {
+          signingRequestId: request.signingRequestId,
+          documentId: request.documentId,
+          state: request.state,
+          documentTitle: request.documentTitle,
+          participantCount: recipients.length,
+          completedParticipantCount: signed.length,
+          createdAt: request.createdAt,
+          // The record carries no `sentAt`; the real column does. Inventing one
+          // would assert a timestamp nothing stored.
+          sentAt: null,
+          completedAt: request.completedAt,
+        };
+      });
+      return Promise.resolve({ items, total: mine.length });
+    },
+
     createSnapshot: (snapshot: NewSigningRequestSnapshot) => {
       const { request, recipients, fields } = snapshot;
       if (request.workspaceId !== scope) {
