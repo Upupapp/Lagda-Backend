@@ -40,6 +40,7 @@ import {
 import { registerMemberRoutes } from "../workspaces/member-routes.js";
 import { registerContactRoutes } from "../contacts/contact-routes.js";
 import { registerDocumentRoutes } from "../documents/document-routes.js";
+import { registerFolderRoutes } from "../folders/folder-routes.js";
 import { registerPreparationRoutes } from "../preparation/preparation-routes.js";
 import { registerRecipientRoutes } from "../recipients/recipient-routes.js";
 import { registerSigningRequestRoutes } from "../signing-requests/signing-request-routes.js";
@@ -455,6 +456,23 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
           ),
           documentDependencies: documents,
           metrics,
+        });
+      }
+
+      // The folder tree. Registered beside documents and gated the same way:
+      // a folder is a container for documents and is meaningless without them.
+      if (workspaces.folders !== undefined) {
+        const folders = workspaces.folders;
+        registerFolderRoutes(scope, {
+          authenticatedUser: (request: FastifyRequest) => Promise.resolve(
+            request.auth.status === "authenticated"
+              ? {
+                  userId: request.auth.actor.userId,
+                  sessionId: request.auth.actor.sessionId,
+                }
+              : null,
+          ),
+          folderDependencies: folders,
         });
       }
 

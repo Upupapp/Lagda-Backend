@@ -3720,6 +3720,96 @@
         }
       }
     },
+    "/workspaces/{workspaceId}/folders": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "FolderList",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "folders"
+                  ],
+                  "properties": {
+                    "folders": {
+                      "type": "array",
+                      "items": {
+                        "title": "Folder",
+                        "additionalProperties": false,
+                        "description": "A folder in the workspace's document tree.",
+                        "type": "object",
+                        "required": [
+                          "folderId",
+                          "parentFolderId",
+                          "name",
+                          "createdAt",
+                          "archivedAt"
+                        ],
+                        "properties": {
+                          "folderId": {
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "type": "string"
+                          },
+                          "parentFolderId": {
+                            "anyOf": [
+                              {
+                                "minLength": 1,
+                                "maxLength": 64,
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "name": {
+                            "minLength": 1,
+                            "maxLength": 120,
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "archivedAt": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/workspaces/{workspaceId}/documents/{documentId}/preparation": {
       "get": {
         "parameters": [

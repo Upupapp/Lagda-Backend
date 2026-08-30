@@ -66,6 +66,7 @@ import type {
 import type {
   ScopedDocumentRepository, DocumentRecord, NewDocument, DocumentIdGenerator,
 } from "../common/ports/documents.js";
+import type { FolderRecord } from "../common/ports/folders.js";
 import type {
   ScopedPreparationRepository, PreparationRecord, NewPreparation,
   PreparationFieldRecord, PreparationId, PreparationFieldId,
@@ -383,6 +384,7 @@ interface StoreSnapshot {
   readonly invitationDigests: Map<string, string>;
   readonly contacts: ContactRecord[];
   readonly documents: DocumentRecord[];
+  readonly folders: FolderRecord[];
   readonly preparations: PreparationRecord[];
   readonly preparationFields: PreparationFieldRecord[];
   readonly recipients: RecipientRecord[];
@@ -427,6 +429,7 @@ export class InMemoryStore {
   readonly notificationDeliveries = new Map<string, NotificationDeliveryRecord>();
   contacts: ContactRecord[] = [];
   documents: DocumentRecord[] = [];
+  folders: FolderRecord[] = [];
   preparations: PreparationRecord[] = [];
   preparationFields: PreparationFieldRecord[] = [];
   recipients: RecipientRecord[] = [];
@@ -476,6 +479,7 @@ export class InMemoryStore {
       invitationDigests: new Map(this.invitationDigests),
       contacts: [...this.contacts],
       documents: [...this.documents],
+      folders: [...this.folders],
       preparations: [...this.preparations],
       preparationFields: [...this.preparationFields],
       recipients: [...this.recipients],
@@ -527,6 +531,7 @@ export class InMemoryStore {
     this.invitations = [...snapshot.invitations];
     this.contacts = [...snapshot.contacts];
     this.documents = [...snapshot.documents];
+    this.folders = [...snapshot.folders];
     this.preparations = [...snapshot.preparations];
     this.preparationFields = [...snapshot.preparationFields];
     this.recipients = [...snapshot.recipients];
@@ -2255,6 +2260,11 @@ export class FakeTransactionManager implements TransactionManager {
         invitations: scopedInvitations(this.store, workspaceId),
         contacts: scopedContacts(this.store, workspaceId),
         documents: scopedDocuments(this.store, workspaceId),
+        // Empty rather than absent. A workspace with no folders is the
+        // ordinary case, and every test that does not care about folders
+        // should not have to build one.
+        folders: { list: () => Promise.resolve(this.store.folders.filter(
+          f => f.workspaceId === workspaceId)) },
         preparations: scopedPreparations(this.store, workspaceId),
         recipients: scopedRecipients(this.store, workspaceId),
         signingRequests: scopedSigningRequests(this.store, workspaceId),
@@ -2324,6 +2334,8 @@ export class FakeTransactionManager implements TransactionManager {
             workspaceId,
             actorProfiles: { displayNameOf: () => Promise.resolve(null) },
             organizationUnits: scopedOrganizationUnits(store, workspaceId),
+            folders: { list: () => Promise.resolve(
+              store.folders.filter(f => f.workspaceId === workspaceId)) },
             workspaces: scopedWorkspaces(store, workspaceId),
             memberships: scopedMemberships(store, workspaceId),
             evidence: scopedEvidence(store, workspaceId),

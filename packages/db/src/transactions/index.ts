@@ -44,6 +44,7 @@ import {
 } from "../repositories/invitations.js";
 import { createScopedContactRepository } from "../repositories/contacts.js";
 import { createScopedDocumentRepository } from "../repositories/documents.js";
+import { createScopedFolderRepository } from "../repositories/folders.js";
 import { createScopedPreparationRepository } from "../repositories/preparation.js";
 import { createScopedRecipientRepository } from "../repositories/recipients.js";
 import { createScopedSigningRequestRepository } from "../repositories/signing-requests.js";
@@ -111,6 +112,7 @@ function buildUnitOfWork(
     invitations: createScopedInvitationRepository(trx, workspaceId),
     contacts: createScopedContactRepository(trx, workspaceId),
     documents: createScopedDocumentRepository(trx, workspaceId),
+    folders: createScopedFolderRepository(trx, workspaceId),
     preparations: createScopedPreparationRepository(trx, workspaceId),
     recipients: createScopedRecipientRepository(trx, workspaceId),
     signingRequests: createScopedSigningRequestRepository(trx, workspaceId),

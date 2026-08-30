@@ -188,6 +188,7 @@ export async function createProductionDependencies(
       workspace: () => ({ transactions }),
       contacts: () => ({ transactions, clock, ids: contactIds }),
       documents: () => ({ transactions, clock, ids: documentIds }),
+      folders: () => ({ transactions }),
       preparation: () => ({ transactions, clock, ids: preparationIds }),
       // Both generators: a recipient cannot exist without a preparation to hold
       // it, and the first recipient on a never-prepared document creates one.

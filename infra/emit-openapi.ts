@@ -90,6 +90,7 @@ const app = await createApp({
       },
       contacts: () => stub("workspaces.contacts"),
       documents: () => stub("workspaces.documents"),
+      folders: () => stub("workspaces.folders"),
       preparation: () => stub("workspaces.preparation"),
       recipients: () => stub("workspaces.recipients"),
       signingRequests: () => stub("workspaces.signingRequests"),

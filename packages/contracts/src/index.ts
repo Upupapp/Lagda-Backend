@@ -13,6 +13,7 @@ export * from "./verification/index.js";
 export * from "./workspaces/index.js";
 export * from "./contacts/index.js";
 export * from "./documents/index.js";
+export * from "./folders/index.js";
 export * from "./preparation/index.js";
 export * from "./recipients/index.js";
 export * from "./signing-requests/index.js";

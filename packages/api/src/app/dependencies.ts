@@ -17,7 +17,8 @@ import type {
   ListMyWorkspacesDependencies,
   InvitationDependencies, AcceptInvitationDependencies,
   MemberAdministrationDependencies, WorkspaceAccessDependencies,
-  ContactDependencies, DocumentDependencies, PreparationDependencies,
+  ContactDependencies, DocumentDependencies, FolderDependencies,
+  PreparationDependencies,
   RecipientDependencies, SigningRequestDependencies,
   SendSigningRequestDependencies, SigningAccessDependencies,
   SigningCeremonyDependencies, SigningSubmissionDependencies,
@@ -190,6 +191,14 @@ export interface WorkspaceDependencies {
    * document routes are registered; absent means none is.
    */
   readonly documents?: () => DocumentDependencies;
+  /**
+   * The folder tree (migration 040).
+   *
+   * Optional as a whole, like every other group. Absent means the route does
+   * not exist -- a workspace with no folder surface, rather than one with an
+   * unprotected folder surface.
+   */
+  readonly folders?: () => FolderDependencies;
   /**
    * Document preparation (BACKEND-30).
    *

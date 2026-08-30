@@ -15,6 +15,7 @@ import type {
 } from "./invitations.js";
 import type { ScopedContactRepository } from "./contacts.js";
 import type { ScopedDocumentRepository } from "./documents.js";
+import type { ScopedFolderRepository } from "./folders.js";
 import type { ScopedPreparationRepository } from "./preparation.js";
 import type { ScopedRecipientRepository } from "./recipients.js";
 import type { ScopedSigningRequestRepository } from "./signing-requests.js";
@@ -378,6 +379,8 @@ export interface WorkspaceUnitOfWork {
    * never be paired with bytes from another workspace.
    */
   readonly documents: ScopedDocumentRepository;
+  /** The workspace's folder tree. Reads only -- see the repository. */
+  readonly folders: ScopedFolderRepository;
   /**
    * Document preparation (BACKEND-30).
    *
@@ -662,6 +665,7 @@ export * from "./invitations.js";
 export * from "./contacts.js";
 
 export * from "./documents.js";
+export * from "./folders.js";
 
 export * from "./preparation.js";
 

@@ -171,7 +171,7 @@ describe("production composition", () => {
 
     const subWired =
       workspaceSubgroups().length - Object.keys(WORKSPACE_SUBGROUPS_NOT_WIRED).length;
-    expect(subWired).toBe(10);
+    expect(subWired).toBe(11);
   });
 });
 
