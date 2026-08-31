@@ -160,12 +160,52 @@ export const SigningDeclineReasonSchema = Type.Union(
  * transition, and a client generated from it would break on the first `sent`
  * request it ever saw.
  */
+/**
+ * States the API DECLARES and cannot currently produce.
+ *
+ * ── Why a union is wider than what can be stored ───────────────────────────
+ *
+ * The type is the whole lifecycle vocabulary and the DATABASE is the gate.
+ * Each state is admitted by a migration only when the code that reaches it
+ * exists -- migration 024 put it plainly: "a CHECK that admits a state no code
+ * can reach is a permission granted in advance of the thing it permits".
+ *
+ * Two members have not earned their migration. `@lagda/core`'s transition
+ * table defines both edges -- `markReadyToSend` out of `draft`, and `expire`
+ * out of `sent` and `partially-completed` -- and NOTHING invokes either. There
+ * is no expiry job and no readiness command, so no request can arrive in
+ * either state.
+ *
+ * ── Declared rather than removed, deliberately ─────────────────────────────
+ *
+ * Removing them would be the wrong repair. The lifecycle is what it is; the
+ * missing part is the code, not the vocabulary. A client that dropped these
+ * two would break on the day either lands, which is the failure this union
+ * exists to prevent -- see the note above about a client generated before
+ * `sent` was storable.
+ *
+ * So they stay, and this constant says so IN THE CONTRACT rather than in a
+ * comment in one client. Exported because a client can then compute what it
+ * may actually receive instead of rediscovering this by reading migrations.
+ *
+ * **Anything added here must be removed the day its migration lands**, which
+ * an architecture guard enforces by comparing this list against the CHECK.
+ */
+export const SIGNING_REQUEST_STATES_NOT_YET_REACHABLE = [
+  "ready-to-send",
+  "expired",
+] as const satisfies readonly SigningRequestState[];
+
 export const SigningRequestStateSchema = Type.Union(
   SIGNING_REQUEST_STATES.map(state => Type.Literal(state)),
   {
     title: "SigningRequestState",
     description:
-      "The request's lifecycle state. BACKEND-32 can only produce `draft`.",
+      "The request's lifecycle state. Two members of this union are declared "
+      + "and cannot currently be returned, because nothing transitions into "
+      + "them and the database refuses them: `ready-to-send` and `expired`. "
+      + "They remain in the union so a client written today does not break on "
+      + "the day either is implemented.",
   },
 );
 

@@ -8,6 +8,9 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import {
+  SIGNING_REQUEST_STATES, SIGNING_REQUEST_STATES_NOT_YET_REACHABLE,
+} from "@lagda/contracts";
 
 const ROOT = join(import.meta.dirname, "..", "..");
 const PACKAGES = join(ROOT, "packages");
@@ -238,5 +241,79 @@ describe("nothing is left as a promise", () => {
       const src = read(file);
       expect(src, file).not.toMatch(/\bas any\b|:\s*any\b|@ts-(ignore|nocheck)/);
     }
+  });
+});
+
+// ── The contract is wider than the database, and says by how much ────────────
+
+describe("declared states that cannot be reached are declared as such", () => {
+  /**
+   * The states the database will actually admit today.
+   *
+   * Read from the LAST migration that rewrites the CHECK rather than from a
+   * list kept here, because a list kept here is a second copy that drifts. If
+   * a later migration widens the constraint again, this constant has to move
+   * with it -- and the failure when it does not is this test, which is the
+   * point.
+   */
+  const STORABLE = (): readonly string[] => {
+    const migration = readFileSync(
+      join(PACKAGES, "db/src/migrations/028_signing_request_completed.ts"), "utf8");
+    // The FIRST declaration is the one this migration installs; the second is
+    // `OLD_REQUEST_STATES`, kept for `down`. Matching the wrong one would
+    // assert against the constraint this migration replaced.
+    const block = /const REQUEST_STATES = \[([\s\S]*?)\] as const;/.exec(migration);
+    expect(block, "028 no longer declares REQUEST_STATES the way this guard reads it")
+      .not.toBeNull();
+    return [...(block?.[1] ?? "").matchAll(/"([a-z-]+)"/g)].map(m => m[1] ?? "");
+  };
+
+  it("finds the constraint it means to measure", () => {
+    // A guard whose extraction silently returns nothing passes everything.
+    expect(STORABLE().length).toBeGreaterThan(1);
+    expect(STORABLE()).toContain("draft");
+  });
+
+  /**
+   * The one assertion that matters.
+   *
+   * Every declared state is either storable today or listed as not-yet-
+   * reachable. A state that is neither is a value the API publishes, cannot
+   * produce, and does not admit to -- which is exactly the divergence this
+   * list exists to make visible.
+   */
+  it("accounts for every declared state", () => {
+    const storable = new Set(STORABLE());
+    const declared = new Set<string>(SIGNING_REQUEST_STATES);
+    const named = new Set<string>(SIGNING_REQUEST_STATES_NOT_YET_REACHABLE);
+
+    const unaccounted = [...declared].filter(s => !storable.has(s) && !named.has(s));
+    expect(unaccounted, "declared, not storable, and not admitted to").toEqual([]);
+  });
+
+  /**
+   * The list must SHRINK when a migration catches up.
+   *
+   * Without this, implementing `expired` would leave the contract telling
+   * every client it can never arrive -- a stale disclaimer, which is worse
+   * than none because it is believed.
+   */
+  it("names nothing the database already stores", () => {
+    const storable = new Set(STORABLE());
+    const stale = SIGNING_REQUEST_STATES_NOT_YET_REACHABLE.filter(s => storable.has(s));
+    expect(stale, "these are storable now and must leave the not-yet-reachable list")
+      .toEqual([]);
+  });
+
+  /**
+   * And it must name only states that exist.
+   *
+   * A typo here would silently protect nothing: the guard above would still
+   * pass, because a misspelled state is neither storable nor declared.
+   */
+  it("names only states the union declares", () => {
+    const declared = new Set<string>(SIGNING_REQUEST_STATES);
+    const unknown = SIGNING_REQUEST_STATES_NOT_YET_REACHABLE.filter(s => !declared.has(s));
+    expect(unknown).toEqual([]);
   });
 });

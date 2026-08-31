@@ -5763,7 +5763,7 @@
                     },
                     "state": {
                       "title": "SigningRequestState",
-                      "description": "The request's lifecycle state. BACKEND-32 can only produce `draft`.",
+                      "description": "The request's lifecycle state. Two members of this union are declared and cannot currently be returned, because nothing transitions into them and the database refuses them: `ready-to-send` and `expired`. They remain in the union so a client written today does not break on the day either is implemented.",
                       "anyOf": [
                         {
                           "type": "string",
@@ -5922,7 +5922,7 @@
                           },
                           "state": {
                             "title": "SigningRequestState",
-                            "description": "The request's lifecycle state. BACKEND-32 can only produce `draft`.",
+                            "description": "The request's lifecycle state. Two members of this union are declared and cannot currently be returned, because nothing transitions into them and the database refuses them: `ready-to-send` and `expired`. They remain in the union so a client written today does not break on the day either is implemented.",
                             "anyOf": [
                               {
                                 "type": "string",
@@ -6103,7 +6103,7 @@
                     },
                     "state": {
                       "title": "SigningRequestState",
-                      "description": "The request's lifecycle state. BACKEND-32 can only produce `draft`.",
+                      "description": "The request's lifecycle state. Two members of this union are declared and cannot currently be returned, because nothing transitions into them and the database refuses them: `ready-to-send` and `expired`. They remain in the union so a client written today does not break on the day either is implemented.",
                       "anyOf": [
                         {
                           "type": "string",
