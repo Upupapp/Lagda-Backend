@@ -18,6 +18,7 @@ import type {
   SigningRequestRecord, SigningRequestRecipientRecord, SigningRequestFieldRecord,
   SigningRequestId, SigningRequestRecipientId, SigningRequestFieldId,
   ArtifactId, PreparationId, PreparationFieldId, RecipientId,
+  SigningRequestExpiryIndexRepository,
 } from "@lagda/application";
 import type {
   Database, SigningRequestsTable, SigningRequestRecipientsTable,
@@ -58,6 +59,7 @@ function toRequest(row: RequestRow): SigningRequestRecord {
     state: oneOf<SigningRequestState>(
       SIGNING_REQUEST_STATES, "signing_requests", "state", row.state),
     completedAt: row.completed_at === null ? null : row.completed_at.getTime(),
+    expiresAt: row.expires_at === null ? null : row.expires_at.getTime(),
     completionReadyAt:
       row.completion_ready_at === null ? null : row.completion_ready_at.getTime(),
     terminatedAt: row.terminated_at === null ? null : row.terminated_at.getTime(),
@@ -135,12 +137,13 @@ export function createScopedSigningRequestRepository(
         created_at: Date;
         sent_at: Date | null;
         completed_at: Date | null;
+        expires_at: Date | null;
         participant_count: string;
         completed_participant_count: string;
       }>`
         select
           sr.signing_request_id, sr.document_id, sr.state, sr.document_title,
-          sr.created_at, sr.sent_at, sr.completed_at,
+          sr.created_at, sr.sent_at, sr.completed_at, sr.expires_at,
           (select count(*) from signing_request_recipients r
              where r.signing_request_id = sr.signing_request_id)
             as participant_count,
@@ -170,6 +173,7 @@ export function createScopedSigningRequestRepository(
           createdAt: row.created_at.getTime(),
           sentAt: row.sent_at === null ? null : row.sent_at.getTime(),
           completedAt: row.completed_at === null ? null : row.completed_at.getTime(),
+          expiresAt: row.expires_at === null ? null : row.expires_at.getTime(),
         })),
         total: Number(counted.total),
       };
@@ -285,6 +289,45 @@ export function createScopedSigningRequestRepository(
       }
     },
 
+    async setExpiry(input) {
+      try {
+        // The index is NOT written here. A trigger maintains it, so this
+        // statement cannot be the one that forgets, and there is one writer
+        // for one fact.
+        const applied = await trx.updateTable("signing_requests")
+          .set({
+            expires_at: input.expiresAt === null ? null : new Date(input.expiresAt),
+            updated_at: new Date(input.now),
+          })
+          .where("workspace_id", "=", scope)
+          .where("signing_request_id", "=", input.signingRequestId)
+          .executeTakeFirst();
+        return Number(applied.numUpdatedRows) === 1;
+      } catch (error) {
+        throw translatePersistenceError(error);
+      }
+    },
+
+    async expireIfDue(input) {
+      try {
+        const applied = await trx.updateTable("signing_requests")
+          .set({ state: "expired", updated_at: new Date(input.now) })
+          .where("workspace_id", "=", scope)
+          .where("signing_request_id", "=", input.signingRequestId)
+          // BOTH conditions are in the statement, not read beforehand. The
+          // sweep found this id OUTSIDE this transaction; since then the
+          // request may have been signed, cancelled, or had its deadline
+          // extended, and a sweep that trusted its own stale read would expire
+          // a request somebody had just rescued.
+          .where("state", "in", ["sent", "partially-completed"])
+          .where("expires_at", "<=", new Date(input.now))
+          .executeTakeFirst();
+        return Number(applied.numUpdatedRows) === 1;
+      } catch (error) {
+        throw translatePersistenceError(error);
+      }
+    },
+
     async listFields(signingRequestId: SigningRequestId) {
       const rows = await trx.selectFrom("signing_request_fields")
         .selectAll()
@@ -296,6 +339,37 @@ export function createScopedSigningRequestRepository(
         .orderBy("request_field_id", "asc")
         .execute();
       return rows.map(toField);
+    },
+  };
+}
+
+/**
+ * The expiry index, read WITHOUT a tenant.
+ *
+ * `signing_requests` cannot be scanned here: `tenant_isolation` is
+ * `workspace_id = lagda_current_workspace()` and a global transaction sets no
+ * such context, so the scan would return nothing. This reads the unpoliced
+ * index instead -- three columns, maintained by a trigger -- and the caller
+ * enters each workspace properly to do the work.
+ */
+export function createSigningRequestExpiryIndexRepository(
+  trx: Transaction<Database>,
+): SigningRequestExpiryIndexRepository {
+  return {
+    async listDue(input) {
+      const rows = await trx.selectFrom("signing_request_expiry_index")
+        .select(["signing_request_id", "workspace_id", "expires_at"])
+        .where("expires_at", "<=", new Date(input.now))
+        // Longest overdue first. An arbitrary order could starve one request
+        // indefinitely while the batch size held.
+        .orderBy("expires_at", "asc")
+        .limit(input.limit)
+        .execute();
+      return rows.map(row => ({
+        signingRequestId: row.signing_request_id as SigningRequestId,
+        workspaceId: row.workspace_id as WorkspaceId,
+        expiresAt: row.expires_at.getTime(),
+      }));
     },
   };
 }

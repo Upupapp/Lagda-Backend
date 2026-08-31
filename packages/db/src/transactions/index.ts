@@ -47,7 +47,10 @@ import { createScopedDocumentRepository } from "../repositories/documents.js";
 import { createScopedFolderRepository } from "../repositories/folders.js";
 import { createScopedPreparationRepository } from "../repositories/preparation.js";
 import { createScopedRecipientRepository } from "../repositories/recipients.js";
-import { createScopedSigningRequestRepository } from "../repositories/signing-requests.js";
+import {
+  createScopedSigningRequestRepository,
+  createSigningRequestExpiryIndexRepository,
+} from "../repositories/signing-requests.js";
 import { createScopedSigningAccessRepository } from "../repositories/signing-access.js";
 import { createNotificationRepository } from "../repositories/notifications.js";
 import {
@@ -368,6 +371,11 @@ export function createTransactionManager(db: Kysely<Database>): TransactionManag
           // because a cross-tenant scan cannot have one without BYPASSRLS.
           signingWorkflowReconciliation:
             createSigningWorkflowReconciliationRepository(trx),
+          // The THIRD such table, and read here for the same reason: a deadline
+          // passes with nobody watching, and the requests it applies to are
+          // invisible from global mode by design.
+          signingRequestExpiryIndex:
+            createSigningRequestExpiryIndexRepository(trx),
           // The second identifiers-only exception, and the same shape as the
           // first: `notification_dispatch_index` is derived, unpoliced and made
           // of ids. It says which deliveries need attention and where to go to

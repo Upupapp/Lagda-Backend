@@ -15,6 +15,7 @@ import {
 } from "@lagda/db";
 import {
   IdempotencyCleanupJob, RateLimitCleanupJob, NotificationDeliveryJob,
+  SigningRequestExpiryJob,
   NotificationDispatchJob, JOB_DEFINITIONS,
   createTemplateRegistry, ALL_TEMPLATES, createNotificationLinkBuilder,
   noopMetrics,
@@ -42,6 +43,7 @@ import { loadWorkerConfig, type WorkerConfig } from "../config/index.js";
 import {
   handleIdempotencyCleanup, handleRateLimitCleanup, type CleanupDependencies,
 } from "../handlers/cleanup.js";
+import { handleSigningRequestExpiry } from "../handlers/signing-request-expiry.js";
 
 export interface StartedWorker {
   readonly config: WorkerConfig;
@@ -126,7 +128,9 @@ export async function startWorker(): Promise<StartedWorker> {
   //     died on boot with "Queue idempotency.cleanup not found". The integration
   //     tests did not catch it because they create their own queues — the gap
   //     between a green suite and a process that starts.
-  for (const definition of [IdempotencyCleanupJob, RateLimitCleanupJob]) {
+  for (const definition of [
+    IdempotencyCleanupJob, RateLimitCleanupJob, SigningRequestExpiryJob,
+  ]) {
     await ensureQueue(boss, definition);
   }
 
@@ -150,6 +154,13 @@ export async function startWorker(): Promise<StartedWorker> {
   const transactions = createTransactionManager(database.db);
   const scheduler = createJobScheduler(boss);
   const clock = { now: () => Date.now() };
+
+  // Registered HERE and not beside the cleanups, because it needs the
+  // transaction manager built just above. Unconditional, unlike notification
+  // delivery: expiry has no provider to configure and nothing to be missing --
+  // a deployment either runs the worker or does not.
+  await registerSystemHandler(boss, config, SigningRequestExpiryJob, (raw, context) =>
+    handleSigningRequestExpiry(raw, context, { transactions, clock }));
 
   const missing = deliveryPrerequisites(config);
   if (missing.length > 0) {
@@ -336,6 +347,17 @@ export async function startWorker(): Promise<StartedWorker> {
         { tz: "UTC" },
       );
     }
+
+    // Its own cadence, between the other two. A deadline is a DATE the sender
+    // chose rather than a moment, so expiring at 00:07 instead of 00:00 changes
+    // nothing anyone can observe -- but an hour's delay would leave a request
+    // accepting signatures after the day it was meant to stop.
+    await boss.schedule(
+      SigningRequestExpiryJob.type,
+      config.expiryCron,
+      { batchSize: config.expiryBatchSize },
+      { tz: "UTC" },
+    );
 
     // Its own cadence, far more frequent than cleanup. The two look alike and
     // are not: a security email waiting an hour for a sweep is a login the user

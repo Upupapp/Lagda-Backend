@@ -104,6 +104,7 @@ suite("signature submission (RLS, constraints, runtime role)", () => {
           sourcePreparationId: "prep_ss" as PreparationId,
           sourcePreparationRevision: 1, state: "draft",
           completionReadyAt: null, terminatedAt: null,
+          expiresAt: null,
           completedAt: null,
           terminationReason: null, cancellationNote: null,
           documentTitle: "Lease", createdByUserId: USER,

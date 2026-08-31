@@ -12,8 +12,14 @@
 // ── Creating is not sending ────────────────────────────────────────────────
 //
 // There is deliberately no `subject`, no `message`, no `expiresAt`, no
-// `sentAt`, no `signingUrl` and no `accessToken`. A request that exists has
-// been configured; nothing has left the building. BACKEND-33 owns send.
+// `sentAt`, no `signingUrl` and no `accessToken` ON THE CREATE BODY. A request
+// that exists has been configured; nothing has left the building. BACKEND-33
+// owns send.
+//
+// `expiresAt` exists elsewhere in this file, and that is not a contradiction:
+// BACKEND-46 sets a deadline on a request that has ALREADY been sent, through
+// its own route. A deadline before anyone was asked to sign is a deadline on
+// nothing, and the product agrees -- `avail("edit-expiration", isActive && ...)`.
 
 import { Type, type Static } from "@sinclair/typebox";
 import { RecipientTypeSchema } from "../recipients/index.js";
@@ -170,11 +176,13 @@ export const SigningDeclineReasonSchema = Type.Union(
  * exists -- migration 024 put it plainly: "a CHECK that admits a state no code
  * can reach is a permission granted in advance of the thing it permits".
  *
- * Two members have not earned their migration. `@lagda/core`'s transition
- * table defines both edges -- `markReadyToSend` out of `draft`, and `expire`
- * out of `sent` and `partially-completed` -- and NOTHING invokes either. There
- * is no expiry job and no readiness command, so no request can arrive in
- * either state.
+ * ONE member has not earned its migration. `@lagda/core`'s transition table
+ * defines the edge -- `markReadyToSend` out of `draft` -- and nothing invokes
+ * it, so no request can arrive in that state.
+ *
+ * `expired` LEFT this list in BACKEND-46, when migration 041 brought the
+ * deadline, the sweep and the state together. Leaving it here would have been
+ * a stale disclaimer, which is worse than none because it is believed.
  *
  * ── Declared rather than removed, deliberately ─────────────────────────────
  *
@@ -193,7 +201,6 @@ export const SigningDeclineReasonSchema = Type.Union(
  */
 export const SIGNING_REQUEST_STATES_NOT_YET_REACHABLE = [
   "ready-to-send",
-  "expired",
 ] as const satisfies readonly SigningRequestState[];
 
 export const SigningRequestStateSchema = Type.Union(
@@ -201,11 +208,10 @@ export const SigningRequestStateSchema = Type.Union(
   {
     title: "SigningRequestState",
     description:
-      "The request's lifecycle state. Two members of this union are declared "
-      + "and cannot currently be returned, because nothing transitions into "
-      + "them and the database refuses them: `ready-to-send` and `expired`. "
-      + "They remain in the union so a client written today does not break on "
-      + "the day either is implemented.",
+      "The request's lifecycle state. One member of this union is declared and "
+      + "cannot currently be returned, because nothing transitions into it and "
+      + "the database refuses it: `ready-to-send`. It remains in the union so "
+      + "a client written today does not break on the day it is implemented.",
   },
 );
 
@@ -315,6 +321,15 @@ export const SigningRequestSummarySchema = Type.Object(
     createdAt: Type.String({ format: "date-time" }),
     sentAt: Type.Union([Type.String({ format: "date-time" }), Type.Null()]),
     completedAt: Type.Union([Type.String({ format: "date-time" }), Type.Null()]),
+    /**
+     * When this request stops accepting signatures, or null for no deadline.
+     *
+     * On the LIST row and not only the detail, because "expires in 3 days" is a
+     * property of the chip a list already shows. An instant rather than a
+     * countdown: the client's clock decides how to phrase it, and a server-side
+     * "3 days" is wrong the moment it is cached.
+     */
+    expiresAt: Type.Union([Type.String({ format: "date-time" }), Type.Null()]),
   },
   {
     title: "SigningRequestSummary",
@@ -323,6 +338,22 @@ export const SigningRequestSummarySchema = Type.Object(
   },
 );
 export type SigningRequestSummaryView = Static<typeof SigningRequestSummarySchema>;
+
+/**
+ * Setting or clearing a deadline.
+ *
+ * `expiresAt` is REQUIRED and nullable rather than optional. Null CLEARS the
+ * deadline, and an optional key would let a client omit it and mean either
+ * "clear it" or "I forgot" -- which the server cannot tell apart. The same
+ * shape, for the same reason, as the folder routes' `parentFolderId`.
+ */
+export const SetSigningRequestExpirySchema = Type.Object(
+  {
+    expiresAt: Type.Union([Type.String({ format: "date-time" }), Type.Null()]),
+  },
+  { title: "SetSigningRequestExpiry", additionalProperties: false },
+);
+export type SetSigningRequestExpiryRequest = Static<typeof SetSigningRequestExpirySchema>;
 
 export const SigningRequestListSchema = Type.Object(
   {

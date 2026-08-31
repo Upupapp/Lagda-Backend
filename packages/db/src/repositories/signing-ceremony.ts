@@ -60,6 +60,7 @@ export function createRecipientCeremonyRepository(
           row.completed_at === null ? null : row.completed_at.getTime(),
         completionReadyAt:
           row.completion_ready_at === null ? null : row.completion_ready_at.getTime(),
+        expiresAt: row.expires_at === null ? null : row.expires_at.getTime(),
         terminatedAt: row.terminated_at === null ? null : row.terminated_at.getTime(),
         terminationReason: row.termination_reason as "declined" | "cancelled" | null,
         // NOT projected onward. The ceremony DTO carries no cancellation note -

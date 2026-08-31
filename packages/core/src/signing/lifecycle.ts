@@ -123,6 +123,19 @@ export type SigningAction = (typeof SIGNING_ACTIONS)[number];
  * ones with an empty action set, so a missing state is a compile error rather
  * than an accidental omission.
  */
+/**
+ * The states a deadline can still act on.
+ *
+ * Derived from the transition table below rather than restated: `expire` is an
+ * edge out of exactly these two. Exported because the database trigger, the
+ * sweep and the set-expiry command all need the same answer, and three copies
+ * of a list is three chances to disagree about what "still expirable" means.
+ */
+export const EXPIRABLE_SIGNING_REQUEST_STATES = [
+  "sent",
+  "partially-completed",
+] as const satisfies readonly SigningRequestState[];
+
 const TRANSITIONS: Record<
   SigningRequestState,
   Partial<Record<SigningAction, SigningRequestState>>

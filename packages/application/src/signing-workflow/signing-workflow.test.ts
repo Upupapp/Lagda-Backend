@@ -85,6 +85,7 @@ function seed(h: Harness, people: readonly Spec[], state = "sent"): void {
     sourcePreparationId: "prep_1" as PreparationId, sourcePreparationRevision: 1,
     state: state as never,
     completionReadyAt: null, terminatedAt: null,
+    expiresAt: null,
     completedAt: null,
     terminationReason: null, cancellationNote: null,
     documentTitle: "Office Lease", createdByUserId: OWNER,

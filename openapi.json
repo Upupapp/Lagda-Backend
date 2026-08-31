@@ -5763,7 +5763,7 @@
                     },
                     "state": {
                       "title": "SigningRequestState",
-                      "description": "The request's lifecycle state. Two members of this union are declared and cannot currently be returned, because nothing transitions into them and the database refuses them: `ready-to-send` and `expired`. They remain in the union so a client written today does not break on the day either is implemented.",
+                      "description": "The request's lifecycle state. One member of this union is declared and cannot currently be returned, because nothing transitions into it and the database refuses it: `ready-to-send`. It remains in the union so a client written today does not break on the day it is implemented.",
                       "anyOf": [
                         {
                           "type": "string",
@@ -5907,7 +5907,8 @@
                           "completedParticipantCount",
                           "createdAt",
                           "sentAt",
-                          "completedAt"
+                          "completedAt",
+                          "expiresAt"
                         ],
                         "properties": {
                           "signingRequestId": {
@@ -5922,7 +5923,7 @@
                           },
                           "state": {
                             "title": "SigningRequestState",
-                            "description": "The request's lifecycle state. Two members of this union are declared and cannot currently be returned, because nothing transitions into them and the database refuses them: `ready-to-send` and `expired`. They remain in the union so a client written today does not break on the day either is implemented.",
+                            "description": "The request's lifecycle state. One member of this union is declared and cannot currently be returned, because nothing transitions into it and the database refuses it: `ready-to-send`. It remains in the union so a client written today does not break on the day it is implemented.",
                             "anyOf": [
                               {
                                 "type": "string",
@@ -6007,6 +6008,17 @@
                             ]
                           },
                           "completedAt": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "expiresAt": {
                             "anyOf": [
                               {
                                 "format": "date-time",
@@ -6103,7 +6115,7 @@
                     },
                     "state": {
                       "title": "SigningRequestState",
-                      "description": "The request's lifecycle state. Two members of this union are declared and cannot currently be returned, because nothing transitions into them and the database refuses them: `ready-to-send` and `expired`. They remain in the union so a client written today does not break on the day either is implemented.",
+                      "description": "The request's lifecycle state. One member of this union is declared and cannot currently be returned, because nothing transitions into it and the database refuses it: `ready-to-send`. It remains in the union so a client written today does not break on the day it is implemented.",
                       "anyOf": [
                         {
                           "type": "string",
@@ -6398,6 +6410,89 @@
                     "createdAt": {
                       "format": "date-time",
                       "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/signing-requests/{signingRequestId}/expiry": {
+      "put": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "SetSigningRequestExpiry",
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "expiresAt"
+                ],
+                "properties": {
+                  "expiresAt": {
+                    "anyOf": [
+                      {
+                        "format": "date-time",
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "signingRequestId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "expiresAt"
+                  ],
+                  "properties": {
+                    "expiresAt": {
+                      "anyOf": [
+                        {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   }
                 }

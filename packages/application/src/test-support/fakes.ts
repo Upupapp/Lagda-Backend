@@ -90,6 +90,7 @@ import type {
 } from "../common/ports/signing-access.js";
 import type {
   ScopedSigningRequestRepository, NewSigningRequestSnapshot,
+  SigningRequestExpiryIndexRepository,
   SigningRequestRecord, SigningRequestRecipientRecord, SigningRequestFieldRecord,
   SigningRequestId, SigningRequestRecipientId, SigningRequestFieldId,
   SigningRequestIdGenerator,
@@ -1548,6 +1549,33 @@ function workflowReconciliation(
 }
 
 
+/**
+ * The expiry index, derived rather than stored.
+ *
+ * The real one is a TABLE kept by a trigger; here it is computed from the
+ * requests themselves, which is the honest fake: it cannot drift from the rows
+ * it describes, and a test that passed against a stale fake index would be
+ * testing nothing. The predicate matches the trigger's exactly -- a deadline,
+ * and a state a deadline can still act on.
+ */
+function expiryIndex(store: InMemoryStore): SigningRequestExpiryIndexRepository {
+  return {
+    listDue: input => Promise.resolve(
+      store.signingRequests
+        .filter(request =>
+          request.expiresAt !== null
+          && request.expiresAt <= input.now
+          && (request.state === "sent" || request.state === "partially-completed"))
+        .sort((a, b) => (a.expiresAt ?? 0) - (b.expiresAt ?? 0))
+        .slice(0, input.limit)
+        .map(request => ({
+          signingRequestId: request.signingRequestId,
+          workspaceId: request.workspaceId,
+          expiresAt: request.expiresAt ?? 0,
+        }))),
+  };
+}
+
 // -- Completion pipeline (BACKEND-38) ----------------------------------------
 
 /** Mirrors `isCompletionRunClaimable`. */
@@ -1930,6 +1958,7 @@ function scopedSigningRequests(
           // would assert a timestamp nothing stored.
           sentAt: null,
           completedAt: request.completedAt,
+          expiresAt: request.expiresAt,
         };
       });
       return Promise.resolve({ items, total: mine.length });
@@ -1975,6 +2004,37 @@ function scopedSigningRequests(
       if (current === undefined) return Promise.resolve(false);
       store.signingRequests[index] = {
         ...current, state: "sent", updatedAt: input.sentAt,
+      };
+      return Promise.resolve(true);
+    },
+
+    setExpiry: (input) => {
+      const index = store.signingRequests.findIndex(
+        request => request.workspaceId === scope
+          && request.signingRequestId === input.signingRequestId);
+      const current = index === -1 ? undefined : store.signingRequests[index];
+      if (current === undefined) return Promise.resolve(false);
+      store.signingRequests[index] = {
+        ...current, expiresAt: input.expiresAt, updatedAt: input.now,
+      };
+      return Promise.resolve(true);
+    },
+
+    expireIfDue: (input) => {
+      const index = store.signingRequests.findIndex(
+        request => request.workspaceId === scope
+          && request.signingRequestId === input.signingRequestId
+          // BOTH conditions, mirroring the adapter's WHERE clause. A fake that
+          // checked only the id would let a sweep expire a request that had
+          // been signed or rescued since the index was read, and the test
+          // would pass.
+          && (request.state === "sent" || request.state === "partially-completed")
+          && request.expiresAt !== null
+          && request.expiresAt <= input.now);
+      const current = index === -1 ? undefined : store.signingRequests[index];
+      if (current === undefined) return Promise.resolve(false);
+      store.signingRequests[index] = {
+        ...current, state: "expired", updatedAt: input.now,
       };
       return Promise.resolve(true);
     },
@@ -2698,6 +2758,7 @@ export class FakeTransactionManager implements TransactionManager {
       const result = await operation({
         scope: "global",
         signingWorkflowReconciliation: workflowReconciliation(this.store),
+        signingRequestExpiryIndex: expiryIndex(this.store),
         notificationDispatch: dispatchIndex(),
       });
       this.committed++;

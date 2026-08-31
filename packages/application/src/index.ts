@@ -38,6 +38,7 @@ export * from "./folders/folders.js";
 export * from "./preparation/preparation.js";
 export * from "./recipients/recipients.js";
 export * from "./signing-requests/signing-requests.js";
+export * from "./signing-requests/expiry.js";
 export * from "./signing-requests/send.js";
 export * from "./signing-access/signing-access.js";
 export * from "./signing-ceremony/signing-ceremony.js";

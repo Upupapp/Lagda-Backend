@@ -115,6 +115,14 @@ export interface SigningRequestRecord {
    */
   readonly completionReadyAt: number | null;
   /**
+   * When this request stops accepting signatures, or null for no deadline.
+   *
+   * Null is NO DEADLINE, not "unknown" and not "already passed". Opt-in, and an
+   * absolute instant rather than a period, matching the product's
+   * `ExpirationSettings`.
+   */
+  readonly expiresAt: number | null;
+  /**
    * BACKEND-41's finalization time. Non-null exactly when `state` is
    * `completed`, asserted by a database CHECK in both directions.
    *
@@ -153,6 +161,8 @@ export interface SigningRequestSummary {
   readonly createdAt: number;
   readonly sentAt: number | null;
   readonly completedAt: number | null;
+  /** When it stops accepting signatures, or null for no deadline. */
+  readonly expiresAt: number | null;
 }
 
 export interface SigningRequestListPage {
@@ -234,6 +244,75 @@ export interface ScopedSigningRequestRepository {
     readonly signingRequestId: SigningRequestId;
     readonly sentAt: number;
   }): Promise<boolean>;
+
+  /**
+   * Sets or clears the deadline. NULL clears it.
+   *
+   * Does NOT touch the index: a database trigger maintains it, so no caller can
+   * be the one that forgets. Writing it here as well would be a second writer
+   * for one fact.
+   *
+   * Returns whether it applied. Zero rows means absent or another tenant.
+   */
+  setExpiry(input: {
+    readonly signingRequestId: SigningRequestId;
+    readonly expiresAt: number | null;
+    readonly now: number;
+  }): Promise<boolean>;
+
+  /**
+   * Expires a request, conditionally on it still being expirable AND due.
+   *
+   * BOTH conditions are IN the statement. The sweep reads the index outside the
+   * workspace transaction, so between the read and this write the request may
+   * have been signed, cancelled, or had its deadline extended -- and a sweep
+   * that trusted its own stale read would expire a request somebody had just
+   * rescued.
+   *
+   * Returns whether it applied. False means the request moved on, which is an
+   * ordinary outcome and not an error.
+   */
+  expireIfDue(input: {
+    readonly signingRequestId: SigningRequestId;
+    readonly now: number;
+  }): Promise<boolean>;
+}
+
+/**
+ * One request whose deadline has passed, and the workspace to enter for it.
+ *
+ * IDENTIFIERS AND AN INSTANT. Nothing here can name a document, a person or a
+ * field value, because none of those is in the index table -- the column list
+ * is the control that a row policy would otherwise be.
+ */
+export interface DueExpiryRef {
+  readonly signingRequestId: SigningRequestId;
+  readonly workspaceId: WorkspaceId;
+  readonly expiresAt: number;
+}
+
+/**
+ * Finding expired requests without a tenant.
+ *
+ * The THIRD exception to "global mode is not a route to workspace data", and
+ * built to the same shape as the other two rather than a new one: a deadline
+ * passes with nobody watching, and `signing_requests` cannot be scanned across
+ * tenants because `tenant_isolation` matches nothing without a workspace
+ * context. That is the design working, not a gap -- so the sweep reads
+ * identifiers from an unpoliced index and enters each workspace properly.
+ */
+export interface SigningRequestExpiryIndexRepository {
+  /**
+   * The oldest overdue requests, bounded.
+   *
+   * Ordered by deadline so the longest-overdue request is handled first; a
+   * sweep that ordered arbitrarily could starve one request indefinitely while
+   * the batch size held.
+   */
+  listDue(input: {
+    readonly now: number;
+    readonly limit: number;
+  }): Promise<readonly DueExpiryRef[]>;
 }
 
 export interface SigningRequestIdGenerator {

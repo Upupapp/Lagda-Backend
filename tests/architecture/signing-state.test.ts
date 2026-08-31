@@ -256,14 +256,32 @@ describe("declared states that cannot be reached are declared as such", () => {
    * with it -- and the failure when it does not is this test, which is the
    * point.
    */
+  const MIGRATIONS = join(PACKAGES, "db/src/migrations");
+
+  /** The newest migration that rewrites the request-state CHECK. */
+  const LATEST = (): string => {
+    const files = readdirSync(MIGRATIONS)
+      .filter(name => /^\d+_.*\.ts$/.test(name))
+      .filter(name => readFileSync(join(MIGRATIONS, name), "utf8")
+        .includes("const REQUEST_STATES = ["))
+      .sort();
+    const last = files.at(-1);
+    expect(last, "no migration declares REQUEST_STATES").toBeDefined();
+    return join(MIGRATIONS, last ?? "");
+  };
+
   const STORABLE = (): readonly string[] => {
-    const migration = readFileSync(
-      join(PACKAGES, "db/src/migrations/028_signing_request_completed.ts"), "utf8");
-    // The FIRST declaration is the one this migration installs; the second is
+    // FOUND, not named. An earlier version of this guard hardcoded 028 and
+    // went stale the moment 041 widened the constraint -- it then reported a
+    // storable state as unaccounted for, which is the wrong failure for the
+    // right reason. The newest migration that declares the list is the one
+    // that installed the constraint in force.
+    const migration = readFileSync(LATEST(), "utf8");
+    // The FIRST declaration is the one that migration installs; the second is
     // `OLD_REQUEST_STATES`, kept for `down`. Matching the wrong one would
-    // assert against the constraint this migration replaced.
+    // assert against the constraint the migration replaced.
     const block = /const REQUEST_STATES = \[([\s\S]*?)\] as const;/.exec(migration);
-    expect(block, "028 no longer declares REQUEST_STATES the way this guard reads it")
+    expect(block, "the newest migration no longer declares REQUEST_STATES readably")
       .not.toBeNull();
     return [...(block?.[1] ?? "").matchAll(/"([a-z-]+)"/g)].map(m => m[1] ?? "");
   };

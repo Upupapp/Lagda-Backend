@@ -25,13 +25,15 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { Type, type Static } from "@sinclair/typebox";
 import {
   createSigningRequest, getSigningRequest, listSigningRequests, assertValidKey,
-  type SigningRequestDependencies,
+  setSigningRequestExpiry,
+  type SigningRequestDependencies, type SigningRequestId,
   type SigningRequestView, type SigningRequestCreatedView,
   type SessionId, type UserId,
 } from "@lagda/application";
 import {
   SigningRequestSchema, SigningRequestCreatedSchema, SigningRequestListSchema,
-  IDEMPOTENCY_KEY_HEADER,
+  SetSigningRequestExpirySchema, IDEMPOTENCY_KEY_HEADER,
+  type SetSigningRequestExpiryRequest,
   type DocumentId, type WorkspaceId,
 } from "@lagda/contracts";
 import type { MetricsRecorder } from "../observability/metrics.js";
@@ -281,6 +283,7 @@ export function registerSigningRequestRoutes(
         // epoch is a date rather than an absence.
         sentAt: item.sentAt === null ? null : iso(item.sentAt),
         completedAt: item.completedAt === null ? null : iso(item.completedAt),
+        expiresAt: item.expiresAt === null ? null : iso(item.expiresAt),
       })),
     });
   });
@@ -305,5 +308,57 @@ export function registerSigningRequestRoutes(
     // Reads are not logged. A sender reviewing a request before sending it
     // would otherwise produce a line per refresh.
     return reply.status(200).send(present(found));
+  });
+
+  // ── The deadline ────────────────────────────────────────────────────────
+  //
+  // PUT, not PATCH. The body carries exactly one field and always sets it:
+  // null CLEARS the deadline rather than leaving it alone, so this is a
+  // replacement of the whole (one-field) resource and not a partial update.
+  // PATCH would invite a later reader to add a second optional field and
+  // reintroduce the "absent or null?" ambiguity this shape exists to avoid.
+  app.put("/workspaces/:workspaceId/signing-requests/:signingRequestId/expiry", {
+    schema: {
+      params: ReadParamsSchema,
+      body: SetSigningRequestExpirySchema,
+      response: { 200: Type.Object({
+        expiresAt: Type.Union([Type.String({ format: "date-time" }), Type.Null()]),
+      }, { additionalProperties: false }) },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await actorOf(request);
+    if (actor === null) return unauthenticated(reply);
+
+    const { workspaceId, signingRequestId } =
+      request.params as Static<typeof ReadParamsSchema>;
+    const body = request.body as SetSigningRequestExpiryRequest;
+
+    const result = await setSigningRequestExpiry({
+      actor,
+      workspaceId: workspaceId as WorkspaceId,
+      signingRequestId: signingRequestId as SigningRequestId,
+      // `Date.parse` of a schema-validated date-time. NaN is unreachable here,
+      // and would be refused by the use case's future check even if it were.
+      expiresAt: body.expiresAt === null ? null : Date.parse(body.expiresAt),
+    }, options.signingRequestDependencies());
+
+    // The INSTANT is logged, not omitted: a deadline is the sender's own
+    // scheduling decision about their own request, carries no counterparty
+    // detail, and is the one field an operator needs to answer "why did this
+    // expire". Contrast the document title, which is a matter name.
+    request.log.info({
+      event: "signing_request.expiry_set",
+      result: "success",
+      workspaceId,
+      signingRequestId,
+      actorUserId: actor.userId,
+      expiresAt: result.expiresAt,
+      cleared: result.expiresAt === null,
+    }, "signing_request.expiry_set");
+
+    return reply.status(200).send({
+      expiresAt: result.expiresAt === null ? null : iso(result.expiresAt),
+    });
   });
 }

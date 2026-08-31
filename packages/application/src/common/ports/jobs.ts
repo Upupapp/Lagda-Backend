@@ -17,6 +17,7 @@ import type { WorkspaceId } from "@lagda/contracts";
 export const JOB_TYPES = [
   "idempotency.cleanup",
   "rate-limit.cleanup",
+  "signing-request.expiry",
   "notification.deliver",
   "notification.dispatch",
 ] as const;

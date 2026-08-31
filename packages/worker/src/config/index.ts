@@ -27,6 +27,8 @@ export interface WorkerConfig {
 
   /** How often the dispatcher sweeps for due deliveries and expired leases. */
   readonly dispatchCron: string;
+  readonly expiryCron: string;
+  readonly expiryBatchSize: number;
   readonly dispatchBatchSize: number;
   /**
    * How long a worker may hold a delivery claim before it is reclaimable.
@@ -76,6 +78,13 @@ export function loadWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerCo
     throw new WorkerConfigError("CLEANUP_BATCH_SIZE must be between 1 and 10000.");
   }
 
+  // Bounded like the cleanups. A sweep that took an unbounded batch would hold
+  // one global read open across an arbitrary number of workspace transactions.
+  const expiryBatchSize = readInt(env["EXPIRY_BATCH_SIZE"], "EXPIRY_BATCH_SIZE", 200);
+  if (expiryBatchSize < 1 || expiryBatchSize > 10_000) {
+    throw new WorkerConfigError("EXPIRY_BATCH_SIZE must be between 1 and 10000.");
+  }
+
   const concurrency = env["WORKER_CONCURRENCY"];
   if (concurrency !== undefined && concurrency !== "") {
     const parsed = readInt(concurrency, "WORKER_CONCURRENCY", 1);
@@ -98,6 +107,16 @@ export function loadWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerCo
   // Every minute. A security email waiting an hour for a sweep is a login the
   // user gave up on, so this is deliberately far more frequent than the
   // cleanup cron beside it — the two look similar and are not.
+  // Every fifteen minutes by default. A deadline is a DATE the sender chose,
+  // not a moment: expiring at 00:07 instead of 00:00 changes nothing anyone
+  // can observe, and a per-minute sweep would read the index 1440 times a day
+  // to find nothing almost every time. Far less frequent than dispatch, where
+  // a security email waiting is a login the user gave up on.
+  const expiryCron = env["EXPIRY_CRON"] ?? "*/15 * * * *";
+  if (expiryCron.trim().split(/\s+/).length !== 5) {
+    throw new WorkerConfigError("EXPIRY_CRON must be a 5-field cron expression.");
+  }
+
   const dispatchCron = env["DISPATCH_CRON"] ?? "* * * * *";
   if (dispatchCron.trim().split(/\s+/).length !== 5) {
     throw new WorkerConfigError("DISPATCH_CRON must be a 5-field cron expression.");
@@ -141,6 +160,8 @@ export function loadWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerCo
     ...(concurrency === undefined || concurrency === ""
       ? {} : { concurrencyOverride: Number(concurrency) }),
     dispatchCron,
+    expiryCron,
+    expiryBatchSize,
     dispatchBatchSize,
     deliveryLeaseMs,
     deliveryMaxAttempts,

@@ -18,7 +18,9 @@ import type { ScopedDocumentRepository } from "./documents.js";
 import type { ScopedFolderRepository } from "./folders.js";
 import type { ScopedPreparationRepository } from "./preparation.js";
 import type { ScopedRecipientRepository } from "./recipients.js";
-import type { ScopedSigningRequestRepository } from "./signing-requests.js";
+import type {
+  ScopedSigningRequestRepository, SigningRequestExpiryIndexRepository,
+} from "./signing-requests.js";
 import type { ScopedSigningAccessRepository } from "./signing-access.js";
 import type {
   ScopedSigningWorkflowRepository, SigningWorkflowReconciliationRepository,
@@ -450,11 +452,11 @@ export interface GlobalUnitOfWork {
   /**
    * Outstanding signing-workflow advances, across every tenant (BACKEND-37).
    *
-   * One of TWO exceptions to "global mode is not a route to workspace data",
-   * and both are narrow enough to state exactly: the table each reads carries
-   * no policy because a cross-tenant scan cannot have one without `BYPASSRLS`,
-   * and each returns IDENTIFIERS ONLY. The caller then enters each workspace
-   * properly and does the work under normal tenancy.
+   * One of THREE exceptions to "global mode is not a route to workspace data",
+   * and all three are narrow enough to state exactly: the table each reads
+   * carries no policy because a cross-tenant scan cannot have one without
+   * `BYPASSRLS`, and each returns IDENTIFIERS ONLY. The caller then enters each
+   * workspace properly and does the work under normal tenancy.
    *
    * `idempotency_records` established the shape. Nothing here can read a name,
    * an address, a field value or a credential, because none of those is in the
@@ -463,10 +465,22 @@ export interface GlobalUnitOfWork {
   readonly signingWorkflowReconciliation: SigningWorkflowReconciliationRepository;
 
   /**
+   * Requests whose deadline has passed, across every tenant (BACKEND-46).
+   *
+   * The THIRD exception, and deliberately identical in shape to the first two:
+   * `signing_request_expiry_index` carries no policy, is maintained by a
+   * trigger, and holds a request id, a workspace id and an instant. A deadline
+   * passes with nobody watching, so the work has to be findable without a
+   * tenant -- and `signing_requests` itself cannot be scanned across tenants
+   * without `BYPASSRLS`, which INV-334 rejected.
+   */
+  readonly signingRequestExpiryIndex: SigningRequestExpiryIndexRepository;
+
+  /**
    * Transport work that needs finding without a tenant (BACKEND-45, OD-174).
    *
-   * The second exception, and the same shape as the first by design rather than
-   * by coincidence: `notification_dispatch_index` is derived, unpoliced and
+   * The second exception, and the same shape as the others by design rather
+   * than by coincidence: `notification_dispatch_index` is derived, unpoliced and
    * made of identifiers. It answers "which deliveries are due", "which leases
    * expired" and "which delivery does this provider reference name" — and
    * nothing else about any of them.

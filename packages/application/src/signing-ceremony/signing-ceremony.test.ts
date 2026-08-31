@@ -175,6 +175,7 @@ function seed(
     sourcePreparationRevision: 2,
     state: over.state ?? "sent",
     completionReadyAt: null, terminatedAt: null,
+    expiresAt: null,
     completedAt: null,
     terminationReason: null, cancellationNote: null,
     documentTitle: "Office Lease",

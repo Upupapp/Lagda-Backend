@@ -127,6 +127,7 @@ function seed(h: Harness, opts: {
     sourceArtifactId: SOURCE,
     sourcePreparationId: "prep_1" as PreparationId, sourcePreparationRevision: 1,
     state: state as never, completionReadyAt: AT - 1000, completedAt: null,
+    expiresAt: null,
     terminatedAt: null, terminationReason: null, cancellationNote: null,
     documentTitle: "Lease", createdByUserId: "usr_1" as UserId,
     createdAt: AT, updatedAt: AT,

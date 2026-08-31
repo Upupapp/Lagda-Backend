@@ -497,6 +497,9 @@ async function buildSnapshot(
     // are stated rather than omitted: an optional field is one a future writer
     // forgets, and these four decide whether a request is finished.
     completionReadyAt: null,
+    // No deadline at creation. The product's `ExpirationSettings` is opt-in,
+    // and a default here would expire requests nobody asked to expire.
+    expiresAt: null,
     completedAt: null,
     terminatedAt: null,
     terminationReason: null,

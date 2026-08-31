@@ -29,6 +29,32 @@ export const IdempotencyCleanupJob: JobDefinition<CleanupPayload> = {
     + "run finds nothing left and deletes nothing.",
 };
 
+/**
+ * Expires signing requests whose deadline has passed.
+ *
+ * SYSTEM-scoped, and it has to be: a deadline passes with nobody watching, so
+ * there is no workspace on whose behalf the sweep runs. It reads identifiers
+ * from the unpoliced expiry index and enters each workspace properly.
+ */
+export const SigningRequestExpiryJob: JobDefinition<CleanupPayload> = {
+  type: "signing-request.expiry",
+  tenantScope: "system",
+  // The same shape as the cleanups -- a batch size and nothing else. A payload
+  // carrying a workspace or a request id would be a job an operator could
+  // hand-write to expire somebody's contract.
+  schema: CleanupPayloadSchema,
+  maxAttempts: 3,
+  retryBackoffSeconds: 60,
+  // One at a time. Two sweeps would read overlapping batches and contend on the
+  // same rows; `expireIfDue` makes the second a no-op rather than a double
+  // expiry, so the cost is wasted work rather than a wrong outcome.
+  concurrency: 1,
+  idempotencyStrategy:
+    "Naturally idempotent: `expireIfDue` carries its own conditions, so a "
+    + "second run over the same batch matches zero rows. A request signed or "
+    + "rescued between the index read and the write is skipped, not expired.",
+};
+
 /** Deletes rate-limit counters whose window has fully lapsed. */
 export const RateLimitCleanupJob: JobDefinition<CleanupPayload> = {
   type: "rate-limit.cleanup",
@@ -126,6 +152,7 @@ export const NotificationDispatchJob: JobDefinition<CleanupPayload> = {
 
 export const JOB_DEFINITIONS = [
   IdempotencyCleanupJob,
+  SigningRequestExpiryJob,
   RateLimitCleanupJob,
   NotificationDeliveryJob,
   NotificationDispatchJob,

@@ -244,7 +244,17 @@ describe("creating a request sends nothing", () => {
       for (const forbidden of [
         "delivered_at", "viewed_at", "viewedAt",
         "signed_at", "signedAt", "declined_at", "completed_at", "cancelled_at",
-        "expires_at", "expiresAt", "email_sent_at", "delivery_status",
+        // `expiresAt` left this list in BACKEND-46, exactly as `sentAt` left it
+        // in BACKEND-33 and for the same reason: a deadline is now a real fact
+        // the ports and the contract carry, and keeping it here would fail on
+        // correct code.
+        //
+        // `expires_at` STAYS, and the distinction is the point. This loop
+        // checks migration 019, where creation still writes no deadline --
+        // migration 041 adds the column, which is a different file. It is the
+        // same shape as `completed_at`, which is still forbidden here while
+        // `completedAt` is not.
+        "expires_at", "email_sent_at", "delivery_status",
       ]) {
         expect(source, `${path.basename(file)} declares ${forbidden}`)
           .not.toContain(forbidden);
@@ -274,19 +284,26 @@ describe("the snapshot is immutable", () => {
   });
 
   it("issues no UPDATE statement against either SNAPSHOT table", () => {
-    // ── Narrowed by BACKEND-33, and the narrowing is the invariant ──────────
+    // ── Narrowed twice, and the narrowing is the invariant ──────────────────
     //
     // This forbade `updateTable` outright, which was right while the request
-    // row had nothing to change. BACKEND-33 transitions its STATE, so one
-    // UPDATE now exists — against `signing_requests` and nowhere else.
+    // row had nothing to change. BACKEND-33 transitions its STATE, so it became
+    // "exactly one UPDATE, against `signing_requests`".
     //
-    // The claim was never "this file issues no UPDATE". It was "a snapshot row
-    // cannot be rewritten", and that is still absolute: the runtime role holds
-    // no UPDATE grant on either snapshot table, so even a statement added here
-    // by mistake would be refused by PostgreSQL.
+    // BACKEND-46 adds two more -- setting a deadline and expiring on it -- and
+    // that exposed the assertion as the wrong shape rather than the wrong
+    // number. The claim was never "this file issues ONE update". It was "a
+    // snapshot row cannot be rewritten", so what is asserted now is the set of
+    // tables touched, at any count. A fourth legitimate transition passes; an
+    // update against a snapshot table fails, which is the thing worth catching.
+    //
+    // And it stays absolute underneath: the runtime role holds no UPDATE grant
+    // on either snapshot table, so a statement added here by mistake would be
+    // refused by PostgreSQL regardless of this test.
     const repository = code(REPOSITORY);
     const updates = repository.match(/updateTable\("(\w+)"\)/g) ?? [];
-    expect(updates).toEqual(['updateTable("signing_requests")']);
+    expect(updates.length, "no UPDATE at all is a regression").toBeGreaterThan(0);
+    expect([...new Set(updates)]).toEqual(['updateTable("signing_requests")']);
     expect(repository).not.toContain("deleteFrom");
   });
 
@@ -304,10 +321,27 @@ describe("the snapshot is immutable", () => {
   });
 
   it("exposes no generic patch route", () => {
+    // ── What this forbids, stated precisely ─────────────────────────────────
+    //
+    // It used to forbid the VERBS outright, which was right while the request
+    // had no mutable part at all. BACKEND-46 adds
+    // `PUT .../signing-requests/{id}/expiry` -- a named sub-resource holding
+    // one field -- and a verb ban cannot tell that from a generic patch of the
+    // snapshot.
+    //
+    // So the rule is now about the PATH. Nothing may replace, patch or delete
+    // the request itself; a sub-resource under it is a different resource with
+    // its own rules, and its own route to read them in. Rewriting this as a
+    // verb ban again would either fail on correct code or have to be deleted.
     const routes = code(ROUTES);
-    expect(routes).not.toContain("app.patch");
-    expect(routes).not.toContain("app.put");
-    expect(routes).not.toContain("app.delete");
+    const mutating = [...routes.matchAll(/app\.(put|patch|delete)\(\s*"([^"]+)"/g)];
+    for (const [, verb, route] of mutating) {
+      expect(
+        route?.endsWith("/signing-requests") || route?.endsWith("{signingRequestId}")
+          || route?.endsWith(":signingRequestId"),
+        `${String(verb).toUpperCase()} ${String(route)} replaces the request itself`,
+      ).toBe(false);
+    }
   });
 });
 

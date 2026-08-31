@@ -686,6 +686,15 @@ export interface SigningRequestsTable {
    * completion.
    */
   completed_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
+  /**
+   * When this request stops accepting signatures, or NULL for no deadline.
+   *
+   * Opt-in and absolute, matching the product's `ExpirationSettings`: there is
+   * no workspace default and no duration-from-send. `expired` implies this is
+   * set; the converse is deliberately NOT true, because a deadline in the
+   * future is the ordinary case for a live request.
+   */
+  expires_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
   /** When it ended without completing. */
   terminated_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
   /** `declined` or `cancelled`, and it always equals `state`. */
@@ -707,6 +716,25 @@ export interface SigningRequestsTable {
  * against it, and BACKEND-43 cites it - none of which can be built on an id
  * whose row a sender may edit or delete.
  */
+/**
+ * The map from a request a background sweep knows by deadline to the workspace
+ * it must be entered in. THE THIRD unpoliced index (034 and BACKEND-37's intent
+ * table are the others).
+ *
+ * Identifiers and one instant. No title, no name, no field value: the column
+ * list is the control that a row policy would otherwise be, because a
+ * cross-tenant scan of a policied table would need BYPASSRLS.
+ *
+ * Maintained by a trigger, never by application code. A row exists exactly
+ * while the request has a deadline and is still in a state a deadline can act
+ * on.
+ */
+export interface SigningRequestExpiryIndexTable {
+  signing_request_id: string;
+  workspace_id: string;
+  expires_at: Timestamptz;
+}
+
 export interface SigningRequestRecipientsTable {
   request_recipient_id: string;
   workspace_id: string;
@@ -1261,6 +1289,7 @@ export interface Database {
   preparation_fields: PreparationFieldsTable;
   preparation_recipients: PreparationRecipientsTable;
   signing_requests: SigningRequestsTable;
+  signing_request_expiry_index: SigningRequestExpiryIndexTable;
   signing_request_recipients: SigningRequestRecipientsTable;
   signing_request_fields: SigningRequestFieldsTable;
   signing_request_recipient_activation: SigningRequestRecipientActivationTable;
