@@ -194,3 +194,48 @@ describe("every production route declares schemas", () => {
     }
   });
 });
+
+// ── The composition root's untested write ────────────────────────────────────
+//
+// `commitAcceptance` lives in `start-server.ts`, which every route test
+// substitutes. Nothing executes it, so nothing caught it marking an upload
+// `accepted` without naming the artifact -- which migration 006's CHECK
+// refuses, meaning NO UPLOAD COULD EVER SUCCEED while the whole suite was
+// green. Found by running the real server against real PostgreSQL.
+//
+// A source guard rather than a behavioural one, deliberately: the thing that
+// was missing is a line in a file nothing calls, and the honest way to hold it
+// is to read that file.
+
+describe("the upload composition names the artifact it accepted", () => {
+  const START_SERVER = path.join(PACKAGES, "api", "src", "server", "start-server.ts");
+
+  /** The `commitAcceptance` body, comments stripped. */
+  const commitBody = (): string => {
+    const source = readFileSync(START_SERVER, "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/(^|[^:])\/\/.*$/gm, "$1");
+    const match = /commitAcceptance:\s*async \(input\) => \{([\s\S]*?)\n {8}\},/.exec(source);
+    // A guard whose extraction finds nothing passes everything.
+    expect(match, "commitAcceptance is no longer readable here").not.toBeNull();
+    return match?.[1] ?? "";
+  };
+
+  it("passes the artifact id when marking an upload accepted", () => {
+    const body = commitBody();
+    expect(body).toContain('status: "accepted"');
+    expect(
+      body,
+      "an accepted upload must name its artifact, or migration 006's CHECK refuses the row",
+    ).toContain("acceptedArtifactId: input.artifact.artifactId");
+  });
+
+  it("writes the artifact and the completion in ONE transaction", () => {
+    // Separately written, a crash between them leaves either an artifact
+    // nothing points at, or an upload accepted with no artifact.
+    const body = commitBody();
+    expect((body.match(/runForWorkspace/g) ?? []).length).toBe(1);
+    expect(body).toContain("uow.artifacts.insert(input.artifact)");
+    expect(body).toContain("uow.uploads.complete(");
+  });
+});

@@ -338,6 +338,16 @@ function buildUpload(
             await uow.uploads.complete({
               uploadId: input.uploadId,
               status: "accepted",
+              // THE ARTIFACT THIS UPLOAD PRODUCED. Its absence made every
+              // upload fail at the last write: migration 006's CHECK says
+              // `accepted` implies `accepted_artifact_id is not null`, and
+              // this call omitted it while holding the id one line above.
+              //
+              // Nothing caught it because the in-memory upload repository
+              // accepted a row the database refuses -- so the whole suite was
+              // green and no document could ever have bytes. The fake enforces
+              // the rule now, which is the part that stops it happening again.
+              acceptedArtifactId: input.artifact.artifactId,
               digest: input.digest,
               detectedMediaType: input.detectedMediaType,
               scanOutcome: input.scanOutcome,

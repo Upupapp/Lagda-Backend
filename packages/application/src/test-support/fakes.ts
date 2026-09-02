@@ -2885,6 +2885,27 @@ function scopedUploads(
       const row = rows.get(input.uploadId);
       if (row === undefined || row.workspaceId !== workspaceId) return Promise.resolve();
       if (row.status !== "quarantined") return Promise.resolve();
+
+      // ── The database's CHECK, enforced here too ──────────────────────────
+      //
+      // Migration 006: `accepted` implies `accepted_artifact_id is not null`,
+      // and the converse. This fake accepted a row PostgreSQL refuses, so the
+      // composition root could mark an upload accepted without naming the
+      // artifact and every test stayed green while no upload could ever
+      // succeed in production. Found by running the real thing against real
+      // PostgreSQL.
+      //
+      // A fake that is looser than the database is not a simplification; it is
+      // a different system, and the difference is exactly where defects live.
+      const accepted = input.status === "accepted";
+      const artifactId = input.acceptedArtifactId ?? null;
+      if (accepted !== (artifactId !== null)) {
+        throw new Error(
+          "document_uploads_accepted_has_artifact: `accepted` requires an "
+          + "artifact id, and any other status forbids one.",
+        );
+      }
+
       rows.set(input.uploadId, {
         ...row,
         status: input.status,
