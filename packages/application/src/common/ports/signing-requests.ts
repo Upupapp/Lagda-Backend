@@ -227,22 +227,58 @@ export interface ScopedSigningRequestRepository {
   ): Promise<readonly SigningRequestFieldRecord[]>;
 
   /**
-   * Marks a DRAFT request sent, conditionally.
+   * Marks a SENDABLE request sent, conditionally.
+   *
+   * Sendable is `draft` OR `ready-to-send`, which is core's rule
+   * (`isEditableForSend`) rather than this port's: the review state is
+   * OPTIONAL, so send still works straight from a draft.
+   *
+   * Renamed from `markSentIfDraft` in BACKEND-47. The old name described the
+   * only sendable state there was, and would have become a lie the moment a
+   * second one existed -- the kind that reads as documentation.
    *
    * The condition is IN the statement, not before it: two sends racing on one
-   * request would otherwise both read `draft` and both proceed, and the second
-   * would mint a second set of bearer credentials for the same people.
+   * request would otherwise both read a sendable state and both proceed, and
+   * the second would mint a second set of bearer credentials for the same
+   * people.
    *
-   * Returns whether it applied. False means the request was not `draft` -
+   * Returns whether it applied. False means the request was not sendable -
    * already sent, or absent, or another tenant's - and the caller reports only
    * what it needs to.
    *
    * `sentAt` is set in the same UPDATE. A CHECK constraint refuses the two
    * columns disagreeing, so a transition that forgot the timestamp fails.
    */
-  markSentIfDraft(input: {
+  markSentIfSendable(input: {
     readonly signingRequestId: SigningRequestId;
     readonly sentAt: number;
+  }): Promise<boolean>;
+
+  /**
+   * Marks a DRAFT ready to send, conditionally.
+   *
+   * The condition is in the statement for the same reason every transition
+   * here carries its own: the caller read the state in a different breath.
+   *
+   * Returns whether it applied. False means it was not `draft` -- already
+   * marked, already sent, absent, or another tenant's.
+   */
+  markReadyToSendIfDraft(input: {
+    readonly signingRequestId: SigningRequestId;
+    readonly now: number;
+  }): Promise<boolean>;
+
+  /**
+   * Returns a READY-TO-SEND request to draft, conditionally.
+   *
+   * The reverse of the edge above, and the reason the review state is safe to
+   * enter: marking a request ready commits nobody to anything, because it can
+   * be taken back. Only from `ready-to-send` -- a sent request is not
+   * retractable this way, and `cancel` is the operation for that.
+   */
+  returnToDraftIfReady(input: {
+    readonly signingRequestId: SigningRequestId;
+    readonly now: number;
   }): Promise<boolean>;
 
   /**

@@ -176,13 +176,17 @@ export const SigningDeclineReasonSchema = Type.Union(
  * exists -- migration 024 put it plainly: "a CHECK that admits a state no code
  * can reach is a permission granted in advance of the thing it permits".
  *
- * ONE member has not earned its migration. `@lagda/core`'s transition table
- * defines the edge -- `markReadyToSend` out of `draft` -- and nothing invokes
- * it, so no request can arrive in that state.
+ * IT IS EMPTY, and that is the point of keeping it.
  *
- * `expired` LEFT this list in BACKEND-46, when migration 041 brought the
- * deadline, the sweep and the state together. Leaving it here would have been
- * a stale disclaimer, which is worse than none because it is believed.
+ * `expired` left in BACKEND-46 with migration 041, and `ready-to-send` in
+ * BACKEND-47 with migration 042. Every state this API declares can now be
+ * returned, so there is nothing to warn a client about.
+ *
+ * The constant stays rather than being deleted, because the NEXT state added
+ * to the union will be unreachable on the day it is added -- that is the
+ * normal order, the vocabulary first and the migration when the code earns it
+ * -- and an empty list is where it goes. Deleting it would mean the next
+ * author has to rediscover both the pattern and the guard that enforces it.
  *
  * ── Declared rather than removed, deliberately ─────────────────────────────
  *
@@ -199,19 +203,15 @@ export const SigningDeclineReasonSchema = Type.Union(
  * **Anything added here must be removed the day its migration lands**, which
  * an architecture guard enforces by comparing this list against the CHECK.
  */
-export const SIGNING_REQUEST_STATES_NOT_YET_REACHABLE = [
-  "ready-to-send",
-] as const satisfies readonly SigningRequestState[];
+export const SIGNING_REQUEST_STATES_NOT_YET_REACHABLE: readonly SigningRequestState[] = [];
 
 export const SigningRequestStateSchema = Type.Union(
   SIGNING_REQUEST_STATES.map(state => Type.Literal(state)),
   {
     title: "SigningRequestState",
     description:
-      "The request's lifecycle state. One member of this union is declared and "
-      + "cannot currently be returned, because nothing transitions into it and "
-      + "the database refuses it: `ready-to-send`. It remains in the union so "
-      + "a client written today does not break on the day it is implemented.",
+      "The request's lifecycle state. Every member of this union can be "
+      + "returned: there is no longer any declared-but-unreachable state.",
   },
 );
 

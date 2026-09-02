@@ -124,7 +124,16 @@ export function evaluateSendReadiness(
   return issues.length === 0 ? policyOk() : policyFailed(issues);
 }
 
-const isEditableForSend = (state: SigningRequestState): boolean =>
+/**
+ * The states a send may start from.
+ *
+ * EXPORTED since BACKEND-47, because it stopped being this file's private
+ * business. The send use case had its own `state !== "draft"` gate above the
+ * repository's conditional update, and widening only the repository left a
+ * reviewed request unsendable -- caught by a test, but the shape is the
+ * problem: three copies of "what may be sent" is three chances to disagree.
+ */
+export const isEditableForSend = (state: SigningRequestState): boolean =>
   state === "draft" || state === "ready-to-send";
 
 /**

@@ -24,6 +24,7 @@ import {
   type SendSigningRequestDependencies,
 } from "./send.js";
 import { createSigningRequest, type SigningRequestDependencies } from "./signing-requests.js";
+import { markSigningRequestReadyToSend } from "./readiness.js";
 import {
   addRecipient, updateRecipient, type RecipientDependencies,
 } from "../recipients/recipients.js";
@@ -32,7 +33,9 @@ import {
 } from "../preparation/preparation.js";
 import { ResourceNotFoundError } from "../common/errors/index.js";
 import type { AuthenticatedActor, SessionId } from "../common/ports/session.js";
-import type { ArtifactId, SealedDeliverySecret } from "../common/ports/index.js";
+import type {
+  ArtifactId, SealedDeliverySecret, SigningRequestId,
+} from "../common/ports/index.js";
 import {
   FixedClock, SequentialWorkspaceIds, SequentialMemberIds,
   SequentialPreparationIds, SequentialRecipientIds, SequentialSigningRequestIds,
@@ -238,6 +241,30 @@ describe("the state transition", () => {
     expect(sent.state).toBe("sent");
     expect(sent.sentAt).toBe(AT);
     expect(h.store.signingRequests[0]?.state).toBe("sent");
+  });
+
+  /**
+   * THE REVIEW STATE IS OPTIONAL, and this is the test that keeps it so.
+   *
+   * `isEditableForSend` accepts `draft` and `ready-to-send` alike. The test
+   * above proves the direct path still works; this one proves the reviewed
+   * path does too. Narrowing the send predicate back to `draft` alone would
+   * leave every reviewed request unsendable, and without this the suite would
+   * stay green while it happened.
+   */
+  it("sends a request that went through review", async () => {
+    const h = await harness();
+    const id = await requestWith(h, [{ email: "a@x.com" }]);
+
+    await markSigningRequestReadyToSend({
+      actor: actor(OWNER), workspaceId: h.workspaceId,
+      signingRequestId: id as SigningRequestId,
+    }, h.createDeps);
+    expect(h.store.signingRequests[0]?.state).toBe("ready-to-send");
+
+    const sent = await send(h, id);
+    expect(sent.state).toBe("sent");
+    expect(sent.sentAt).toBe(AT);
   });
 
   it("refuses a second send with a new key", async () => {

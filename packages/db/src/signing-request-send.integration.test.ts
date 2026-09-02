@@ -145,13 +145,13 @@ suite("signing request send (RLS, runtime role)", () => {
   describe("the draft predicate", () => {
     it("transitions once and refuses the second attempt", async () => {
       const first = await createTransactionManager(app.db).runForWorkspace(
-        WS_A, uow => uow.signingRequests.markSentIfDraft({
+        WS_A, uow => uow.signingRequests.markSentIfSendable({
           signingRequestId: requestOf(WS_A), sentAt: AT,
         }));
       expect(first).toBe(true);
 
       const second = await createTransactionManager(app.db).runForWorkspace(
-        WS_A, uow => uow.signingRequests.markSentIfDraft({
+        WS_A, uow => uow.signingRequests.markSentIfSendable({
           signingRequestId: requestOf(WS_A), sentAt: AT + 1000,
         }));
       expect(second).toBe(false);
@@ -161,7 +161,7 @@ suite("signing request send (RLS, runtime role)", () => {
       // The race the fake cannot model: both transactions open before either
       // commits, and only the WHERE clause separates them.
       const attempt = () => createTransactionManager(app.db).runForWorkspace(
-        WS_A, uow => uow.signingRequests.markSentIfDraft({
+        WS_A, uow => uow.signingRequests.markSentIfSendable({
           signingRequestId: requestOf(WS_A), sentAt: AT,
         }));
 

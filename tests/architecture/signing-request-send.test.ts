@@ -11,7 +11,7 @@
 //   4. The signing link comes from configured base, never a request header.
 
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WORKSPACE_CAPABILITIES } from "@lagda/core";
@@ -297,23 +297,68 @@ describe("the signing link", () => {
 
 describe("the transition", () => {
   it("is conditional, in one statement", () => {
+    // ── Scoped to the SEND statement, not the file ──────────────────────────
+    //
+    // This used to assert the file CONTAINED `.where("state", "=", "draft")`.
+    // BACKEND-47 added `markReadyToSendIfDraft` and `returnToDraftIfReady`,
+    // which contain that string too -- so the assertion would have kept
+    // passing while saying nothing about send, which is the failure mode a
+    // guard cannot report on itself.
     const repository = code(
       path.join(PACKAGES, "db", "src", "repositories", "signing-requests.ts"));
-    expect(repository).toContain('.where("state", "=", "draft")');
-    expect(repository).toContain('set({ state: "sent"');
+    const method = /async markSentIfSendable\(input\) \{([\s\S]*?)\n {4}\},/
+      .exec(repository);
+    expect(method, "markSentIfSendable is no longer readable here").not.toBeNull();
+
+    const body = method?.[1] ?? "";
+    expect(body).toContain('set({ state: "sent"');
+    // BOTH sendable states, which is core's `isEditableForSend`. The predicate
+    // is named rather than inline, so this pins the name and the constant's
+    // own declaration pins the values.
+    expect(body).toContain('.where("state", "in", SENDABLE_STATES)');
+    expect(repository).toMatch(
+      /const SENDABLE_STATES = \["draft", "ready-to-send"\] as const;/);
   });
 
   it("happens LAST, after every credential and intent is written", () => {
     const source = code(USE_CASE);
     const provisioning = source.indexOf("provisionSigningRecipientAccess(uow");
-    const transition = source.indexOf("markSentIfDraft");
+    const transition = source.indexOf("markSentIfSendable");
     expect(provisioning).toBeGreaterThan(0);
     expect(transition).toBeGreaterThan(provisioning);
   });
 
   it("keeps sent_at in step with state at the database", () => {
-    expect(sqlOf(MIGRATION)).toMatch(
-      /signing_requests_sent_at_matches_state check \([\s\S]{0,200}state = 'sent' and sent_at is not null/);
+    // ── Read from the NEWEST migration that defines it ──────────────────────
+    //
+    // This asserted 020's text, which stopped describing the live constraint
+    // when 024 widened it and again when 042 did. A guard pinned to a
+    // superseded statement passes forever while the thing it names has moved.
+    //
+    // What must stay true is the BICONDITIONAL: a state and its timestamp that
+    // can disagree is a request claiming something nobody did. `ready-to-send`
+    // is why the left-hand side is a set now -- it is not sent, and must carry
+    // no `sent_at`.
+    const migrations = path.join(PACKAGES, "db", "src", "migrations");
+    const owner = readdirSync(migrations)
+      .filter(name => /^\d+_.*\.ts$/.test(name))
+      .filter(name => sqlOf(path.join(migrations, name))
+        .includes("add constraint signing_requests_sent_at_matches_state"))
+      .sort()
+      .at(-1);
+    expect(owner, "no migration adds the sent_at constraint").toBeDefined();
+
+    // The list is INTERPOLATED from a named constant, so the source carries
+    // the name and not the values. Both are pinned: the shape of the
+    // constraint here, and the constant's own contents below -- which is what
+    // makes the biconditional readable rather than a template nobody checks.
+    const source = sqlOf(path.join(migrations, owner ?? ""));
+    expect(source).toMatch(
+      /state in \(\$\{inList\(UNSENT_STATES\)\}\) and sent_at is null/);
+    expect(source).toMatch(
+      /state not in \(\$\{inList\(UNSENT_STATES\)\}\) and sent_at is not null/);
+    expect(code(path.join(migrations, owner ?? ""))).toMatch(
+      /const UNSENT_STATES = \["draft", "ready-to-send"\] as const;/);
   });
 });
 

@@ -5763,7 +5763,7 @@
                     },
                     "state": {
                       "title": "SigningRequestState",
-                      "description": "The request's lifecycle state. One member of this union is declared and cannot currently be returned, because nothing transitions into it and the database refuses it: `ready-to-send`. It remains in the union so a client written today does not break on the day it is implemented.",
+                      "description": "The request's lifecycle state. Every member of this union can be returned: there is no longer any declared-but-unreachable state.",
                       "anyOf": [
                         {
                           "type": "string",
@@ -5923,7 +5923,7 @@
                           },
                           "state": {
                             "title": "SigningRequestState",
-                            "description": "The request's lifecycle state. One member of this union is declared and cannot currently be returned, because nothing transitions into it and the database refuses it: `ready-to-send`. It remains in the union so a client written today does not break on the day it is implemented.",
+                            "description": "The request's lifecycle state. Every member of this union can be returned: there is no longer any declared-but-unreachable state.",
                             "anyOf": [
                               {
                                 "type": "string",
@@ -6115,7 +6115,7 @@
                     },
                     "state": {
                       "title": "SigningRequestState",
-                      "description": "The request's lifecycle state. One member of this union is declared and cannot currently be returned, because nothing transitions into it and the database refuses it: `ready-to-send`. It remains in the union so a client written today does not break on the day it is implemented.",
+                      "description": "The request's lifecycle state. Every member of this union can be returned: there is no longer any declared-but-unreachable state.",
                       "anyOf": [
                         {
                           "type": "string",
@@ -6410,6 +6410,214 @@
                     "createdAt": {
                       "format": "date-time",
                       "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/signing-requests/{signingRequestId}/readiness": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "signingRequestId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "state"
+                  ],
+                  "properties": {
+                    "state": {
+                      "title": "SigningRequestState",
+                      "description": "The request's lifecycle state. Every member of this union can be returned: there is no longer any declared-but-unreachable state.",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "draft"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "ready-to-send"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "sent"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "partially-completed"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "completion-ready"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "completed"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "declined"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "cancelled"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "expired"
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/signing-requests/{signingRequestId}/draft": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "signingRequestId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "state"
+                  ],
+                  "properties": {
+                    "state": {
+                      "title": "SigningRequestState",
+                      "description": "The request's lifecycle state. Every member of this union can be returned: there is no longer any declared-but-unreachable state.",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "draft"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "ready-to-send"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "sent"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "partially-completed"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "completion-ready"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "completed"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "declined"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "cancelled"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "expired"
+                          ]
+                        }
+                      ]
                     }
                   }
                 }

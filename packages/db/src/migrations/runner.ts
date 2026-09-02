@@ -49,6 +49,7 @@ import * as m038 from "./038_retire_mfa_otp_notification.js";
 import * as m039 from "./039_organization_units.js";
 import * as m040 from "./040_document_folders.js";
 import * as m041 from "./041_signing_request_expiry.js";
+import * as m042 from "./042_signing_request_ready_to_send.js";
 
 /**
  * Migrations listed explicitly rather than read from disk.
@@ -102,6 +103,7 @@ const MIGRATIONS: Record<string, Migration> = {
   "039_organization_units": m039,
   "040_document_folders": m040,
   "041_signing_request_expiry": m041,
+  "042_signing_request_ready_to_send": m042,
 };
 
 class ExplicitMigrationProvider implements MigrationProvider {

@@ -48,6 +48,14 @@ function oneOf<T extends string>(
   return found;
 }
 
+/**
+ * The states a send may start from.
+ *
+ * Mirrors `@lagda/core`'s `isEditableForSend`. Written as a constant rather
+ * than inline so the predicate has a name a reader can go and check.
+ */
+const SENDABLE_STATES = ["draft", "ready-to-send"] as const;
+
 function toRequest(row: RequestRow): SigningRequestRecord {
   return {
     signingRequestId: row.signing_request_id as SigningRequestId,
@@ -272,7 +280,7 @@ export function createScopedSigningRequestRepository(
       return rows.map(toRecipient);
     },
 
-    async markSentIfDraft(input) {
+    async markSentIfSendable(input) {
       try {
         const claimed = await trx.updateTable("signing_requests")
           .set({ state: "sent", sent_at: new Date(input.sentAt),
@@ -281,9 +289,43 @@ export function createScopedSigningRequestRepository(
           .where("signing_request_id", "=", input.signingRequestId)
           // The whole concurrency control, in one predicate. A second send
           // matches zero rows rather than sending twice.
-          .where("state", "=", "draft")
+          //
+          // BOTH sendable states, which is core's `isEditableForSend` and not
+          // a widening invented here: the review state is optional, so a draft
+          // still sends directly.
+          .where("state", "in", SENDABLE_STATES)
           .executeTakeFirst();
         return Number(claimed.numUpdatedRows) === 1;
+      } catch (error) {
+        throw translatePersistenceError(error);
+      }
+    },
+
+    async markReadyToSendIfDraft(input) {
+      try {
+        const applied = await trx.updateTable("signing_requests")
+          .set({ state: "ready-to-send", updated_at: new Date(input.now) })
+          .where("workspace_id", "=", scope)
+          .where("signing_request_id", "=", input.signingRequestId)
+          .where("state", "=", "draft")
+          .executeTakeFirst();
+        return Number(applied.numUpdatedRows) === 1;
+      } catch (error) {
+        throw translatePersistenceError(error);
+      }
+    },
+
+    async returnToDraftIfReady(input) {
+      try {
+        const applied = await trx.updateTable("signing_requests")
+          .set({ state: "draft", updated_at: new Date(input.now) })
+          .where("workspace_id", "=", scope)
+          .where("signing_request_id", "=", input.signingRequestId)
+          // Only from the review state. A SENT request is not retractable this
+          // way; `cancel` is the operation for that, and it tells recipients.
+          .where("state", "=", "ready-to-send")
+          .executeTakeFirst();
+        return Number(applied.numUpdatedRows) === 1;
       } catch (error) {
         throw translatePersistenceError(error);
       }

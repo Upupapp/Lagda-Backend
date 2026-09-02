@@ -36,7 +36,7 @@ import type {
 import { requestSent, recipientActivated } from "../evidence/events.js";
 import {
   assessSendEligibility, describeSendBlocker, planActivation, routingShape,
-  needsSigningAccess,
+  needsSigningAccess, isEditableForSend,
   type WorkspaceCapability, type SendableRecipient,
 } from "@lagda/core";
 import type {
@@ -281,7 +281,10 @@ async function performSend(
   const request = await uow.signingRequests.find(signingRequestId);
   // Another tenant's request is indistinguishable from an absent one.
   if (request === null) throw new ResourceNotFoundError("SigningRequest");
-  if (request.state !== "draft") throw new SigningRequestAlreadySentError();
+  // Core's predicate, not a literal. This gate sits ABOVE the repository's
+  // conditional update, so a copy here that disagreed with it would make a
+  // reviewed request unsendable while every statement below stayed correct.
+  if (!isEditableForSend(request.state)) throw new SigningRequestAlreadySentError();
 
   const recipients = await uow.signingRequests.listRecipients(signingRequestId);
   const fields = await uow.signingRequests.listFields(signingRequestId);
@@ -352,7 +355,7 @@ async function performSend(
   // been written — and the `where state = 'draft'` predicate means a
   // concurrent send under a different key matches zero rows rather than
   // sending twice.
-  const transitioned = await uow.signingRequests.markSentIfDraft({
+  const transitioned = await uow.signingRequests.markSentIfSendable({
     signingRequestId, sentAt: now,
   });
   if (!transitioned) {

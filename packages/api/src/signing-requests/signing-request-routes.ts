@@ -26,12 +26,14 @@ import { Type, type Static } from "@sinclair/typebox";
 import {
   createSigningRequest, getSigningRequest, listSigningRequests, assertValidKey,
   setSigningRequestExpiry,
+  markSigningRequestReadyToSend, returnSigningRequestToDraft,
   type SigningRequestDependencies, type SigningRequestId,
   type SigningRequestView, type SigningRequestCreatedView,
   type SessionId, type UserId,
 } from "@lagda/application";
 import {
   SigningRequestSchema, SigningRequestCreatedSchema, SigningRequestListSchema,
+  SigningRequestStateSchema,
   SetSigningRequestExpirySchema, IDEMPOTENCY_KEY_HEADER,
   type SetSigningRequestExpiryRequest,
   type DocumentId, type WorkspaceId,
@@ -309,6 +311,61 @@ export function registerSigningRequestRoutes(
     // would otherwise produce a line per refresh.
     return reply.status(200).send(present(found));
   });
+
+  // ── The review state ────────────────────────────────────────────────────
+  //
+  // POST to a named sub-resource, not a state field on the request. A client
+  // that could PUT `state` could write any state it liked, and the whole point
+  // of the lifecycle table is that transitions are named operations with their
+  // own rules -- §206's argument, applied at the boundary.
+  //
+  // Two routes rather than one taking a boolean: they have different meanings
+  // and could later have different authority, and "readiness: false" reads
+  // like a property when it is a retraction.
+  for (const edge of [
+    {
+      suffix: "readiness",
+      run: markSigningRequestReadyToSend,
+      event: "signing_request.marked_ready",
+    },
+    {
+      suffix: "draft",
+      run: returnSigningRequestToDraft,
+      event: "signing_request.returned_to_draft",
+    },
+  ] as const) {
+    app.post(`/workspaces/:workspaceId/signing-requests/:signingRequestId/${edge.suffix}`, {
+      schema: {
+        params: ReadParamsSchema,
+        // No body at all. A transition carries no payload -- everything it
+        // needs is the request's own state, which the server already has.
+        response: { 200: Type.Object({
+          state: SigningRequestStateSchema,
+        }, { additionalProperties: false }) },
+      },
+    }, async (request: FastifyRequest, reply: FastifyReply) => {
+      noStore(reply);
+      const actor = await actorOf(request);
+      if (actor === null) return unauthenticated(reply);
+
+      const { workspaceId, signingRequestId } =
+        request.params as Static<typeof ReadParamsSchema>;
+
+      const result = await edge.run({
+        actor,
+        workspaceId: workspaceId as WorkspaceId,
+        signingRequestId: signingRequestId as SigningRequestId,
+      }, options.signingRequestDependencies());
+
+      // Ids and the outcome. Never the document title -- it is a matter name.
+      request.log.info({
+        event: edge.event, result: "success",
+        workspaceId, signingRequestId, actorUserId: actor.userId,
+      }, edge.event);
+
+      return reply.status(200).send({ state: result.state });
+    });
+  }
 
   // ── The deadline ────────────────────────────────────────────────────────
   //

@@ -7,7 +7,7 @@
 // zero rows, the caller learns it, and the outcome converges.
 //
 // That single pattern is what makes §29, §59, §160, §176 and §241 true, and it
-// is the same one `markSentIfDraft` and `changeRoleIfUnchanged` already use.
+// is the same one `markSentIfSendable` and `changeRoleIfUnchanged` already use.
 
 import { sql, type Transaction } from "kysely";
 import type {

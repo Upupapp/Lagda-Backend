@@ -190,7 +190,7 @@ suite("signing ceremony (RLS, runtime role)", () => {
           credentialDigest: `${ws.slice(-1)}`.repeat(64).slice(0, 64) as SigningAccessDigest,
           createdAt: AT, expiresAt: AT + 14 * 24 * 3_600_000,
         });
-        await uow.signingRequests.markSentIfDraft({
+        await uow.signingRequests.markSentIfSendable({
           signingRequestId: requestOf(ws), sentAt: AT,
         });
       });

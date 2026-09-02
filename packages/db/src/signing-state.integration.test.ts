@@ -137,7 +137,7 @@ suite("signing workflow concurrency (real PostgreSQL, runtime role)", () => {
           field("srf_st_3", R3, 3)],
       };
       await uow.signingRequests.createSnapshot(snapshot);
-      await uow.signingRequests.markSentIfDraft({
+      await uow.signingRequests.markSentIfSendable({
         signingRequestId: REQUEST, sentAt: AT,
       });
       await uow.signingAccess.insertActivations({

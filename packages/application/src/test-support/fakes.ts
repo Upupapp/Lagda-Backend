@@ -1994,16 +1994,45 @@ function scopedSigningRequests(
 
     find: (signingRequestId) => Promise.resolve(owned(signingRequestId) ?? null),
 
-    markSentIfDraft: (input) => {
+    markSentIfSendable: (input) => {
       const index = store.signingRequests.findIndex(
         request => request.workspaceId === scope
           && request.signingRequestId === input.signingRequestId
-          // The condition, mirroring the adapter's WHERE clause.
-          && request.state === "draft");
+          // BOTH sendable states, mirroring the adapter's WHERE clause. A fake
+          // that still accepted only `draft` would fail every send from the
+          // review state while the real adapter allowed it -- a fake stricter
+          // than production is as misleading as one that is looser.
+          && (request.state === "draft" || request.state === "ready-to-send"));
       const current = index === -1 ? undefined : store.signingRequests[index];
       if (current === undefined) return Promise.resolve(false);
       store.signingRequests[index] = {
         ...current, state: "sent", updatedAt: input.sentAt,
+      };
+      return Promise.resolve(true);
+    },
+
+    markReadyToSendIfDraft: (input) => {
+      const index = store.signingRequests.findIndex(
+        request => request.workspaceId === scope
+          && request.signingRequestId === input.signingRequestId
+          && request.state === "draft");
+      const current = index === -1 ? undefined : store.signingRequests[index];
+      if (current === undefined) return Promise.resolve(false);
+      store.signingRequests[index] = {
+        ...current, state: "ready-to-send", updatedAt: input.now,
+      };
+      return Promise.resolve(true);
+    },
+
+    returnToDraftIfReady: (input) => {
+      const index = store.signingRequests.findIndex(
+        request => request.workspaceId === scope
+          && request.signingRequestId === input.signingRequestId
+          && request.state === "ready-to-send");
+      const current = index === -1 ? undefined : store.signingRequests[index];
+      if (current === undefined) return Promise.resolve(false);
+      store.signingRequests[index] = {
+        ...current, state: "draft", updatedAt: input.now,
       };
       return Promise.resolve(true);
     },

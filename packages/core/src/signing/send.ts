@@ -6,6 +6,7 @@
 
 import { canHoldFields, type RecipientType } from "../recipients/index.js";
 import type { SigningRequestState } from "@lagda/contracts";
+import { isEditableForSend } from "./policies.js";
 
 // ── Eligibility ──────────────────────────────────────────────────────────────
 
@@ -69,7 +70,11 @@ export function assessSendEligibility(
 ): SendEligibility {
   const blockers: SendBlocker[] = [];
 
-  if (state !== "draft") blockers.push({ kind: "already-sent" });
+  // `isEditableForSend`, not `state !== "draft"`. This was the THIRD copy of
+  // "what may be sent" -- the others being the send use case's own gate and the
+  // repository's WHERE clause -- and BACKEND-47 found all three by adding a
+  // second sendable state and watching each one refuse it in turn.
+  if (!isEditableForSend(state)) blockers.push({ kind: "already-sent" });
   if (recipients.length === 0) blockers.push({ kind: "no-recipients" });
   if (fieldCount === 0) blockers.push({ kind: "no-fields" });
 

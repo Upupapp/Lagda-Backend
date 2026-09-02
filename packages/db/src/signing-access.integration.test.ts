@@ -148,7 +148,7 @@ suite("recipient signing access (RLS, runtime role)", () => {
           credentialDigest: digest,
           createdAt: AT, expiresAt: AT + 14 * 24 * 3_600_000,
         });
-        await uow.signingRequests.markSentIfDraft({
+        await uow.signingRequests.markSentIfSendable({
           signingRequestId: requestOf(ws), sentAt: AT,
         });
       });
