@@ -77,6 +77,26 @@ export async function truncateAll(database: LagdaDatabase): Promise<void> {
   // `document_uploads` references BOTH `workspaces` and `document_artifacts`,
   // so it goes before either. Omitting it made every upload test fail on the
   // workspace delete rather than on anything it was testing.
+  // ── Notifications FIRST (BACKEND-44, BACKEND-45) ──────────────────────────
+  //
+  // They were MISSING ENTIRELY, and that single omission failed thirteen tests
+  // in one suite: intents survived between cases, so the second insert of a
+  // fixture id hit `notification_intents_pkey`, and the failures read as
+  // idempotency and claiming defects rather than as dirty state.
+  //
+  // First because they are the most dependent rows in the schema: an intent
+  // references the workspace, the user and the RECIPIENT, so
+  // "refuses to delete a recipient with an outstanding notification" is a real
+  // constraint this list has to unwind rather than trip over.
+  //
+  // The dispatch index cascades from deliveries, and is deleted explicitly
+  // anyway -- the same rule this file already states for preparation fields:
+  // the order is load-bearing and an implicit cascade hides it.
+  await database.db.deleteFrom("notification_delivery_attempts").execute();
+  await database.db.deleteFrom("notification_dispatch_index").execute();
+  await database.db.deleteFrom("notification_deliveries").execute();
+  await database.db.deleteFrom("notification_intents").execute();
+
   await database.db.deleteFrom("document_uploads").execute();
   await database.db.deleteFrom("verification_records").execute();
   await database.db.deleteFrom("document_seals").execute();
@@ -111,6 +131,10 @@ export async function truncateAll(database: LagdaDatabase): Promise<void> {
   // while a signed recipient still cites it. The constraint that makes
   // "signedAt came from THIS submission" checkable is the same one that makes
   // this ordering load-bearing.
+  // Cascades from `signing_requests`, and deleted explicitly for the reason
+  // above. A stranded index row would send the expiry sweep into a workspace
+  // to act on a request that no longer exists.
+  await database.db.deleteFrom("signing_request_expiry_index").execute();
   await database.db.deleteFrom("signing_request_recipient_activation").execute();
   await database.db.deleteFrom("signing_field_values").execute();
   await database.db.deleteFrom("signing_representations").execute();

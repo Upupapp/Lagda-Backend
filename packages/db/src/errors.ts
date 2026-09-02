@@ -27,10 +27,26 @@ export const isUniqueViolation = (error: unknown, constraint?: string): boolean 
   return e.code === "23505" && (constraint === undefined || e.constraint === constraint);
 };
 
-/** 23503 — a foreign key. Also what catches a cross-tenant compound reference. */
+/**
+ * A foreign key. Also what catches a cross-tenant compound reference.
+ *
+ * ── TWO SQLSTATEs, and missing the second was a real defect ────────────────
+ *
+ * 23503 is `foreign_key_violation`. 23001 is `restrict_violation`, which
+ * PostgreSQL raises instead when the reference is `ON DELETE RESTRICT` rather
+ * than NO ACTION -- and this schema uses RESTRICT nearly everywhere, precisely
+ * because deletion semantics are deliberately unresolved.
+ *
+ * Checking only 23503 meant every RESTRICT refusal fell through to the generic
+ * internal error: a caller asking to delete something still referenced got a
+ * 500 instead of a conflict it could explain. Caught by the first integration
+ * run against real PostgreSQL; no fake raises a SQLSTATE at all, so nothing
+ * else could have.
+ */
 export const isForeignKeyViolation = (error: unknown, constraint?: string): boolean => {
   const e = sqlstate(error);
-  return e.code === "23503" && (constraint === undefined || e.constraint === constraint);
+  const referential = e.code === "23503" || e.code === "23001";
+  return referential && (constraint === undefined || e.constraint === constraint);
 };
 
 /** 23514 — a CHECK constraint. A value the schema refuses to hold. */

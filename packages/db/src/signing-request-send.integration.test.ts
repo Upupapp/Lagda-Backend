@@ -309,13 +309,25 @@ suite("signing request send (RLS, runtime role)", () => {
       expect(row.rows[0]?.rolsuper).toBe(false);
     });
 
-    it("forces RLS on all three tables", async () => {
+    it("forces RLS on both remaining tables", async () => {
+      // ── It was THREE ────────────────────────────────────────────────────
+      //
+      // `signing_delivery_intents` was the third until migration 031 retired
+      // it: it was a notification intent under another name, and BACKEND-45
+      // moved signing invitations onto the canonical substrate rather than
+      // keeping two delivery paths. Its rows now live in
+      // `notification_delivery_*`, whose own suite checks their RLS.
+      //
+      // The stale name made this assert a table count of 3 against a database
+      // holding 2, so it has been failing since 031 -- unnoticed, because
+      // nothing had run the integration suite. Naming the tables and counting
+      // them is still right; the list simply has to match the schema.
       const rows = await sql<{ relname: string; relforcerowsecurity: boolean }>`
         select relname, relforcerowsecurity from pg_class
-        where relname in ('signing_access_grants', 'signing_delivery_intents',
+        where relname in ('signing_access_grants',
                           'signing_request_recipient_activation')
       `.execute(owner.db);
-      expect(rows.rows).toHaveLength(3);
+      expect(rows.rows).toHaveLength(2);
       for (const row of rows.rows) {
         expect(row.relforcerowsecurity, row.relname).toBe(true);
       }

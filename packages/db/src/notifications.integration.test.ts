@@ -20,7 +20,9 @@ import type { UserId, WorkspaceId, WorkspaceMemberId } from "@lagda/contracts";
 import type {
   NotificationIntentId, NotificationDeliveryId, NewNotificationIntent,
   NotificationDeliveryAttemptId, SigningRequestRecipientId,
+  ArtifactId, PreparationId, SigningRequestId, NewSigningRequestSnapshot,
 } from "@lagda/application";
+import type { DocumentId } from "@lagda/contracts";
 import { createDatabase, type LagdaDatabase } from "./client/index.js";
 import { loadDatabaseConfig } from "./config/index.js";
 import { createTransactionManager } from "./transactions/index.js";
@@ -36,6 +38,7 @@ const AT = Date.parse("2026-08-18T07:00:00.000Z");
 const USER = "usr_notify" as UserId;
 const WS_A = "ws_na" as WorkspaceId;
 const WS_B = "ws_nb" as WorkspaceId;
+const DOC = "doc_na" as DocumentId;
 
 const suite = hasIntegrationDatabase() ? describe : describe.skip;
 
@@ -115,6 +118,57 @@ suite("notifications (RLS, runtime role)", () => {
         });
       });
     }
+
+    // ── The recipient the audience POINTS AT ────────────────────────────────
+    //
+    // `workspaceIntent` names `srr_a`, and migration 032 made
+    // `audience_recipient_id` a real foreign key to
+    // `signing_request_recipients` -- correcting migration 030, which shipped
+    // it as a bare column. This suite predates that and never seeded one, so
+    // every workspace-scoped case has failed on the FK since 032. Nobody saw
+    // it because the integration suite had no database to run against.
+    //
+    // A whole signing request has to exist for the recipient to hang off:
+    // document, artifact, preparation, then the snapshot.
+    await tx.runForWorkspace(WS_A, async uow => {
+      await uow.documents.insert({
+        documentId: DOC, workspaceId: WS_A, title: "Lease Agreement",
+        originalFilename: null, createdByUserId: USER, createdAt: AT,
+      });
+      await uow.artifacts.insert({
+        artifactId: "art_na" as ArtifactId, workspaceId: WS_A, documentId: DOC,
+        artifactType: "original", storageReference: "ws/a" as never,
+        mediaType: "application/pdf", sizeBytes: 1024,
+        digestAlgorithm: "sha-256", digest: "c".repeat(64) as never,
+        pageCount: 1, rotatedPageCount: 0, createdAt: AT,
+      });
+      await uow.preparations.insert({
+        preparationId: "prep_na" as PreparationId, workspaceId: WS_A,
+        documentId: DOC, sourceArtifactId: "art_na", createdAt: AT,
+      });
+
+      const snapshot: NewSigningRequestSnapshot = {
+        request: {
+          signingRequestId: "sr_na" as SigningRequestId, workspaceId: WS_A,
+          documentId: DOC, sourceArtifactId: "art_na" as ArtifactId,
+          sourcePreparationId: "prep_na" as PreparationId,
+          sourcePreparationRevision: 1, state: "draft",
+          completionReadyAt: null, expiresAt: null, completedAt: null,
+          terminatedAt: null, terminationReason: null, cancellationNote: null,
+          documentTitle: "Lease Agreement", createdByUserId: USER,
+          createdAt: AT, updatedAt: AT,
+        },
+        recipients: [{
+          recipientId: "srr_a" as SigningRequestRecipientId,
+          sourcePreparationRecipientId: null,
+          name: "Maria Santos", email: "maria@example.test",
+          normalizedEmail: "maria@example.test", organization: null,
+          type: "signer", isRequired: true, orderIndex: 0, routingOrder: 1,
+        }],
+        fields: [],
+      };
+      await uow.signingRequests.createSnapshot(snapshot);
+    });
   });
 
   /** Runs inside a workspace RLS context on the runtime-role connection. */

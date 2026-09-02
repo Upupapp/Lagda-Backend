@@ -221,7 +221,9 @@ describe.skipIf(!hasIntegrationDatabase())("evidence persistence on PostgreSQL",
     const [found] = await transactions.runForWorkspace(WS_A, (uow) =>
       uow.evidence.listForSigningRequest(REQ));
 
-    expect(found?.actor).toEqual({ type: "recipient", actorId: "rcp_1" });
+    // SRR, not a literal. It read `"rcp_1"` -- the constant's old value --
+    // so it asserted the round trip changed the id rather than preserved it.
+    expect(found?.actor).toEqual({ type: "recipient", actorId: SRR });
   });
 
   it("round-trips observed request context and versioned details", async () => {
