@@ -45,9 +45,17 @@ const NOT_WIRED_IN_PRODUCTION: Record<string, string> = {
   // cost was concrete, and only visible from outside: send mints a grant and
   // writes an invitation carrying a link, and the route that link points at
   // did not exist in a deployment.
-  signingCeremony: "Depends on the ceremony graph.",
-  signingSubmission: "Depends on the submission graph.",
-  signingDecline: "Depends on the decline graph.",
+  // `signingCeremony`, `signingSubmission` and `signingDecline` left with
+  // `signingAccess`. Their reasons named the work rather than a blocker: every
+  // port already had an implementation in this package. What was genuinely
+  // missing was three ID GENERATORS -- consent, submission and completion --
+  // which nothing had needed precisely because none of these had ever been
+  // composed.
+  //
+  // They are CONDITIONAL, and on two different things. The ceremony reads the
+  // document, so it needs object storage. Submission and decline advance the
+  // workflow, and advancing provisions the next recipient's access, so they
+  // need the same delivery key and base URL that send needs.
   publicVerification: "Needs the evidence projection lookup.",
 };
 
@@ -192,8 +200,9 @@ describe("production composition", () => {
     // Deliberately an assertion rather than a comment: when someone wires a
     // group, this number moves and the change is visible in the diff.
     const wired = groups.length - Object.keys(NOT_WIRED_IN_PRODUCTION).length;
-    // 6 -> 7 when `signingAccess` was wired. The number moving IS the record.
-    expect(wired).toBe(7);
+    // 6 -> 7 with `signingAccess`, then 7 -> 10 with the ceremony, submission
+    // and decline. The number moving IS the record.
+    expect(wired).toBe(10);
 
     const subWired =
       workspaceSubgroups().length - Object.keys(WORKSPACE_SUBGROUPS_NOT_WIRED).length;

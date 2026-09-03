@@ -41,6 +41,10 @@ import type {
   NotificationDeliveryIdGenerator,
   RecipientSigningSessionIdGenerator,
   SigningWorkflowIdGenerator,
+  SigningConsentIdGenerator, SigningConsentId,
+  RecipientSubmissionIdGenerator, RecipientSubmissionId,
+  SigningFieldValueId, SigningRepresentationId,
+  CompletionIdGenerator, CompletionRunId, CompletionStepId,
   OrganizationUnitIdGenerator, OrganizationUnitId,
   VerificationChallengeId, PasswordResetChallengeId,
   MfaFactorId, RecoveryCodeId,
@@ -202,6 +206,41 @@ export function createRecipientSigningSessionIdGenerator(): RecipientSigningSess
 export function createSigningWorkflowIdGenerator(): SigningWorkflowIdGenerator {
   return {
     nextSigningWorkflowIntentId: () => mint("swi") as SigningWorkflowIntentId,
+  };
+}
+
+/**
+ * The recipient's own writes: a consent, a submission, and what it contains.
+ *
+ * ONE generator for the three submission ids because they are minted together
+ * in one transaction and never separately -- a field value belongs to the
+ * submission that carried it.
+ */
+export function createSigningConsentIdGenerator(): SigningConsentIdGenerator {
+  return {
+    nextSigningConsentId: () => mint("scn") as SigningConsentId,
+  };
+}
+
+export function createRecipientSubmissionIdGenerator(): RecipientSubmissionIdGenerator {
+  return {
+    nextRecipientSubmissionId: () => mint("sub") as RecipientSubmissionId,
+    nextSigningFieldValueId: () => mint("sfv") as SigningFieldValueId,
+    nextSigningRepresentationId: () => mint("srp") as SigningRepresentationId,
+  };
+}
+
+/**
+ * The completion pipeline's run and its steps.
+ *
+ * Nothing supplied these before, which is consistent: the pipeline was one of
+ * the surfaces `NOT_WIRED_IN_PRODUCTION` records, so no composition had ever
+ * needed them.
+ */
+export function createCompletionIdGenerator(): CompletionIdGenerator {
+  return {
+    nextCompletionRunId: () => mint("crun") as CompletionRunId,
+    nextCompletionStepId: () => mint("cstp") as CompletionStepId,
   };
 }
 

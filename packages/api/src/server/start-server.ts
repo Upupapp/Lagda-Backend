@@ -19,6 +19,7 @@ import { createInvitationTokenFactory } from "../security/invitation-token.js";
 import { createInvitationLinkBuilder } from "../workspaces/invitation-link.js";
 import { createSigningAccessTokenFactory } from "../security/signing-access-token.js";
 import { createRecipientSessionTokenFactory } from "../security/recipient-session-token.js";
+import { createSignatureImageValidator } from "../security/signature-image.js";
 import {
   createDeliverySecretSealer, createSigningLinkBuilder,
 } from "../security/signing-delivery.js";
@@ -30,6 +31,7 @@ import { randomBytes } from "node:crypto";
 import {
   createS3ObjectStorage, createStorageKeyStrategy, loadStorageConfig,
 } from "@lagda/storage";
+import type { ObjectStorage } from "@lagda/application";
 import { createClamAvScanner, loadScannerConfig } from "@lagda/scanning";
 import { createPdfInspector, sha256 } from "@lagda/sealing";
 import { createArgon2PasswordHasher } from "../security/password-hasher.js";
@@ -41,7 +43,9 @@ import {
   createSigningRequestIdGenerator, createEvidenceEventIdGenerator,
   createOrganizationUnitIdGenerator, createWorkspaceInvitationIdGenerator,
   createSigningAccessIdGenerator, createNotificationIntentIdGenerator,
-  createRecipientSigningSessionIdGenerator,
+  createRecipientSigningSessionIdGenerator, createSigningWorkflowIdGenerator,
+  createSigningConsentIdGenerator, createRecipientSubmissionIdGenerator,
+  createCompletionIdGenerator,
   createNotificationDeliveryIdGenerator, createArtifactIdGenerator, nextUploadId,
 } from "../security/identifiers.js";
 import { createProviderEventConfirmerFromEnv } from "@lagda/email";
@@ -151,6 +155,10 @@ export async function createProductionDependencies(
   const workspaceIds = createWorkspaceIdGenerator();
   const memberIds = createWorkspaceMemberIdGenerator();
   const contactIds = createContactIdGenerator();
+  // ONE object store for every surface that touches bytes: upload writes the
+  // artifact, and the ceremony serves the same one back to the recipient.
+  const objectStorage = buildObjectStorage();
+
   const documentIds = createDocumentIdGenerator();
   const folderIds = createFolderIdGenerator();
   const preparationIds = createPreparationIdGenerator();
@@ -224,8 +232,11 @@ export async function createProductionDependencies(
     // present-and-undefined. Under `exactOptionalPropertyTypes` those are
     // different things, and here the difference is whether a route exists.
     ...buildIdentity(database, config, sessions, dummyPasswordHash),
-    ...buildUpload(database, transactions, clock),
+    ...buildUpload(database, transactions, clock, objectStorage),
     ...buildRecipientAccess(transactions, clock, config),
+    ...buildRecipientCeremony({
+      transactions, clock, config, storage: objectStorage, idempotency,
+    }),
     ...buildProviderWebhook(database),
   };
 }
@@ -272,6 +283,99 @@ function buildRecipientAccess(
 }
 
 /**
+ * What the recipient does once they are in: read, consent, sign, or decline.
+ *
+ * ── Three more off NOT_WIRED_IN_PRODUCTION ─────────────────────────────────
+ *
+ * `signingCeremony`, `signingSubmission` and `signingDecline` were listed as
+ * "depends on the ceremony / submission / decline graph". As with
+ * `signingAccess`, that named the work rather than a blocker -- every port
+ * already had an implementation in `@lagda/api`. What was genuinely missing
+ * was three ID GENERATORS, which nothing had needed before precisely because
+ * none of these surfaces had ever been composed.
+ *
+ * ── Conditional, and on two different things ───────────────────────────────
+ *
+ * The ceremony reads the document, so it needs OBJECT STORAGE -- the same
+ * instance upload writes through, not a second client that could be pointed at
+ * a different bucket.
+ *
+ * Submission and decline ADVANCE the workflow, and advancing provisions the
+ * next recipient's access: a grant, a sealed credential and a link. So they
+ * need the same graph `sendSigningRequest` needs, and are conditional on the
+ * same delivery key and base URL. A deployment that cannot send cannot advance,
+ * which is coherent rather than awkward: there would be nobody to advance to.
+ */
+function buildRecipientCeremony(input: {
+  readonly transactions: ReturnType<typeof createTransactionManager>;
+  readonly clock: Clock;
+  readonly config: ApiConfig;
+  readonly storage: ObjectStorage | null;
+  readonly idempotency: IdempotencyComposition;
+}): Partial<Pick<AppDependencies,
+  "signingCeremony" | "signingSubmission" | "signingDecline">> {
+  const { transactions, clock, config, storage, idempotency } = input;
+  const sessionTokens = createRecipientSessionTokenFactory();
+
+  const ceremony = storage === null ? {} : {
+    signingCeremony: () => ({
+      transactions, clock, sessionTokens,
+      consentIds: createSigningConsentIdGenerator(),
+      ids: createEvidenceEventIdGenerator(),
+      storage,
+      policy: { consentVersion: config.recipientConsentVersion },
+    }),
+  };
+
+  const appBaseUrl = config.appBaseUrl;
+  if (config.signingDeliveryKey === null || appBaseUrl === null) return ceremony;
+
+  /** The provisioner's slice, identical to the one send composes. */
+  const workflowAccess = {
+    clock,
+    ids: {
+      ...createSigningAccessIdGenerator(),
+      ...createEvidenceEventIdGenerator(),
+      ...createNotificationIntentIdGenerator(),
+      ...createNotificationDeliveryIdGenerator(),
+    },
+    tokens: createSigningAccessTokenFactory(),
+    sealer: createDeliverySecretSealer(
+      config.signingDeliveryKey, config.signingDeliveryKeyVersion),
+    links: createSigningLinkBuilder(appBaseUrl),
+    templates: createTemplateRegistry(ALL_TEMPLATES),
+    policy: { bootstrapLifetimeMs: config.signingAccessLifetimeMs },
+  };
+
+  return {
+    ...ceremony,
+    signingSubmission: () => ({
+      transactions, clock, sessionTokens,
+      workflowIds: createSigningWorkflowIdGenerator(),
+      completionIds: createCompletionIdGenerator(),
+      workflowAccess,
+      ids: {
+        ...createRecipientSubmissionIdGenerator(),
+        ...createEvidenceEventIdGenerator(),
+      },
+      idempotencyKeys: idempotency.digester,
+      idempotencyIds: idempotency.ids,
+      signatureImages: createSignatureImageValidator(),
+      policy: {
+        consentVersion: config.recipientConsentVersion,
+        idempotencyRetentionMs: idempotency.policy.retentionMs,
+      },
+    }),
+    signingDecline: () => ({
+      transactions, clock, sessionTokens,
+      workflowIds: createSigningWorkflowIdGenerator(),
+      completionIds: createCompletionIdGenerator(),
+      access: workflowAccess,
+    }),
+  };
+}
+
+/**
  * Document upload, if this deployment has somewhere to put bytes and something
  * to scan them with.
  *
@@ -289,11 +393,33 @@ function buildRecipientAccess(
  * upload route that stores unscanned bytes. That is the right trade and it is
  * not this file's decision to revisit.
  */
+/**
+ * Object storage, once, for every surface that reads or writes bytes.
+ *
+ * Built here rather than inside `buildUpload` because the CEREMONY needs the
+ * same store: a recipient fetching the document they are asked to sign reads
+ * exactly the artifact the upload wrote. Two clients would be two connection
+ * pools and two chances to be pointed at different buckets.
+ *
+ * Null when the deployment has nowhere to put bytes, which is what makes both
+ * surfaces conditional rather than broken.
+ */
+function buildObjectStorage(): ObjectStorage | null {
+  try {
+    return createS3ObjectStorage(loadStorageConfig());
+  } catch {
+    // Names only are ever reported by the loader; no value is logged here.
+    return null;
+  }
+}
+
 function buildUpload(
   database: LagdaDatabase,
   transactions: ReturnType<typeof createTransactionManager>,
   clock: Clock,
+  storage: ObjectStorage | null,
 ): Pick<AppDependencies, "upload"> {
+  if (storage === null) return {};
   let storageConfig;
   let scannerConfig;
   try {
@@ -305,7 +431,7 @@ function buildUpload(
     return {};
   }
 
-  const storage = createS3ObjectStorage(storageConfig);
+  void storageConfig;
   const keys = createStorageKeyStrategy();
   const inspector = createPdfInspector();
   const scanner = createClamAvScanner(scannerConfig);
