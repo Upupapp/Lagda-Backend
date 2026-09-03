@@ -39,7 +39,12 @@ const API_SRC = join(dirname(fileURLToPath(import.meta.url)), "..");
  * should require the same argument as any other decision to ship less.
  */
 const NOT_WIRED_IN_PRODUCTION: Record<string, string> = {
-  signingAccess: "Depends on the signing-access graph.",
+  // `signingAccess` LEFT this list. Its reason -- "depends on the signing-access
+  // graph" -- described the shape of the work rather than a blocker: every
+  // piece it needed already existed in the composition root. What the omission
+  // cost was concrete, and only visible from outside: send mints a grant and
+  // writes an invitation carrying a link, and the route that link points at
+  // did not exist in a deployment.
   signingCeremony: "Depends on the ceremony graph.",
   signingSubmission: "Depends on the submission graph.",
   signingDecline: "Depends on the decline graph.",
@@ -142,6 +147,26 @@ describe("production composition", () => {
     }
   });
 
+  /**
+   * And an entry for a group that IS wired is the same lie, pointing the other
+   * way.
+   *
+   * This direction was unchecked, so wiring `signingAccess` left its excuse in
+   * place and nothing failed. A stale entry is worse than a missing one: it
+   * exempts the group from the accounting above, so a later change that
+   * UNWIRED it would pass silently -- the list would still say it was never
+   * wired, and the test would still agree.
+   */
+  it("lists nothing it has since wired", () => {
+    const body = productionBody();
+    const wiredButListed = Object.keys(NOT_WIRED_IN_PRODUCTION).filter(
+      group => supplies(body, group));
+    expect(
+      wiredButListed,
+      "these are supplied now and must leave NOT_WIRED_IN_PRODUCTION",
+    ).toEqual([]);
+  });
+
   it("accounts for every workspace sub-group, wired or explicitly not", () => {
     const body = productionBody();
     const unaccounted = workspaceSubgroups().filter((group) =>
@@ -167,7 +192,8 @@ describe("production composition", () => {
     // Deliberately an assertion rather than a comment: when someone wires a
     // group, this number moves and the change is visible in the diff.
     const wired = groups.length - Object.keys(NOT_WIRED_IN_PRODUCTION).length;
-    expect(wired).toBe(6);
+    // 6 -> 7 when `signingAccess` was wired. The number moving IS the record.
+    expect(wired).toBe(7);
 
     const subWired =
       workspaceSubgroups().length - Object.keys(WORKSPACE_SUBGROUPS_NOT_WIRED).length;

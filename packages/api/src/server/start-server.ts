@@ -18,6 +18,7 @@ import { createRateLimitScopeDigester } from "../security/rate-limit-plugin.js";
 import { createInvitationTokenFactory } from "../security/invitation-token.js";
 import { createInvitationLinkBuilder } from "../workspaces/invitation-link.js";
 import { createSigningAccessTokenFactory } from "../security/signing-access-token.js";
+import { createRecipientSessionTokenFactory } from "../security/recipient-session-token.js";
 import {
   createDeliverySecretSealer, createSigningLinkBuilder,
 } from "../security/signing-delivery.js";
@@ -40,6 +41,7 @@ import {
   createSigningRequestIdGenerator, createEvidenceEventIdGenerator,
   createOrganizationUnitIdGenerator, createWorkspaceInvitationIdGenerator,
   createSigningAccessIdGenerator, createNotificationIntentIdGenerator,
+  createRecipientSigningSessionIdGenerator,
   createNotificationDeliveryIdGenerator, createArtifactIdGenerator, nextUploadId,
 } from "../security/identifiers.js";
 import { createProviderEventConfirmerFromEnv } from "@lagda/email";
@@ -223,7 +225,49 @@ export async function createProductionDependencies(
     // different things, and here the difference is whether a route exists.
     ...buildIdentity(database, config, sessions, dummyPasswordHash),
     ...buildUpload(database, transactions, clock),
+    ...buildRecipientAccess(transactions, clock, config),
     ...buildProviderWebhook(database),
+  };
+}
+
+/**
+ * The recipient's way in.
+ *
+ * ── Shrinking NOT_WIRED_IN_PRODUCTION ──────────────────────────────────────
+ *
+ * `signingAccess` was listed there as "depends on the signing-access graph",
+ * which described the shape of the work rather than a blocker. Every piece it
+ * needs already existed in this file: the transaction manager, the clock, both
+ * token factories, an id generator and a lifetime from configuration.
+ *
+ * What it cost to leave unwired was concrete. Sending a request MINTS a grant,
+ * seals a credential and writes an invitation carrying a link -- and the route
+ * that link points at did not exist in a deployment, so the invitation was
+ * undeliverable in the only sense that matters. Found by driving the ceremony
+ * end to end for the first time and getting 404 from `/signing-access/bootstrap`.
+ *
+ * UNCONDITIONAL, unlike upload and send. It reads no secret and needs no
+ * external service, so there is no configuration under which the recipient's
+ * entry point should be absent.
+ */
+function buildRecipientAccess(
+  transactions: ReturnType<typeof createTransactionManager>,
+  clock: Clock,
+  config: ApiConfig,
+): Pick<AppDependencies, "signingAccess"> {
+  return {
+    signingAccess: () => ({
+      transactions,
+      clock,
+      // The BOOTSTRAP credential is the one in the emailed link; the SESSION
+      // token is what the ceremony runs on afterwards. Two factories because
+      // they are two credentials with two lifetimes, and collapsing them would
+      // make the link as long-lived as the session.
+      bootstrapTokens: createSigningAccessTokenFactory(),
+      sessionTokens: createRecipientSessionTokenFactory(),
+      ids: createRecipientSigningSessionIdGenerator(),
+      policy: { sessionLifetimeMs: config.recipientSessionLifetimeMs },
+    }),
   };
 }
 
