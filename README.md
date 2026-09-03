@@ -15,8 +15,12 @@ BACKEND-00.
 - **Node.js 24** (`.nvmrc` pins `24`; `engines` requires `>=24 <25`)
 - **npm** — the package manager, using npm workspaces
 
-Nothing else. No database, no cloud account, no secrets, and no running
-frontend are needed for any command below.
+Nothing else for the default gate: `npm run check` needs no database, no cloud
+account, no secrets and no running frontend.
+
+**The integration suite is the exception.** `npm run test:integration` needs a
+real, multi-connection PostgreSQL — see [Integration tests](#integration-tests).
+It is not part of `check` or `ci` for that reason.
 
 ## Install
 
@@ -38,13 +42,24 @@ npm install   # when adding or changing dependencies
 | `npm run clean` | Removes build output. Touches nothing else. |
 | `npm run check` | `typecheck` → `lint` → `test`. The local gate. |
 | `npm run ci` | `check` plus `build`. What CI runs. |
+| `npm run test:integration` | The suites that need real PostgreSQL. Not in `check` — see below. |
+| `npm run test:tenancy` | Just the cross-workspace isolation suite. |
+| `npm run check:full` | `check` plus `test:integration`. |
+| `npm run test:coverage` | Vitest with coverage. |
+| `npm run db:migrate` | Applies migrations to `DATABASE_URL`. Up only. |
+| `npm run db:migrate:status` | Reports which migrations have run. |
+| `npm run openapi:emit` | Regenerates `openapi.json` from the contracts. |
+| `npm run dev:api` / `npm run dev:worker` | The two processes, watched. |
+| `npm run start:api` / `npm run start:worker` | The same, from `dist/`. |
+| `npm run preflight` | Checks a deployment's configuration before it boots. |
 
 `typecheck` and `build` share the same mechanism (TypeScript project
 references); `typecheck` forces a full re-check while `build` is incremental.
 
-There are intentionally **no** `dev:api` or `dev:worker` scripts yet. The API and
-worker processes do not exist, and a placeholder daemon that pretends otherwise
-would be worse than their absence.
+`db:migrate` applies migrations and has **no `down`**. Reverting means calling a
+migration's own `down` and deleting its `kysely_migration` row by hand — which is
+deliberate friction: several migrations refuse to revert at all, because
+narrowing a state vocabulary would mean choosing a state for rows that have one.
 
 ### No formatter
 
@@ -126,15 +141,44 @@ exists.
 Layers separate by directory as they arrive:
 
 ```
-tests/architecture/   structural rules (exists)
-tests/unit/           domain logic, no I/O
-tests/integration/    real PostgreSQL where persistence semantics matter
+tests/architecture/   structural rules
+tests/contracts/      the published contract's own shape
+tests/integration/    cross-adapter composition against real PostgreSQL
 tests/security/       cross-workspace access, privilege escalation, CSRF, uploads
 tests/e2e/            complete backend flows
 ```
 
-Only `tests/architecture/` exists today; the rest are created by the commands
-that need them rather than pre-made as empty folders.
+`architecture`, `contracts` and `integration` exist; the rest are created by the
+commands that need them rather than pre-made as empty folders. Most integration
+suites live beside the code they exercise as `*.integration.test.ts`, and
+`tests/integration/` holds the ones that wire two adapters together and so
+belong to neither package.
+
+### Integration tests
+
+They need a **real, multi-connection PostgreSQL**, and no in-process substitute
+will do. This is not fussiness: a single-connection stand-in cannot run a
+request path that fans out, and a fake enforces no constraint at all. Both
+limits have hidden real defects here — an upload that could never succeed, and a
+completion that could never be recorded — each invisible to a green unit suite.
+
+```bash
+./scripts/testing/test-database.sh    # provisions a cluster; idempotent
+DATABASE_TEST_URL="postgres://postgres@127.0.0.1:55433/lagda_test" \
+  npm run test:integration
+```
+
+The script finds PostgreSQL even when it is not on `PATH` — Postgres.app ships
+under `/Applications` and adds nothing to the shell, which is how one concludes
+a machine has no PostgreSQL when it has one.
+
+Two rules the harness enforces, both worth knowing before they surprise you:
+
+- **The database name must contain `test`.** It truncates between cases, and an
+  unlucky environment variable must not be able to point that at a development
+  database.
+- **Migrations run automatically.** There is no separate step, and the suite
+  works from an empty database.
 
 No coverage threshold is set. Thresholds become meaningful once real domain code
 exists, and setting one now would only invite tests written to satisfy a number.
