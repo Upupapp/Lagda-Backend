@@ -17,7 +17,7 @@ import type { LagdaDatabase } from "./client/index.js";
 import { createIdempotencyRepository } from "./repositories/idempotency.js";
 import { createTestDatabase, hasIntegrationDatabase } from "./testing/harness.js";
 
-const WS_A: IdempotencyScope = { type: "workspace", workspaceId: "ws_a" as WorkspaceId };
+const WS_A: IdempotencyScope = { type: "workspace", workspaceId: "ws_idem_a" as WorkspaceId };
 const WS_B: IdempotencyScope = { type: "workspace", workspaceId: "ws_b" as WorkspaceId };
 const USER: IdempotencyScope = { type: "user", userId: "usr_a" as UserId };
 
@@ -41,7 +41,22 @@ describe.skipIf(!hasIntegrationDatabase())("idempotency on PostgreSQL", () => {
 
   beforeAll(async () => { database = await createTestDatabase(); }, 60_000);
   afterAll(async () => { await database?.close(); });
-  beforeEach(async () => { await database.db.deleteFrom("idempotency_records").execute(); });
+  beforeEach(async () => {
+    await database.db.deleteFrom("idempotency_records").execute();
+    // ── The workspace too, and BEFORE rather than after ────────────────────
+    //
+    // Two tests insert `ws_a` and deleted it on their last line. Cleanup that
+    // only runs when the test SUCCEEDS is not cleanup: one failure stranded
+    // the row, the next test collided on the primary key, and the pair failed
+    // together -- intermittently, because a later suite's `truncateAll`
+    // eventually cleared it and the following run passed.
+    //
+    // That is also why the id is namespaced now. Every other suite here uses
+    // one (`ws_evidence_a`, `ws_prep_a`); this file used a bare `ws_a`, which
+    // is exactly the name a future suite would reach for.
+    await database.db.deleteFrom("workspaces")
+      .where("workspace_id", "=", "ws_idem_a").execute();
+  });
 
   const repo = () => createIdempotencyRepository(database.db);
 
@@ -177,46 +192,44 @@ describe.skipIf(!hasIntegrationDatabase())("idempotency on PostgreSQL", () => {
   it("commits the claim and the business write together", async () => {
     // The atomicity guarantee, using a real second table.
     await database.db.insertInto("workspaces").values({
-      workspace_id: "ws_a", name: "A", created_at: new Date(AT),
+      workspace_id: "ws_idem_a", name: "A", created_at: new Date(AT),
     }).execute();
 
     await database.db.transaction().execute(async (trx) => {
       await createIdempotencyRepository(trx).claim(claim());
       await trx.updateTable("workspaces").set({ name: "renamed" })
-        .where("workspace_id", "=", "ws_a").execute();
+        .where("workspace_id", "=", "ws_idem_a").execute();
       await createIdempotencyRepository(trx)
         .complete("idem_1" as IdempotencyRecordId, result(), AT + 1000);
     });
 
     const row = await database.db.selectFrom("workspaces").selectAll()
-      .where("workspace_id", "=", "ws_a").executeTakeFirst();
+      .where("workspace_id", "=", "ws_idem_a").executeTakeFirst();
     expect(row?.name).toBe("renamed");
     expect((await repo().find(WS_A, "signingRequest.send", KEY))?.state).toBe("completed");
 
-    await database.db.deleteFrom("workspaces").where("workspace_id", "=", "ws_a").execute();
   });
 
   it("rolls back the business write when completion fails", async () => {
     await database.db.insertInto("workspaces").values({
-      workspace_id: "ws_a", name: "A", created_at: new Date(AT),
+      workspace_id: "ws_idem_a", name: "A", created_at: new Date(AT),
     }).execute();
 
     await expect(
       database.db.transaction().execute(async (trx) => {
         await createIdempotencyRepository(trx).claim(claim());
         await trx.updateTable("workspaces").set({ name: "renamed" })
-          .where("workspace_id", "=", "ws_a").execute();
+          .where("workspace_id", "=", "ws_idem_a").execute();
         throw new Error("failed after the write");
       }),
     ).rejects.toThrow();
 
     const row = await database.db.selectFrom("workspaces").selectAll()
-      .where("workspace_id", "=", "ws_a").executeTakeFirst();
+      .where("workspace_id", "=", "ws_idem_a").executeTakeFirst();
     // Neither the mutation nor the claim survived.
     expect(row?.name).toBe("A");
     expect(await repo().find(WS_A, "signingRequest.send", KEY)).toBeNull();
 
-    await database.db.deleteFrom("workspaces").where("workspace_id", "=", "ws_a").execute();
   });
 
   // ── Expiry ────────────────────────────────────────────────────────────────
