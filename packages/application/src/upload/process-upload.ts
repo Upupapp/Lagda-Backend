@@ -123,6 +123,49 @@ export interface UploadRejected {
   readonly reason: UploadRejectionReason;
   /** True when the caller caused it and could fix it. Drives the HTTP status. */
   readonly clientFault: boolean;
+  /**
+   * What went wrong internally, for the OPERATOR. Never sent to a client.
+   *
+   * ── Why this exists ─────────────────────────────────────────────────────
+   *
+   * `storage-failure` is returned at four places and each one swallowed its
+   * error entirely. When every upload began failing, the reason was a CHECK
+   * constraint the composition root violated -- and finding it took four
+   * rebuild cycles, adding a `console.error` to one catch at a time, because
+   * the four are indistinguishable from outside.
+   *
+   * ── Why it is not the error message ─────────────────────────────────────
+   *
+   * A PostgreSQL error's `message` and `detail` can embed ROW VALUES -- "Key
+   * (email)=(maria@example.test) already exists" is a real one -- so logging
+   * them would put customer data in the log the same way a document title
+   * would. `safeCause` records the SQLSTATE and the constraint name, or the
+   * error's constructor name, and nothing else. Both are schema identifiers.
+   *
+   * The same rule `InspectionRejected.detail` already states in this package:
+   * a safe detail for operators, never a library message.
+   */
+  readonly cause?: string;
+}
+
+/**
+ * A bounded description of a thrown value, safe to log.
+ *
+ * Deliberately narrow. Anything not recognised becomes its constructor name,
+ * because an unrecognised error is exactly the kind whose message is least
+ * predictable.
+ */
+export function safeCause(error: unknown): string {
+  if (typeof error !== "object" || error === null) return typeof error;
+  const record = error as Record<string, unknown>;
+  const parts: string[] = [];
+  // SQLSTATE and the constraint. Identifiers from the schema, not from a row.
+  if (typeof record["code"] === "string") parts.push(`sqlstate=${record["code"]}`);
+  if (typeof record["constraint"] === "string") {
+    parts.push(`constraint=${record["constraint"]}`);
+  }
+  if (parts.length === 0) parts.push(error.constructor.name);
+  return parts.join(" ");
 }
 
 export type UploadResult = UploadAccepted | UploadRejected;
@@ -173,7 +216,10 @@ export async function processDocumentUpload(
       // (§24).
       return { outcome: "rejected", uploadId: null, reason: "file-too-large", clientFault: true };
     }
-    return { outcome: "rejected", uploadId: null, reason: "storage-failure", clientFault: false };
+    return {
+      outcome: "rejected", uploadId: null, reason: "storage-failure",
+      clientFault: false, cause: safeCause(error),
+    };
   }
 
   if (byteSize === 0) {
@@ -193,8 +239,11 @@ export async function processDocumentUpload(
       // accepted artifact gets the DETECTED type instead (§68).
       mediaType: request.clientMediaType ?? "application/octet-stream",
     });
-  } catch {
-    return { outcome: "rejected", uploadId: null, reason: "storage-failure", clientFault: false };
+  } catch (error) {
+    return {
+      outcome: "rejected", uploadId: null, reason: "storage-failure",
+      clientFault: false, cause: safeCause(error),
+    };
   }
 
   // The durable record exists only AFTER the bytes do, so a row never claims a
@@ -283,7 +332,7 @@ export async function processDocumentUpload(
       uploadId, status: "failed", rejectionReason: reason,
       scanOutcome: scan.outcome, scannedAt, completedAt: deps.clock.now(),
     });
-    return { outcome: "rejected", uploadId, reason, clientFault: false };
+    return { outcome: "rejected", uploadId, reason, clientFault: false, cause: safeCause(error) };
   }
 
   // ── 5. Commit metadata, in a SHORT transaction ───────────────────────────
@@ -313,7 +362,7 @@ export async function processDocumentUpload(
       uploadId, digest, detectedMediaType: inspection.detectedMediaType,
       scanOutcome: scan.outcome, scannedAt, completedAt,
     });
-  } catch {
+  } catch (error) {
     // The object exists but is unreferenced and private. NOT deleted here: a
     // retry with the same artifact identity converges on identical bytes, and
     // deleting on an uncertain transaction outcome is how a real artifact is
@@ -324,6 +373,7 @@ export async function processDocumentUpload(
     }).catch(() => undefined);
     return {
       outcome: "rejected", uploadId, reason: "storage-failure", clientFault: false,
+      cause: safeCause(error),
     };
   }
 

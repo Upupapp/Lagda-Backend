@@ -8,6 +8,7 @@
 import { describe, it, expect } from "vitest";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { createHash } from "node:crypto";
+import { createLogCapture } from "../logging/testing.js";
 import type { DocumentId, Sha256Digest, WorkspaceId } from "@lagda/contracts";
 import type {
   ObjectStorage, UploadDependencies, UploadId, ArtifactId,
@@ -34,8 +35,14 @@ interface Built {
 async function build(options: {
   authorized?: boolean;
   maxBytes?: number;
+  /** Makes the artifact write throw, to exercise LAGDA's own failure path. */
+  failArtifactPut?: boolean;
+  /** Captures what the route LOGS, so the cause can be checked. */
+  logStream?: NodeJS.WritableStream;
 } = {}): Promise<Built> {
-  const app = Fastify({ logger: false });
+  const app = Fastify(options.logStream === undefined
+    ? { logger: false }
+    : { logger: { level: "info", stream: options.logStream } });
   const puts: string[] = [];
   const scans: number[] = [];
   const contexts: { workspaceId: string; userId: string }[] = [];
@@ -43,6 +50,14 @@ async function build(options: {
   const storage: ObjectStorage = {
     putObject(input) {
       puts.push(input.ref.zone);
+      if (options.failArtifactPut === true && input.ref.zone === "artifacts") {
+        // Shaped like a PostgreSQL error, because that is what the cause has
+        // to summarise safely.
+        return Promise.reject(Object.assign(
+          new Error("null value in column \"accepted_artifact_id\""),
+          { code: "23502", constraint: "document_uploads_accepted_has_artifact" },
+        ));
+      }
       return Promise.resolve({ ref: input.ref, sizeBytes: 0 });
     },
     getObject: ref => Promise.resolve({
@@ -271,6 +286,57 @@ describe("upload route", () => {
     // The pipeline was built for the AUTHENTICATED workspace, never the body's.
     expect(contexts).toEqual([{ workspaceId: WS, userId: "usr_1" }]);
     await app.close();
+  });
+
+  /**
+   * The operator gets the cause; the client never does.
+   *
+   * `storage-failure` is returned at four places in the use case, and they are
+   * indistinguishable from outside. Diagnosing one meant adding a
+   * `console.error` to each catch and rebuilding -- four times.
+   */
+  it("logs why an upload failed, and tells the client nothing about it", async () => {
+    const capture = createLogCapture();
+    const { app } = await build({ failArtifactPut: true, logStream: capture.stream });
+    const { payload, headers } = onePdf();
+
+    const response = await app.inject({
+      method: "POST", url: "/test/uploads", payload, headers,
+    });
+    expect(response.statusCode).toBe(503);
+
+    const failure = capture.lines().find(line => line["event"] === "upload.failed");
+    expect(failure, "the route logged nothing about its own failure").toBeDefined();
+    expect(failure?.["reason"]).toBe("storage-failure");
+    // The SQLSTATE and the constraint -- schema identifiers, which is what
+    // makes the log both useful and safe to keep.
+    expect(failure?.["cause"]).toBe(
+      "sqlstate=23502 constraint=document_uploads_accepted_has_artifact");
+
+    // And NONE of it reaches the caller: they learn to retry, and nothing
+    // about the inside.
+    const body = JSON.stringify(response.json());
+    for (const forbidden of ["sqlstate", "constraint", "document_uploads", "23502"]) {
+      expect(body, `the response leaks ${forbidden}`).not.toContain(forbidden);
+    }
+  });
+
+  /**
+   * A CLIENT fault is not logged as a LAGDA failure.
+   *
+   * The reason it gets back already describes it fully, and logging every
+   * oversized PDF would bury the real failures under them.
+   */
+  it("logs nothing when the caller is at fault", async () => {
+    const capture = createLogCapture();
+    const { app } = await build({ maxBytes: 8, logStream: capture.stream });
+    const { payload, headers } = onePdf();
+
+    const response = await app.inject({
+      method: "POST", url: "/test/uploads", payload, headers,
+    });
+    expect(response.statusCode).toBe(413);
+    expect(capture.lines().some(line => line["event"] === "upload.failed")).toBe(false);
   });
 
   it("maps every rejection reason to a distinct, safe status", () => {

@@ -11,7 +11,7 @@ import { describe, it, expect, vi } from "vitest";
 import { createHash } from "node:crypto";
 import type { DocumentId, Sha256Digest, WorkspaceId } from "@lagda/contracts";
 import {
-  processDocumentUpload, normalizeFilename,
+  processDocumentUpload, normalizeFilename, safeCause,
   type UploadDependencies, type UploadLimits, type UploadResult,
   type MalwareScanResult, type InspectionResult,
   type UploadId, type ArtifactId, type UploadRecord,
@@ -410,5 +410,59 @@ describe("filename handling", () => {
     expect(normalizeFilename("x".repeat(400))?.length).toBe(255);
     expect(normalizeFilename("   ")).toBeNull();
     expect(normalizeFilename(undefined)).toBeNull();
+  });
+});
+
+// ── The cause an operator needs, and the data they must not get ──────────────
+
+describe("a rejection records why, safely", () => {
+  /**
+   * Four sites return `storage-failure` and are indistinguishable from outside.
+   *
+   * When every upload began failing, finding out WHICH one meant adding a
+   * `console.error` to one catch at a time and rebuilding -- four times. The
+   * cause is on the result now, so the route can log it once.
+   */
+  it("carries a cause when the accepted-object write fails", async () => {
+    const h = harness({ failPut: ref => ref.zone === "artifacts" });
+    const result = await upload(h, PDF);
+
+    expect(result).toMatchObject({ outcome: "rejected", reason: "storage-failure" });
+    expect((result as { cause?: string }).cause).toBeDefined();
+  });
+
+  it("carries a cause when the commit fails after promotion", async () => {
+    const h = harness({ failCommit: true });
+    const result = await upload(h, PDF);
+    expect((result as { cause?: string }).cause).toBeDefined();
+  });
+
+  /**
+   * NEVER the message. A PostgreSQL error's `message` and `detail` embed row
+   * values -- "Key (email)=(maria@example.test) already exists" is a real one
+   * -- so a cause built from them would put customer data in the log exactly
+   * as a document title would.
+   */
+  it("reports the SQLSTATE and constraint, and nothing from the row", () => {
+    const pgError = Object.assign(new Error(
+      "duplicate key value violates unique constraint \"users_email\"\n"
+      + "Key (email)=(maria@example.test) already exists."), {
+      code: "23505",
+      constraint: "users_email",
+      detail: "Key (email)=(maria@example.test) already exists.",
+    });
+
+    const cause = safeCause(pgError);
+    expect(cause).toBe("sqlstate=23505 constraint=users_email");
+    expect(cause).not.toContain("maria@example.test");
+    expect(cause).not.toContain("duplicate key");
+  });
+
+  it("falls back to the error's type when it carries no SQLSTATE", () => {
+    // An unrecognised error is exactly the one whose message is least
+    // predictable, so its NAME is all that is recorded.
+    expect(safeCause(new TypeError("cannot read properties of undefined"))).toBe("TypeError");
+    expect(safeCause("a bare string")).toBe("string");
+    expect(safeCause(null)).toBe("object");
   });
 });

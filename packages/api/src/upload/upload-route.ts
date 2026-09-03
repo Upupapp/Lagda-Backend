@@ -233,6 +233,29 @@ export async function registerUploadRoute(
     );
 
     if (result.outcome === "rejected") {
+      // ── The cause is LOGGED, never sent ────────────────────────────────
+      //
+      // `storage-failure` is returned at four places in the use case and they
+      // are indistinguishable from outside. When every upload started failing,
+      // finding out which one meant adding a `console.error` to each catch and
+      // rebuilding -- four times. One line here removes that.
+      //
+      // Only for LAGDA's own failures. A client fault is already fully
+      // described by the reason it gets back, and logging those would bury the
+      // real ones under every oversized PDF anyone uploads.
+      //
+      // `cause` is a SQLSTATE and a constraint name, never an error message:
+      // a PostgreSQL message can embed row values. It stays out of the
+      // response for the reason the reply below already states -- the client
+      // learns what to do, and nothing about the inside.
+      if (!result.clientFault) {
+        request.log.error({
+          event: "upload.failed",
+          reason: result.reason,
+          uploadId: result.uploadId,
+          cause: result.cause ?? "unrecorded",
+        }, "upload.failed");
+      }
       return sendRejection(reply, result.reason);
     }
 
