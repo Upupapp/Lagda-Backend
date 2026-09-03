@@ -236,10 +236,25 @@ export function createScopedCompletionRepository(
     },
 
     async recordCompletion(input) {
-      // `on conflict do nothing` against UNIQUE (signing_request_id). A retry
-      // that lost its response finds the row already there and converges (§109)
-      // rather than violating — and a SECOND completion is impossible by
-      // constraint, not by an application check.
+      // `on conflict do nothing` against the PRIMARY KEY. A retry that lost its
+      // response finds the row already there and converges (§109) rather than
+      // violating — and a SECOND completion is impossible by constraint, not by
+      // an application check.
+      //
+      // ── The target must name BOTH key columns ─────────────────────────────
+      //
+      // It named `signing_request_id` alone, and the comment claimed a UNIQUE
+      // on that column. There is none: the key is
+      // `PRIMARY KEY (workspace_id, signing_request_id)`. PostgreSQL requires a
+      // conflict target to match a unique index exactly, so this threw "there
+      // is no unique or exclusion constraint matching the ON CONFLICT
+      // specification" for EVERY completion — the pipeline's final write could
+      // never succeed.
+      //
+      // Invisible to the unit suite, which uses a fake with no constraints at
+      // all. Found the first time the integration suite ran against real
+      // PostgreSQL. The guarantee is unchanged: one completion per request per
+      // workspace, and the tenant column belongs in the key anyway.
       try {
         const result = await trx.insertInto("signing_request_completions")
           .values({
@@ -256,7 +271,7 @@ export function createScopedCompletionRepository(
             pipeline_version: input.pipelineVersion,
             created_at: new Date(input.completedAt),
           })
-          .onConflict(oc => oc.column("signing_request_id").doNothing())
+          .onConflict(oc => oc.columns(["workspace_id", "signing_request_id"]).doNothing())
           .executeTakeFirst();
         return Number(result.numInsertedOrUpdatedRows ?? 0n) === 1;
       } catch (error) {

@@ -13,6 +13,7 @@ import type {
 import type {
   ArtifactId, ArtifactRecord, EvidenceEventId, EvidenceEventInput,
   SealId, SealRecord, VerificationRecord, SigningRequestRecipientId,
+  PreparationId, SigningRequestId, CompletionRunId,
 } from "@lagda/application";
 import type { LagdaDatabase } from "./client/index.js";
 import { createTransactionManager } from "./transactions/index.js";
@@ -656,14 +657,82 @@ describe.skipIf(!hasIntegrationDatabase())("evidence persistence on PostgreSQL",
     const lookup = () =>
       createPublicVerificationLookup((operation) => database.db.transaction().execute(operation));
 
+    /**
+     * Everything the PUBLIC lookup structurally requires, not just a record.
+     *
+     * ── Why this grew ───────────────────────────────────────────────────────
+     *
+     * It used to write artifacts, a seal and a verification record, and that
+     * was enough until BACKEND-41 hardened the query: it now inner-joins the
+     * COMPLETION and requires the request to be `completed`, so that a public
+     * endpoint does not rest on "the writer happens to write both in one
+     * transaction". The comment in `evidence.ts` says exactly that.
+     *
+     * The query was right and this fixture was two migrations behind, which is
+     * why both public-lookup tests failed. Building the request and its
+     * completion here is not ceremony -- it is the precondition the endpoint
+     * genuinely has, and a fixture that skipped it was testing a lookup no
+     * anonymous caller could ever reach.
+     */
     async function finalize(): Promise<void> {
       await transactions.runForWorkspace(WS_A, async (uow) => {
         await uow.artifacts.insert(artifact());
         await uow.artifacts.insert(artifact({
           artifactId: "art_sealed" as ArtifactId, artifactType: "sealed", digest: HASH_B,
         }));
+
+        // The request the verification record points at. `completed`, with the
+        // timestamps its CHECK constraints demand: `sent_at` for anything past
+        // draft, `completed_at` exactly when completed.
+        await uow.preparations.insert({
+          preparationId: "prep_ev" as PreparationId, workspaceId: WS_A,
+          documentId: DOC, sourceArtifactId: "art_original", createdAt: 0,
+        });
+        await uow.signingRequests.createSnapshot({
+          request: {
+            signingRequestId: REQ as unknown as SigningRequestId, workspaceId: WS_A,
+            documentId: DOC, sourceArtifactId: "art_original" as ArtifactId,
+            sourcePreparationId: "prep_ev" as PreparationId,
+            sourcePreparationRevision: 1, state: "draft",
+            completionReadyAt: null, expiresAt: null, completedAt: null,
+            terminatedAt: null, terminationReason: null, cancellationNote: null,
+            documentTitle: "Lease Agreement",
+            createdByUserId: "usr_evidence_fixture" as never,
+            createdAt: 0, updatedAt: 0,
+          },
+          recipients: [], fields: [],
+        });
+        await uow.completion.ensureRun({
+          completionRunId: "crun_ev" as CompletionRunId,
+          signingRequestId: REQ as unknown as SigningRequestId,
+          pipelineVersion: 1, createdAt: 0,
+        });
+        await uow.completion.recordCompletion({
+          signingRequestId: REQ as unknown as SigningRequestId,
+          completionRunId: "crun_ev" as CompletionRunId,
+          mergedArtifactId: "art_original" as ArtifactId,
+          certificateArtifactId: "art_original" as ArtifactId,
+          finalArtifactId: "art_sealed" as ArtifactId,
+          completedAt: 0, sealScheme: "hash-evidence", sealVersion: 1,
+          digestAlgorithm: "sha-256", pipelineVersion: 1,
+        });
+
         await uow.finalizations.recordFinalization({ seal: seal(), verification: verification() });
       });
+
+      // The state, set directly. There is no transition from `draft` to
+      // `completed` -- the lifecycle goes through send, signature and the
+      // completion pipeline, none of which this suite is about -- and the
+      // CHECK constraints demand the timestamps that go with it: `sent_at` for
+      // anything past draft, `completed_at` exactly when completed.
+      await sql`
+        update signing_requests
+           set state = 'completed',
+               sent_at = to_timestamp(0),
+               completion_ready_at = to_timestamp(0),
+               completed_at = to_timestamp(0)
+         where signing_request_id = ${REQ}
+      `.execute(database.db);
     }
 
     it("resolves a verification ID with no workspace context", async () => {

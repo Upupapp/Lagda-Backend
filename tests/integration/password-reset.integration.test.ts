@@ -11,6 +11,7 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { createHash } from "node:crypto";
+import { sql } from "kysely";
 import {
   registerUser, loginUser, requestPasswordReset, resetPassword,
   type LoginDependencies, type RegisterUserDependencies,
@@ -113,9 +114,36 @@ describe.skipIf(!hasIntegrationDatabase())("password recovery", () => {
       commit: operation => database.db.transaction().execute(trx => operation({
         challenges: createPasswordResetRepository(trx),
         users: createPasswordResettableUserRepository(trx),
-      // OD-185. Not exercised here: this suite covers the challenge, not the
-      // notification, and a fake that succeeded would assert nothing.
-      adoptUser: () => Promise.reject(new Error("adoptUser is not exercised here")),
+      // OD-185. Exercised ONLY when a delivery is configured, because that is
+      // the only branch that calls it -- the use case adopts the account just
+      // before `scheduleDelivery` and not otherwise.
+      //
+      // It used to reject unconditionally, with a comment saying this suite
+      // covers the challenge rather than the notification. That was true until
+      // the intent write moved INSIDE the transaction: the two delivery cases
+      // now reach `adoptUser` first, so they failed on the double instead of on
+      // the queue they were about. The loud rejection is kept for every other
+      // case, where a fake that succeeded really would assert nothing.
+      adoptUser: (userId) => {
+        if (overrides.withDelivery !== true && overrides.failDelivery !== true) {
+          return Promise.reject(new Error("adoptUser is not exercised here"));
+        }
+        return (async () => {
+          // Adoption is REAL: a notification intent is GLOBAL_USER-scoped and
+          // its policy checks `lagda.user_id` on write, so the context is set
+          // on the same transaction exactly as production does it.
+          await sql`select set_config('lagda.user_id', ${userId}, true)`.execute(trx);
+          // The repository is NOT. This suite stubs `scheduleDelivery`, so
+          // nothing reads it -- and a proxy that throws says so, where a silent
+          // object would let a future test believe an intent was written.
+          const notifications = new Proxy({}, {
+            get: () => {
+              throw new Error("this suite writes no notification intents");
+            },
+          }) as never;
+          return { notifications, transaction: trx };
+        })();
+      },
       })),
       ...(overrides.withDelivery === true || overrides.failDelivery === true
         ? {
