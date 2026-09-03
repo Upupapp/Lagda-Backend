@@ -135,6 +135,36 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
 
   const app = Fastify(serverOptions).withTypeProvider<TypeBoxTypeProvider>();
 
+  // ── An empty JSON body means "no fields", not "malformed" ──────────────────
+  //
+  // Fastify's default parser raises FST_ERR_CTP_EMPTY_JSON_BODY for a zero-byte
+  // body, which this app mapped to "The request body is not valid JSON." That
+  // is right for a route that needs fields and wrong for one that needs none:
+  // a state TRANSITION carries no payload, and most HTTP clients set
+  // `Content-Type: application/json` on a POST regardless. So
+  // `POST .../readiness` -- which takes no body by design -- answered 400 to
+  // the most natural way to call it, while the same request with `{}` or with
+  // no content-type at all succeeded.
+  //
+  // Treating empty as `{}` does not weaken the routes that DO require fields:
+  // they now fail schema validation naming the missing property, which is a
+  // better answer than a parse error for the same mistake.
+  app.addContentTypeParser<string>(
+    "application/json", { parseAs: "string" },
+    (_request, body, done) => {
+      if (body.trim() === "") { done(null, {}); return; }
+      try {
+        done(null, JSON.parse(body) as unknown);
+      } catch {
+        // Fastify's own code, so the existing mapping keeps answering for it
+        // rather than this parser inventing a second shape for one failure.
+        const invalid = new Error("Body is not valid JSON.") as Error & { code?: string };
+        invalid.code = "FST_ERR_CTP_INVALID_JSON_BODY";
+        done(invalid);
+      }
+    },
+  );
+
   // ── Plugin order matters ───────────────────────────────────────────────────
   //
   // 1. security headers  — applied to every response including errors and 404s

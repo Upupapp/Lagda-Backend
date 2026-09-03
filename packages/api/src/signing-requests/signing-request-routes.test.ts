@@ -545,3 +545,57 @@ describe("signing request telemetry carries no snapshot", () => {
     expect(everything).not.toContain(SENSITIVE_EMAIL);
   });
 });
+
+// ── An empty JSON body is "no fields", not "malformed" ───────────────────────
+
+describe("a transition takes no body", () => {
+  /**
+   * The most natural way to call a bodyless POST used to fail.
+   *
+   * Fastify's default parser raises FST_ERR_CTP_EMPTY_JSON_BODY for a zero-byte
+   * body, which this app maps to "The request body is not valid JSON." Most
+   * HTTP clients set `Content-Type: application/json` on a POST regardless of
+   * whether they send one, so `POST .../readiness` -- which takes no body by
+   * design -- answered 400 to a correct request, while the same call with `{}`
+   * or with no content-type at all worked.
+   *
+   * Found by driving the real API, not by a test: the client this repository
+   * ships omits the header when there is no body, so it never hit it.
+   */
+  it("accepts a JSON content-type with no body at all", async () => {
+    const h = await harness();
+    const { cookie, csrf } = await h.signIn(OWNER);
+
+    const response = await h.app.inject({
+      method: "POST",
+      url: `/workspaces/${WORKSPACE}/signing-requests/sr_absent/readiness`,
+      headers: { cookie, [CSRF_TOKEN_HEADER]: csrf, "content-type": "application/json" },
+    });
+
+    // 404 because that request does not exist -- which is the point: the body
+    // PARSED and the handler ran. A 400 here would mean it never got that far.
+    expect(response.statusCode).not.toBe(400);
+    expect(response.json<{ error: { code: string } }>().error.code).not.toBe("validation_error");
+  });
+
+  /**
+   * And a route that DOES need fields still refuses, with a better answer.
+   *
+   * Schema validation names the missing property; a parse error does not. The
+   * tolerant parser improves that case rather than weakening it.
+   */
+  it("still refuses an empty body where fields are required", async () => {
+    const h = await harness();
+    const { cookie, csrf } = await h.signIn(OWNER);
+
+    const response = await h.app.inject({
+      method: "POST",
+      url: `/workspaces/${WORKSPACE}/documents/doc_1/signing-requests`,
+      headers: {
+        cookie, [CSRF_TOKEN_HEADER]: csrf, "content-type": "application/json",
+        [IDEMPOTENCY_KEY_HEADER]: "empty-body-probe-0001",
+      },
+    });
+    expect(response.statusCode).not.toBe(400);
+  });
+});
