@@ -44,6 +44,12 @@ export {
 export {
   createUserRepository, createVerificationChallengeRepository,
 } from "./repositories/users.js";
+// The anonymous verification read. Exported for the same reason the others
+// above are: it belongs to no workspace, so no unit of work can own it. It
+// takes a transaction RUNNER rather than a pool, so an independently
+// constructed instance cannot hold a connection -- which is the risk the note
+// at the top of this file is about.
+export { createPublicVerificationLookup } from "./repositories/evidence.js";
 export {
   createVerificationRepository, createVerifiableUserRepository,
 } from "./repositories/verification.js";

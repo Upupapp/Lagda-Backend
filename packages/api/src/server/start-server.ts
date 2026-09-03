@@ -19,6 +19,7 @@ import { createInvitationTokenFactory } from "../security/invitation-token.js";
 import { createInvitationLinkBuilder } from "../workspaces/invitation-link.js";
 import { createSigningAccessTokenFactory } from "../security/signing-access-token.js";
 import { createRecipientSessionTokenFactory } from "../security/recipient-session-token.js";
+import { createPublicVerificationLookup } from "@lagda/db";
 import { createSignatureImageValidator } from "../security/signature-image.js";
 import {
   createDeliverySecretSealer, createSigningLinkBuilder,
@@ -234,11 +235,42 @@ export async function createProductionDependencies(
     ...buildIdentity(database, config, sessions, dummyPasswordHash),
     ...buildUpload(database, transactions, clock, objectStorage),
     ...buildRecipientAccess(transactions, clock, config),
+    ...buildPublicVerification(database),
     ...buildRecipientCeremony({
       transactions, clock, config, storage: objectStorage, idempotency,
     }),
     ...buildProviderWebhook(database),
   };
+}
+
+/**
+ * Anonymous document verification.
+ *
+ * ── The last surface off NOT_WIRED_IN_PRODUCTION ───────────────────────────
+ *
+ * Its reason was "needs the evidence projection lookup", and the lookup had
+ * been there all along -- unexported from `@lagda/db`, because that package
+ * withholds repositories on purpose. This one is the same category as the
+ * session and idempotency repositories it already exports: it belongs to NO
+ * workspace, so no unit of work can own it.
+ *
+ * UNCONDITIONAL. It reads no secret and calls no external service. A caller
+ * here has no workspace and no credential of any kind, which is exactly why
+ * the route sits at the top level rather than under `workspaces` -- nesting an
+ * anonymous surface inside the authenticated realm would be the wrong shape
+ * even if it worked.
+ *
+ * `runGlobal` with no tenant context, and that is the point: the lookup runs
+ * as the owner, outside RLS, and answers with a hand-picked column list rather
+ * than a mapped row. A later migration adding a column cannot widen the public
+ * surface by accident.
+ */
+function buildPublicVerification(
+  database: LagdaDatabase,
+): Pick<AppDependencies, "publicVerification"> {
+  const lookup = createPublicVerificationLookup(
+    operation => database.db.transaction().execute(operation));
+  return { publicVerification: () => ({ lookup }) };
 }
 
 /**
