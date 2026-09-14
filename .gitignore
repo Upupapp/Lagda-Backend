@@ -8,3 +8,7 @@ coverage/
 .env
 .env.*
 !.env.example
+
+# Local-only dev Postgres (not used for deployment)
+docker-compose.local.yml
+scripts/local/
