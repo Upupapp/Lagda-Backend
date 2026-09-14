@@ -35,6 +35,9 @@
     },
     {
       "path": "../email"
+    },
+    {
+      "path": "../firebase-admin"
     }
   ],
   "exclude": [

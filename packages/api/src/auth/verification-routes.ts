@@ -23,8 +23,9 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { Type, type Static } from "@sinclair/typebox";
 import {
-  verifyEmail, resendEmailVerification, MAX_EMAIL_LENGTH,
+  verifyEmail, resendEmailVerification, finalizeExternalEmailVerification, MAX_EMAIL_LENGTH,
   type ResendVerificationDependencies, type VerifyEmailDependencies,
+  type FinalizeExternalEmailVerificationDependencies, type VerificationChallengeId,
 } from "@lagda/application";
 
 /**
@@ -63,16 +64,52 @@ export const ResendVerificationResponseSchema = Type.Object({
    * infrastructure it does not happen at all (§52).
    */
   accepted: Type.Literal(true),
+  /**
+   * Firebase-provider mode ONLY, and present ONLY when this resend actually
+   * rotated a real, unverified account's challenge — see resendEmailVerification's ResendVerificationResult.
+   *
+   * KNOWN, DISCLOSED NARROWING (P2 migration mission §9/§23): unlike the rest
+   * of this response, whether this field is present DOES distinguish "real,
+   * unverified account" from "unknown address or already verified" in
+   * Firebase mode. This is inherent to Firebase's client-driven send design
+   * (the browser must sign in and call sendEmailVerification() itself — there
+   * is no server-side "just send it" call), not an oversight. Absent entirely
+   * in the default mode, where behavior is byte-for-byte
+   * unchanged from before this migration.
+   */
+  verificationHandoff: Type.Optional(Type.Object({
+    provider: Type.Literal("firebase"),
+    customToken: Type.String(),
+    challengeId: Type.String(),
+  }, { additionalProperties: false })),
+}, { additionalProperties: false });
+
+/** Firebase-provider finalization — reuses VerifyEmailResponseSchema. */
+export const FirebaseFinalizeVerificationRequestSchema = Type.Object({
+  challengeId: Type.String({ minLength: 1, maxLength: 64 }),
 }, { additionalProperties: false });
 
 export type VerifyEmailRequest = Static<typeof VerifyEmailRequestSchema>;
 export type ResendVerificationRequest = Static<typeof ResendVerificationRequestSchema>;
+export type FirebaseFinalizeVerificationRequest = Static<typeof FirebaseFinalizeVerificationRequestSchema>;
 
 export interface VerificationRouteOptions {
   readonly verifyPath: string;
   readonly resendPath: string;
   readonly verifyDependencies: () => VerifyEmailDependencies;
   readonly resendDependencies: () => ResendVerificationDependencies;
+  /**
+   * Firebase-provider mode ONLY. Both undefined together in the default mode —
+   * see identity-composition.ts, which wires them mutually exclusively with
+   * the default scheduleDelivery path.
+   */
+  readonly firebaseFinalizePath?: string;
+  readonly firebaseFinalizeDependencies?: () => FinalizeExternalEmailVerificationDependencies;
+  /** Same handoff issuance register-route.ts uses — see its option's comment. */
+  readonly issueFirebaseVerificationHandoff?: (input: {
+    readonly userId: string;
+    readonly email: string;
+  }) => Promise<{ readonly customToken: string } | null>;
 }
 
 export function registerVerificationRoutes(
@@ -126,13 +163,80 @@ export function registerVerificationRoutes(
     },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     const body = request.body as ResendVerificationRequest;
-    await resendEmailVerification(body.email, options.resendDependencies());
+    const result = await resendEmailVerification(body.email, options.resendDependencies());
 
-    // ALWAYS 202, always the same body. The use case's telemetry reason never
-    // reaches here — it is exactly the distinction anti-enumeration hides.
+    // Firebase mode only: a real rotation is the ONE case that gets a
+    // handoff. See ResendVerificationResponseSchema's comment on why this is
+    // a disclosed, narrower anti-enumeration guarantee than the default mode's.
+    let verificationHandoff: { provider: "firebase"; customToken: string; challengeId: string } | undefined;
+    if (
+      options.issueFirebaseVerificationHandoff !== undefined
+      && result.telemetryReason === "rotated"
+      && result.challengeId !== undefined
+      && result.userId !== undefined
+      && result.normalizedEmail !== undefined
+    ) {
+      const handoff = await options.issueFirebaseVerificationHandoff({
+        userId: result.userId,
+        email: result.normalizedEmail,
+      });
+      if (handoff !== null) {
+        verificationHandoff = {
+          provider: "firebase", customToken: handoff.customToken, challengeId: result.challengeId,
+        };
+      }
+    }
+
+    // ALWAYS 202. In the default mode, always the same body — the use case's
+    // telemetry reason never reaches here, exactly the distinction
+    // anti-enumeration hides. In firebase mode, verificationHandoff's
+    // presence is the one disclosed exception (see schema comment above).
     //
     // 202 rather than 200: the work is accepted, and whether a message is ever
     // delivered is decided later by infrastructure this route does not own.
-    return reply.status(202).send({ accepted: true as const });
+    return reply.status(202).send({
+      accepted: true as const,
+      ...(verificationHandoff === undefined ? {} : { verificationHandoff }),
+    });
   });
+
+  // ── Firebase-provider finalization ───────────────────────────────────────
+  //
+  // Same anti-scanner reasoning as Verify above: POST, never a GET a
+  // prefetcher could trigger. Reuses VerifyEmailResponseSchema — the public
+  // shape is identical (verified/nextAction), because this is the same
+  // terminal state, reached by proving mailbox ownership a different way
+  // (Firebase's own server-side emailVerified, not a redeemed LAGDA secret).
+  if (
+    options.firebaseFinalizePath !== undefined
+    && options.firebaseFinalizeDependencies !== undefined
+  ) {
+    app.post(options.firebaseFinalizePath, {
+      schema: {
+        body: FirebaseFinalizeVerificationRequestSchema,
+        response: { 200: VerifyEmailResponseSchema },
+      },
+    }, async (request: FastifyRequest, reply: FastifyReply) => {
+      const body = request.body as FirebaseFinalizeVerificationRequest;
+      const result = await finalizeExternalEmailVerification(
+        body.challengeId as VerificationChallengeId,
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        options.firebaseFinalizeDependencies!(),
+      );
+
+      if (result.outcome === "invalid") {
+        return reply.status(422).send({
+          error: {
+            code: "INVALID_OR_EXPIRED_VERIFICATION_CODE",
+            message: "That verification link is not valid or has expired. Request a new one.",
+          },
+        });
+      }
+
+      return reply.status(200).send({
+        verified: true,
+        nextAction: "sign-in" as const,
+      });
+    });
+  }
 }

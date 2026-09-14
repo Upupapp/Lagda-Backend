@@ -70,6 +70,10 @@ const ROUTE_POLICIES: Readonly<Record<string, RoutePolicies>> = {
   [IDENTITY_PATHS.resendVerification]: {
     ip: "verification.resend.ip", account: "verification.resend.account",
   },
+  // Firebase-provider mode only (P2 migration) — registered as a route only
+  // when that mode is active (see identity-routes.ts), but the completeness
+  // gate scans this table unconditionally, so the entry must exist either way.
+  [IDENTITY_PATHS.firebaseFinalizeVerification]: { ip: "verification.firebaseFinalize.ip" },
   [IDENTITY_PATHS.forgotPassword]: {
     ip: "auth.reset.request.ip", account: "auth.reset.request.account",
   },

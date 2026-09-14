@@ -389,8 +389,11 @@ describe("POST /auth/register", () => {
       properties: Record<string, unknown>;
     };
     expect(schema.additionalProperties).toBe(false);
+    // `verificationHandoff` is the disclosed, Firebase-provider-only field —
+    // see RegisterResponseSchema's own comment. Still fully closed
+    // (additionalProperties false), just one more known property.
     expect(Object.keys(schema.properties).sort())
-      .toEqual(["email", "emailVerified", "nextAction", "userId"]);
+      .toEqual(["email", "emailVerified", "nextAction", "userId", "verificationHandoff"]);
   });
 
   it("accepts a registration without the optional fields", async () => {

@@ -31,6 +31,7 @@ import type { SessionId } from "@lagda/application";
 import type {
   RegisterUserDependencies, LoginDependencies,
   VerifyEmailDependencies, ResendVerificationDependencies,
+  FinalizeExternalEmailVerificationDependencies,
   RequestPasswordResetDependencies, ResetPasswordDependencies,
   CompleteMfaDependencies, BeginEnrolmentDependencies,
   ConfirmEnrolmentDependencies, DisableMfaDependencies,
@@ -54,6 +55,8 @@ export const IDENTITY_PATHS = {
   signOut: "/auth/sessions/current",
   verifyEmail: "/auth/email-verifications",
   resendVerification: "/auth/email-verifications/resend",
+  /** Firebase-provider mode only — see verification-routes.ts. */
+  firebaseFinalizeVerification: "/auth/email-verifications/firebase-finalize",
   forgotPassword: "/auth/password-resets",
   resetPassword: "/auth/password-resets/complete",
   mfaVerify: "/auth/mfa/verifications",
@@ -107,12 +110,24 @@ export interface IdentityDependencies {
     readonly userId: UserId;
     readonly sessionId: SessionId;
   } | null>;
-  /** Delivers the verification link created by registration. */
+  /** Delivers the verification link created by registration. Default-provider
+   *  mode only — mutually exclusive with issueFirebaseVerificationHandoff below. */
   readonly deliverVerification?: (input: {
     readonly email: string;
     readonly rawToken: string;
     readonly expiresAt: number;
   }) => Promise<void>;
+  /**
+   * Firebase-provider mode only (EMAIL_VERIFICATION_PROVIDER=firebase). Same
+   * function used by both register and resend — see register-route.ts's
+   * option of the same name for the full contract.
+   */
+  readonly issueFirebaseVerificationHandoff?: (input: {
+    readonly userId: string;
+    readonly email: string;
+  }) => Promise<{ readonly customToken: string } | null>;
+  /** Firebase-provider mode only. */
+  readonly firebaseFinalizeVerification?: () => FinalizeExternalEmailVerificationDependencies;
 }
 
 /**
@@ -139,6 +154,9 @@ export function registerIdentityRoutes(
     ...(deps.deliverVerification === undefined
       ? {}
       : { deliverVerification: deps.deliverVerification }),
+    ...(deps.issueFirebaseVerificationHandoff === undefined
+      ? {}
+      : { issueFirebaseVerificationHandoff: deps.issueFirebaseVerificationHandoff }),
   });
 
   registerSessionRoutes(app, {
@@ -155,6 +173,15 @@ export function registerIdentityRoutes(
     resendPath: IDENTITY_PATHS.resendVerification,
     verifyDependencies: deps.verifyEmail,
     resendDependencies: deps.resendVerification,
+    ...(deps.issueFirebaseVerificationHandoff === undefined
+      ? {}
+      : { issueFirebaseVerificationHandoff: deps.issueFirebaseVerificationHandoff }),
+    ...(deps.firebaseFinalizeVerification === undefined
+      ? {}
+      : {
+        firebaseFinalizePath: IDENTITY_PATHS.firebaseFinalizeVerification,
+        firebaseFinalizeDependencies: deps.firebaseFinalizeVerification,
+      }),
   });
 
   registerPasswordResetRoutes(app, {

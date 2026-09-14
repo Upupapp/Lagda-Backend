@@ -26,6 +26,9 @@
       "path": "packages/security"
     },
     {
+      "path": "packages/firebase-admin"
+    },
+    {
       "path": "packages/scanning"
     },
     {

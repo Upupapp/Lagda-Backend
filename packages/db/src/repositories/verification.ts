@@ -42,6 +42,17 @@ export function createVerificationRepository(
       return row === undefined ? null : toChallenge(row);
     },
 
+    async findById(
+      challengeId: VerificationChallengeId,
+    ): Promise<VerificationChallenge | null> {
+      // Primary-key lookup — the Firebase-provider finalize path (no raw
+      // secret to digest; see verify-email.ts's finalizeExternalEmailVerification).
+      const row = await db.selectFrom("email_verification_challenges").selectAll()
+        .where("challenge_id", "=", challengeId)
+        .executeTakeFirst();
+      return row === undefined ? null : toChallenge(row);
+    },
+
     async consumeIfActive(input): Promise<boolean> {
       // The conditions ARE the concurrency control. Two requests racing on one
       // challenge both issue this UPDATE; PostgreSQL serializes them and the
@@ -149,12 +160,13 @@ export function createVerifiableUserRepository(
   return {
     async findById(userId: UserId) {
       const row = await db.selectFrom("users")
-        .select(["user_id", "email_verified_at"])
+        .select(["user_id", "normalized_email", "email_verified_at"])
         .where("user_id", "=", userId)
         .executeTakeFirst();
       if (row === undefined) return null;
       return {
         userId: row.user_id as UserId,
+        normalizedEmail: row.normalized_email,
         emailVerifiedAt: row.email_verified_at === null
           ? null
           : row.email_verified_at.getTime(),

@@ -37,6 +37,7 @@
     "fastify-plugin": "^6.0.0",
     "otpauth": "9.5.1",
     "@lagda/security": "*",
-    "@lagda/email": "*"
+    "@lagda/email": "*",
+    "@lagda/firebase-admin": "*"
   }
 }

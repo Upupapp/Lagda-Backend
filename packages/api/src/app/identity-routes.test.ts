@@ -45,6 +45,16 @@ function app() {
       sessionToken: "t", csrfToken: "c", expiresAt: 0,
     }),
     authenticatedUser: () => Promise.resolve(null),
+    // Firebase-provider mode's two optional deps — present here so "mounts
+    // every declared path" below still proves EVERY contract path in
+    // IDENTITY_PATHS is genuinely wired when the deployment supplies them,
+    // not just the always-on ones. A deployment that omits these (the
+    // default) correctly never mounts firebaseFinalizeVerification at all —
+    // see identity-routes.ts's registerIdentityRoutes.
+    issueFirebaseVerificationHandoff: () => {
+      throw new Error("issueFirebaseVerificationHandoff was called");
+    },
+    firebaseFinalizeVerification: () => stub("firebaseFinalizeVerification"),
   });
 
   return instance;

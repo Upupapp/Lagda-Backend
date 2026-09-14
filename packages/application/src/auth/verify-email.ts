@@ -47,6 +47,20 @@ export interface VerificationChallengeRepositoryFull {
     digest: VerificationTokenDigest,
   ) => Promise<VerificationChallenge | null>;
   /**
+   * Lookup by the challenge's OWN id rather than a digest of its secret.
+   *
+   * Added for Firebase-provider verification (P2 migration): that path's
+   * proof of mailbox ownership comes from Firebase's server-side
+   * `emailVerified` state, not from redeeming a LAGDA-minted secret, so there
+   * is no raw code to digest. The challenge row is still the LAGDA-side
+   * binding context (which account, which email, still-valid window) — this
+   * is simply a second way to reach the same row. `challengeId` alone proves
+   * nothing (it is not a bearer secret); see finalizeExternalEmailVerification.
+   */
+  readonly findById: (
+    challengeId: VerificationChallengeId,
+  ) => Promise<VerificationChallenge | null>;
+  /**
    * Marks a challenge consumed, CONDITIONALLY.
    *
    * Returns false when the row was already terminal. The condition lives in the
@@ -96,6 +110,13 @@ export interface VerifiableUserRepository
   extends Pick<UserRepository, "findByNormalizedEmail"> {
   readonly findById: (userId: UserId) => Promise<{
     readonly userId: UserId;
+    /**
+     * Added for Firebase-provider verification: finalization must compare
+     * THIS (the account's own canonical address) against what Firebase
+     * independently reports as verified, never trusting the caller to say
+     * which email it means (§5/§23 of the migration mission).
+     */
+    readonly normalizedEmail: string;
     readonly emailVerifiedAt: number | null;
   } | null>;
   /**
@@ -220,6 +241,109 @@ export async function verifyEmail(
   });
 }
 
+// ── External-provider finalization ──────────────────────────────────────────
+//
+// Nothing below names a vendor — same rule this file's neighbors follow
+// (auth.ts: "Nothing here names Argon2, a database, or a mail provider").
+// Which external identity provider is in use, and its SDK, live entirely in
+// the composition layer (see identity-composition.ts) and its own adapter
+// package; this module only knows the shape of the proof it needs.
+//
+// Same public result shape as verifyEmail() (VerifyEmailResult), and the same
+// terminal transitions (consumeIfActive → markEmailVerifiedIfUnverified →
+// supersedeActiveForUser) — this is the SAME LAGDA-side state machine,
+// entered a different way. The difference is what counts as proof:
+// verifyEmail() proves mailbox ownership by redeeming a LAGDA-minted secret;
+// this proves it by asking the external provider, server-side, whether ITS
+// OWN independently-delivered verification succeeded for the identity this
+// LAGDA account maps to. The browser's word is never trusted either way.
+
+/** What this function needs from the external provider — read-only, server-side only. */
+export interface ExternalVerificationLookup {
+  readonly getVerificationState: (
+    externalUid: string,
+  ) => Promise<{ readonly email: string; readonly emailVerified: boolean } | null>;
+}
+
+export interface FinalizeExternalEmailVerificationDependencies {
+  readonly clock: Clock;
+  /**
+   * Derives the external provider's uid from a LAGDA account id.
+   * Deterministic and one-directional — never something the caller supplies
+   * (§5/§23: an external uid is never accepted from the request).
+   */
+  readonly externalUid: (userId: UserId) => string;
+  readonly verifier: ExternalVerificationLookup;
+  readonly commit: <T>(
+    operation: (repositories: {
+      readonly challenges: VerificationChallengeRepositoryFull;
+      readonly users: VerifiableUserRepository;
+    }) => Promise<T>,
+  ) => Promise<T>;
+}
+
+export async function finalizeExternalEmailVerification(
+  challengeId: VerificationChallengeId,
+  deps: FinalizeExternalEmailVerificationDependencies,
+): Promise<VerifyEmailResult> {
+  const now = deps.clock.now();
+
+  return deps.commit(async ({ challenges, users }) => {
+    const challenge = await challenges.findById(challengeId);
+    if (challenge === null) return { outcome: "invalid", reason: "not-found" };
+
+    // Identical terminal-state ordering to verifyEmail() — see its comments.
+    if (challenge.supersededAt !== null) {
+      return { outcome: "invalid", reason: "superseded" };
+    }
+    if (challenge.consumedAt !== null) {
+      const account = await users.findById(challenge.userId);
+      if (account !== null && account.emailVerifiedAt !== null) {
+        return { outcome: "already-verified", userId: challenge.userId };
+      }
+      return { outcome: "invalid", reason: "consumed" };
+    }
+    if (challenge.expiresAt <= now) {
+      return { outcome: "invalid", reason: "expired" };
+    }
+
+    const account = await users.findById(challenge.userId);
+    if (account === null) return { outcome: "invalid", reason: "not-found" };
+
+    // THE PROOF. Never the browser's `{ emailVerified: true }` — a fresh,
+    // server-side read of the external provider's own record for the uid
+    // this LAGDA account (not the request) determines, checked against the
+    // account's own canonical email. Any mismatch fails closed into the SAME
+    // public bucket as every other rejection (never distinguishable from
+    // "expired").
+    const uid = deps.externalUid(challenge.userId);
+    const externalUser = await deps.verifier.getVerificationState(uid);
+    if (
+      externalUser === null
+      || !externalUser.emailVerified
+      || externalUser.email !== account.normalizedEmail
+    ) {
+      return { outcome: "invalid", reason: "not-found" };
+    }
+
+    const consumed = await challenges.consumeIfActive({ challengeId, now });
+    if (!consumed) {
+      return { outcome: "already-verified", userId: challenge.userId };
+    }
+
+    const marked = await users.markEmailVerifiedIfUnverified({
+      userId: challenge.userId, verifiedAt: now,
+    });
+    if (!marked) {
+      return { outcome: "already-verified", userId: challenge.userId };
+    }
+
+    await challenges.supersedeActiveForUser({ userId: challenge.userId, now });
+
+    return { outcome: "verified", userId: challenge.userId, verifiedAt: now };
+  });
+}
+
 // ── Resend ───────────────────────────────────────────────────────────────────
 
 export interface ResendVerificationDependencies {
@@ -291,6 +415,23 @@ export type ResendVerificationResult = {
   readonly outcome: "accepted";
   /** For TELEMETRY only. Must never reach a response. */
   readonly telemetryReason: "rotated" | "unknown-account" | "already-verified";
+  /**
+   * Present ONLY when telemetryReason is "rotated". For the Firebase-provider
+   * route's own optional handoff-issuance decision — see verification-routes.ts.
+   * Still must never be forwarded into the ordinary `{accepted:true}` response
+   * body used by non-Firebase deployments. A Firebase-mode deployment's
+   * response DOES vary by whether this is present; that is a disclosed,
+   * narrower anti-enumeration guarantee than the default path's, not an
+   * oversight — see the migration report's Security Review.
+   */
+  readonly challengeId?: VerificationChallengeId;
+  /** Present alongside challengeId, same rationale — needed to derive the
+   *  Firebase UID for the handoff issuance; never forwarded to a response. */
+  readonly userId?: UserId;
+  /** The ACCOUNT's own canonical address, not the submitted form — same
+   *  rationale, so the Firebase user is created with the address finalize()
+   *  will later compare against, not whatever casing/spacing was typed. */
+  readonly normalizedEmail?: string;
 };
 
 export async function resendEmailVerification(
@@ -354,6 +495,9 @@ export async function resendEmailVerification(
       }, adopted);
     }
 
-    return { outcome: "accepted", telemetryReason: "rotated" };
+    return {
+      outcome: "accepted", telemetryReason: "rotated", challengeId,
+      userId: account.userId, normalizedEmail: normalized.normalized,
+    };
   });
 }

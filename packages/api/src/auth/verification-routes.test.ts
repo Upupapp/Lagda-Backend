@@ -52,6 +52,7 @@ async function build(options: {
               consumedAt: options.verifyOutcome === "already-verified" ? 1 : null,
               supersededAt: null,
             }),
+        findById: () => Promise.resolve(null),
         consumeIfActive: () => Promise.resolve(true),
         supersedeActiveForUser: () => Promise.resolve(0),
         findSealedIfActive: () => Promise.resolve(null),
@@ -61,6 +62,7 @@ async function build(options: {
       users: {
         findById: () => Promise.resolve({
           userId: "usr_1" as UserId,
+          normalizedEmail: "user@example.com",
           emailVerifiedAt: options.verifyOutcome === "already-verified" ? 1 : null,
         }),
         findByNormalizedEmail: () => Promise.resolve(null),
@@ -81,6 +83,7 @@ async function build(options: {
         new Error("adoptUser is not exercised here")),
       challenges: {
         findByTokenDigest: () => Promise.resolve(null),
+        findById: () => Promise.resolve(null),
         consumeIfActive: () => Promise.resolve(false),
         supersedeActiveForUser: () => Promise.resolve(1),
         findSealedIfActive: () => Promise.resolve(null),
@@ -263,7 +266,11 @@ describe("POST /auth/resend-verification", () => {
       additionalProperties?: boolean; properties: Record<string, unknown>;
     };
     expect(schema.additionalProperties).toBe(false);
-    expect(Object.keys(schema.properties)).toEqual(["accepted"]);
+    // `verificationHandoff` is the disclosed, Firebase-provider-only field —
+    // see ResendVerificationResponseSchema's own comment on why it exists
+    // and is optional; the shape is still fully closed (additionalProperties
+    // false), just with two known properties instead of one.
+    expect(Object.keys(schema.properties)).toEqual(["accepted", "verificationHandoff"]);
   });
 
   it("keeps the code out of logs", async () => {
@@ -286,6 +293,7 @@ describe("POST /auth/resend-verification", () => {
         new Error("adoptUser is not exercised here")),
           challenges: {
             findByTokenDigest: () => Promise.resolve(null),
+            findById: () => Promise.resolve(null),
             consumeIfActive: () => Promise.resolve(false),
             supersedeActiveForUser: () => Promise.resolve(0),
             findSealedIfActive: () => Promise.resolve(null),
@@ -313,6 +321,7 @@ describe("POST /auth/resend-verification", () => {
         new Error("adoptUser is not exercised here")),
           challenges: {
             findByTokenDigest: () => Promise.resolve(null),
+            findById: () => Promise.resolve(null),
             consumeIfActive: () => Promise.resolve(false),
             supersedeActiveForUser: () => Promise.resolve(0),
             findSealedIfActive: () => Promise.resolve(null),

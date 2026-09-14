@@ -9,6 +9,8 @@
 // port and silently picks a default is a server whose deployment config is
 // wrong and nobody knows.
 
+import { loadFirebaseAdminConfig, type FirebaseAdminConfig } from "@lagda/firebase-admin";
+
 export type NodeEnvironment = "development" | "test" | "production";
 
 /**
@@ -145,6 +147,30 @@ export interface ApiConfig {
    * Counsel's first real text becomes `v1`.
    */
   readonly recipientConsentVersion: string;
+
+  /**
+   * Which provider delivers ACCOUNT EMAIL VERIFICATION messages — and ONLY
+   * that message type. Password reset, signing invitations, and every other
+   * notification remain on the default email delivery pipeline regardless
+   * of this setting (P2 Firebase-verification migration mission §2, §21).
+   *
+   * Defaults to "default" — the pre-migration behavior (this package's one
+   * existing notification transport, deliberately not named here — see
+   * tests/architecture/notifications.test.ts's vendor-insulation rule) — so
+   * an unset deployment is unaffected. Explicit rather than inferred from
+   * the presence of Firebase credentials, so "firebase" mode fails LOUD at
+   * boot (see loadFirebaseAdminConfig) rather than silently falling back.
+   */
+  readonly emailVerificationProvider: "default" | "firebase";
+  /**
+   * Loaded HERE, not in identity-composition.ts, so `process.env` is read in
+   * exactly one place in this package (tests/architecture/api.test.ts's
+   * "reads process.env only in the config loader" enforces it). Null unless
+   * `emailVerificationProvider` is "firebase" — see loadFirebaseAdminConfig,
+   * which throws (failing boot loud) if credentials are missing/malformed
+   * while that mode is selected.
+   */
+  readonly firebaseAdmin: FirebaseAdminConfig | null;
 }
 
 export class ApiConfigError extends Error {
@@ -299,6 +325,7 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     );
   }
   const environment: NodeEnvironment = rawEnvironment;
+  const emailVerificationProvider = parseEmailVerificationProvider(env["EMAIL_VERIFICATION_PROVIDER"]);
 
   const port = readInt(env["API_PORT"], "API_PORT", 8080);
   if (port < 1 || port > 65_535) {
@@ -356,6 +383,8 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       8 * 3_600_000),
     recipientConsentVersion:
       env["RECIPIENT_CONSENT_VERSION"] ?? "v0-demonstration",
+    emailVerificationProvider,
+    firebaseAdmin: emailVerificationProvider !== "firebase" ? null : loadFirebaseAdminConfig(env),
   };
 
   assertProductionSafety(config);
@@ -374,6 +403,16 @@ function parseSameSite(raw: string | undefined): "lax" | "strict" | "none" {
   if (value !== "lax" && value !== "strict" && value !== "none") {
     throw new ApiConfigError(
       `SESSION_COOKIE_SAMESITE must be lax, strict or none, got ${JSON.stringify(value)}.`,
+    );
+  }
+  return value;
+}
+
+function parseEmailVerificationProvider(raw: string | undefined): "default" | "firebase" {
+  const value = raw ?? "default";
+  if (value !== "default" && value !== "firebase") {
+    throw new ApiConfigError(
+      `EMAIL_VERIFICATION_PROVIDER must be default or firebase, got ${JSON.stringify(value)}.`,
     );
   }
   return value;

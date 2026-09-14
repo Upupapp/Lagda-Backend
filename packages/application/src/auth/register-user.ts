@@ -131,6 +131,11 @@ export type RegisterUserResult =
     readonly outcome: "registered";
     readonly userId: UserId;
     readonly email: string;
+    /** The canonical (trim+lowercase) form — see register-route.ts's
+     *  issueFirebaseVerificationHandoff, which needs THIS, not `email`
+     *  above, to match what finalizeExternalEmailVerification later
+     *  compares against. */
+    readonly normalizedEmail: string;
     readonly emailVerified: false;
     /**
      * The RAW verification token.
@@ -142,6 +147,17 @@ export type RegisterUserResult =
      */
     readonly verificationToken: string;
     readonly verificationExpiresAt: number;
+    /**
+     * The challenge row's own id, alongside the raw token above.
+     *
+     * Added for Firebase-provider verification (P2 migration): that path
+     * issues a Firebase custom-token handoff keyed by this id rather than
+     * mailing the raw token at all — see register-route.ts's
+     * issueFirebaseVerificationHandoff. Safe to hand to the route layer: a
+     * challenge id alone is not a bearer credential (see
+     * finalizeExternalEmailVerification's comment on why).
+     */
+    readonly challengeId: VerificationChallengeId;
   }
   | { readonly outcome: "rejected"; readonly failure: RegisterUserFailure };
 
@@ -183,6 +199,7 @@ export async function registerUser(
   const now = deps.clock.now();
   const userId = deps.newUserId();
   const token = deps.tokens.issue();
+  const challengeId = deps.newChallengeId();
 
   // ── 5. One short transaction ────────────────────────────────────────────
   try {
@@ -201,7 +218,7 @@ export async function registerUser(
       });
 
       await repositories.challenges.create({
-        challengeId: deps.newChallengeId(),
+        challengeId,
         userId,
         // The DIGEST. The raw token leaves this function and is never written.
         tokenDigest: token.digest,
@@ -223,11 +240,13 @@ export async function registerUser(
     outcome: "registered",
     userId,
     email: email.display,
+    normalizedEmail: email.normalized,
     // NEVER derived from "registration succeeded". A new account is unverified
     // until someone proves control of the mailbox (INV-241).
     emailVerified: false,
     verificationToken: token.raw,
     verificationExpiresAt: now + deps.verificationTtlMs,
+    challengeId,
   };
 }
 

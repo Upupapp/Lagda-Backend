@@ -167,6 +167,21 @@ export const RATE_LIMIT_POLICIES = {
       + "per-account limit so a shared office NAT stays usable.",
   },
 
+  // Firebase-provider finalization (P2 migration) — same volumetric
+  // reasoning as verification.redeem.ip above: this proves nothing by
+  // itself (finalize() re-checks Firebase server-side), so the limit bounds
+  // guessing/probing at scale, not the credential's own strength.
+  "verification.firebaseFinalize.ip": {
+    id: "verification.firebaseFinalize.ip",
+    scopeType: "ip",
+    limit: 20,
+    windowMs: MINUTE,
+    failureMode: "fail-closed",
+    source: "P2 Firebase-verification migration - mirrors verification.redeem.ip "
+      + "(handoff §317, 20/min), the closest existing analogue: both are "
+      + "cheap-to-call, ip-scoped, and gate the same terminal transition.",
+  },
+
   // ── Password recovery (BACKEND-22) ──────────────────────────────────────
   //
   // Requesting a reset TRIGGERS OUTBOUND EMAIL to an address the caller does

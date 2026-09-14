@@ -60,8 +60,8 @@ describe("workspace foundation", () => {
     // Guards the rest of the file: an empty list would make every other
     // assertion below pass without checking anything.
     expect(packageNames).toEqual([
-      "api", "application", "contracts", "core", "db", "email", "scanning",
-      "sealing", "security", "storage", "worker",
+      "api", "application", "contracts", "core", "db", "email", "firebase-admin",
+      "scanning", "sealing", "security", "storage", "worker",
     ]);
   });
 

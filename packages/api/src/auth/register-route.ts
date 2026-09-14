@@ -80,6 +80,20 @@ export const RegisterResponseSchema = Type.Object({
    * frontend would have to parse. The real UI navigates to `/verify-email`.
    */
   nextAction: Type.Literal("verify-email"),
+  /**
+   * Present ONLY in EMAIL_VERIFICATION_PROVIDER=firebase mode (P2 migration).
+   * Absent in the default/rollback mode — an unset deployment's
+   * response is byte-for-byte unchanged. `customToken` authorizes nothing
+   * beyond the frontend signing into Firebase Web Auth to call its OWN
+   * `sendEmailVerification()`; `challengeId` is the LAGDA-side binding
+   * context the eventual finalize call proves against (see
+   * finalizeExternalEmailVerification) — not a bearer secret by itself.
+   */
+  verificationHandoff: Type.Optional(Type.Object({
+    provider: Type.Literal("firebase"),
+    customToken: Type.String(),
+    challengeId: Type.String(),
+  }, { additionalProperties: false })),
 }, { additionalProperties: false });
 
 export interface RegisterRouteOptions {
@@ -107,6 +121,20 @@ export interface RegisterRouteOptions {
     readonly rawToken: string;
     readonly expiresAt: number;
   }) => Promise<void>;
+  /**
+   * Firebase-provider mode ONLY (mutually exclusive with deliverVerification
+   * at the composition layer — see identity-composition.ts). Ensures the
+   * Firebase verification-only identity exists and mints a short-lived
+   * custom token for the frontend to sign in with. Returns null (never
+   * throws) on any Firebase-side failure — per the P2 migration mission
+   * §8, a Firebase outage must never make registration itself look failed;
+   * the account already exists, and Resend Verification is the recovery
+   * path, same as an email delivery failure always was.
+   */
+  readonly issueFirebaseVerificationHandoff?: (input: {
+    readonly userId: string;
+    readonly email: string;
+  }) => Promise<{ readonly customToken: string } | null>;
 }
 
 export function registerAuthRoutes(
@@ -147,6 +175,21 @@ export function registerAuthRoutes(
       });
     }
 
+    // Same "attempted after commit, failure never un-registers" placement as
+    // deliverVerification above. Firebase-mode only (see the two are wired
+    // mutually exclusively — identity-composition.ts).
+    let verificationHandoff: { provider: "firebase"; customToken: string; challengeId: string } | undefined;
+    if (options.issueFirebaseVerificationHandoff !== undefined) {
+      const handoff = await options.issueFirebaseVerificationHandoff({
+        userId: result.userId, email: result.normalizedEmail,
+      });
+      if (handoff !== null) {
+        verificationHandoff = {
+          provider: "firebase", customToken: handoff.customToken, challengeId: result.challengeId,
+        };
+      }
+    }
+
     // 201, per API conventions for a created resource. No `Location` header:
     // there is no account resource route to point at yet, and inventing one
     // would advertise an endpoint that 404s.
@@ -159,6 +202,7 @@ export function registerAuthRoutes(
       email: result.email,
       emailVerified: false,
       nextAction: "verify-email" as const,
+      ...(verificationHandoff === undefined ? {} : { verificationHandoff }),
     });
   });
 }

@@ -23,6 +23,11 @@ import {
 import type {
   SessionService, UserId, PasswordHash, SessionId,
 } from "@lagda/application";
+import {
+  createTemplateRegistry, ALL_TEMPLATES,
+  createVerificationNotificationProducer, createResetNotificationProducer,
+} from "@lagda/application";
+import { createFirebaseVerificationAdmin } from "@lagda/firebase-admin";
 import type { ApiConfig } from "../config/index.js";
 import type { AppDependencies } from "../app/dependencies.js";
 import type { RequestAuth } from "../security/session-plugin.js";
@@ -35,6 +40,7 @@ import {
 } from "../security/reset-token.js";
 import { createSecretBox } from "@lagda/security";
 import { createPreAuthCredentialFactory } from "../security/pre-auth-token.js";
+import { createDeliverySecretSealer } from "../security/signing-delivery.js";
 import {
   generateTotpSecret, buildProvisioningUri, verifyTotp, isWellFormedTotpCode,
 } from "../security/totp.js";
@@ -44,6 +50,7 @@ import {
 import {
   nextUserId, nextVerificationChallengeId, nextPasswordResetChallengeId,
   nextMfaFactorId, nextRecoveryCodeId, nextPendingAuthenticationId,
+  createNotificationIntentIdGenerator, createNotificationDeliveryIdGenerator,
 } from "../security/identifiers.js";
 
 /**
@@ -113,6 +120,75 @@ export function buildIdentity(
   const verificationTokens = createVerificationTokenFactory();
   const resetTokens = createResetTokenFactory();
   const preAuthCredentials = createPreAuthCredentialFactory();
+
+  /**
+   * Absent means a verification/reset challenge rotates but nothing is ever
+   * mailed — the same "absent capability, never a stub" shape as everything
+   * else optional in this file. `signingDeliveryKey` is config-independent of
+   * `mfaSecretKey`, so a deployment can hold one without the other.
+   */
+  const emailDelivery = config.signingDeliveryKey === null || config.appBaseUrl === null
+    ? null
+    : (() => {
+      const notificationTemplates = createTemplateRegistry(ALL_TEMPLATES);
+      const notificationIds = {
+        ...createNotificationIntentIdGenerator(),
+        ...createNotificationDeliveryIdGenerator(),
+      };
+      const sealer = createDeliverySecretSealer(
+        config.signingDeliveryKey, config.signingDeliveryKeyVersion);
+      return {
+        sealer,
+        verification: createVerificationNotificationProducer({
+          templates: notificationTemplates, ids: notificationIds, clock,
+        }),
+        reset: createResetNotificationProducer({
+          templates: notificationTemplates, ids: notificationIds, clock,
+        }),
+      };
+    })();
+
+  /**
+   * Firebase-provider ACCOUNT EMAIL VERIFICATION (P2 migration). Mutually
+   * exclusive with `emailDelivery`'s `verification` producer above for THIS
+   * one notification type only — password reset and every other
+   * notification stay on the default email provider regardless of this
+   * setting (mission §2/§21). Null unless `EMAIL_VERIFICATION_PROVIDER=
+   * firebase`, in which case a missing/invalid credential fails loud at
+   * boot (config.firebaseAdmin's own loader throws — see config/index.ts,
+   * the one place this package reads process.env), matching every other
+   * optional-but-fail-loud capability in this file.
+   */
+  const firebaseVerification = config.emailVerificationProvider !== "firebase"
+    || config.firebaseAdmin === null
+    ? null
+    : (() => {
+      const admin = createFirebaseVerificationAdmin(config.firebaseAdmin);
+      // LAGDA's own user id, used AS-IS as the Firebase UID (mission §5):
+      // it already satisfies Firebase's UID constraints (<=128 chars,
+      // alphanumeric+underscore), and reusing it — rather than inventing a
+      // second identifier — is what makes the mapping deterministic and
+      // trivially one-to-one, with nothing to persist or reconcile.
+      const firebaseUid = (userId: string): string => userId;
+      return {
+        firebaseUid,
+        issueHandoff: async (input: { userId: string; email: string }) => {
+          try {
+            await admin.ensureVerificationUser({ uid: firebaseUid(input.userId), email: input.email });
+            const customToken = await admin.mintCustomToken(firebaseUid(input.userId));
+            return { customToken };
+          } catch {
+            // Never thrown up to the route (mission §8): a Firebase outage
+            // must not make registration/resend itself look failed. The
+            // account already exists either way; Resend Verification is the
+            // recovery path, same shape a email delivery failure always
+            // had.
+            return null;
+          }
+        },
+        getVerificationState: (uid: string) => admin.getVerificationState(uid),
+      };
+    })();
 
   // OD-081 stands: one key, no KMS, no rotation, no escrow. The version column
   // is what makes rotation possible later without rewriting stored secrets.
@@ -302,7 +378,18 @@ export function buildIdentity(
         // The worker delivers. This hands the row to the queue and returns --
         // the raw token is never in scope here, because the renderer recovers
         // it from the sealed secret on the challenge row.
-        scheduleDelivery: () => Promise.resolve(),
+        //
+        // FIREBASE MODE: this whole default-provider scheduling path is skipped —
+        // ACCOUNT EMAIL VERIFICATION delivery is Firebase's job in that mode
+        // (see issueFirebaseVerificationHandoff below, wired at the route
+        // layer instead, since minting a Firebase custom token is an
+        // external call and must not run inside this DB transaction — same
+        // "nothing external inside commit" rule this file already follows).
+        ...(emailDelivery === null || firebaseVerification !== null ? {} : {
+          sealer: emailDelivery.sealer,
+          scheduleDelivery: (input, context) => emailDelivery.verification(
+            input, context.notifications, context.transaction),
+        }),
       }),
 
       requestPasswordReset: () => ({
@@ -310,6 +397,11 @@ export function buildIdentity(
         tokens: resetTokens,
         newChallengeId: () => nextPasswordResetChallengeId(),
         resetTtlMs: RESET_TTL_MS,
+        ...(emailDelivery === null ? {} : {
+          sealer: emailDelivery.sealer,
+          scheduleDelivery: (input, context) => emailDelivery.reset(
+            input, context.notifications, context.transaction),
+        }),
         commit: requestResetCommit,
       }),
 
@@ -373,6 +465,19 @@ export function buildIdentity(
       revokeSession: () => ({ clock, sessions: createAccountSessionRepository(db) }),
       revokeOtherSessions: () => ({
         clock, sessions: createAccountSessionRepository(db),
+      }),
+
+      // Firebase-provider ACCOUNT EMAIL VERIFICATION only (P2 migration) —
+      // both absent together in the default mode (the default). See
+      // identity-routes.ts's IdentityDependencies for the full contract.
+      ...(firebaseVerification === null ? {} : {
+        issueFirebaseVerificationHandoff: firebaseVerification.issueHandoff,
+        firebaseFinalizeVerification: () => ({
+          clock,
+          externalUid: firebaseVerification.firebaseUid,
+          verifier: { getVerificationState: firebaseVerification.getVerificationState },
+          commit: verificationCommit,
+        }),
       }),
 
       // "logout", from REVOCATION_REASONS. NOT "signed_out": that value is not
