@@ -33,7 +33,7 @@ import {
   createS3ObjectStorage, createStorageKeyStrategy, loadStorageConfig,
 } from "@lagda/storage";
 import type { ObjectStorage } from "@lagda/application";
-import { createClamAvScanner, loadScannerConfig } from "@lagda/scanning";
+import { createClamAvScanner, createMetaDefenderScanner, loadScannerConfig } from "@lagda/scanning";
 import { createPdfInspector, sha256 } from "@lagda/sealing";
 import { createArgon2PasswordHasher } from "../security/password-hasher.js";
 import { buildIdentity } from "./identity-composition.js";
@@ -466,7 +466,11 @@ function buildUpload(
   void storageConfig;
   const keys = createStorageKeyStrategy();
   const inspector = createPdfInspector();
-  const scanner = createClamAvScanner(scannerConfig);
+  // Provider chosen entirely by config — see loadScannerConfig's own header
+  // for why MetaDefender exists as a second option and remains temporary.
+  const scanner = scannerConfig.provider === "metadefender"
+    ? createMetaDefenderScanner(scannerConfig.metadefender)
+    : createClamAvScanner(scannerConfig.clamav);
   const artifactIds = createArtifactIdGenerator();
 
   return {
