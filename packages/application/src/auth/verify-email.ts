@@ -61,6 +61,19 @@ export interface VerificationChallengeRepositoryFull {
     challengeId: VerificationChallengeId,
   ) => Promise<VerificationChallenge | null>;
   /**
+   * The user's current active challenge, if any — not consumed, not
+   * superseded, not expired. Used by `resendEmailVerification` to decide
+   * whether a still-valid link already exists before rotating: sending a
+   * fresh one otherwise means TWO valid links can be live for the same
+   * account at once, an easy way to confuse a user and (with nothing else
+   * guarding it beyond volumetric rate limits) an email-bombing surface —
+   * see resendEmailVerification's own comment.
+   */
+  readonly findActiveForUser: (input: {
+    readonly userId: UserId;
+    readonly now: number;
+  }) => Promise<VerificationChallenge | null>;
+  /**
    * Marks a challenge consumed, CONDITIONALLY.
    *
    * Returns false when the row was already terminal. The condition lives in the
@@ -414,7 +427,7 @@ export interface ResendVerificationDependencies {
 export type ResendVerificationResult = {
   readonly outcome: "accepted";
   /** For TELEMETRY only. Must never reach a response. */
-  readonly telemetryReason: "rotated" | "unknown-account" | "already-verified";
+  readonly telemetryReason: "rotated" | "unknown-account" | "already-verified" | "already-active";
   /**
    * Present ONLY when telemetryReason is "rotated". For the Firebase-provider
    * route's own optional handoff-issuance decision — see verification-routes.ts.
@@ -459,6 +472,19 @@ export async function resendEmailVerification(
       // No new challenge, no email. Sending one would be a way to spam a
       // verified address, and there is nothing left to verify (§25, §101).
       return { outcome: "accepted", telemetryReason: "already-verified" };
+    }
+
+    // A still-valid challenge already exists: no rotation, no new email.
+    // Without this, resend is bounded only by the volumetric rate limits
+    // (verification.resend.account/ip) — real protection against a flood of
+    // requests, but not against a legitimate-looking single request every few
+    // minutes quietly re-sending mail and invalidating the recipient's
+    // already-valid link out from under them. Expiry (EMAIL_VERIFICATION_TTL_MS)
+    // is the only thing that reopens this path — the user's own account
+    // memory (BACKEND-21).
+    const active = await challenges.findActiveForUser({ userId: account.userId, now });
+    if (active !== null) {
+      return { outcome: "accepted", telemetryReason: "already-active" };
     }
 
     // Supersede FIRST, then insert. The partial unique index permits exactly one

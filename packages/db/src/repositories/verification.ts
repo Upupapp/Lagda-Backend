@@ -53,6 +53,20 @@ export function createVerificationRepository(
       return row === undefined ? null : toChallenge(row);
     },
 
+    async findActiveForUser(input): Promise<VerificationChallenge | null> {
+      // Read-only — resendEmailVerification uses this to decide whether a
+      // still-valid challenge already exists before rotating. At most one
+      // active row exists per user (the partial unique index this repository's
+      // insert/supersede pair maintains), so no ordering/limit ambiguity.
+      const row = await db.selectFrom("email_verification_challenges").selectAll()
+        .where("user_id", "=", input.userId)
+        .where("consumed_at", "is", null)
+        .where("superseded_at", "is", null)
+        .where("expires_at", ">", new Date(input.now))
+        .executeTakeFirst();
+      return row === undefined ? null : toChallenge(row);
+    },
+
     async consumeIfActive(input): Promise<boolean> {
       // The conditions ARE the concurrency control. Two requests racing on one
       // challenge both issue this UPDATE; PostgreSQL serializes them and the

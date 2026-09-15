@@ -23,7 +23,7 @@ interface Built {
 
 async function build(options: {
   verifyOutcome?: "verified" | "already-verified" | "invalid";
-  resendReason?: "rotated" | "unknown-account" | "already-verified";
+  resendReason?: "rotated" | "unknown-account" | "already-verified" | "already-active";
 } = {}): Promise<Built> {
   const app = Fastify({
     logger: false,
@@ -53,6 +53,7 @@ async function build(options: {
               supersededAt: null,
             }),
         findById: () => Promise.resolve(null),
+        findActiveForUser: () => Promise.resolve(null),
         consumeIfActive: () => Promise.resolve(true),
         supersedeActiveForUser: () => Promise.resolve(0),
         findSealedIfActive: () => Promise.resolve(null),
@@ -84,6 +85,17 @@ async function build(options: {
       challenges: {
         findByTokenDigest: () => Promise.resolve(null),
         findById: () => Promise.resolve(null),
+        findActiveForUser: () => Promise.resolve(
+          options.resendReason === "already-active"
+            ? {
+              challengeId: "evc_active" as VerificationChallengeId,
+              userId: "usr_1" as UserId,
+              createdAt: 1_700_000_000_000 - 1000,
+              expiresAt: 1_700_000_000_000 + 86_400_000,
+              consumedAt: null,
+              supersededAt: null,
+            }
+            : null),
         consumeIfActive: () => Promise.resolve(false),
         supersedeActiveForUser: () => Promise.resolve(1),
         findSealedIfActive: () => Promise.resolve(null),
@@ -195,11 +207,13 @@ describe("POST /auth/verify-email", () => {
 });
 
 describe("POST /auth/resend-verification", () => {
-  it("gives an IDENTICAL response for unknown, verified and unverified", async () => {
+  it("gives an IDENTICAL response for unknown, verified, unverified and already-active", async () => {
     // The decisive anti-enumeration property. Unlike registration, the caller
     // has asserted nothing about owning this address.
     const responses = [];
-    for (const reason of ["unknown-account", "already-verified", "rotated"] as const) {
+    for (const reason of [
+      "unknown-account", "already-verified", "rotated", "already-active",
+    ] as const) {
       const { app } = await build({ resendReason: reason });
       const response = await post(app, "/auth/resend-verification",
         { email: "user@example.com" });
@@ -225,6 +239,20 @@ describe("POST /auth/resend-verification", () => {
       expect(rotations).toHaveLength(0);
       await app.close();
     }
+  });
+
+  it("does NOT rotate while a still-valid challenge already exists", async () => {
+    // Otherwise resend is bounded only by the volumetric rate limits — real
+    // protection against a flood of requests, but not against one legitimate-
+    // looking request every few minutes quietly invalidating the recipient's
+    // already-valid link out from under them.
+    const { app, rotations } = await build({ resendReason: "already-active" });
+    const response = await post(app, "/auth/resend-verification", { email: "user@example.com" });
+
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toEqual({ accepted: true });
+    expect(rotations).toHaveLength(0);
+    await app.close();
   });
 
   it("never claims an email was sent", async () => {
@@ -294,6 +322,7 @@ describe("POST /auth/resend-verification", () => {
           challenges: {
             findByTokenDigest: () => Promise.resolve(null),
             findById: () => Promise.resolve(null),
+            findActiveForUser: () => Promise.resolve(null),
             consumeIfActive: () => Promise.resolve(false),
             supersedeActiveForUser: () => Promise.resolve(0),
             findSealedIfActive: () => Promise.resolve(null),
@@ -322,6 +351,7 @@ describe("POST /auth/resend-verification", () => {
           challenges: {
             findByTokenDigest: () => Promise.resolve(null),
             findById: () => Promise.resolve(null),
+            findActiveForUser: () => Promise.resolve(null),
             consumeIfActive: () => Promise.resolve(false),
             supersedeActiveForUser: () => Promise.resolve(0),
             findSealedIfActive: () => Promise.resolve(null),
