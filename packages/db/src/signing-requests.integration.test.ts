@@ -200,9 +200,24 @@ suite("signing requests (RLS, runtime role)", () => {
         .toThrow(/foreign key|violates/i);
     });
 
-    it("refuses a request naming another workspace's artifact", async () => {
-      await expect(write(WS_A, { artifactId: `art_${DOC_B}` })).rejects
-        .toThrow(/foreign key|violates/i);
+    // Migration 043 dropped `signing_requests_artifact_fk` (and every other
+    // FK pointing at document_artifacts/document_seals/evidence_events/
+    // verification_records): those four tables run under `force row level
+    // security`, and PostgreSQL's FK validation locks the referenced row
+    // (`SELECT ... FOR KEY SHARE`) — which on a FORCE-RLS table requires
+    // UPDATE privilege on the referenced table, something migration 003
+    // deliberately never grants `lagda_app` (privilege-separated
+    // immutability). The two controls are mutually exclusive at the database
+    // level; 043 chose to keep 003's guarantee and drop this one.
+    //
+    // What this test now proves instead: the database no longer rejects a
+    // RAW SQL write naming another workspace's artifact — that protection
+    // now lives ONLY in the application layer, which never lets a caller
+    // supply an artifact id directly (createSigningRequest always derives it
+    // from an already workspace-scoped, RLS-filtered read). Exploiting this
+    // gap requires raw database write access, not an API call.
+    it("no longer refuses a request naming another workspace's artifact at the DB layer (see migration 043)", async () => {
+      await expect(write(WS_A, { artifactId: `art_${DOC_B}` })).resolves.toBeUndefined();
     });
 
     it("refuses a request naming another workspace's preparation", async () => {

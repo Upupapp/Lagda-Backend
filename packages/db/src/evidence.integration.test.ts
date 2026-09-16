@@ -353,10 +353,27 @@ describe.skipIf(!hasIntegrationDatabase())("evidence persistence on PostgreSQL",
       ).rejects.toThrow(/workspace/i);
     });
 
-    it("prevents a seal in one workspace referencing another workspace's artifact", async () => {
-      // The database rejects this, not the application. The compound foreign
-      // key (workspace_id, sealed_artifact_id) has no matching row in A even
-      // though the artifact ID exists in B.
+    // Migration 043 dropped `document_seals_sealed_artifact_fk` and
+    // `document_artifacts_source_fk` (and every other FK pointing at
+    // document_artifacts/document_seals/evidence_events/verification_records):
+    // those four tables run under `force row level security`, and
+    // PostgreSQL's FK validation locks the referenced row (`SELECT ... FOR
+    // KEY SHARE`) — which on a FORCE-RLS table requires UPDATE privilege on
+    // the referenced table, something migration 003 deliberately never grants
+    // `lagda_app` (privilege-separated immutability: "an application bug —
+    // or a compromised application — cannot rewrite history"). The two
+    // controls are mutually exclusive at the database level; 043 chose to
+    // keep 003's guarantee and drop this one.
+    //
+    // What these tests now prove instead: the database no longer rejects a
+    // RAW SQL write naming another workspace's artifact — that protection
+    // now lives ONLY in the application layer, which never lets a caller
+    // supply an artifact id directly (every writer derives it from an
+    // already workspace-scoped, RLS-filtered read within the same
+    // transaction it writes the reference in — final-seal.ts and
+    // field-merge.ts included). Exploiting this gap requires raw database
+    // write access, not an API call.
+    it("no longer refuses a seal in one workspace referencing another workspace's artifact at the DB layer (see migration 043)", async () => {
       await transactions.runForWorkspace(WS_B, (uow) =>
         uow.artifacts.insert(artifact({
           workspaceId: WS_B, artifactId: "art_sealed" as ArtifactId, artifactType: "sealed",
@@ -365,10 +382,10 @@ describe.skipIf(!hasIntegrationDatabase())("evidence persistence on PostgreSQL",
       await expect(
         transactions.runForWorkspace(WS_A, (uow) =>
           uow.finalizations.recordFinalization({ seal: seal(), verification: verification() })),
-      ).rejects.toBeDefined();
+      ).resolves.toBeUndefined();
     });
 
-    it("prevents artifact provenance crossing workspaces", async () => {
+    it("no longer refuses artifact provenance crossing workspaces at the DB layer (see migration 043)", async () => {
       await transactions.runForWorkspace(WS_B, (uow) =>
         uow.artifacts.insert(artifact({ workspaceId: WS_B })));
 
@@ -379,7 +396,7 @@ describe.skipIf(!hasIntegrationDatabase())("evidence persistence on PostgreSQL",
             artifactType: "sealed",
             sourceArtifactId: "art_original" as ArtifactId,
           }))),
-      ).rejects.toBeDefined();
+      ).resolves.toBeUndefined();
     });
   });
 

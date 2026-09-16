@@ -120,7 +120,25 @@ suite("document preparation (RLS, runtime role)", () => {
       })).rejects.toThrow(/foreign key|violates/i);
     });
 
-    it("refuses a preparation targeting another workspace's ARTIFACT", async () => {
+    // Migration 043 dropped `document_preparations_artifact_fk` (and every
+    // other FK pointing at document_artifacts/document_seals/evidence_events/
+    // verification_records): those four tables run under `force row level
+    // security`, and PostgreSQL's FK validation locks the referenced row
+    // (`SELECT ... FOR KEY SHARE`) — which on a FORCE-RLS table requires
+    // UPDATE privilege on the referenced table, something migration 003
+    // deliberately never grants `lagda_app` (privilege-separated immutability:
+    // "an application bug — or a compromised application — cannot rewrite
+    // history"). The two controls are mutually exclusive at the database
+    // level; migration 043 chose to keep 003's guarantee and drop this one.
+    //
+    // What this test now proves instead: the database no longer rejects a
+    // RAW SQL write naming another workspace's artifact — that protection now
+    // lives ONLY in the application layer, which never lets a caller supply
+    // an artifact id directly (`saveDocumentPreparation` always derives
+    // `sourceArtifactId` from `artifacts.find(...)` over an already
+    // workspace-scoped, RLS-filtered read — see preparation.ts). Exploiting
+    // this gap requires raw database write access, not an API call.
+    it("no longer refuses a preparation naming another workspace's artifact at the DB layer (see migration 043)", async () => {
       await expect(app.db.transaction().execute(async trx => {
         await sql`select set_config('lagda.workspace_id', ${WS_B}, true)`.execute(trx);
         await sql`
@@ -128,7 +146,7 @@ suite("document preparation (RLS, runtime role)", () => {
             document_id, source_artifact_id, created_at, updated_at)
           values ('prep_y', ${WS_B}, ${DOC_B}, ${ART_A}, now(), now())
         `.execute(trx);
-      })).rejects.toThrow(/foreign key|violates/i);
+      })).resolves.toBeUndefined();
     });
 
     it("refuses a field attached to another workspace's preparation", async () => {

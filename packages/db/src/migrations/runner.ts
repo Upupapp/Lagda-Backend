@@ -50,6 +50,7 @@ import * as m039 from "./039_organization_units.js";
 import * as m040 from "./040_document_folders.js";
 import * as m041 from "./041_signing_request_expiry.js";
 import * as m042 from "./042_signing_request_ready_to_send.js";
+import * as m043 from "./043_drop_immutable_artifact_fks.js";
 
 /**
  * Migrations listed explicitly rather than read from disk.
@@ -104,6 +105,7 @@ const MIGRATIONS: Record<string, Migration> = {
   "040_document_folders": m040,
   "041_signing_request_expiry": m041,
   "042_signing_request_ready_to_send": m042,
+  "043_drop_immutable_artifact_fks": m043,
 };
 
 class ExplicitMigrationProvider implements MigrationProvider {
