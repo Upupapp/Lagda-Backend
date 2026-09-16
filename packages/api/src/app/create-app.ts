@@ -560,6 +560,9 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
               : null,
           ),
           signingRequestDependencies: signingRequests,
+          ...(workspaces.completedArtifact === undefined
+            ? {}
+            : { completedArtifactDependencies: workspaces.completedArtifact }),
           metrics,
         });
       }

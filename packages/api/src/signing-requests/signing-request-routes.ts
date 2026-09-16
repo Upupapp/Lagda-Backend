@@ -22,13 +22,16 @@
 // The BACKEND-27 guard greps this directory.
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { Readable } from "node:stream";
 import { Type, type Static } from "@sinclair/typebox";
 import {
   createSigningRequest, getSigningRequest, listSigningRequests, assertValidKey,
   setSigningRequestExpiry,
   markSigningRequestReadyToSend, returnSigningRequestToDraft,
+  getCompletedArtifact,
   type SigningRequestDependencies, type SigningRequestId,
   type SigningRequestView, type SigningRequestCreatedView,
+  type CompletedArtifactDependencies,
   type SessionId, type UserId,
 } from "@lagda/application";
 import {
@@ -99,6 +102,8 @@ export interface SigningRequestRouteOptions {
     readonly sessionId: SessionId;
   } | null>;
   readonly signingRequestDependencies: () => SigningRequestDependencies;
+  /** Phase 1-C. Absent means no completed-document download route exists. */
+  readonly completedArtifactDependencies?: () => CompletedArtifactDependencies;
   readonly metrics?: MetricsRecorder;
 }
 
@@ -311,6 +316,53 @@ export function registerSigningRequestRoutes(
     // would otherwise produce a line per refresh.
     return reply.status(200).send(present(found));
   });
+
+  // ── The completed document (Phase 1-C, sender only) ────────────────────
+  //
+  // Absent key = route does not exist, same convention as every other
+  // storage-dependent surface in this codebase (upload, the recipient
+  // ceremony): a deployment with no object storage configured gets no
+  // download route, not one that 500s on the first request.
+  if (options.completedArtifactDependencies !== undefined) {
+    const completedArtifactDependencies = options.completedArtifactDependencies;
+    app.get("/workspaces/:workspaceId/signing-requests/:signingRequestId/completed-document", {
+      schema: { params: ReadParamsSchema },
+    }, async (request: FastifyRequest, reply: FastifyReply) => {
+      const actor = await actorOf(request);
+      if (actor === null) return unauthenticated(reply);
+
+      const { workspaceId, signingRequestId } =
+        request.params as Static<typeof ReadParamsSchema>;
+
+      const document = await getCompletedArtifact(
+        actor, workspaceId as WorkspaceId, signingRequestId as SigningRequestId,
+        completedArtifactDependencies());
+
+      // Same cache posture as the recipient ceremony's own document route: a
+      // signed legal document must never sit in a shared cache, and `private`
+      // alone would still permit the browser's disk cache.
+      void reply.header("Cache-Control", "private, no-store");
+      void reply.header("Pragma", "no-cache");
+      void reply.header("Referrer-Policy", "no-referrer");
+      void reply.header("Content-Type", document.mediaType);
+      void reply.header("Content-Length", String(document.sizeBytes));
+      // `attachment`, unlike the ceremony's `inline`: this IS the product's
+      // download affordance, the one document-routes.ts documents as
+      // deliberately absent until this phase decided the design.
+      void reply.header(
+        "Content-Disposition",
+        `attachment; filename="${signingRequestId}.pdf"`,
+      );
+      void reply.header("Accept-Ranges", "none");
+
+      // The port's contract is `AsyncIterable<Uint8Array>`, not "a Node
+      // Readable" — the real S3 SDK's response body happens to be both, but
+      // nothing guarantees every `ObjectStorage` implementation's stream is.
+      // Fastify's `reply.send` only accepts a string, a Buffer, or a real
+      // stream, so this wraps rather than assumes.
+      return reply.status(200).send(Readable.from(document.stream));
+    });
+  }
 
   // ── The review state ────────────────────────────────────────────────────
   //

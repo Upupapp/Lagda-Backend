@@ -61,7 +61,7 @@ import type {
 // BACKEND-43. Factories, never hand-built event literals.
 import { submissionAccepted, recipientSigned } from "../evidence/events.js";
 import type { AuthenticatedActor } from "../common/ports/session.js";
-import type { CompletionIdGenerator } from "../common/ports/completion.js";
+import type { CompletionIdGenerator, CompletionRunId } from "../common/ports/completion.js";
 import {
   ApplicationError, ResourceNotFoundError,
 } from "../common/errors/index.js";
@@ -136,6 +136,12 @@ export interface WorkflowAdvanceResult {
   readonly provisionedCount: number;
   /** How many durable intents this attempt cleared. */
   readonly intentsApplied: number;
+  /**
+   * Phase 1-B. Present only when `outcome` is `"completion-ready"` — the run
+   * `completion.ensureRun` created or found, for a caller that wants to
+   * enqueue real processing against it without a second lookup.
+   */
+  readonly completionRunId?: CompletionRunId;
 }
 
 // ── Dependencies ─────────────────────────────────────────────────────────────
@@ -529,7 +535,7 @@ async function applyPlan(
     // idempotent by uniqueness, and running it on a request that is already
     // `completion-ready` is how a request that reached readiness before this
     // pipeline existed acquires its run.
-    await uow.completion.ensureRun({
+    const run = await uow.completion.ensureRun({
       completionRunId: deps.completionIds.nextCompletionRunId(),
       signingRequestId,
       pipelineVersion: COMPLETION_PIPELINE_VERSION,
@@ -539,6 +545,12 @@ async function applyPlan(
     return {
       outcome: moved ? "completion-ready" : "no-change",
       activatedCount, provisionedCount,
+      // The RUN's real id, not necessarily the one just generated above —
+      // `ensureRun` returns the EXISTING run when one already covers this
+      // request (idempotent by construction), and a caller that enqueues
+      // processing (Phase 1-B) must enqueue against the run that actually
+      // exists, not one it merely proposed.
+      completionRunId: run.completionRunId,
     };
   }
   if (next === "partially-completed") {

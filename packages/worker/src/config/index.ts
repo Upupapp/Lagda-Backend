@@ -48,6 +48,12 @@ export interface WorkerConfig {
   /** Opens sealed signing credentials at render time. Null disables delivery. */
   readonly signingDeliveryKey: string | null;
   readonly signingDeliveryKeyVersion: string;
+
+  // ── Completion processing (BACKEND-38/41, Phase 1-B) ──────────────────────
+
+  /** How long a completion attempt may go silent before it is abandoned. */
+  readonly completionStaleAttemptMs: number;
+  readonly completionReconcileBatchSize: number;
 }
 
 export class WorkerConfigError extends Error {
@@ -89,6 +95,22 @@ export function loadWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerCo
   if (concurrency !== undefined && concurrency !== "") {
     const parsed = readInt(concurrency, "WORKER_CONCURRENCY", 1);
     if (parsed < 1) throw new WorkerConfigError("WORKER_CONCURRENCY must be at least 1.");
+  }
+
+  // How long a completion attempt may go silent before reconciliation treats
+  // it as abandoned (a crashed worker). Five minutes: generous enough that a
+  // slow seal on a large document is never mistaken for a dead worker, short
+  // enough that a genuinely stuck run does not sit unclaimed for long.
+  const completionStaleAttemptMs = readInt(
+    env["COMPLETION_STALE_ATTEMPT_MS"], "COMPLETION_STALE_ATTEMPT_MS", 300_000);
+  if (completionStaleAttemptMs < 30_000) {
+    throw new WorkerConfigError("COMPLETION_STALE_ATTEMPT_MS must be at least 30000.");
+  }
+
+  const completionReconcileBatchSize = readInt(
+    env["COMPLETION_RECONCILE_BATCH_SIZE"], "COMPLETION_RECONCILE_BATCH_SIZE", 50);
+  if (completionReconcileBatchSize < 1 || completionReconcileBatchSize > 10_000) {
+    throw new WorkerConfigError("COMPLETION_RECONCILE_BATCH_SIZE must be between 1 and 10000.");
   }
 
   // Hourly, at UTC. Frequent enough that expired rows do not accumulate,
@@ -168,5 +190,7 @@ export function loadWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerCo
     appBaseUrl,
     signingDeliveryKey: env["SIGNING_DELIVERY_KEY"] ?? null,
     signingDeliveryKeyVersion: env["SIGNING_DELIVERY_KEY_VERSION"] ?? "v1",
+    completionStaleAttemptMs,
+    completionReconcileBatchSize,
   };
 }

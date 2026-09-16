@@ -41,11 +41,19 @@ export * from "./signing-requests/signing-requests.js";
 export * from "./signing-requests/expiry.js";
 export * from "./signing-requests/readiness.js";
 export * from "./signing-requests/send.js";
+export * from "./signing-requests/completed-artifact.js";
 export * from "./signing-access/signing-access.js";
 export * from "./signing-ceremony/signing-ceremony.js";
 export * from "./signing-submission/signing-submission.js";
 export * from "./signing-workflow/signing-workflow.js";
 export * from "./completion/completion.js";
+// Phase 1-B (BACKEND-38/41). Previously unexported — nothing outside this
+// package's own tests ever consumed them, because nothing composed
+// `CompletionStepRunners` in production. The worker's completion composition
+// is the first real consumer.
+export * from "./completion/field-merge.js";
+export * from "./completion/certificate-step.js";
+export * from "./completion/final-seal.js";
 export * from "./verification/public-verification.js";
 // BACKEND-43. The ONE way to construct an evidence event: producers call a
 // factory rather than building a literal, so type, version, source and actor

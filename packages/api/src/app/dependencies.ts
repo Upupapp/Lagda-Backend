@@ -21,6 +21,7 @@ import type {
   PreparationDependencies,
   RecipientDependencies, SigningRequestDependencies,
   SendSigningRequestDependencies, SigningAccessDependencies,
+  CompletedArtifactDependencies,
   SigningCeremonyDependencies, SigningSubmissionDependencies,
   SigningDeclineDependencies, SigningWorkflowDependencies,
   AuditTrailDependencies, OrganizationDependencies,
@@ -227,6 +228,16 @@ export interface WorkspaceDependencies {
    * back is not.
    */
   readonly signingRequests?: () => SigningRequestDependencies;
+
+  /**
+   * The completed, sealed document download (Phase 1-C).
+   *
+   * Separate from `signingRequests` because it needs strictly more: object
+   * storage, which `signingRequests` itself never touches. Absent means no
+   * download route exists — the same "absent key = route does not exist"
+   * convention as upload and the recipient ceremony, both also storage-gated.
+   */
+  readonly completedArtifact?: () => CompletedArtifactDependencies;
 
   /**
    * Sending a signing request (BACKEND-33).

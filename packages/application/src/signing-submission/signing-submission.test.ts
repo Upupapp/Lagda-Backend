@@ -644,6 +644,55 @@ describe("what submission does NOT do", () => {
     expect(h.store.signingRequests[0]?.completionReadyAt).not.toBeNull();
   });
 
+  it("Phase 1-B: enqueues real completion processing AND its reconciliation safety net when the run becomes completion-ready", async () => {
+    const h = harness();
+    seed(h, [{ id: "f_txt", type: "text" }]);
+    const token = await signerSession(h);
+
+    const enqueued: Array<{ type: string; payload: unknown; options?: unknown }> = [];
+    const completionScheduler = {
+      enqueue: (definition: { type: string }, payload: unknown, options?: unknown) => {
+        enqueued.push({ type: definition.type, payload, options });
+        return Promise.resolve({ jobId: "job_1", type: definition.type as never });
+      },
+    };
+
+    await submitRecipientSigning(
+      { rawSessionToken: token, idempotencyKey: KEY, fieldValues: [{ fieldId: "f_txt", kind: "text", text: "x" }] },
+      { ...h.deps, completionScheduler },
+    );
+
+    expect(h.store.signingRequests[0]?.state).toBe("completion-ready");
+
+    const process = enqueued.find(e => e.type === "completion.process");
+    expect(process?.payload).toEqual({ workspaceId: WS, completionRunId: "crn_1" });
+
+    const reconcile = enqueued.find(e => e.type === "completion.reconcile");
+    expect(reconcile?.payload).toEqual({ workspaceId: WS });
+    // Self-scheduled a few minutes out, deduplicated per workspace — never a
+    // flood of reconcile jobs from concurrent submissions in the same
+    // workspace, and never immediate (that would defeat the point of having
+    // a separate, cheap immediate enqueue for the common case).
+    expect(reconcile?.options).toMatchObject({
+      startAfter: AT + 5 * 60_000,
+      singletonKey: WS,
+      singletonSeconds: 5 * 60,
+    });
+  });
+
+  it("Phase 1-B: never throws when no completion scheduler is composed", async () => {
+    // Absent means exactly what it means everywhere else in this codebase:
+    // the deployment has nowhere to enqueue completion processing — not a
+    // reason to fail a signature that already committed.
+    const h = harness();
+    seed(h, [{ id: "f_txt", type: "text" }]);
+    const token = await signerSession(h);
+
+    await expect(submit(h, token, [{ fieldId: "f_txt", kind: "text", text: "x" }]))
+      .resolves.toBeDefined();
+    expect(h.store.signingRequests[0]?.state).toBe("completion-ready");
+  });
+
   it("is unaffected by contact and preparation mutation", async () => {
     const h = harness();
     seed(h, [{ id: "f_name", type: "full-name" }]);

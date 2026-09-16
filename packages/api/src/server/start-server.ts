@@ -32,7 +32,9 @@ import { randomBytes } from "node:crypto";
 import {
   createS3ObjectStorage, createStorageKeyStrategy, loadStorageConfig,
 } from "@lagda/storage";
-import type { ObjectStorage } from "@lagda/application";
+import type { ObjectStorage, JobScheduler } from "@lagda/application";
+import { PgBoss } from "pg-boss";
+import { createJobScheduler } from "./job-scheduler.js";
 import { createClamAvScanner, createMetaDefenderScanner, loadScannerConfig } from "@lagda/scanning";
 import { createPdfInspector, sha256 } from "@lagda/sealing";
 import { createArgon2PasswordHasher } from "../security/password-hasher.js";
@@ -109,6 +111,13 @@ interface IdempotencyComposition {
 export async function createProductionDependencies(
   database: LagdaDatabase,
   config: ApiConfig,
+  // Phase 1-B. Absent means exactly what it means everywhere else in this
+  // file: the deployment has nowhere to enqueue completion processing. The
+  // durable work already committed via `completion.ensureRun` regardless
+  // (inside `advanceSigningWorkflow`'s own transaction) — an absent scheduler
+  // means that run simply waits for a FUTURE deployment that does compose one
+  // to reach it, rather than being lost.
+  completionScheduler?: JobScheduler,
 ): Promise<AppDependencies> {
   // The REAL transaction manager, over the real pool. It is what composes the
   // twenty-odd scoped repositories into a unit of work and what applies the
@@ -215,6 +224,12 @@ export async function createProductionDependencies(
       signingRequests: () => ({
         transactions, clock, ids: signingRequestIds, idempotency,
       }),
+      // Phase 1-C. Same "absent means no route" convention as upload and the
+      // ceremony: no object storage, no download route — never a route that
+      // 500s on the first request.
+      ...(objectStorage === null ? {} : {
+        completedArtifact: () => ({ transactions, storage: objectStorage }),
+      }),
       members: {
         administration: () => ({ transactions, clock }),
         access: () => ({ transactions }),
@@ -238,6 +253,7 @@ export async function createProductionDependencies(
     ...buildPublicVerification(database),
     ...buildRecipientCeremony({
       transactions, clock, config, storage: objectStorage, idempotency,
+      ...(completionScheduler === undefined ? {} : { completionScheduler }),
     }),
     ...buildProviderWebhook(database),
   };
@@ -344,9 +360,10 @@ function buildRecipientCeremony(input: {
   readonly config: ApiConfig;
   readonly storage: ObjectStorage | null;
   readonly idempotency: IdempotencyComposition;
+  readonly completionScheduler?: JobScheduler;
 }): Partial<Pick<AppDependencies,
   "signingCeremony" | "signingSubmission" | "signingDecline">> {
-  const { transactions, clock, config, storage, idempotency } = input;
+  const { transactions, clock, config, storage, idempotency, completionScheduler } = input;
   const sessionTokens = createRecipientSessionTokenFactory();
 
   const ceremony = storage === null ? {} : {
@@ -393,6 +410,7 @@ function buildRecipientCeremony(input: {
       idempotencyKeys: idempotency.digester,
       idempotencyIds: idempotency.ids,
       signatureImages: createSignatureImageValidator(),
+      ...(completionScheduler === undefined ? {} : { completionScheduler }),
       policy: {
         consentVersion: config.recipientConsentVersion,
         idempotencyRetentionMs: idempotency.policy.retentionMs,
@@ -748,9 +766,37 @@ export async function startServer(): Promise<StartedServer> {
     );
   }
 
+  // 3b. A PUBLISH-ONLY pg-boss client (Phase 1-B) — the API enqueues real
+  // completion processing the instant a request becomes `completion-ready`,
+  // but it never calls `.work()`/registers a handler: consuming jobs is the
+  // worker's role alone, by the same rule this file's own header states for
+  // HTTP (`start-worker.ts`: "the API must never start queue consumers").
+  // `migrate: false` for the same reason migrations are never run here at
+  // all (see the comment above) — the WORKER owns creating pg-boss's schema;
+  // this client only ever needs it to already exist. A failure here is
+  // swallowed, not fatal: an API that could not reach its own database would
+  // already have refused to start above, but pg-boss's own schema being
+  // briefly unready during a rolling deploy must not take signing down.
+  let completionScheduler: JobScheduler | undefined;
+  let completionBoss: PgBoss | undefined;
+  try {
+    completionBoss = new PgBoss({
+      connectionString: databaseConfig.connectionString,
+      schema: "pgboss",
+      migrate: false,
+      max: 2,
+    });
+    completionBoss.on("error", () => undefined);
+    await completionBoss.start();
+    completionScheduler = createJobScheduler(completionBoss);
+  } catch {
+    completionScheduler = undefined;
+    completionBoss = undefined;
+  }
+
   const app = await createApp({
     config,
-    dependencies: await createProductionDependencies(database, config),
+    dependencies: await createProductionDependencies(database, config, completionScheduler),
   });
 
   // ── One warning, and why it is worth a line at boot ──────────────────────
@@ -783,6 +829,9 @@ export async function startServer(): Promise<StartedServer> {
   const targets: ShutdownTarget[] = [
     { name: "http", close: () => app.close() },
     { name: "database", close: () => database.close() },
+    ...(completionBoss === undefined
+      ? []
+      : [{ name: "completion-scheduler", close: () => completionBoss.stop({ graceful: false }) }]),
   ];
 
   const shutdown = createShutdown({

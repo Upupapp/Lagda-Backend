@@ -24,3 +24,7 @@ export {
   createNotificationSecretResolver,
   type CredentialValidityCheck, type ChallengeCredentialLookup,
 } from "./notification-secret.js";
+export {
+  createArtifactIdGenerator, createSealIdGenerator, createCompletionIdGenerator,
+  createEvidenceEventIdGenerator, createVerificationIdGenerator,
+} from "./completion-identifiers.js";

@@ -22,6 +22,8 @@ import {
   createIdempotencyKeyDigester, createIdempotencyRecordIds,
 } from "@lagda/application/test-support";
 import type { DocumentId, WorkspaceId, WorkspaceMemberId } from "@lagda/contracts";
+import type { SigningRequestId } from "@lagda/application";
+import { createInMemoryObjectStorage } from "@lagda/storage";
 import { createApp } from "../app/create-app.js";
 import { loadApiConfig, type ApiConfig } from "../config/index.js";
 import { SESSION_COOKIE_NAME } from "../security/cookies.js";
@@ -597,5 +599,151 @@ describe("a transition takes no body", () => {
       },
     });
     expect(response.statusCode).not.toBe(400);
+  });
+});
+
+// ── The completed-document route (Phase 1-C) ────────────────────────────────
+
+describe("the completed-document route", () => {
+  const REQUEST = "sr_completed_1" as SigningRequestId;
+  const downloadUrl = `/workspaces/${WORKSPACE}/signing-requests/${REQUEST}/completed-document`;
+
+  async function buildWithCompletedRequest(
+    options: { readonly composeCompletedArtifact?: boolean } = {},
+  ): Promise<Harness> {
+    const sessions = createSessionService({
+      sessions: fakeSessionRepository(),
+      tokens: createSecurityTokenGenerator(),
+      digester: createSecurityTokenDigester(),
+      clock: { now: () => Date.now() },
+      policy: {
+        absoluteLifetimeMs: 7 * 24 * 3_600_000,
+        idleTimeoutMs: 8 * 3_600_000,
+        touchIntervalMs: 300_000,
+      },
+    });
+
+    const transactions = new FakeTransactionManager();
+    seed(transactions);
+
+    const storage = createInMemoryObjectStorage();
+    const bytes = new TextEncoder().encode("%PDF-1.4 completed bytes");
+    await storage.putObject({
+      ref: { zone: "artifacts", key: "ws/doc/art_final" as never },
+      content: { kind: "bytes", bytes },
+      mediaType: "application/pdf",
+    });
+    transactions.store.artifacts.push({
+      artifactId: "art_final" as ArtifactId, workspaceId: WORKSPACE, documentId: DOC,
+      artifactType: "sealed", storageReference: "ws/doc/art_final" as never,
+      mediaType: "application/pdf", sizeBytes: bytes.byteLength,
+      digestAlgorithm: "sha-256", digest: "c".repeat(64) as never,
+      pageCount: 1, rotatedPageCount: 0, createdAt: AT,
+    });
+    transactions.store.signingRequests.push({
+      signingRequestId: REQUEST, workspaceId: WORKSPACE, documentId: DOC,
+      sourceArtifactId: "art_original" as ArtifactId,
+      sourcePreparationId: "prep_completed" as never,
+      sourcePreparationRevision: 1, state: "completed",
+      completionReadyAt: AT, expiresAt: null, terminatedAt: null,
+      completedAt: AT, terminationReason: null, cancellationNote: null,
+      documentTitle: SENSITIVE_TITLE, createdByUserId: OWNER,
+      createdAt: AT, updatedAt: AT,
+    });
+    transactions.store.seals.push({
+      sealId: "seal_completed" as never, workspaceId: WORKSPACE,
+      signingRequestId: REQUEST as unknown as never,
+      sealedArtifactId: "art_final" as ArtifactId,
+      sealScheme: "hash-evidence", sealVersion: 1, digestAlgorithm: "sha-256",
+      originalDocumentHash: "a".repeat(64) as never,
+      signedDocumentHash: "c".repeat(64) as never,
+      sealedAt: AT,
+    });
+
+    const requestIds = new SequentialSigningRequestIds();
+    const clock = new FixedClock(AT);
+
+    const app = await createApp({
+      config: config(),
+      dependencies: {
+        databaseHealth: { isReachable: () => Promise.resolve(true) },
+        sessions,
+        workspaces: {
+          create: (): CreateWorkspaceDependencies => ({
+            transactions, clock,
+            workspaceIds: new SequentialWorkspaceIds(),
+            memberIds: new SequentialMemberIds(),
+            idempotency: {
+              digester: createIdempotencyKeyDigester(),
+              ids: createIdempotencyRecordIds(),
+              clock,
+              policy: { retentionMs: 24 * 3_600_000 },
+            },
+          }),
+          list: (): ListMyWorkspacesDependencies => ({ transactions }),
+          workspace: (): GetWorkspaceDependencies => ({ transactions }),
+          signingRequests: (): SigningRequestDependencies => ({
+            transactions, clock, ids: requestIds,
+            idempotency: {
+              digester: createIdempotencyKeyDigester(),
+              ids: createIdempotencyRecordIds(),
+              clock,
+              policy: { retentionMs: 24 * 3_600_000 },
+            },
+          }),
+          ...(options.composeCompletedArtifact === false ? {} : {
+            completedArtifact: () => ({ transactions, storage }),
+          }),
+        },
+      },
+    });
+
+    return {
+      app, transactions,
+      signIn: async (userId: UserId) => {
+        const issued = await sessions.issue(userId);
+        return {
+          cookie: `${SESSION_COOKIE_NAME}=${issued.sessionToken}`,
+          csrf: issued.csrfToken,
+        };
+      },
+    };
+  }
+
+  it("does not exist when no object storage is composed", async () => {
+    const built = await buildWithCompletedRequest({ composeCompletedArtifact: false });
+    open = built.app;
+    const { cookie } = await built.signIn(OWNER);
+    const response = await built.app.inject({ method: "GET", url: downloadUrl, headers: { cookie } });
+    expect(response.statusCode).toBe(404);
+  });
+
+  it("refuses an anonymous request", async () => {
+    const built = await buildWithCompletedRequest();
+    open = built.app;
+    const response = await built.app.inject({ method: "GET", url: downloadUrl });
+    expect(response.statusCode).toBe(401);
+  });
+
+  it("refuses a non-member of the workspace", async () => {
+    const built = await buildWithCompletedRequest();
+    open = built.app;
+    const stranger = "usr_stranger" as UserId;
+    const { cookie } = await built.signIn(stranger);
+    const response = await built.app.inject({ method: "GET", url: downloadUrl, headers: { cookie } });
+    expect(response.statusCode).toBe(404);
+  });
+
+  it("streams the sealed bytes to the sender with the right headers", async () => {
+    const built = await buildWithCompletedRequest();
+    open = built.app;
+    const { cookie } = await built.signIn(OWNER);
+    const response = await built.app.inject({ method: "GET", url: downloadUrl, headers: { cookie } });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toBe("application/pdf");
+    expect(response.headers["cache-control"]).toBe("private, no-store");
+    expect(response.headers["content-disposition"]).toContain("attachment");
+    expect(response.body).toBe("%PDF-1.4 completed bytes");
   });
 });

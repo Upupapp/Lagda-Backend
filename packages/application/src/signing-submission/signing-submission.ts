@@ -52,6 +52,8 @@ import type {
 import type {
   SigningWorkflowIdGenerator, CompletionIdGenerator, EvidenceEventIdGenerator,
 } from "../common/ports/index.js";
+import type { JobScheduler } from "../common/ports/jobs.js";
+import { CompletionProcessJob, CompletionReconcileJob } from "../jobs/definitions.js";
 
 // ── Errors ───────────────────────────────────────────────────────────────────
 
@@ -159,6 +161,19 @@ export interface SigningSubmissionDependencies {
     readonly consentVersion: string;
     readonly idempotencyRetentionMs: number;
   };
+  /**
+   * Phase 1-B. Enqueues real completion processing the instant a request
+   * becomes `completion-ready` — the "immediate" half of the hybrid trigger.
+   *
+   * Optional and deliberately best-effort, same reasoning as
+   * `advanceSigningWorkflow` itself just below: the durable work already
+   * committed via `completion.ensureRun` inside that call, so a failed or
+   * absent enqueue only delays processing until `completion.reconcile`
+   * (enqueued alongside it) picks the run up — it never loses anything, and
+   * a deployment that supplies neither still gets a correct, if slower,
+   * completion pipeline once one is composed.
+   */
+  readonly completionScheduler?: JobScheduler;
 }
 
 type SessionDeps = Pick<
@@ -230,7 +245,7 @@ export async function submitRecipientSigning(
   // signature is already accepted and immutable, telling the signer their
   // signing failed when it did not (§172).
   try {
-    await advanceSigningWorkflow(
+    const advanced = await advanceSigningWorkflow(
       {
         workspaceId: context.workspaceId,
         signingRequestId: context.signingRequestId,
@@ -242,6 +257,29 @@ export async function submitRecipientSigning(
         completionIds: deps.completionIds,
         access: deps.workflowAccess,
       });
+
+    // Phase 1-B, the "immediate" half of the hybrid completion trigger. The
+    // run itself was already created durably, inside `advanceSigningWorkflow`
+    // above (`uow.completion.ensureRun`, in the transition's own transaction)
+    // — this enqueue is purely a latency optimization on top of that, which
+    // is exactly why it belongs in this same best-effort try: whether it
+    // succeeds, fails, or never runs at all (no scheduler composed),
+    // `completion.reconcile` — enqueued alongside it, self-scheduled a few
+    // minutes out via its singleton key — is what actually GUARANTEES the
+    // run gets processed either way.
+    if (advanced.outcome === "completion-ready" && deps.completionScheduler !== undefined) {
+      const workspaceId = context.workspaceId as string;
+      await deps.completionScheduler.enqueue(CompletionProcessJob, {
+        workspaceId, completionRunId: advanced.completionRunId as string,
+      });
+      await deps.completionScheduler.enqueue(CompletionReconcileJob, {
+        workspaceId,
+      }, {
+        startAfter: now + 5 * 60_000,
+        singletonKey: workspaceId,
+        singletonSeconds: 5 * 60,
+      });
+    }
   } catch {
     // Swallowed without the error object: an exception message is unbounded
     // text that may carry a value from the row it failed on, and the recipient

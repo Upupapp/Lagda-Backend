@@ -20,6 +20,8 @@ export const JOB_TYPES = [
   "signing-request.expiry",
   "notification.deliver",
   "notification.dispatch",
+  "completion.process",
+  "completion.reconcile",
 ] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 
@@ -77,6 +79,40 @@ export const NotificationDeliveryPayloadSchema = Type.Object(
 );
 export type NotificationDeliveryPayload =
   Static<typeof NotificationDeliveryPayloadSchema>;
+
+/**
+ * Processing one completion run as far as this build can take it.
+ *
+ * Two identifiers, not one: unlike a notification delivery (which resolves
+ * its own scope from the dispatch index), the enqueuing site already knows
+ * both — it just transitioned this exact request, in this exact workspace,
+ * to `completion-ready`. Re-deriving the workspace from the run id would be
+ * an extra lookup for information the caller is never without.
+ */
+export const CompletionProcessPayloadSchema = Type.Object(
+  {
+    workspaceId: Type.String({ minLength: 1, maxLength: 64 }),
+    completionRunId: Type.String({ minLength: 1, maxLength: 64 }),
+  },
+  { additionalProperties: false },
+);
+export type CompletionProcessPayload = Static<typeof CompletionProcessPayloadSchema>;
+
+/**
+ * Recovering stranded completion work for ONE workspace.
+ *
+ * `reconcileCompletionRuns` itself takes a single workspace — there is no
+ * system-wide completion index the way `signing-request.expiry` has one, so
+ * this job is scoped to exactly the workspace whose completion work just
+ * happened, self-scheduled a few minutes out (via a singleton key) as a
+ * safety net for that workspace's own crashed workers or lost enqueues,
+ * rather than sweeping every workspace in the system.
+ */
+export const CompletionReconcilePayloadSchema = Type.Object(
+  { workspaceId: Type.String({ minLength: 1, maxLength: 64 }) },
+  { additionalProperties: false },
+);
+export type CompletionReconcilePayload = Static<typeof CompletionReconcilePayloadSchema>;
 
 /** Everything a job definition declares. */
 export interface JobDefinition<TPayload> {

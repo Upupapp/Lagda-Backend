@@ -17,20 +17,31 @@ import {
   IdempotencyCleanupJob, RateLimitCleanupJob, NotificationDeliveryJob,
   SigningRequestExpiryJob,
   NotificationDispatchJob, JOB_DEFINITIONS,
+  CompletionProcessJob, CompletionReconcileJob,
   createTemplateRegistry, ALL_TEMPLATES, createNotificationLinkBuilder,
   noopMetrics,
+  runFieldMergeStep, runCertificateStep, runFinalSealStep,
   type JobDefinition, type SystemJobContext,
   type DeliverNotificationDependencies, type NotificationDeliveryId,
   type NotificationTransportRepository, type NotificationDeliveryUnitOfWork,
   type CompleteAttemptInput, type ClaimDeliveryInput,
   type NotificationScope,
+  type ObjectStorage, type CompletionDependencies, type CompletionStepRunners,
 } from "@lagda/application";
 import { createTransactionManager } from "@lagda/db";
 import { loadPostmarkConfig, createPostmarkEmailProvider, EmailConfigError } from "@lagda/email";
 import {
   createSealedSecretResolver, createChallengeSecretResolver,
   createNotificationSecretResolver,
+  createArtifactIdGenerator, createSealIdGenerator, createCompletionIdGenerator,
+  createEvidenceEventIdGenerator, createVerificationIdGenerator,
 } from "@lagda/security";
+import {
+  createS3ObjectStorage, createStorageKeyStrategy, loadStorageConfig,
+} from "@lagda/storage";
+import {
+  NodeFieldMerger, NodeCompletionCertificateGenerator, NodeDocumentSealer,
+} from "@lagda/sealing";
 import { randomUUID } from "node:crypto";
 import { createJobScheduler } from "../queue/scheduler.js";
 import {
@@ -39,6 +50,8 @@ import {
 import {
   handleNotificationDispatch,
 } from "../handlers/notification-dispatch.js";
+import { handleCompletionProcess } from "../handlers/completion-process.js";
+import { handleCompletionReconcile } from "../handlers/completion-reconcile.js";
 import { loadWorkerConfig, type WorkerConfig } from "../config/index.js";
 import {
   handleIdempotencyCleanup, handleRateLimitCleanup, type CleanupDependencies,
@@ -73,6 +86,22 @@ function emit(
     ...fields,
   });
   process.stdout.write(`${line}\n`);
+}
+
+/**
+ * Object storage for the completion pipeline, mirroring
+ * `packages/api/src/server/start-server.ts`'s `buildObjectStorage` exactly —
+ * same loader, same "null means absent, never a crash" contract. A separate
+ * function (not shared code) because the two processes do not share a
+ * dependency edge — see this file's own header comment.
+ */
+function buildWorkerObjectStorage(): ObjectStorage | null {
+  try {
+    return createS3ObjectStorage(loadStorageConfig());
+  } catch {
+    // Names only are ever reported by the loader; no value is logged here.
+    return null;
+  }
 }
 
 export async function startWorker(): Promise<StartedWorker> {
@@ -133,6 +162,8 @@ export async function startWorker(): Promise<StartedWorker> {
   ]) {
     await ensureQueue(boss, definition);
   }
+  await ensureQueue(boss, CompletionProcessJob);
+  await ensureQueue(boss, CompletionReconcileJob);
 
   await registerSystemHandler(boss, config, IdempotencyCleanupJob, (raw, context) =>
     handleIdempotencyCleanup(raw, context, cleanupDeps));
@@ -161,6 +192,74 @@ export async function startWorker(): Promise<StartedWorker> {
   // a deployment either runs the worker or does not.
   await registerSystemHandler(boss, config, SigningRequestExpiryJob, (raw, context) =>
     handleSigningRequestExpiry(raw, context, { transactions, clock }));
+
+  // ── 4a½. Completion processing (BACKEND-38/41, Phase 1-B) ──────────────────
+  //
+  // Registered UNCONDITIONALLY, same reasoning as expiry above — but unlike
+  // expiry, "unconditional" here does not mean "always fully functional".
+  // Object storage may be absent (no OBJECT_STORAGE_* configured), in which
+  // case `steps` below is left undefined entirely and `processCompletionRun`
+  // falls back to its OWN documented behaviour for that case: the run parks
+  // itself with `step-not-implemented` and returns to the claimable pool
+  // (see completion.ts's own comment on `CompletionStepRunners` being
+  // optional). That is the existing, correct degradation path — not a new one
+  // invented here — so registering the handler even without storage is safe:
+  // it does real, visible-in-the-run-history work (parking) rather than
+  // nothing.
+  const objectStorage = buildWorkerObjectStorage();
+  const completionSteps: CompletionStepRunners | undefined = objectStorage === null
+    ? undefined
+    : (() => {
+      const keys = createStorageKeyStrategy();
+      const completionIds = {
+        ...createCompletionIdGenerator(),
+        ...createArtifactIdGenerator(),
+        ...createEvidenceEventIdGenerator(),
+      };
+      return {
+        fieldMerge: (input: Parameters<CompletionStepRunners["fieldMerge"] & object>[0]) =>
+          runFieldMergeStep(input, {
+            transactions, clock, ids: completionIds,
+            storage: objectStorage, keys, merger: new NodeFieldMerger(),
+          }),
+        certificate: (input: Parameters<CompletionStepRunners["certificate"] & object>[0]) =>
+          runCertificateStep(input, {
+            transactions, clock, ids: completionIds,
+            storage: objectStorage, keys,
+            certificates: new NodeCompletionCertificateGenerator(),
+          }),
+        finalSeal: (input: Parameters<CompletionStepRunners["finalSeal"] & object>[0]) =>
+          runFinalSealStep(input, {
+            transactions, clock,
+            ids: {
+              ...completionIds,
+              ...createSealIdGenerator(),
+              ...createVerificationIdGenerator(),
+            },
+            storage: objectStorage, keys, sealer: new NodeDocumentSealer(),
+          }),
+      };
+    })();
+
+  const completionDeps: CompletionDependencies = {
+    transactions, clock, ids: createCompletionIdGenerator(),
+    policy: {
+      staleAttemptMs: config.completionStaleAttemptMs,
+      reconcileBatchSize: config.completionReconcileBatchSize,
+    },
+    ...(completionSteps === undefined ? {} : { steps: completionSteps }),
+  };
+
+  if (objectStorage === null) {
+    emit("info", "worker.completion_processing_degraded", {
+      reason: "no object storage configured — runs will park at field-merge",
+    });
+  }
+
+  await registerSystemHandler(boss, config, CompletionProcessJob, (raw, context) =>
+    handleCompletionProcess(raw, context, completionDeps));
+  await registerSystemHandler(boss, config, CompletionReconcileJob, (raw, context) =>
+    handleCompletionReconcile(raw, context, completionDeps));
 
   const missing = deliveryPrerequisites(config);
   if (missing.length > 0) {

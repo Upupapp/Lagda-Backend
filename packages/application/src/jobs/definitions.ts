@@ -6,7 +6,9 @@
 
 import {
   CleanupPayloadSchema, NotificationDeliveryPayloadSchema,
+  CompletionProcessPayloadSchema, CompletionReconcilePayloadSchema,
   type CleanupPayload, type NotificationDeliveryPayload, type JobDefinition,
+  type CompletionProcessPayload, type CompletionReconcilePayload,
 } from "../common/ports/jobs.js";
 
 /**
@@ -150,10 +152,71 @@ export const NotificationDispatchJob: JobDefinition<CleanupPayload> = {
     + "finds already reclaimed.",
 };
 
+/**
+ * Runs one completion attempt (BACKEND-38/41), enqueued the instant a
+ * request becomes `completion-ready` (the "immediate" half of the hybrid
+ * trigger — see `completion.reconcile` for the recovery half).
+ *
+ * SYSTEM-scoped like `notification.deliver`, even though the work is really
+ * for one workspace: the payload already carries `workspaceId` alongside the
+ * run id (the enqueuing site — the signing-workflow transition — already
+ * knows both), so there is nothing a workspace-scoped context would add.
+ */
+export const CompletionProcessJob: JobDefinition<CompletionProcessPayload> = {
+  type: "completion.process",
+  tenantScope: "system",
+  schema: CompletionProcessPayloadSchema,
+  maxAttempts: 3,
+  retryBackoffSeconds: 60,
+  // `processCompletionRun`'s own claim (`UPDATE ... WHERE state IN
+  // ('pending','waiting-retry')`) is what makes concurrent processing safe,
+  // not this number — but concurrent workers racing the SAME run only ever
+  // waste one side's attempt, so this stays conservative rather than
+  // multiplying that waste under load.
+  concurrency: 4,
+  idempotencyStrategy:
+    "The payload is a run id. processCompletionRun claims the run with a "
+    + "conditional UPDATE before doing anything else, so a duplicate delivery "
+    + "of this job finds the run already claimed (or already terminal) and "
+    + "does nothing. A retry after a genuine mid-step failure resumes from "
+    + "the last accepted step, per the step loop's own re-read of accepted "
+    + "steps each pass — it never redoes finished work.",
+};
+
+/**
+ * Recovers stranded completion work for ONE workspace (the "reconciliation"
+ * half of the hybrid trigger) — a `completion-ready` request whose enqueue
+ * was lost, or a `processing` run whose worker died.
+ *
+ * Self-scheduled with a singleton key (the workspace id) a few minutes after
+ * `completion.process` is enqueued for that workspace, rather than run on a
+ * fixed system-wide cron: there is no system-wide completion index the way
+ * `signing-request.expiry` has one (`reconcileCompletionRuns` itself takes a
+ * single workspace), so this targets exactly the workspace that just had
+ * completion activity instead of sweeping every workspace in the system on a
+ * schedule regardless of whether any of them have outstanding work.
+ */
+export const CompletionReconcileJob: JobDefinition<CompletionReconcilePayload> = {
+  type: "completion.reconcile",
+  tenantScope: "system",
+  schema: CompletionReconcilePayloadSchema,
+  maxAttempts: 3,
+  retryBackoffSeconds: 60,
+  concurrency: 1,
+  idempotencyStrategy:
+    "Naturally idempotent: creates a run only for a completion-ready request "
+    + "that has none yet (a second run finds one already there and does "
+    + "nothing), and abandons only a `processing` run whose attempt is "
+    + "already stale by the configured threshold (a second run over an "
+    + "already-abandoned or already-progressing run changes nothing).",
+};
+
 export const JOB_DEFINITIONS = [
   IdempotencyCleanupJob,
   SigningRequestExpiryJob,
   RateLimitCleanupJob,
   NotificationDeliveryJob,
   NotificationDispatchJob,
+  CompletionProcessJob,
+  CompletionReconcileJob,
 ] as const;
