@@ -508,11 +508,37 @@ export async function registerSystemHandler<TPayload>(
  * Returns names rather than a boolean, so the boot log says which one to set
  * instead of "delivery disabled" — the difference between a two-minute fix and
  * an afternoon.
+ *
+ * Must cover every var `loadPostmarkConfig` treats as required-for-presence
+ * (not merely required-to-be-well-formed) — the caller's own comment assumes
+ * "presence is already established" before calling that loader, so that loader
+ * throwing (and taking the whole worker down with it, deliberately, per that
+ * comment) is meant to mean "a value was set but is malformed," never "a
+ * required var was never set at all." EMAIL_FROM_ADDRESS and
+ * POSTMARK_MESSAGE_STREAM are just as required-for-presence there
+ * (`packages/email/src/config.ts`'s `loadPostmarkConfig`) as the three already
+ * checked below — omitting them here let a deployment that set only
+ * POSTMARK_SERVER_TOKEN crash the worker at boot instead of staying gracefully
+ * disabled like every other incomplete-config case.
+ *
+ * Takes `env` as a parameter, not a global read, for the same reason
+ * `loadWorkerConfig`/`loadPostmarkConfig` do (see their own comments): a
+ * function that reads `process.env` directly cannot be tested without
+ * mutating global state.
  */
-function deliveryPrerequisites(config: WorkerConfig): string[] {
+export function deliveryPrerequisites(
+  config: WorkerConfig,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): string[] {
   const missing: string[] = [];
-  if ((process.env["POSTMARK_SERVER_TOKEN"] ?? "") === "") {
+  if ((env["POSTMARK_SERVER_TOKEN"] ?? "") === "") {
     missing.push("POSTMARK_SERVER_TOKEN");
+  }
+  if ((env["EMAIL_FROM_ADDRESS"] ?? "").trim() === "") {
+    missing.push("EMAIL_FROM_ADDRESS");
+  }
+  if ((env["POSTMARK_MESSAGE_STREAM"] ?? "").trim() === "") {
+    missing.push("POSTMARK_MESSAGE_STREAM");
   }
   if (config.signingDeliveryKey === null || config.signingDeliveryKey === "") {
     // Without it a sealed credential cannot be opened, and every secret-bearing
