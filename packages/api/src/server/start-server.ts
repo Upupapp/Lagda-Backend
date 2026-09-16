@@ -588,7 +588,7 @@ function buildLinkedSurfaces(input: {
   idempotency: IdempotencyComposition;
   memberIds: ReturnType<typeof createWorkspaceMemberIdGenerator>;
   database: LagdaDatabase;
-}): Partial<Pick<WorkspaceDependencies, "invitations" | "sendSigningRequest">> {
+}): Partial<Pick<WorkspaceDependencies, "invitations" | "sendSigningRequest" | "cancelSigningRequest">> {
   const { config, transactions, clock, idempotency, memberIds, database } = input;
   const appBaseUrl = config.appBaseUrl;
   if (appBaseUrl === null) return {};
@@ -635,29 +635,52 @@ function buildLinkedSurfaces(input: {
 
   if (config.signingDeliveryKey === null) return { invitations };
 
+  // Shared by send AND cancel: both provision/revoke the same kind of
+  // recipient access, so both need the same `SigningAccessProvisioningDependencies`
+  // slice. Built once here rather than twice (as buildRecipientCeremony's
+  // separate `workflowAccess` does for the recipient-facing composition root)
+  // so a sender-side cancellation revokes grants minted from the exact same
+  // token/sealer configuration send used to create them.
+  const accessDeps = {
+    // Send mints a grant, appends evidence, and raises a notification intent
+    // with its delivery. Four capabilities, composed by spread so none can be
+    // changed without the others being seen.
+    ids: {
+      ...createSigningAccessIdGenerator(),
+      ...createEvidenceEventIdGenerator(),
+      ...createNotificationIntentIdGenerator(),
+      ...createNotificationDeliveryIdGenerator(),
+    },
+    tokens: createSigningAccessTokenFactory(),
+    sealer: createDeliverySecretSealer(
+      config.signingDeliveryKey, config.signingDeliveryKeyVersion),
+    links: createSigningLinkBuilder(appBaseUrl),
+    // The real templates, the same set the worker renders from. A registry
+    // built from a different list would let the API freeze a template version
+    // the worker cannot resolve.
+    templates: createTemplateRegistry(ALL_TEMPLATES),
+    policy: { bootstrapLifetimeMs: config.signingAccessLifetimeMs },
+    clock,
+  };
+
   return {
     invitations,
     sendSigningRequest: () => ({
-      transactions, clock,
-      // Send mints a grant, appends evidence, and raises a notification intent
-      // with its delivery. Four capabilities, composed by spread so none can be
-      // changed without the others being seen.
-      ids: {
-        ...createSigningAccessIdGenerator(),
-        ...createEvidenceEventIdGenerator(),
-        ...createNotificationIntentIdGenerator(),
-        ...createNotificationDeliveryIdGenerator(),
-      },
-      tokens: createSigningAccessTokenFactory(),
-      sealer: createDeliverySecretSealer(
-        config.signingDeliveryKey, config.signingDeliveryKeyVersion),
-      links: createSigningLinkBuilder(appBaseUrl),
-      // The real templates, the same set the worker renders from. A registry
-      // built from a different list would let the API freeze a template version
-      // the worker cannot resolve.
-      templates: createTemplateRegistry(ALL_TEMPLATES),
-      policy: { bootstrapLifetimeMs: config.signingAccessLifetimeMs },
+      transactions,
+      ...accessDeps,
       idempotency,
+    }),
+    // BACKEND-37, routed by OD-154 — the sender's withdrawal (registerCancelRoutes,
+    // create-app.ts). Was defined in the application layer with a matching route
+    // and tests, but never composed here, so `POST .../cancel` 404'd in every
+    // deployment. Same authenticated, workspace-scoped registration site as
+    // send (create-app.ts) — session validation, CSRF and rate limiting come
+    // from there, not from this composition.
+    cancelSigningRequest: () => ({
+      transactions, clock,
+      workflowIds: createSigningWorkflowIdGenerator(),
+      completionIds: createCompletionIdGenerator(),
+      access: accessDeps,
     }),
   };
 }
