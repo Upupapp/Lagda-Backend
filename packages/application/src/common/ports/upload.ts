@@ -160,6 +160,12 @@ export const UPLOAD_REJECTION_REASONS = [
   "scan-unavailable",
   "integrity-failure",
   "storage-failure",
+  // Distinct from `storage-failure`: that means the provider errored on a
+  // write attempt; this means LAGDA refused to attempt one at all, because a
+  // self-hosted deployment's disk is at its configured limit. The client
+  // retries neither the same way — this one only makes sense to retry after
+  // capacity is freed, not immediately.
+  "storage-capacity-exceeded",
 ] as const;
 export type UploadRejectionReason = (typeof UPLOAD_REJECTION_REASONS)[number];
 

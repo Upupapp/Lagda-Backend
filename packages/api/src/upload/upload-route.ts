@@ -23,6 +23,7 @@ import multipart from "@fastify/multipart";
 import {
   processDocumentUpload,
   type UploadDependencies, type UploadLimits, type UploadRejectionReason,
+  type StorageCapacityChecker,
 } from "@lagda/application";
 import type { DocumentId, WorkspaceId } from "@lagda/contracts";
 
@@ -61,6 +62,20 @@ export interface UploadRouteOptions {
      */
     readonly documentId: DocumentId;
   } | null;
+  /**
+   * Resolves the trusted actor for the capacity-status probe below. Simpler
+   * than `resolveContext`: this isn't workspace-scoped (capacity is a fact
+   * about the deployment, not a tenant), it only needs to know SOMEONE is
+   * signed in, so an anonymous caller cannot learn anything about this
+   * deployment's infrastructure.
+   */
+  readonly resolveActor?: (request: FastifyRequest) => { readonly userId: string } | null;
+  /**
+   * Absent means this deployment has no local-disk capacity constraint to
+   * report — `GET /upload-capacity` always reports available in that case,
+   * same as `processDocumentUpload` never refusing an upload on this basis.
+   */
+  readonly capacity?: StorageCapacityChecker;
 }
 
 /**
@@ -85,6 +100,10 @@ export const STATUS_BY_REASON: Record<UploadRejectionReason, number> = {
   "scan-unavailable": 503,
   "integrity-failure": 500,
   "storage-failure": 503,
+  // 507 Insufficient Storage — the precise status for this, and distinct from
+  // 503: retrying "later" only makes sense after capacity is actually freed,
+  // not on the usual short backoff a plain 503 implies.
+  "storage-capacity-exceeded": 507,
 };
 
 /**
@@ -105,12 +124,45 @@ const MESSAGE_BY_REASON: Record<UploadRejectionReason, string> = {
   "scan-unavailable": "Uploads are temporarily unavailable. Please try again.",
   "integrity-failure": "The upload could not be completed.",
   "storage-failure": "Uploads are temporarily unavailable. Please try again.",
+  "storage-capacity-exceeded":
+    "Document storage is currently full. Uploads are temporarily disabled until "
+    + "additional capacity is added — please try again later.",
 };
 
 export async function registerUploadRoute(
   app: FastifyInstance,
   options: UploadRouteOptions,
 ): Promise<void> {
+  // ── Capacity status, checked proactively ─────────────────────────────────
+  //
+  // Lets the client disable its own upload affordance BEFORE a user picks a
+  // file, rather than only ever finding out from a failed POST. Deliberately
+  // not workspace-scoped — this deployment either has room or it does not,
+  // regardless of which workspace is asking — so it only requires SOME
+  // signed-in actor, never an unauthenticated one, to avoid handing out
+  // infrastructure facts to an anonymous caller.
+  if (options.resolveActor !== undefined) {
+    const resolveActor = options.resolveActor;
+    app.get("/upload-capacity", async (request: FastifyRequest, reply: FastifyReply) => {
+      const actor = resolveActor(request);
+      if (actor === null) {
+        return reply.status(401).send({
+          error: { code: "AUTHENTICATION_REQUIRED", message: "Sign in to continue." },
+        });
+      }
+      void reply.header("Cache-Control", "no-store");
+      if (options.capacity === undefined) {
+        return reply.status(200).send({ available: true });
+      }
+      const status = await options.capacity.check();
+      return reply.status(200).send(
+        status.available
+          ? { available: true }
+          : { available: false, message: MESSAGE_BY_REASON["storage-capacity-exceeded"] },
+      );
+    });
+  }
+
   await app.register(multipart, {
     limits: {
       // EXPLICIT bounds, all of them. A permissive default here is how a

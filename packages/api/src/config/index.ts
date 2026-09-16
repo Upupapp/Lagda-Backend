@@ -149,6 +149,17 @@ export interface ApiConfig {
   readonly recipientConsentVersion: string;
 
   /**
+   * A path on the filesystem to watch for free disk space, for a deployment
+   * self-hosting its S3-compatible store on the same machine the API runs
+   * on. Null means no local-disk capacity constraint applies (a managed
+   * provider, or nobody configured this) — uploads are never refused on this
+   * basis.
+   */
+  readonly localStorageCapacityPath: string | null;
+  /** Below this many free bytes on that path, uploads are refused. */
+  readonly localStorageMinFreeBytes: number;
+
+  /**
    * Which provider delivers ACCOUNT EMAIL VERIFICATION messages — and ONLY
    * that message type. Password reset, signing invitations, and every other
    * notification remain on the default email delivery pipeline regardless
@@ -383,6 +394,11 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       8 * 3_600_000),
     recipientConsentVersion:
       env["RECIPIENT_CONSENT_VERSION"] ?? "v0-demonstration",
+    localStorageCapacityPath: env["LOCAL_STORAGE_CAPACITY_PATH"]?.trim() || null,
+    localStorageMinFreeBytes: readInt(
+      env["LOCAL_STORAGE_MIN_FREE_BYTES"], "LOCAL_STORAGE_MIN_FREE_BYTES",
+      2 * 1024 * 1024 * 1024, // 2GB
+    ),
     emailVerificationProvider,
     firebaseAdmin: emailVerificationProvider !== "firebase" ? null : loadFirebaseAdminConfig(env),
   };

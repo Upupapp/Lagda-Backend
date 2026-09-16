@@ -25,6 +25,9 @@ export {
 export {
   ensureTestBuckets, testStorageConfig, samplePdf, TEST_BUCKETS,
 } from "./testing/test-service.js";
+export {
+  createDiskCapacityChecker, type DiskCapacityCheckerConfig,
+} from "./capacity/disk-capacity-checker.js";
 
 // NOT exported here: `runObjectStorageContract`. It imports `vitest`, and
 // anything this index re-exports is pulled in by every consumer - which put a

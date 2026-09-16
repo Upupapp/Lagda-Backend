@@ -339,3 +339,23 @@ export class StorageIntegrityError extends StorageError {
     this.name = "StorageIntegrityError";
   }
 }
+
+/**
+ * Whether this deployment currently has room to accept another upload.
+ *
+ * OPTIONAL, and deliberately not part of `ObjectStorage` itself: a managed
+ * provider (S3, Linode Object Storage, R2) has no meaningful "disk about to
+ * fill up" concept from the app's point of view, only a self-hosted store
+ * sharing a disk with the rest of the deployment does. Absent means exactly
+ * that — this deployment is not disk-constrained, so uploads are never
+ * refused on this basis.
+ */
+export interface StorageCapacityChecker {
+  check(): Promise<StorageCapacityStatus>;
+}
+
+export interface StorageCapacityStatus {
+  readonly available: boolean;
+  readonly freeBytes: number;
+  readonly totalBytes: number;
+}

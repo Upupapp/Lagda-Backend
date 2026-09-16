@@ -39,6 +39,10 @@ async function build(options: {
   failArtifactPut?: boolean;
   /** Captures what the route LOGS, so the cause can be checked. */
   logStream?: NodeJS.WritableStream;
+  /** Undefined = no capacity checker composed at all (managed provider). */
+  capacityAvailable?: boolean;
+  /** Whether `/upload-capacity` sees a signed-in actor. */
+  actorSignedIn?: boolean;
 } = {}): Promise<Built> {
   const app = Fastify(options.logStream === undefined
     ? { logger: false }
@@ -106,6 +110,11 @@ async function build(options: {
     newArtifactId: () => "art_1" as ArtifactId,
       clock: { now: () => 0 },
       digestOf: sha256,
+      ...(options.capacityAvailable === undefined ? {} : {
+        capacity: { check: () => Promise.resolve({
+          available: options.capacityAvailable as boolean, freeBytes: 0, totalBytes: 0,
+        }) },
+      }),
     };
   };
 
@@ -117,6 +126,13 @@ async function build(options: {
       options.authorized === false
         ? null
         : { workspaceId: WS, userId: "usr_1", documentId: "doc_1" as DocumentId },
+    resolveActor: (_request: FastifyRequest) =>
+      options.actorSignedIn === false ? null : { userId: "usr_1" },
+    ...(options.capacityAvailable === undefined ? {} : {
+      capacity: { check: () => Promise.resolve({
+        available: options.capacityAvailable as boolean, freeBytes: 0, totalBytes: 0,
+      }) },
+    }),
   });
   await app.ready();
   return { app, puts, scans, contexts };
@@ -353,6 +369,68 @@ describe("upload route", () => {
     for (const [reason, status] of Object.entries(expected)) {
       expect(STATUS_BY_REASON[reason as keyof typeof STATUS_BY_REASON]).toBe(status);
     }
+  });
+});
+
+describe("capacity status (/upload-capacity)", () => {
+  it("reports available when no capacity checker is composed at all", async () => {
+    const { app } = await build();
+    const response = await app.inject({ method: "GET", url: "/upload-capacity" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ available: true });
+  });
+
+  it("reports available when the checker says there is room", async () => {
+    const { app } = await build({ capacityAvailable: true });
+    const response = await app.inject({ method: "GET", url: "/upload-capacity" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ available: true });
+  });
+
+  it("reports unavailable with an informative message when the checker says there is not", async () => {
+    const { app } = await build({ capacityAvailable: false });
+    const response = await app.inject({ method: "GET", url: "/upload-capacity" });
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { available: boolean; message?: string };
+    expect(body.available).toBe(false);
+    expect(body.message).toMatch(/storage is currently full/i);
+  });
+
+  it("refuses an anonymous caller rather than disclosing infrastructure state", async () => {
+    const { app } = await build({ capacityAvailable: false, actorSignedIn: false });
+    const response = await app.inject({ method: "GET", url: "/upload-capacity" });
+    expect(response.statusCode).toBe(401);
+  });
+
+  it("never caches the answer", async () => {
+    const { app } = await build({ capacityAvailable: true });
+    const response = await app.inject({ method: "GET", url: "/upload-capacity" });
+    expect(response.headers["cache-control"]).toBe("no-store");
+  });
+});
+
+describe("capacity guard on the actual upload", () => {
+  it("refuses the upload with 507 before touching storage or the scanner when capacity is exceeded", async () => {
+    const { app, puts, scans } = await build({ capacityAvailable: false });
+    const { payload, headers } = onePdf();
+    const response = await app.inject({
+      method: "POST", url: "/test/uploads", payload, headers,
+    });
+    expect(response.statusCode).toBe(507);
+    const body = response.json() as { error: { code: string; message: string } };
+    expect(body.error.message).toMatch(/storage is currently full/i);
+    // Fails BEFORE any real work — no bytes ever reach storage or the scanner.
+    expect(puts).toEqual([]);
+    expect(scans).toEqual([]);
+  });
+
+  it("uploads normally when capacity is available", async () => {
+    const { app } = await build({ capacityAvailable: true });
+    const { payload, headers } = onePdf();
+    const response = await app.inject({
+      method: "POST", url: "/test/uploads", payload, headers,
+    });
+    expect(response.statusCode).toBe(201);
   });
 });
 

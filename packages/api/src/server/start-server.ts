@@ -31,6 +31,7 @@ import {
 import { randomBytes } from "node:crypto";
 import {
   createS3ObjectStorage, createStorageKeyStrategy, loadStorageConfig,
+  createDiskCapacityChecker,
 } from "@lagda/storage";
 import type { ObjectStorage, JobScheduler } from "@lagda/application";
 import { PgBoss } from "pg-boss";
@@ -248,7 +249,7 @@ export async function createProductionDependencies(
     // present-and-undefined. Under `exactOptionalPropertyTypes` those are
     // different things, and here the difference is whether a route exists.
     ...buildIdentity(database, config, sessions, dummyPasswordHash),
-    ...buildUpload(database, transactions, clock, objectStorage),
+    ...buildUpload(database, transactions, clock, objectStorage, config),
     ...buildRecipientAccess(transactions, clock, config),
     ...buildPublicVerification(database),
     ...buildRecipientCeremony({
@@ -468,6 +469,7 @@ function buildUpload(
   transactions: ReturnType<typeof createTransactionManager>,
   clock: Clock,
   storage: ObjectStorage | null,
+  config: ApiConfig,
 ): Pick<AppDependencies, "upload"> {
   if (storage === null) return {};
   let storageConfig;
@@ -491,6 +493,20 @@ function buildUpload(
     : createClamAvScanner(scannerConfig.clamav);
   const artifactIds = createArtifactIdGenerator();
 
+  // Local-disk capacity guard — only meaningful for a deployment self-hosting
+  // its S3-compatible store on the same machine the API runs on. Absent
+  // means exactly what it means everywhere in this file: a managed provider
+  // (or nobody configured this), so uploads are never refused on this basis.
+  // The path is the storage backend's OWN data directory, not the app's —
+  // checking a different path would answer "is the app's disk full" instead
+  // of "is the disk the bytes actually land on full".
+  const capacity = config.localStorageCapacityPath === null
+    ? undefined
+    : createDiskCapacityChecker({
+      path: config.localStorageCapacityPath,
+      minFreeBytes: config.localStorageMinFreeBytes,
+    });
+
   return {
     upload: () => ({
       path: "/workspaces/:workspaceId/documents/:documentId/upload",
@@ -511,8 +527,15 @@ function buildUpload(
         };
       },
 
+      resolveActor: (request) => {
+        const auth: RequestAuth = request.auth;
+        return auth.status === "authenticated" ? { userId: auth.actor.userId } : null;
+      },
+      ...(capacity === undefined ? {} : { capacity }),
+
       dependenciesFor: ({ workspaceId }) => ({
         storage, keys, inspector, scanner, clock,
+        ...(capacity === undefined ? {} : { capacity }),
         // The SEALER's digest, not a second one. An upload digest and a seal
         // digest are both digests of document bytes, and INV-080 exists so the
         // two cannot disagree.

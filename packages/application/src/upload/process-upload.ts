@@ -42,6 +42,7 @@ import type { DocumentId, Sha256Digest, WorkspaceId } from "@lagda/contracts";
 import type { ArtifactId, ArtifactRecord } from "../common/ports/evidence.js";
 import type {
   ByteStream, ObjectStorage, StorageKeyStrategy, StorageObjectRef,
+  StorageCapacityChecker,
 } from "../common/ports/storage.js";
 import {
   isClientRejection,
@@ -53,6 +54,11 @@ import {
 /** Everything the pipeline needs. All ports — no concrete adapter types. */
 export interface UploadDependencies {
   readonly storage: ObjectStorage;
+  /**
+   * Absent means this deployment has no local-disk capacity constraint to
+   * check (a managed storage provider, or the check simply wasn't composed).
+   */
+  readonly capacity?: StorageCapacityChecker;
   readonly keys: StorageKeyStrategy;
   readonly inspector: DocumentInspector;
   readonly scanner: MalwareScanner;
@@ -191,6 +197,20 @@ export async function processDocumentUpload(
   deps: UploadDependencies,
   limits: UploadLimits,
 ): Promise<UploadResult> {
+  // ── 0. Capacity, before anything else is even attempted ─────────────────
+  //
+  // Checked first and cheaply: no upload row, no quarantine write, no scan —
+  // none of that work should happen for a request this deployment already
+  // knows it cannot store. Absent `deps.capacity` (a managed provider, or the
+  // check simply wasn't composed) means this deployment has no local-disk
+  // constraint to check at all, so uploads proceed exactly as before.
+  if (deps.capacity !== undefined) {
+    const status = await deps.capacity.check();
+    if (!status.available) {
+      return { outcome: "rejected", uploadId: null, reason: "storage-capacity-exceeded", clientFault: false };
+    }
+  }
+
   const uploadId = deps.newUploadId();
   const quarantineRef = deps.keys.quarantineKey({
     workspaceId: request.workspaceId,
