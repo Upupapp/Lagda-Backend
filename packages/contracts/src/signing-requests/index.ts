@@ -408,3 +408,61 @@ export const SigningRequestCreatedSchema = Type.Object(
   { title: "SigningRequestCreated", additionalProperties: false },
 );
 export type SigningRequestCreated = Static<typeof SigningRequestCreatedSchema>;
+
+/**
+ * Who signed a request, and when.
+ *
+ * ── Separate from `SigningRequestSchema`, deliberately ─────────────────────
+ *
+ * That schema is the immutable snapshot and carries no ceremony state at all
+ * — its guard test refuses `signedAt`, `declinedAt` and the rest by name.
+ * Progress therefore gets its own shape rather than widening that one, so a
+ * client always knows whether it is holding "what was agreed" or "what has
+ * happened since".
+ *
+ * Identity here is the same already-visible party data the snapshot carries
+ * (a name, an address). Never an account: no `userId`, no `normalizedEmail`,
+ * no token — a recipient is a party to a document, not a user of the product.
+ */
+export const SignatorySchema = Type.Object(
+  {
+    recipientId: Type.String({ minLength: 1, maxLength: 64 }),
+    name: Type.String({ minLength: 1 }),
+    email: Type.String({ maxLength: 254 }),
+    organization: Type.Union([Type.String(), Type.Null()]),
+    type: RecipientTypeSchema,
+    isRequired: Type.Boolean(),
+    /** EQUAL VALUES MEAN PARALLEL within a step. */
+    routingOrder: Type.Integer({ minimum: 1 }),
+    state: RecipientWorkflowStateSchema,
+    /** The instant they signed. Null unless `state` is `signed`. */
+    signedAt: Type.Union([Type.String({ format: "date-time" }), Type.Null()]),
+    declinedAt: Type.Union([Type.String({ format: "date-time" }), Type.Null()]),
+    declineReason: Type.Union([SigningDeclineReasonSchema, Type.Null()]),
+  },
+  {
+    title: "Signatory",
+    additionalProperties: false,
+    description: "One party to a signing request and what they have done about it.",
+  },
+);
+export type Signatory = Static<typeof SignatorySchema>;
+
+export const SigningRequestSignaturesSchema = Type.Object(
+  {
+    signingRequestId: Type.String({ minLength: 1, maxLength: 64 }),
+    state: SigningRequestStateSchema,
+    /** REQUIRED participants only — they are what the request waits on. */
+    signedCount: Type.Integer({ minimum: 0 }),
+    requiredCount: Type.Integer({ minimum: 0 }),
+    signatories: Type.Array(SignatorySchema),
+  },
+  {
+    title: "SigningRequestSignatures",
+    additionalProperties: false,
+    description:
+      "Signing progress for one request: every party, their standing, and "
+      + "when they acted.",
+  },
+);
+export type SigningRequestSignatures = Static<typeof SigningRequestSignaturesSchema>;

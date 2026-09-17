@@ -28,15 +28,15 @@ import {
   createSigningRequest, getSigningRequest, listSigningRequests, assertValidKey,
   setSigningRequestExpiry,
   markSigningRequestReadyToSend, returnSigningRequestToDraft,
-  getCompletedArtifact,
+  getCompletedArtifact, getSigningRequestSignatures,
   type SigningRequestDependencies, type SigningRequestId,
   type SigningRequestView, type SigningRequestCreatedView,
-  type CompletedArtifactDependencies,
+  type CompletedArtifactDependencies, type SigningRequestSignaturesView,
   type SessionId, type UserId,
 } from "@lagda/application";
 import {
   SigningRequestSchema, SigningRequestCreatedSchema, SigningRequestListSchema,
-  SigningRequestStateSchema,
+  SigningRequestStateSchema, SigningRequestSignaturesSchema,
   SetSigningRequestExpirySchema, IDEMPOTENCY_KEY_HEADER,
   type SetSigningRequestExpiryRequest,
   type DocumentId, type WorkspaceId,
@@ -159,6 +159,28 @@ const present = (request: SigningRequestView) => ({
     recipientId: field.recipientId,
   })),
   createdAt: iso(request.createdAt),
+});
+
+const presentSignatures = (view: SigningRequestSignaturesView) => ({
+  signingRequestId: view.signingRequestId,
+  state: view.state,
+  signedCount: view.signedCount,
+  requiredCount: view.requiredCount,
+  signatories: view.signatories.map(signatory => ({
+    recipientId: signatory.recipientId,
+    name: signatory.name,
+    email: signatory.email,
+    organization: signatory.organization,
+    type: signatory.type,
+    isRequired: signatory.isRequired,
+    routingOrder: signatory.routingOrder,
+    state: signatory.state,
+    // Nullable instants stay null. Somebody who has not signed has no
+    // signing time, and the epoch is a date rather than an absence.
+    signedAt: signatory.signedAt === null ? null : iso(signatory.signedAt),
+    declinedAt: signatory.declinedAt === null ? null : iso(signatory.declinedAt),
+    declineReason: signatory.declineReason,
+  })),
 });
 
 export function registerSigningRequestRoutes(
@@ -315,6 +337,38 @@ export function registerSigningRequestRoutes(
     // Reads are not logged. A sender reviewing a request before sending it
     // would otherwise produce a line per refresh.
     return reply.status(200).send(present(found));
+  });
+
+  // ── Signing progress ────────────────────────────────────────────────────
+  //
+  // Its own route rather than fields on the one above, because that one is
+  // the immutable snapshot and its guard test refuses ceremony state by
+  // name. "What was agreed" and "what has happened since" are two questions,
+  // and a client is always holding exactly one of them.
+  //
+  // Same dependencies as the read: this joins two tables the unit of work
+  // already reaches, and touches no storage and no credential.
+  app.get("/workspaces/:workspaceId/signing-requests/:signingRequestId/signatures", {
+    schema: {
+      params: ReadParamsSchema,
+      response: { 200: SigningRequestSignaturesSchema },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await actorOf(request);
+    if (actor === null) return unauthenticated(reply);
+
+    const { workspaceId, signingRequestId } =
+      request.params as Static<typeof ReadParamsSchema>;
+
+    const signatures = await getSigningRequestSignatures(
+      actor, workspaceId as WorkspaceId, signingRequestId as SigningRequestId,
+      options.signingRequestDependencies());
+
+    // Not logged, same reasoning as the read above: a sender watching for a
+    // signature would produce a line per refresh, and the payload is the
+    // parties to a contract.
+    return reply.status(200).send(presentSignatures(signatures));
   });
 
   // ── The completed document (Phase 1-C, sender only) ────────────────────

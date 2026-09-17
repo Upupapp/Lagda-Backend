@@ -43,6 +43,7 @@ export * from "./signing-requests/expiry.js";
 export * from "./signing-requests/readiness.js";
 export * from "./signing-requests/send.js";
 export * from "./signing-requests/completed-artifact.js";
+export * from "./signing-requests/signatures.js";
 export * from "./signing-access/signing-access.js";
 export * from "./signing-ceremony/signing-ceremony.js";
 export * from "./signing-submission/signing-submission.js";

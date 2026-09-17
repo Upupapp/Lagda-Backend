@@ -243,7 +243,18 @@ describe("creating a request sends nothing", () => {
       const source = code(file);
       for (const forbidden of [
         "delivered_at", "viewed_at", "viewedAt",
-        "signed_at", "signedAt", "declined_at", "completed_at", "cancelled_at",
+        // `signedAt` and `declinedAt` left this list the same way `sentAt`
+        // and `expiresAt` did, for the same reason: a signature is now a
+        // real fact the ports and the contract carry (the ceremony writes
+        // `recipient_submissions`, and the workflow row derives `signed_at`
+        // from it), so the signatures surface can answer "who signed this,
+        // and when". Keeping them here would fail on correct code.
+        //
+        // `signed_at` and `declined_at` STAY, and the distinction is the
+        // same one `expires_at` records below: this loop checks migration
+        // 019, where creation still writes neither — those columns belong to
+        // the activation table, which is a different migration.
+        "signed_at", "declined_at", "completed_at", "cancelled_at",
         // `expiresAt` left this list in BACKEND-46, exactly as `sentAt` left it
         // in BACKEND-33 and for the same reason: a deadline is now a real fact
         // the ports and the contract carry, and keeping it here would fail on
