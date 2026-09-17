@@ -1,9 +1,9 @@
-// Envelope configuration, validated once at startup.
+// Envelope + transport configuration, validated once at startup.
 //
 // ── Why validation happens at boot and not at send ─────────────────────────
 //
-// A missing `POSTMARK_SERVER_TOKEN` discovered on the first password reset is
-// an outage that looks like a user problem. Discovered at boot, it is a
+// A missing `SMTP_PASSWORD` discovered on the first password reset is an
+// outage that looks like a user problem. Discovered at boot, it is a
 // deployment that refuses to start (S94) — which is loud, immediate, and
 // attributable.
 //
@@ -13,9 +13,22 @@
 // nowhere else (S80-S83). A template that could set its own sender, or a
 // request body that could influence one, is a way to send mail that appears to
 // come from LAGDA and does not.
+//
+// ── Migrated from Postmark to SMTP ──────────────────────────────────────────
+//
+// LAGDA's transactional mail moved from Postmark's HTTP API to a plain SMTP
+// relay (the current deployment target is GMass's SMTP endpoint). Nothing
+// vendor-specific lives here or in ./smtp.ts by name — SMTP is itself the
+// generic transport, and the actual host/credentials are supplied entirely
+// through configuration. `POSTMARK_MESSAGE_STREAM` had no SMTP equivalent
+// (a "message stream" is a Postmark-only concept for separating transactional
+// from broadcast traffic) and is gone rather than mapped onto something new.
 
 export interface EmailEnvelopeConfig {
-  /** The verified sending identity. Must match the DKIM-signed domain. */
+  /** The verified sending identity. Must match the account/domain configured
+   *  on the SMTP relay's own side (Postmark called this a "sender signature";
+   *  the concept is provider-agnostic — the relay must recognize the address
+   *  as authorized to send). */
   readonly fromAddress: string;
   /** What a recipient sees as the sender. Server-controlled (S81). */
   readonly fromDisplayName: string;
@@ -27,18 +40,19 @@ export interface EmailEnvelopeConfig {
    * mailbox with no owner.
    */
   readonly replyToAddress?: string;
-  /**
-   * Postmark's transactional Message Stream (S87).
-   *
-   * Explicit rather than defaulted, because the default stream on a Postmark
-   * server can be reconfigured, and a security email that inherits a broadcast
-   * stream inherits a broadcast reputation.
-   */
-  readonly messageStream: string;
 }
 
-export interface PostmarkConfig {
-  readonly serverToken: string;
+export interface SmtpConfig {
+  readonly host: string;
+  readonly port: number;
+  /** True = implicit TLS from the first byte (conventionally port 465).
+   *  False = plaintext connection upgraded via STARTTLS (conventionally port
+   *  587) — `requireTLS` on the transport then refuses to fall back to an
+   *  unencrypted session if the server doesn't offer STARTTLS, so credentials
+   *  and message content are never sent in the clear either way. */
+  readonly secure: boolean;
+  readonly username: string;
+  readonly password: string;
   readonly envelope: EmailEnvelopeConfig;
   /**
    * How long to wait for a provider response.
@@ -48,8 +62,6 @@ export interface PostmarkConfig {
    * produces exactly the duplicate send the lease exists to prevent.
    */
   readonly timeoutMs: number;
-  /** Overridable for tests. Never read from a request. */
-  readonly apiBaseUrl: string;
 }
 
 export class EmailConfigError extends Error {
@@ -82,12 +94,37 @@ function requireAddress(value: string | undefined, field: string): string {
  * depending on where it runs, and cannot be tested without mutating global
  * state.
  */
-export function loadPostmarkConfig(
+export function loadSmtpConfig(
   env: Readonly<Record<string, string | undefined>>,
-): PostmarkConfig {
-  const serverToken = env["POSTMARK_SERVER_TOKEN"];
-  if (serverToken === undefined || serverToken.trim() === "") {
-    throw new EmailConfigError("POSTMARK_SERVER_TOKEN is required");
+): SmtpConfig {
+  const password = env["SMTP_PASSWORD"];
+  if (password === undefined || password.trim() === "") {
+    throw new EmailConfigError("SMTP_PASSWORD is required");
+  }
+
+  const host = (env["SMTP_HOST"] ?? "").trim();
+  if (host === "") {
+    throw new EmailConfigError("SMTP_HOST is required");
+  }
+
+  const portRaw = env["SMTP_PORT"];
+  const port = portRaw === undefined ? 587 : Number(portRaw);
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    throw new EmailConfigError("SMTP_PORT must be a valid port number");
+  }
+
+  // Port 465 is the conventional implicit-TLS port; everything else
+  // (587, the GMass-documented port, chief among them) negotiates TLS via
+  // STARTTLS instead. An explicit override is still honored for a relay that
+  // doesn't follow the convention.
+  const secureOverride = env["SMTP_SECURE"];
+  const secure = secureOverride === undefined
+    ? port === 465
+    : secureOverride.trim().toLowerCase() === "true";
+
+  const username = (env["SMTP_USERNAME"] ?? "").trim();
+  if (username === "") {
+    throw new EmailConfigError("SMTP_USERNAME is required");
   }
 
   const fromDisplayName = (env["EMAIL_FROM_DISPLAY_NAME"] ?? "LAGDA").trim();
@@ -104,22 +141,19 @@ export function loadPostmarkConfig(
     throw new EmailConfigError("EMAIL_TIMEOUT_MS must be between 1000 and 30000");
   }
 
-  const messageStream = (env["POSTMARK_MESSAGE_STREAM"] ?? "").trim();
-  if (messageStream === "") {
-    throw new EmailConfigError("POSTMARK_MESSAGE_STREAM is required");
-  }
-
   return {
-    serverToken: serverToken.trim(),
+    host,
+    port,
+    secure,
+    username,
+    password: password.trim(),
     envelope: {
       fromAddress: requireAddress(env["EMAIL_FROM_ADDRESS"], "EMAIL_FROM_ADDRESS"),
       fromDisplayName,
       ...(replyTo === undefined || replyTo.trim() === ""
         ? {}
         : { replyToAddress: requireAddress(replyTo, "EMAIL_REPLY_TO_ADDRESS") }),
-      messageStream,
     },
     timeoutMs,
-    apiBaseUrl: (env["POSTMARK_API_BASE_URL"] ?? "https://api.postmarkapp.com").trim(),
   };
 }

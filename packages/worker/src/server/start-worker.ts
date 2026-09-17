@@ -29,7 +29,7 @@ import {
   type ObjectStorage, type CompletionDependencies, type CompletionStepRunners,
 } from "@lagda/application";
 import { createTransactionManager } from "@lagda/db";
-import { loadPostmarkConfig, createPostmarkEmailProvider, EmailConfigError } from "@lagda/email";
+import { loadSmtpConfig, createSmtpEmailProvider, EmailConfigError } from "@lagda/email";
 import {
   createSealedSecretResolver, createChallengeSecretResolver,
   createNotificationSecretResolver,
@@ -266,11 +266,11 @@ export async function startWorker(): Promise<StartedWorker> {
     emit("info", "worker.notification_delivery_disabled", { missing });
   } else {
     // Throws on a malformed value even though presence is already established:
-    // a bad message stream or an unparseable timeout is a deployment fault that
-    // must stop the process rather than surface on the first password reset.
-    let postmark;
+    // a bad host or an unparseable timeout is a deployment fault that must
+    // stop the process rather than surface on the first password reset.
+    let smtp;
     try {
-      postmark = loadPostmarkConfig(process.env);
+      smtp = loadSmtpConfig(process.env);
     } catch (error) {
       if (error instanceof EmailConfigError) {
         throw new Error(`Email delivery is misconfigured: ${error.message}`);
@@ -278,7 +278,7 @@ export async function startWorker(): Promise<StartedWorker> {
       throw error;
     }
 
-    const provider = createPostmarkEmailProvider(postmark);
+    const provider = createSmtpEmailProvider(smtp);
 
     // CHALLENGE credentials live in the domain that minted them (OD-184), and
     // password_reset_challenges carries no tenant column -- an account security
@@ -425,7 +425,7 @@ export async function startWorker(): Promise<StartedWorker> {
       });
 
     emit("info", "worker.notification_delivery_enabled", {
-      provider: "postmark",
+      provider: "smtp",
       leaseMs: config.deliveryLeaseMs,
       maxAttempts: config.deliveryMaxAttempts,
     });
@@ -608,20 +608,22 @@ export async function registerSystemHandler<TPayload>(
  * instead of "delivery disabled" — the difference between a two-minute fix and
  * an afternoon.
  *
- * Must cover every var `loadPostmarkConfig` treats as required-for-presence
- * (not merely required-to-be-well-formed) — the caller's own comment assumes
+ * Must cover every var `loadSmtpConfig` treats as required-for-presence (not
+ * merely required-to-be-well-formed) — the caller's own comment assumes
  * "presence is already established" before calling that loader, so that loader
  * throwing (and taking the whole worker down with it, deliberately, per that
  * comment) is meant to mean "a value was set but is malformed," never "a
- * required var was never set at all." EMAIL_FROM_ADDRESS and
- * POSTMARK_MESSAGE_STREAM are just as required-for-presence there
- * (`packages/email/src/config.ts`'s `loadPostmarkConfig`) as the three already
- * checked below — omitting them here let a deployment that set only
- * POSTMARK_SERVER_TOKEN crash the worker at boot instead of staying gracefully
- * disabled like every other incomplete-config case.
+ * required var was never set at all." EMAIL_FROM_ADDRESS, SMTP_HOST and
+ * SMTP_USERNAME are just as required-for-presence there
+ * (`packages/email/src/config.ts`'s `loadSmtpConfig`) as SMTP_PASSWORD —
+ * omitting any of them here would let a deployment that set only
+ * SMTP_PASSWORD crash the worker at boot instead of staying gracefully
+ * disabled like every other incomplete-config case. (SMTP_PORT and
+ * SMTP_SECURE both have real defaults in the loader, so their absence is not
+ * a misconfiguration and does not belong here.)
  *
  * Takes `env` as a parameter, not a global read, for the same reason
- * `loadWorkerConfig`/`loadPostmarkConfig` do (see their own comments): a
+ * `loadWorkerConfig`/`loadSmtpConfig` do (see their own comments): a
  * function that reads `process.env` directly cannot be tested without
  * mutating global state.
  */
@@ -630,14 +632,17 @@ export function deliveryPrerequisites(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): string[] {
   const missing: string[] = [];
-  if ((env["POSTMARK_SERVER_TOKEN"] ?? "") === "") {
-    missing.push("POSTMARK_SERVER_TOKEN");
+  if ((env["SMTP_PASSWORD"] ?? "") === "") {
+    missing.push("SMTP_PASSWORD");
+  }
+  if ((env["SMTP_HOST"] ?? "").trim() === "") {
+    missing.push("SMTP_HOST");
+  }
+  if ((env["SMTP_USERNAME"] ?? "").trim() === "") {
+    missing.push("SMTP_USERNAME");
   }
   if ((env["EMAIL_FROM_ADDRESS"] ?? "").trim() === "") {
     missing.push("EMAIL_FROM_ADDRESS");
-  }
-  if ((env["POSTMARK_MESSAGE_STREAM"] ?? "").trim() === "") {
-    missing.push("POSTMARK_MESSAGE_STREAM");
   }
   if (config.signingDeliveryKey === null || config.signingDeliveryKey === "") {
     // Without it a sealed credential cannot be opened, and every secret-bearing

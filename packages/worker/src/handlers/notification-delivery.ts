@@ -116,7 +116,7 @@ export function recordDeliveryOutcome(
   outcome: DeliveryRunOutcome,
   durationMs: number,
 ): void {
-  const labels = { provider: "postmark", processRole: "worker" } as const;
+  const labels = { provider: "smtp", processRole: "worker" } as const;
 
   // NOT_CLAIMABLE is not an attempt. Counting it would inflate the attempt
   // rate with lost claim races, which are the ordinary consequence of

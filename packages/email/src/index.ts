@@ -1,5 +1,5 @@
 // The transactional email transport.
 export * from "./config.js";
-export * from "./postmark.js";
-export * from "./postmark-events.js";
+export * from "./smtp.js";
+export * from "./webhook.js";
 export * from "./composition.js";

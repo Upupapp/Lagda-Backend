@@ -100,17 +100,21 @@ describe("the provider stays inside its adapter", () => {
    * A path rather than a package name, so moving the adapter is a deliberate
    * edit here rather than a silent widening.
    */
-  const ADAPTER_PATH = path.join("db", "src", "email");
+  const ADAPTER_PATH = path.join("email", "src");
 
   /**
-   * The SDK ADR-037 selected. Everything else stays forbidden outright.
+   * The transport selected. Everything else stays forbidden outright.
    *
    * ADR-036 chose Amazon SES and was superseded the same day when the
-   * deployment stack turned out to contain no AWS. The AWS packages are
-   * therefore back in the forbidden set, not merely unused — a rejected vendor
-   * appearing anywhere would mean a second transport path.
+   * deployment stack turned out to contain no AWS. ADR-037 chose Postmark,
+   * which was itself later replaced by a plain SMTP relay (nodemailer is the
+   * client, not a vendor — see smtp.ts's own header comment on why a real
+   * dependency was warranted here unlike Postmark's raw-fetch HTTP call).
+   * Every one of those earlier choices is back in the forbidden set, not
+   * merely unused — a rejected transport appearing anywhere would mean a
+   * second transport path.
    */
-  const SELECTED_PROVIDER_PACKAGES = ["postmark"];
+  const SELECTED_PROVIDER_PACKAGES = ["nodemailer"];
 
   const isAdapter = (file: string): boolean => file.includes(ADAPTER_PATH);
 
@@ -133,7 +137,7 @@ describe("the provider stays inside its adapter", () => {
         // The selected provider's SDK is permitted as a dependency of the
         // package holding the adapter; every rejected vendor stays banned.
         if (SELECTED_PROVIDER_PACKAGES.includes(forbidden)
-          && manifest.includes(`${path.sep}db${path.sep}`)) continue;
+          && manifest.includes(`${path.sep}email${path.sep}`)) continue;
         expect(declared).not.toContain(forbidden);
       }
     }
@@ -425,15 +429,27 @@ describe("the transport cannot reach the domain it reports on", () => {
     }
   });
 
-  it("confirms a webhook event into two transport states and no others", () => {
-    // S37. A confirmed provider event may establish DELIVERED or BOUNCED.
-    // PROVIDER_ACCEPTED is established synchronously by the send call, and a
-    // callback claiming it later would be a provider narrating LAGDA's past.
-    const confirmer = code(path.join(PACKAGES, "email", "src", "postmark-events.ts"));
-    const states = new Set(
-      [...confirmer.matchAll(/"(PENDING|PROCESSING|PROVIDER_ACCEPTED|DELIVERED|BOUNCED|FAILED_RETRYABLE|FAILED_TERMINAL|SUPPRESSED|CANCELLED)"/gu)]
-        .map(match => match[1]));
-    expect([...states].sort()).toEqual(["BOUNCED", "DELIVERED"]);
+  it("confirms webhook events into no states at all — SMTP has no confirmer", () => {
+    // S37, restated for a transport with no webhook mechanism. Postmark
+    // confirmed DELIVERED/BOUNCED via a signed callback plus an API lookup
+    // (postmark-events.ts, since removed); plain SMTP has neither a callback
+    // nor a message-reference lookup to confirm anything against.
+    // `createProviderEventConfirmerFromEnv` therefore always returns null
+    // (see composition.ts) rather than a confirmer with a narrowed
+    // vocabulary — DELIVERED/BOUNCED are unreachable by construction, not by
+    // a state list that happens to admit only two values.
+    const composition = code(path.join(PACKAGES, "email", "src", "composition.ts"));
+    const confirmerBody = composition.slice(
+      composition.indexOf("export function createProviderEventConfirmerFromEnv"),
+      composition.indexOf("export function createEmailProviderFromEnv"));
+
+    expect(confirmerBody).toContain("return null");
+    for (const state of ["PENDING", "PROCESSING", "PROVIDER_ACCEPTED",
+      "DELIVERED", "BOUNCED", "FAILED_RETRYABLE", "FAILED_TERMINAL",
+      "SUPPRESSED", "CANCELLED"]) {
+      expect({ state, named: confirmerBody.includes(`"${state}"`) })
+        .toEqual({ state, named: false });
+    }
   });
 });
 
@@ -483,13 +499,15 @@ describe("email delivery metrics", () => {
   });
 });
 
-describe("the provider credential never leaves its header", () => {
+describe("the provider credential never leaves its own field", () => {
   it("is never interpolated into a string", () => {
-    // S96, S217, S218. The token is a header value and nothing else. An
-    // interpolation is how it reaches a URL, a log line or an error message --
-    // all three of which are retained somewhere LAGDA does not control.
+    // S96, S217, S218. The password is handed to nodemailer as a plain
+    // config field (`auth.pass`) and nothing else touches it. An
+    // interpolation is how it would reach a URL, a log line or an error
+    // message -- all three of which are retained somewhere LAGDA does not
+    // control.
     for (const file of emailSources) {
-      expect(code(file)).not.toMatch(/\$\{[^}]*(serverToken|webhookSecret)/u);
+      expect(code(file)).not.toMatch(/\$\{[^}]*config\.password/u);
     }
   });
 
@@ -508,11 +526,14 @@ describe("the provider credential never leaves its header", () => {
     // S219. Provider errors routinely echo the destination address, the
     // subject and the request payload. None of that can be redacted later if
     // it never crosses the boundary -- so the result carries an outcome and a
-    // reference, and the response body is read for nothing else.
-    const adapter = code(path.join(PACKAGES, "email", "src", "postmark.ts"));
-    // `MessageID` is read and returned; `Message` -- Postmark's human-readable
-    // error text -- is not read at all, and is not even declared.
-    expect(adapter).not.toMatch(/\bMessage\b(?!ID|Stream)/u);
+    // reference, and the thrown error is read for nothing but its bounded
+    // `code`/`responseCode` fields.
+    const adapter = code(path.join(PACKAGES, "email", "src", "smtp.ts"));
+    // `messageId` is read and returned as the operational reference;
+    // `error.message` -- nodemailer's human-readable error text, the SMTP
+    // equivalent of Postmark's `Message` field -- is never read at all.
+    expect(adapter).not.toContain("error.message");
+    expect(adapter).not.toContain("e.message");
     expect(adapter).not.toContain("statusText");
   });
 });
