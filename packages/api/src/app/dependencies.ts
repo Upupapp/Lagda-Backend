@@ -17,7 +17,7 @@ import type {
   ListMyWorkspacesDependencies,
   InvitationDependencies, AcceptInvitationDependencies,
   MemberAdministrationDependencies, WorkspaceAccessDependencies,
-  ContactDependencies, DocumentDependencies, FolderDependencies,
+  ContactDependencies, DocumentDependencies, DocumentContentDependencies, FolderDependencies,
   PreparationDependencies,
   RecipientDependencies, SigningRequestDependencies,
   SendSigningRequestDependencies, SigningAccessDependencies,
@@ -192,6 +192,14 @@ export interface WorkspaceDependencies {
    * document routes are registered; absent means none is.
    */
   readonly documents?: () => DocumentDependencies;
+  /**
+   * Viewing a document's own bytes (BACKEND-29 follow-on).
+   *
+   * Separate from `documents` because it needs strictly more: object
+   * storage, which listing/renaming/filing never touch — same convention as
+   * `completedArtifact` below. Absent means no view route exists.
+   */
+  readonly documentContent?: () => DocumentContentDependencies;
   /**
    * The folder tree (migration 040).
    *

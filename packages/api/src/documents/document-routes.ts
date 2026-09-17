@@ -29,10 +29,13 @@
 // read, keyed on a capability. The BACKEND-27 guard greps this directory.
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { Readable } from "node:stream";
 import { Type, type Static } from "@sinclair/typebox";
 import {
   createDocument, listDocuments, getDocument, renameDocument, fileDocument,
+  getDocumentContent,
   type DocumentDependencies, type DocumentSummary,
+  type DocumentContentDependencies,
   type SessionId, type UserId,
 } from "@lagda/application";
 import {
@@ -153,6 +156,13 @@ export interface DocumentRouteOptions {
     readonly sessionId: SessionId;
   } | null>;
   readonly documentDependencies: () => DocumentDependencies;
+  /**
+   * Viewing a document's own bytes. Separate from `documentDependencies`
+   * because it needs strictly more: object storage, which listing/renaming
+   * never touch — same "absent key = route does not exist" convention as
+   * upload, the recipient ceremony, and the completed-artifact download.
+   */
+  readonly documentContentDependencies?: () => DocumentContentDependencies;
   readonly metrics?: MetricsRecorder;
 }
 
@@ -391,4 +401,41 @@ export function registerDocumentRoutes(
 
     return reply.status(200).send(present(document));
   });
+
+  // ── Content (view) ─────────────────────────────────────────────────────
+  //
+  // Absent key = route does not exist, same convention as upload, the
+  // recipient ceremony, and the completed-artifact download: a deployment
+  // with no object storage configured gets no view route, not one that 500s
+  // on the first request.
+  if (options.documentContentDependencies !== undefined) {
+    const documentContentDependencies = options.documentContentDependencies;
+    app.get("/workspaces/:workspaceId/documents/:documentId/content", {
+      schema: { params: DocumentParamsSchema },
+    }, async (request: FastifyRequest, reply: FastifyReply) => {
+      const actor = await actorOf(request);
+      if (actor === null) return unauthenticated(reply);
+
+      const { workspaceId, documentId } = request.params as Static<typeof DocumentParamsSchema>;
+
+      const document = await getDocumentContent(
+        actor, workspaceId as WorkspaceId, documentId as DocumentId,
+        documentContentDependencies());
+
+      // Same cache posture as the ceremony's own document route: never a
+      // shared cache, and `private` alone would still permit the browser's
+      // disk cache.
+      void reply.header("Cache-Control", "private, no-store");
+      void reply.header("Pragma", "no-cache");
+      void reply.header("Referrer-Policy", "no-referrer");
+      void reply.header("Content-Type", document.mediaType);
+      void reply.header("Content-Length", String(document.sizeBytes));
+      // `inline`, like the ceremony: this shows the document, it does not
+      // hand out a file. OD-114 (a dedicated download affordance) stays open.
+      void reply.header("Content-Disposition", "inline");
+      void reply.header("Accept-Ranges", "none");
+
+      return reply.status(200).send(Readable.from(document.stream));
+    });
+  }
 }

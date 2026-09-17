@@ -215,8 +215,9 @@ describe("production composition", () => {
 
     const subWired =
       workspaceSubgroups().length - Object.keys(WORKSPACE_SUBGROUPS_NOT_WIRED).length;
-    // 11 -> 12 with `completedArtifact` (Phase 1-C).
-    expect(subWired).toBe(12);
+    // 11 -> 12 with `completedArtifact` (Phase 1-C), 12 -> 13 with
+    // `documentContent` (viewing a document's own bytes).
+    expect(subWired).toBe(13);
   });
 });
 

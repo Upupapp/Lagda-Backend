@@ -34,8 +34,19 @@ const MIGRATION = path.join(PACKAGES, "db", "src", "migrations", "016_documents.
 const ROUTES = path.join(PACKAGES, "api", "src", "documents", "document-routes.ts");
 const CORE = path.join(PACKAGES, "core", "src", "documents", "index.ts");
 const CONTRACTS = path.join(PACKAGES, "contracts", "src", "documents", "index.ts");
+/**
+ * The one deliberate exception to "the document domain never touches bytes":
+ * viewing a document's own artifact, same storage/streaming boundary as
+ * `completed-artifact.ts` in the signing-requests domain. Kept OUT of
+ * `DOCUMENT_FILES` — the byte-purity checks below would otherwise fail on
+ * exactly the `storage.getObject`/`storageReference` calls this file exists
+ * to make — but still present in the workspace so the completeness check
+ * below cannot be defeated by simply not listing it anywhere.
+ */
+const CONTENT = path.join(PACKAGES, "application", "src", "documents", "document-content.ts");
 
 const DOCUMENT_FILES = [USE_CASES, PORTS, REPOSITORY, ROUTES, CORE, CONTRACTS];
+const GUARDED_FILES = [...DOCUMENT_FILES, CONTENT];
 
 // ── 1. The PDF and storage boundary ──────────────────────────────────────────
 
@@ -369,7 +380,13 @@ describe("document titles stay out of telemetry", () => {
     const routes = code(ROUTES);
     const handlers = (routes.match(/app\.(get|post|put|patch)\(/g) ?? []).length;
     const noStore = (routes.match(/noStore\(reply\);/g) ?? []).length;
-    expect(noStore).toBe(handlers);
+    // The content (view) route is the one exception, same as the recipient
+    // ceremony's and the completed-artifact's own document routes: a stream
+    // response sets its OWN stricter `Cache-Control: private, no-store` plus
+    // `Referrer-Policy`/`Accept-Ranges` headers rather than calling the
+    // generic `noStore` helper built for JSON responses.
+    const streamed = (routes.match(/"Cache-Control", "private, no-store"/g) ?? []).length;
+    expect(noStore + streamed).toBe(handlers);
   });
 });
 
@@ -445,7 +462,7 @@ it("guards every file in the document domain", () => {
       }
     }
   }
-  const guarded = new Set(DOCUMENT_FILES.map(f => path.resolve(f)));
+  const guarded = new Set(GUARDED_FILES.map(f => path.resolve(f)));
   const unguarded = found.filter(f => !guarded.has(path.resolve(f)));
   expect(unguarded.map(f => path.relative(ROOT, f))).toEqual([]);
 });

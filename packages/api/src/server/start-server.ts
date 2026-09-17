@@ -210,6 +210,12 @@ export async function createProductionDependencies(
       workspace: () => ({ transactions }),
       contacts: () => ({ transactions, clock, ids: contactIds }),
       documents: () => ({ transactions, clock, ids: documentIds }),
+      // Same "absent means no route" convention as upload, the ceremony, and
+      // the completed-artifact download below: no object storage, no view
+      // route.
+      ...(objectStorage === null ? {} : {
+        documentContent: () => ({ transactions, storage: objectStorage }),
+      }),
       folders: () => ({ transactions, clock, ids: folderIds }),
       preparation: () => ({ transactions, clock, ids: preparationIds }),
       // Both generators: a recipient cannot exist without a preparation to hold

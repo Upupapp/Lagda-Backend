@@ -34,6 +34,7 @@ export * from "./auth/mfa.js";
 export * from "./account/profile.js";
 export * from "./contacts/contacts.js";
 export * from "./documents/documents.js";
+export * from "./documents/document-content.js";
 export * from "./folders/folders.js";
 export * from "./preparation/preparation.js";
 export * from "./recipients/recipients.js";

@@ -475,6 +475,7 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
       // surface that is safe to reach anonymously.
       if (workspaces.documents !== undefined) {
         const documents = workspaces.documents;
+        const documentContent = workspaces.documentContent;
         registerDocumentRoutes(scope, {
           authenticatedUser: (request: FastifyRequest) => Promise.resolve(
             request.auth.status === "authenticated"
@@ -485,6 +486,7 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
               : null,
           ),
           documentDependencies: documents,
+          ...(documentContent === undefined ? {} : { documentContentDependencies: documentContent }),
           metrics,
         });
       }
