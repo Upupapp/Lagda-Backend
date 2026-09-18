@@ -13,6 +13,79 @@ import { loadDatabaseConfig } from "../config/index.js";
 import { migrateToLatest } from "../migrations/runner.js";
 
 /**
+ * The dedicated role the RLS suites connect as.
+ *
+ * NOT `lagda_app`. Twelve suites used to run
+ * `alter role lagda_app with login password 'lagda_app_test'` so they could
+ * connect as the runtime role — and a PostgreSQL role is CLUSTER-wide, not
+ * per-database. Running the suite against a test DATABASE that happened to
+ * live on the production CLUSTER therefore overwrote the production role's
+ * password with a literal from source control, and the worker lost its
+ * database access on its next restart. That is not a hypothetical: it
+ * happened.
+ *
+ * This role is a MEMBER of `lagda_app`, which is what makes it an honest
+ * stand-in: the tenancy policies are defined `on <table> using (...)` with no
+ * role named, so they apply to every role, and the PRIVILEGES that decide
+ * what the runtime may touch arrive through the membership. It is not a table
+ * owner and has no BYPASSRLS, so `force row level security` binds it exactly
+ * as it binds `lagda_app` in production.
+ */
+const TEST_RUNTIME_ROLE = "lagda_test_runtime";
+
+/**
+ * Its password. Test-only, and safe to keep here for the same reason the old
+ * one was not: this role exists ONLY on a cluster that has already proved it
+ * holds no production database (see `assertSafeTestCluster`), and the
+ * production role is never touched.
+ */
+const TEST_RUNTIME_PASSWORD = "lagda_test_runtime_local_only";
+
+/**
+ * Refuses to go any further if this looks like a production cluster.
+ *
+ * ── Why the database NAME is not enough ────────────────────────────────────
+ *
+ * The name check below has always been here, and it passed: the database was
+ * called `lagda_test`. What it could not see is that `lagda_test` had been
+ * created on the cluster that also hosts `lagda_prod` — and roles, unlike
+ * tables, are shared across every database in a cluster. So the guard has to
+ * ask about the CLUSTER, not only about the connection.
+ *
+ * Runs BEFORE `migrateToLatest` and before any role or schema statement, so a
+ * developer who points the suite at production gets a hard failure rather
+ * than a modified role.
+ */
+async function assertSafeTestCluster(database: LagdaDatabase, name: string): Promise<void> {
+  if (process.env["NODE_ENV"] === "production") {
+    throw new Error(
+      "Refusing to run integration tests with NODE_ENV=production.",
+    );
+  }
+
+  const { rows } = await sql<{ datname: string }>`
+    select datname from pg_database where not datistemplate
+  `.execute(database.db);
+
+  // Anything that looks like a production database, INCLUDING a sibling this
+  // connection is not pointed at. This is the check that would have stopped
+  // the incident.
+  const productionLooking = rows
+    .map(row => row.datname)
+    .filter(datname => /prod/i.test(datname));
+
+  if (productionLooking.length > 0) {
+    throw new Error(
+      `Refusing to run integration tests: the cluster reached via `
+      + `DATABASE_TEST_URL also hosts ${productionLooking.join(", ")}. `
+      + `PostgreSQL ROLES are cluster-wide, so this suite would modify roles `
+      + `that production depends on even though it is connected to "${name}". `
+      + `Point DATABASE_TEST_URL at an isolated test cluster.`,
+    );
+  }
+}
+
+/**
  * Set when the integration database is reachable. Suites skip otherwise.
  *
  * This is the one place outside `config/` that reads the environment, and it is
@@ -46,12 +119,72 @@ export async function createTestDatabase(): Promise<LagdaDatabase> {
   }
 
   const database = createDatabase(loadDatabaseConfig({ DATABASE_URL: url }));
+
+  // BEFORE any migration, role change or schema statement.
+  try {
+    await assertSafeTestCluster(database, name);
+  } catch (error) {
+    await database.close();
+    throw error;
+  }
+
   const outcome = await migrateToLatest(database.db);
   if (outcome.error) {
     await database.close();
     throw outcome.error;
   }
   return database;
+}
+
+/**
+ * A connection as a runtime-equivalent role, for the RLS suites.
+ *
+ * Replaces the `alter role lagda_app with login password '...'` that twelve
+ * suites each carried. Creates a dedicated role that INHERITS `lagda_app`
+ * rather than becoming it, so:
+ *
+ *   * the production role's password is never written, on any cluster;
+ *   * the privileges under test are still exactly `lagda_app`'s, because
+ *     they arrive through role membership;
+ *   * `force row level security` still applies, because this role owns
+ *     nothing and holds no BYPASSRLS.
+ *
+ * Idempotent: safe to call from every suite's `beforeAll`.
+ */
+export async function createRuntimeRoleDatabase(
+  owner: LagdaDatabase,
+): Promise<LagdaDatabase> {
+  const url = INTEGRATION_DATABASE_URL;
+  if (url === undefined || url === "") {
+    throw new Error("DATABASE_TEST_URL is not set.");
+  }
+
+  await sql`
+    do $$
+    begin
+      if not exists (
+        select 1 from pg_roles where rolname = ${sql.lit(TEST_RUNTIME_ROLE)}
+      ) then
+        create role ${sql.raw(TEST_RUNTIME_ROLE)}
+          login password ${sql.lit(TEST_RUNTIME_PASSWORD)} in role lagda_app;
+      else
+        alter role ${sql.raw(TEST_RUNTIME_ROLE)}
+          with login password ${sql.lit(TEST_RUNTIME_PASSWORD)};
+      end if;
+    end
+    $$;
+  `.execute(owner.db);
+
+  // Membership may predate a later `grant ... to lagda_app`, so re-assert it
+  // rather than assuming the role was created after every grant it needs.
+  await sql`
+    grant lagda_app to ${sql.raw(TEST_RUNTIME_ROLE)}
+  `.execute(owner.db);
+
+  const asRuntime = new URL(url);
+  asRuntime.username = TEST_RUNTIME_ROLE;
+  asRuntime.password = TEST_RUNTIME_PASSWORD;
+  return createDatabase(loadDatabaseConfig({ DATABASE_URL: asRuntime.toString() }));
 }
 
 /**

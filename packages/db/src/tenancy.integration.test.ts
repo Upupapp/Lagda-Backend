@@ -13,7 +13,7 @@ import { createDatabase, type LagdaDatabase } from "./client/index.js";
 import { loadDatabaseConfig } from "./config/index.js";
 import { createTransactionManager } from "./transactions/index.js";
 import {
-  createTestDatabase, truncateAll, hasIntegrationDatabase, seedUser,
+  createTestDatabase, createRuntimeRoleDatabase, truncateAll, hasIntegrationDatabase, seedUser,
   withRawTenantTransaction, withRawGlobalTransaction,
 } from "./testing/harness.js";
 
@@ -33,14 +33,11 @@ suite("workspace tenancy (RLS, runtime role)", () => {
   beforeAll(async () => {
     owner = await createTestDatabase();
 
-    // Give the runtime role a password so tests can connect as it. Production
-    // credentials come from deployment; this is test-only setup.
-    await sql`alter role lagda_app with login password 'lagda_app_test'`.execute(owner.db);
-
-    const url = new URL(process.env["DATABASE_TEST_URL"] ?? "");
-    url.username = "lagda_app";
-    url.password = "lagda_app_test";
-    app = createDatabase(loadDatabaseConfig({ DATABASE_URL: url.toString() }));
+    // A dedicated role that INHERITS `lagda_app`, rather than becoming it.
+    // This used to run `alter role lagda_app with login password ...`, which
+    // is cluster-wide and overwrote the production role's password when the
+    // suite was pointed at a test database on the production cluster.
+    app = await createRuntimeRoleDatabase(owner);
   }, 60_000);
 
   afterAll(async () => {

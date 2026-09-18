@@ -23,7 +23,7 @@ import { createDatabase, type LagdaDatabase } from "./client/index.js";
 import { loadDatabaseConfig } from "./config/index.js";
 import { createTransactionManager } from "./transactions/index.js";
 import {
-  createTestDatabase, truncateAll, hasIntegrationDatabase, seedUser,
+  createTestDatabase, createRuntimeRoleDatabase, truncateAll, hasIntegrationDatabase, seedUser,
 } from "./testing/harness.js";
 
 const AT = Date.parse("2026-08-10T07:00:00.000Z");
@@ -42,11 +42,7 @@ suite("contacts (RLS, runtime role)", () => {
 
   beforeAll(async () => {
     owner = await createTestDatabase();
-    await sql`alter role lagda_app with login password 'lagda_app_test'`.execute(owner.db);
-    const url = new URL(process.env["DATABASE_TEST_URL"] ?? "");
-    url.username = "lagda_app";
-    url.password = "lagda_app_test";
-    app = createDatabase(loadDatabaseConfig({ DATABASE_URL: url.toString() }));
+    app = await createRuntimeRoleDatabase(owner);
   }, 60_000);
 
   afterAll(async () => {

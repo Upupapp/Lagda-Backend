@@ -31,7 +31,7 @@ import {
   createNotificationTransportRepository,
 } from "./repositories/notification-transport.js";
 import {
-  createTestDatabase, truncateAll, hasIntegrationDatabase, seedUser,
+  createTestDatabase, createRuntimeRoleDatabase, truncateAll, hasIntegrationDatabase, seedUser,
 } from "./testing/harness.js";
 
 const AT = Date.parse("2026-08-18T07:00:00.000Z");
@@ -93,11 +93,7 @@ suite("notifications (RLS, runtime role)", () => {
 
   beforeAll(async () => {
     owner = await createTestDatabase();
-    await sql`alter role lagda_app with login password 'lagda_app_test'`.execute(owner.db);
-    const url = new URL(process.env["DATABASE_TEST_URL"] ?? "");
-    url.username = "lagda_app";
-    url.password = "lagda_app_test";
-    app = createDatabase(loadDatabaseConfig({ DATABASE_URL: url.toString() }));
+    app = await createRuntimeRoleDatabase(owner);
   }, 60_000);
 
   afterAll(async () => {
