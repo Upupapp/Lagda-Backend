@@ -735,6 +735,20 @@ export interface SigningRequestExpiryIndexTable {
   expires_at: Timestamptz;
 }
 
+/**
+ * The cross-tenant index of completion runs waiting to be driven again.
+ *
+ * Unpoliced by design, like `signing_request_expiry_index` above: a
+ * cross-tenant sweep cannot read a workspace-policed table, so the three
+ * columns it needs — where to go, what to act on, and when — live here and
+ * are maintained by a trigger on `signing_request_completion_runs`.
+ */
+export interface SigningRequestCompletionRetryIndexTable {
+  completion_run_id: string;
+  workspace_id: string;
+  next_attempt_at: Timestamptz;
+}
+
 export interface SigningRequestRecipientsTable {
   request_recipient_id: string;
   workspace_id: string;
@@ -1290,6 +1304,7 @@ export interface Database {
   preparation_recipients: PreparationRecipientsTable;
   signing_requests: SigningRequestsTable;
   signing_request_expiry_index: SigningRequestExpiryIndexTable;
+  signing_request_completion_retry_index: SigningRequestCompletionRetryIndexTable;
   signing_request_recipients: SigningRequestRecipientsTable;
   signing_request_fields: SigningRequestFieldsTable;
   signing_request_recipient_activation: SigningRequestRecipientActivationTable;

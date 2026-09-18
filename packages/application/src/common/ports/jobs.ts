@@ -22,6 +22,7 @@ export const JOB_TYPES = [
   "notification.dispatch",
   "completion.process",
   "completion.reconcile",
+  "completion.retry",
 ] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 

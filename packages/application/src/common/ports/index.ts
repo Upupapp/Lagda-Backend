@@ -27,7 +27,7 @@ import type {
 } from "./signing-workflow.js";
 import type {
   ScopedCompletionRepository, CompletionReconciliationRepository,
-  CompletionInputRepository,
+  CompletionInputRepository, CompletionRetryIndexRepository,
 } from "./completion.js";
 import type {
   SigningCredentialUnitOfWork, RecipientSessionUnitOfWork,
@@ -475,6 +475,19 @@ export interface GlobalUnitOfWork {
    * without `BYPASSRLS`, which INV-334 rejected.
    */
   readonly signingRequestExpiryIndex: SigningRequestExpiryIndexRepository;
+
+  /**
+   * Completion runs waiting to be driven again (BACKEND-38 recovery).
+   *
+   * The FOURTH exception, same shape and same reason. A run that failed
+   * retryably parks in `waiting-retry` and NOTHING inside its own workspace is
+   * watching for it: the immediate trigger already fired, the stale-attempt
+   * sweep only reclaims `processing`, and the readiness sweep only looks for
+   * requests with no run at all. So the parked run has to be findable without
+   * a tenant, and `signing_request_completion_runs` cannot be scanned across
+   * tenants any more than `signing_requests` can.
+   */
+  readonly completionRetryIndex: CompletionRetryIndexRepository;
 
   /**
    * Transport work that needs finding without a tenant (BACKEND-45, OD-174).

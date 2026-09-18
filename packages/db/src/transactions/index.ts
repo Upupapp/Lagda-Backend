@@ -77,6 +77,7 @@ import {
 } from "../repositories/signing-workflow.js";
 import {
   createScopedCompletionRepository, createCompletionReconciliationRepository,
+  createCompletionRetryIndexRepository,
   createCompletionInputRepository,
 } from "../repositories/completion.js";
 
@@ -376,6 +377,10 @@ export function createTransactionManager(db: Kysely<Database>): TransactionManag
           // invisible from global mode by design.
           signingRequestExpiryIndex:
             createSigningRequestExpiryIndexRepository(trx),
+          // The FOURTH, and read here for the same reason as the third: a
+          // completion run parked in `waiting-retry` is invisible from global
+          // mode, and nothing inside its own workspace is watching for it.
+          completionRetryIndex: createCompletionRetryIndexRepository(trx),
           // The second identifiers-only exception, and the same shape as the
           // first: `notification_dispatch_index` is derived, unpoliced and made
           // of ids. It says which deliveries need attention and where to go to

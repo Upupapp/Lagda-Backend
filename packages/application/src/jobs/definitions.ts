@@ -211,6 +211,39 @@ export const CompletionReconcileJob: JobDefinition<CompletionReconcilePayload> =
     + "already-abandoned or already-progressing run changes nothing).",
 };
 
+/**
+ * Drives completion runs whose next attempt is due, across every tenant.
+ *
+ * The RECOVERY half of the completion trigger, and the piece that was
+ * missing: `completion.process` is enqueued once when a request becomes
+ * ready, `completion.reconcile` recovers a request that never got a run, and
+ * neither brings back a run that failed retryably. This sweeps the
+ * cross-tenant retry index for runs that are due and hands each to
+ * `completion.process`.
+ *
+ * SYSTEM-scoped with a batch size and nothing else, exactly like
+ * `signing-request.expiry`. A payload naming a workspace or a run would be a
+ * job an operator could hand-write to drive somebody else's completion.
+ */
+export const CompletionRetryJob: JobDefinition<CleanupPayload> = {
+  type: "completion.retry",
+  tenantScope: "system",
+  schema: CleanupPayloadSchema,
+  maxAttempts: 3,
+  retryBackoffSeconds: 60,
+  // One at a time, like the expiry sweep. Two sweeps would read overlapping
+  // batches; `claimRun` makes the second job a no-op rather than a double
+  // attempt, so the cost is wasted work rather than a wrong outcome.
+  concurrency: 1,
+  idempotencyStrategy:
+    "Naturally idempotent, and deliberately not exactly-once. Enqueuing is "
+    + "not claiming: `claimRun` is one conditional UPDATE over the claimable "
+    + "states, so a duplicate `completion.process` finds the run already "
+    + "`processing` and does nothing. `exhaustRun` carries its own state and "
+    + "attempt conditions, so a second sweep over a run already given up on "
+    + "matches zero rows and reports nothing.",
+};
+
 export const JOB_DEFINITIONS = [
   IdempotencyCleanupJob,
   SigningRequestExpiryJob,
@@ -219,4 +252,5 @@ export const JOB_DEFINITIONS = [
   NotificationDispatchJob,
   CompletionProcessJob,
   CompletionReconcileJob,
+  CompletionRetryJob,
 ] as const;

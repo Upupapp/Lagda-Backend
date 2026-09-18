@@ -148,6 +148,32 @@ export interface ScopedCompletionRepository {
     readonly limit: number;
   }): Promise<number>;
 
+  /**
+   * Gives up on a run whose retries are spent: `waiting-retry` ->
+   * `failed-terminal`.
+   *
+   * ── Both conditions live in the statement ─────────────────────────────────
+   *
+   * `state = 'waiting-retry'` AND `attempt_count >= maxAttempts`, so a run a
+   * worker claimed between the sweep's index read and this write matches zero
+   * rows and keeps its attempt. Reading the count first and deciding in the
+   * application would be the race this avoids.
+   *
+   * ── The failure reason is DELIBERATELY left alone ─────────────────────────
+   *
+   * `failure_step` and `failure_code` keep the last real cause, so the record
+   * says "gave up after N attempts, and the last one failed for THIS reason".
+   * Overwriting them with a synthetic "retries exhausted" code would trade the
+   * only diagnostic anybody wants for a restatement of the state column.
+   *
+   * Returns whether this call was the one that gave up, so a second sweep over
+   * the same run reports nothing rather than double-counting.
+   */
+  exhaustRun(input: {
+    readonly runId: CompletionRunId;
+    readonly maxAttempts: number;
+  }): Promise<boolean>;
+
   listSteps(runId: CompletionRunId): Promise<readonly CompletionStepRecord[]>;
 
   /**
@@ -213,6 +239,41 @@ export interface ScopedCompletionRepository {
  * so this repository is reachable only from a system context that has already
  * established one, and the sweep is per-workspace by construction.
  */
+/**
+ * One claimable run, as the cross-tenant sweep sees it.
+ *
+ * Identifiers and an instant. Nothing about the document, the signers or the
+ * failure is reachable from the index this comes from.
+ */
+export interface DueCompletionRetryRef {
+  readonly completionRunId: CompletionRunId;
+  readonly workspaceId: WorkspaceId;
+  readonly nextAttemptAt: number;
+}
+
+/**
+ * The cross-tenant view of runs waiting to be driven again.
+ *
+ * Read in a GLOBAL transaction, like `signing_request_expiry_index` and
+ * `notification_dispatch_index` before it: `signing_request_completion_runs`
+ * is workspace-policed, so a global scan of it returns nothing, and the sweep
+ * has to learn WHICH workspace to enter before it can enter one. The index
+ * carries exactly that and no more.
+ */
+export interface CompletionRetryIndexRepository {
+  /**
+   * Runs whose next attempt is due, oldest first, bounded.
+   *
+   * Ordered by the instant so the longest-waiting run is driven first; an
+   * arbitrary order could starve one run indefinitely while the batch bound
+   * held.
+   */
+  listDue(input: {
+    readonly now: number;
+    readonly limit: number;
+  }): Promise<readonly DueCompletionRetryRef[]>;
+}
+
 export interface CompletionReconciliationRepository {
   /**
    * Requests that are `completion-ready` and have NO run.

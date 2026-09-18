@@ -20,7 +20,7 @@ import type {
   CompletionRunState, CompletionStep, CompletionStepState, CompletionFailureCode,
 } from "@lagda/contracts";
 import type {
-  ScopedCompletionRepository, CompletionReconciliationRepository,
+  ScopedCompletionRepository, CompletionRetryIndexRepository, CompletionReconciliationRepository,
   CompletionRunRecord, CompletionRunId, CompletionStepId, CompletionIdGenerator,
   CompletionInputRepository,
 } from "../common/ports/completion.js";
@@ -1576,6 +1576,42 @@ function expiryIndex(store: InMemoryStore): SigningRequestExpiryIndexRepository 
   };
 }
 
+/**
+ * The cross-tenant retry index, as the trigger maintains it.
+ *
+ * Derives eligibility the same way migration 047's trigger does — a row
+ * exists exactly while the run is claimable, and becomes due at
+ * `last_attempt_at` (or `created_at`) plus `60 * 2^(attempts-1)` seconds,
+ * capped at an hour. Restating the arithmetic here is the point: if the fake
+ * and the trigger disagree, the PostgreSQL-backed suite says so.
+ */
+function completionRetryIndex(store: InMemoryStore): CompletionRetryIndexRepository {
+  const dueAt = (run: {
+    readonly attemptCount: number;
+    readonly lastAttemptAt: number | null;
+    readonly createdAt: number;
+  }): number => {
+    const base = run.lastAttemptAt ?? run.createdAt;
+    const seconds = Math.min(
+      60 * Math.pow(2, Math.max(run.attemptCount - 1, 0)), 3600);
+    return base + seconds * 1000;
+  };
+
+  return {
+    listDue: input => Promise.resolve(
+      store.completionRuns
+        .filter(run => FAKE_CLAIMABLE.includes(run.state))
+        .map(run => ({
+          completionRunId: run.completionRunId,
+          workspaceId: run.workspaceId,
+          nextAttemptAt: dueAt(run),
+        }))
+        .filter(ref => ref.nextAttemptAt <= input.now)
+        .sort((a, b) => a.nextAttemptAt - b.nextAttemptAt)
+        .slice(0, input.limit)),
+  };
+}
+
 // -- Completion pipeline (BACKEND-38) ----------------------------------------
 
 /** Mirrors `isCompletionRunClaimable`. */
@@ -1661,6 +1697,18 @@ function scopedCompletion(
         moved++;
       }
       return Promise.resolve(moved);
+    },
+
+    // Mirrors the repository's two conditions: only a `waiting-retry` run
+    // whose attempts are spent gives up, and the failure reason is left
+    // intact so the record still says WHY it kept failing.
+    exhaustRun: input => {
+      const row = mine().find(candidate => candidate.completionRunId === input.runId);
+      if (row === undefined) return Promise.resolve(false);
+      if (row.state !== "waiting-retry") return Promise.resolve(false);
+      if (row.attemptCount < input.maxAttempts) return Promise.resolve(false);
+      row.state = "failed-terminal";
+      return Promise.resolve(true);
     },
 
     listSteps: runId => Promise.resolve(
@@ -2788,6 +2836,7 @@ export class FakeTransactionManager implements TransactionManager {
         scope: "global",
         signingWorkflowReconciliation: workflowReconciliation(this.store),
         signingRequestExpiryIndex: expiryIndex(this.store),
+        completionRetryIndex: completionRetryIndex(this.store),
         notificationDispatch: dispatchIndex(),
       });
       this.committed++;

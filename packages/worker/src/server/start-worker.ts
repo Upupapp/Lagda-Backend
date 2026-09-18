@@ -17,7 +17,7 @@ import {
   IdempotencyCleanupJob, RateLimitCleanupJob, NotificationDeliveryJob,
   SigningRequestExpiryJob,
   NotificationDispatchJob, JOB_DEFINITIONS,
-  CompletionProcessJob, CompletionReconcileJob,
+  CompletionProcessJob, CompletionReconcileJob, CompletionRetryJob,
   createTemplateRegistry, ALL_TEMPLATES, createNotificationLinkBuilder,
   noopMetrics,
   runFieldMergeStep, runCertificateStep, runFinalSealStep,
@@ -52,6 +52,7 @@ import {
 } from "../handlers/notification-dispatch.js";
 import { handleCompletionProcess } from "../handlers/completion-process.js";
 import { handleCompletionReconcile } from "../handlers/completion-reconcile.js";
+import { handleCompletionRetry } from "../handlers/completion-retry.js";
 import { loadWorkerConfig, type WorkerConfig } from "../config/index.js";
 import {
   handleIdempotencyCleanup, handleRateLimitCleanup, type CleanupDependencies,
@@ -163,6 +164,7 @@ export async function startWorker(): Promise<StartedWorker> {
     await ensureQueue(boss, definition);
   }
   await ensureQueue(boss, CompletionProcessJob);
+  await ensureQueue(boss, CompletionRetryJob);
   await ensureQueue(boss, CompletionReconcileJob);
 
   await registerSystemHandler(boss, config, IdempotencyCleanupJob, (raw, context) =>
@@ -260,6 +262,15 @@ export async function startWorker(): Promise<StartedWorker> {
     handleCompletionProcess(raw, context, completionDeps));
   await registerSystemHandler(boss, config, CompletionReconcileJob, (raw, context) =>
     handleCompletionReconcile(raw, context, completionDeps));
+
+  // The recovery sweep for PARKED runs — the one thing neither of the two
+  // above can do. Needs the scheduler, because its whole job is to hand runs
+  // back to `completion.process`.
+  await registerSystemHandler(boss, config, CompletionRetryJob, (raw, context) =>
+    handleCompletionRetry(raw, context, {
+      transactions, scheduler, clock,
+      policy: { maxAttempts: config.completionMaxAttempts },
+    }));
 
   const missing = deliveryPrerequisites(config);
   if (missing.length > 0) {
@@ -455,6 +466,17 @@ export async function startWorker(): Promise<StartedWorker> {
       SigningRequestExpiryJob.type,
       config.expiryCron,
       { batchSize: config.expiryBatchSize },
+      { tz: "UTC" },
+    );
+
+    // Its own cadence, and the reason this schedule exists at all: a
+    // completion run that failed retryably is invisible to every other sweep,
+    // so without a tick of its own it waits forever. Two minutes, because the
+    // signer has already signed and is waiting on the document.
+    await boss.schedule(
+      CompletionRetryJob.type,
+      config.completionRetryCron,
+      { batchSize: config.completionRetryBatchSize },
       { tz: "UTC" },
     );
 

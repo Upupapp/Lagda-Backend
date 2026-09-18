@@ -17,6 +17,7 @@ import {
 } from "@lagda/contracts";
 import type {
   ScopedCompletionRepository, CompletionReconciliationRepository,
+  CompletionRetryIndexRepository,
   CompletionRunRecord, CompletionStepRecord, CompletionRecord,
   CompletionRunId, CompletionStepId, CompletionInputRepository,
   SigningRequestId, ArtifactId, RenderableValue,
@@ -187,6 +188,25 @@ export function createScopedCompletionRepository(
         .executeTakeFirst();
       void input.limit;
       return Number(result.numUpdatedRows);
+    },
+
+    async exhaustRun(input) {
+      // BOTH conditions in the statement. A run a worker claimed between the
+      // sweep's index read and this write is `processing`, matches zero rows,
+      // and keeps its attempt — the read-then-decide alternative is the race
+      // this exists to avoid.
+      //
+      // `failure_step` and `failure_code` are deliberately NOT touched: the
+      // record should say "gave up after N attempts, and the last one failed
+      // for this reason", which is the only diagnostic worth having.
+      const result = await trx.updateTable("signing_request_completion_runs")
+        .set({ state: "failed-terminal" })
+        .where("workspace_id", "=", scope)
+        .where("completion_run_id", "=", input.runId)
+        .where("state", "=", "waiting-retry")
+        .where("attempt_count", ">=", input.maxAttempts)
+        .executeTakeFirst();
+      return Number(result.numUpdatedRows) === 1;
     },
 
     async listSteps(runId): Promise<readonly CompletionStepRecord[]> {
@@ -582,6 +602,39 @@ function toRenderableValue(row: RenderableRow): RenderableValue {
     default:
       throw new Error(`Unsupported value kind: ${row.value_kind}.`);
   }
+}
+
+/**
+ * The cross-tenant view of runs waiting to be driven again.
+ *
+ * `signing_request_completion_runs` cannot be scanned here: its
+ * `tenant_isolation` policy is `workspace_id = lagda_current_workspace()` and
+ * a global transaction sets no such context, so the scan would return nothing.
+ * This reads the unpoliced index instead — three columns, maintained by a
+ * trigger — and the caller enters each workspace properly to do the work.
+ *
+ * The same shape and the same reasoning as
+ * `createSigningRequestExpiryIndexRepository`.
+ */
+export function createCompletionRetryIndexRepository(
+  trx: Transaction<Database>,
+): CompletionRetryIndexRepository {
+  return {
+    async listDue(input) {
+      const rows = await trx.selectFrom("signing_request_completion_retry_index")
+        .select(["completion_run_id", "workspace_id", "next_attempt_at"])
+        .where("next_attempt_at", "<=", new Date(input.now))
+        // Longest-waiting first, so no run starves behind the batch bound.
+        .orderBy("next_attempt_at", "asc")
+        .limit(input.limit)
+        .execute();
+      return rows.map(row => ({
+        completionRunId: row.completion_run_id as CompletionRunId,
+        workspaceId: row.workspace_id as WorkspaceId,
+        nextAttemptAt: row.next_attempt_at.getTime(),
+      }));
+    },
+  };
 }
 
 /** Unused here; re-exported so the brand has one import site in this package. */

@@ -28,6 +28,24 @@ export interface WorkerConfig {
   /** How often the dispatcher sweeps for due deliveries and expired leases. */
   readonly dispatchCron: string;
   readonly expiryCron: string;
+  /**
+   * How often parked completion runs are driven, and how many per tick.
+   *
+   * A run that failed retryably is invisible to every other sweep, so this is
+   * the only thing that brings it back. Every two minutes: the failures are
+   * usually infrastructure, and a signer who has already signed should not
+   * wait long for the document.
+   */
+  readonly completionRetryCron: string;
+  readonly completionRetryBatchSize: number;
+  /**
+   * Attempts a completion run gets before the sweep gives up on it.
+   *
+   * The CAP is policy and lives here; WHEN the next attempt is due is data
+   * and lives in migration 047's trigger. Eight attempts under that curve
+   * (60s doubling to an hour) spans roughly three hours.
+   */
+  readonly completionMaxAttempts: number;
   readonly expiryBatchSize: number;
   readonly dispatchBatchSize: number;
   /**
@@ -144,6 +162,18 @@ export function loadWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerCo
     throw new WorkerConfigError("DISPATCH_CRON must be a 5-field cron expression.");
   }
 
+  const completionRetryCron = env["COMPLETION_RETRY_CRON"] ?? "*/2 * * * *";
+  if (completionRetryCron.trim().split(/\s+/).length !== 5) {
+    throw new WorkerConfigError("COMPLETION_RETRY_CRON must be a 5-field cron expression.");
+  }
+  const completionRetryBatchSize = readInt(
+    env["COMPLETION_RETRY_BATCH_SIZE"], "COMPLETION_RETRY_BATCH_SIZE", 50);
+  const completionMaxAttempts = readInt(
+    env["COMPLETION_MAX_ATTEMPTS"], "COMPLETION_MAX_ATTEMPTS", 8);
+  if (completionMaxAttempts < 1) {
+    throw new WorkerConfigError("COMPLETION_MAX_ATTEMPTS must be at least 1.");
+  }
+
   const deliveryLeaseMs = readInt(
     env["DELIVERY_LEASE_MS"], "DELIVERY_LEASE_MS", 120_000);
   // The floor is not arbitrary: EMAIL_TIMEOUT_MS is capped at 30s, and a lease
@@ -183,6 +213,9 @@ export function loadWorkerConfig(env: NodeJS.ProcessEnv = process.env): WorkerCo
       ? {} : { concurrencyOverride: Number(concurrency) }),
     dispatchCron,
     expiryCron,
+    completionRetryCron,
+    completionRetryBatchSize,
+    completionMaxAttempts,
     expiryBatchSize,
     dispatchBatchSize,
     deliveryLeaseMs,
