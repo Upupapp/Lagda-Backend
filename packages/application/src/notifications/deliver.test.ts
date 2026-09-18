@@ -103,7 +103,11 @@ function harness(over: {
             over.secret ?? { status: "AVAILABLE", secret: "raw-token" });
         },
       },
-      links: { build: (path, token) => `https://app.lagda.test${path}?token=${token}` },
+      links: {
+        build: (path, token) => `https://app.lagda.test${path}?token=${token}`,
+        // Token-free variant, for a template that carries no credential.
+        buildPath: path => `https://app.lagda.test${path}`,
+      },
       provider: {
         send: (message: EmailMessage) => {
           order.push("send");

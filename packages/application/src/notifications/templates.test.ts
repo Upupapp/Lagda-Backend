@@ -16,6 +16,10 @@ import type { NotificationTemplateInput } from "../common/ports/notifications.js
 const context = (secret: string | null = "raw-secret-value"): RenderContext => ({
   secret,
   buildLink: (path, token) => `https://app.lagda.test${path}?token=${token}`,
+  // Token-free variant. `signing-completed` is the one template that uses it:
+  // its reader is the sender, who already has an account, so there is no
+  // credential to hand over.
+  buildPath: path => `https://app.lagda.test${path}`,
 });
 
 const signingInput = {
