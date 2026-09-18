@@ -84,7 +84,13 @@ const seal = (over: Partial<SealRecord> = {}): SealRecord => ({
 });
 
 const verification = (over: Partial<VerificationRecord> = {}): VerificationRecord => ({
-  verificationId: "LAGDA-WSA-20260809-7F3A2C" as VerificationId,
+  verificationId: "LAGDA-VER-2026-7F3A2C" as VerificationId,
+  // `LAGDA-VER-{4-digit year}-{suffix}`, which is what both generators mint
+  // and what the public verify page's own regex accepts. These fixtures used
+  // handoff §15's original `LAGDA-{workspace}-{YYYYMMDD}-{suffix}` until
+  // migration 045 corrected `verification_records_format_check` to the live
+  // contract — at which point the old shape stopped being storable, which is
+  // exactly what the constraint is for.
   workspaceId: WS_A,
   signingRequestId: REQ,
   documentId: DOC,
@@ -533,7 +539,7 @@ describe.skipIf(!hasIntegrationDatabase())("evidence persistence on PostgreSQL",
           uow.finalizations.recordFinalization({
             seal: seal({ sealId: "seal_2" as SealId }),
             verification: verification({
-              verificationId: "LAGDA-WSA-20260809-999999" as VerificationId,
+              verificationId: "LAGDA-VER-2026-999999" as VerificationId,
               sealId: "seal_2" as SealId,
             }),
           })),
@@ -574,7 +580,7 @@ describe.skipIf(!hasIntegrationDatabase())("evidence persistence on PostgreSQL",
       await expect(
         withRawTenantTransaction(database, WS_A, (trx) =>
           trx.insertInto("verification_records").values({
-            verification_id: "LAGDA-WSA-20260809-ABCDEF", workspace_id: WS_A,
+            verification_id: "LAGDA-VER-2026-ABCDEF", workspace_id: WS_A,
             signing_request_id: REQ, document_id: DOC, seal_id: "seal_1",
             completed_at: new Date(0), participant_count: 1,
           }).execute()),
@@ -755,9 +761,9 @@ describe.skipIf(!hasIntegrationDatabase())("evidence persistence on PostgreSQL",
     it("resolves a verification ID with no workspace context", async () => {
       await finalize();
       const found = await lookup().findByVerificationId(
-        "LAGDA-WSA-20260809-7F3A2C" as VerificationId);
+        "LAGDA-VER-2026-7F3A2C" as VerificationId);
 
-      expect(found?.verificationId).toBe("LAGDA-WSA-20260809-7F3A2C");
+      expect(found?.verificationId).toBe("LAGDA-VER-2026-7F3A2C");
       expect(found?.participantCount).toBe(2);
       expect(found?.signedDocumentHash).toBe(HASH_B);
       expect(found?.sealScheme).toBe("hash-evidence");
@@ -766,7 +772,7 @@ describe.skipIf(!hasIntegrationDatabase())("evidence persistence on PostgreSQL",
     it("returns null for an unknown verification ID", async () => {
       await finalize();
       const found = await lookup().findByVerificationId(
-        "LAGDA-WSA-20260809-000000" as VerificationId);
+        "LAGDA-VER-2026-000000" as VerificationId);
       expect(found).toBeNull();
     });
 
@@ -776,7 +782,7 @@ describe.skipIf(!hasIntegrationDatabase())("evidence persistence on PostgreSQL",
       // and this fails if it does.
       await finalize();
       const found = await lookup().findByVerificationId(
-        "LAGDA-WSA-20260809-7F3A2C" as VerificationId);
+        "LAGDA-VER-2026-7F3A2C" as VerificationId);
 
       expect(Object.keys(found ?? {}).sort()).toEqual([
         "completedAt", "digestAlgorithm", "originalDocumentHash", "participantCount",
@@ -787,7 +793,7 @@ describe.skipIf(!hasIntegrationDatabase())("evidence persistence on PostgreSQL",
     it("leaks no workspace, document, signing request or storage identity", async () => {
       await finalize();
       const found = await lookup().findByVerificationId(
-        "LAGDA-WSA-20260809-7F3A2C" as VerificationId);
+        "LAGDA-VER-2026-7F3A2C" as VerificationId);
 
       const serialized = JSON.stringify(found);
       // The storage key is included deliberately: it is INTERNAL infrastructure
