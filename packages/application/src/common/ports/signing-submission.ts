@@ -118,6 +118,45 @@ export interface ValidatedRasterSignature {
  * Returns `null` for anything it cannot prove is a bounded raster image. It
  * never throws on hostile input, because hostile input is the expected case.
  */
+/**
+ * Answers whether the document renderer can actually draw a typed signature.
+ *
+ * ── Why this exists ───────────────────────────────────────────────────────
+ *
+ * The merge refuses text the signature face has no glyphs for, and that
+ * refusal is TERMINAL — `unrenderable-value` is classed terminal because
+ * retrying identical text fails identically. But the merge runs in the
+ * completion pipeline, long after the signer has closed the tab. Without this
+ * check, a name the face cannot draw is accepted at signing, fails the
+ * completion run permanently, and leaves the signer believing they signed a
+ * document that will never complete and a sender who is never notified.
+ *
+ * So the same question is asked at submission, while the signer is still there
+ * to do something about it.
+ *
+ * ── Why a port ────────────────────────────────────────────────────────────
+ *
+ * Font coverage is a property of the embedded typeface, which lives in the
+ * sealing package. The application layer must not import it (the architecture
+ * guard asserts so), and must not carry a second hand-written charset either:
+ * two definitions that agree today would diverge the first time a face
+ * changes, silently restoring the gap. The composition root binds this to the
+ * renderer's own coverage function, so there is exactly one definition.
+ */
+export interface TypedSignatureRenderability {
+  /**
+   * The code points the signature face cannot draw, in first-seen order.
+   *
+   * Empty means renderable. Code points rather than a boolean so the caller
+   * can tell the signer WHICH characters are the problem — and code points
+   * rather than the characters themselves, because the text is the signer's
+   * name and must not reach a log or a persisted error (§42, §217).
+   *
+   * Never throws. Unrenderable text is an expected input here, not a fault.
+   */
+  uncoveredCodePoints(text: string): readonly number[];
+}
+
 export interface SignatureImageValidator {
   validate(base64: string): ValidatedRasterSignature | null;
   /**

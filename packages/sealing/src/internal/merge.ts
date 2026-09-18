@@ -31,7 +31,9 @@ import {
   InvalidFieldPlacementError, PdfProcessingError, UnsupportedRepresentationError,
 } from "../errors/index.js";
 import { assertPlaceable, toPdfRect, type PdfRect } from "./geometry.js";
-import { embedFaces, type EmbeddedFaces, type FaceName } from "./fonts.js";
+import {
+  embedFaces, SIGNATURE_FACE, type EmbeddedFaces, type FaceName,
+} from "./fonts.js";
 
 /** Ink colour for rendered values. Near-black, not pure black, matching print. */
 const INK = rgb(0.07, 0.09, 0.13);
@@ -53,7 +55,10 @@ const TYPED_STYLE_COUNT = 4;
  * people have already seen in preview.
  */
 function faceFor(value: MergeableFieldValue): FaceName {
-  return value.kind === "signature" ? "italic" : "regular";
+  // `SIGNATURE_FACE` rather than the literal `"italic"`, so the pre-flight
+  // coverage check exposed to submission and the face actually drawn here are
+  // ONE value. A second literal is how the two silently diverge.
+  return value.kind === "signature" ? SIGNATURE_FACE : "regular";
 }
 
 /** The text a value draws, or `null` when it draws no text at all. */

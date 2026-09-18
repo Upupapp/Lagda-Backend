@@ -50,6 +50,32 @@ export {
  */
 export { sha256 } from "./internal/digest.js";
 
+/**
+ * `uncoveredSignatureCodePoints`, exported for SUBMISSION — and, like `sha256`
+ * above, against the narrow-surface rule, so the reasoning belongs here too.
+ *
+ * The merge refuses text the signature face cannot draw, and refuses it
+ * TERMINALLY: `unrenderable_text` maps to `unrenderable-value`, which
+ * `COMPLETION_FAILURE_CLASSIFICATION` classes as terminal. That is the right
+ * call at merge time — retrying identical text fails identically — but the
+ * merge runs in the completion pipeline, long after the signer has closed the
+ * tab. So a name the face cannot draw was accepted at signing, failed the
+ * completion run permanently, and left the signer believing they had signed a
+ * document that would never complete.
+ *
+ * Closing that means asking the same question earlier, while the signer is
+ * still present. The alternative — a charset check written independently in
+ * the application layer — is the failure INV-080 describes for digests: two
+ * definitions that agree today and diverge the first time a face is changed,
+ * restoring the gap without anything failing a test.
+ *
+ * So the narrow-surface rule yields to the one-implementation rule, exactly as
+ * it does for `sha256`. The BOUND form is exported and the face name is not:
+ * a caller cannot check coverage against the wrong face, because there is no
+ * parameter to get wrong. `mergeFields` and `renderCertificate` stay private.
+ */
+export { uncoveredSignatureCodePoints } from "./internal/fonts.js";
+
 export {
   SealingError,
   InvalidPdfError,

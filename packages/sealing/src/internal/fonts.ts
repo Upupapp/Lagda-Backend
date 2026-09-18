@@ -125,6 +125,37 @@ function coverage(name: FaceName): { hasGlyphForCodePoint(cp: number): boolean }
 }
 
 /**
+ * The face every typed signature and initials value renders in.
+ *
+ * A single exported constant rather than a literal repeated per call site,
+ * because the failure this prevents is subtle: a caller that checks coverage
+ * against `regular` while the merger draws in `italic` would accept text the
+ * merger then refuses — which is exactly the bug the submission-time check was
+ * added to close. `faceFor` in `internal/merge.ts` reads this, so the renderer
+ * and any pre-flight check cannot disagree about WHICH face without changing
+ * one shared value.
+ */
+export const SIGNATURE_FACE: FaceName = "italic";
+
+/**
+ * Every code point the SIGNATURE face cannot draw.
+ *
+ * The bound form, and the only one exposed outside this package. A caller
+ * asking "can the merger draw this signature?" must not have to know the
+ * answer depends on a face name, because passing the wrong one silently
+ * re-opens the gap between what submission accepts and what the merge
+ * requires.
+ *
+ * Empty result means the merger can render it. Callers decide what to do about
+ * a non-empty one; this function neither throws nor formats a message, because
+ * the recipient-facing wording and the pipeline's wording are different
+ * problems.
+ */
+export function uncoveredSignatureCodePoints(text: string): readonly number[] {
+  return uncoveredCodePoints(text, SIGNATURE_FACE);
+}
+
+/**
  * Every code point the face cannot draw, in first-seen order.
  *
  * Iterating the string directly (not by index) so an astral character — an

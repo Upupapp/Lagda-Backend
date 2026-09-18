@@ -35,6 +35,7 @@ import type {
   Clock, TransactionManager,
   RecipientSessionTokenFactory, RecipientCeremonyUnitOfWork,
   RecipientSubmissionIdGenerator, SignatureImageValidator,
+  TypedSignatureRenderability,
   NewSigningRepresentation, NewSigningFieldValue, RepresentationPurpose,
   SigningRequestFieldId, SigningConsentId, AcceptedSubmissionRecord,
 } from "../common/ports/index.js";
@@ -157,6 +158,12 @@ export interface SigningSubmissionDependencies {
   readonly idempotencyKeys: IdempotencyKeyDigester;
   readonly idempotencyIds: IdempotencyRecordIdGenerator;
   readonly signatureImages: SignatureImageValidator;
+  /**
+   * Whether the renderer can draw a typed signature, asked HERE rather than
+   * discovered at merge time. See the port's own note: the merge refuses
+   * uncoverable text terminally, and by then the signer is long gone.
+   */
+  readonly typedSignatures: TypedSignatureRenderability;
   readonly policy: {
     readonly consentVersion: string;
     readonly idempotencyRetentionMs: number;
@@ -317,6 +324,17 @@ function prepareRepresentations(
       const styleIndex = supplied.styleIndex ?? -1;
       if (text.trim().length === 0 || styleIndex < 0) {
         throw new SigningSubmissionInvalidError([{ code: "field-value-invalid" }]);
+      }
+      // The renderer's own coverage rule, applied while the signer is still
+      // present. Without it this submission is accepted, and the completion
+      // run then fails TERMINALLY at merge on `unrenderable-value` — the
+      // request never completes, the sender is never notified, and the signer
+      // has already been told they are done.
+      //
+      // Checked against the trimmed text because that is what is stored and
+      // therefore what the merge will draw.
+      if (deps.typedSignatures.uncoveredCodePoints(text.trim()).length > 0) {
+        throw new SigningSubmissionInvalidError([{ code: "signature-unrenderable" }]);
       }
       // The digest covers the canonical typed payload, so a typed signature has
       // an integrity identifier for the same reasons a raster does.
