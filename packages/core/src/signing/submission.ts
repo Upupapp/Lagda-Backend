@@ -66,7 +66,24 @@ export type SubmissionProblemCode =
   | "field-value-invalid"
   | "field-server-owned"
   | "signature-missing"
-  | "initials-missing";
+  | "initials-missing"
+  /**
+   * A typed signature or initials the renderer has no glyphs for.
+   *
+   * Distinct from `field-value-invalid`, which says the value is malformed.
+   * This value is well-formed and would be accepted by every schema — the
+   * embedded face simply cannot draw it, and the merge refuses it terminally
+   * rather than rendering a blank signature onto a completed document.
+   *
+   * It is its own code because it is the one problem here with a specific
+   * remedy the signer can act on: a different spelling of their name, or a
+   * drawn signature. "Invalid value" would tell them nothing they could use.
+   *
+   * Carries no field id and never the text: which characters are missing is
+   * reported as code points by the layer that formats the message, and the
+   * signer's name does not belong in an error record (§42, §217).
+   */
+  | "signature-unrenderable";
 
 export interface SubmissionProblem {
   readonly code: SubmissionProblemCode;

@@ -10,7 +10,8 @@
 //   nothing about the workflow moves.
 
 import { describe, it, expect } from "vitest";
-import type { DocumentId, UserId, WorkspaceId, IdempotencyKey } from "@lagda/contracts";
+import type {
+  DocumentId, UserId, WorkspaceId, IdempotencyKey } from "@lagda/contracts";
 import { bootstrapSigningAccess, type SigningAccessDependencies } from "../signing-access/signing-access.js";
 import { acceptSigningConsent, type SigningCeremonyDependencies } from "../signing-ceremony/signing-ceremony.js";
 import {
@@ -25,7 +26,7 @@ import type {
   SigningAccessGrantId, SigningAccessDigest, SigningConsentId,
   RecipientSessionDigest, RecipientCsrfDigest,
   RecipientSubmissionId, SigningFieldValueId, SigningRepresentationId,
-  SignatureImageValidator,
+  SignatureImageValidator, TypedSignatureRenderability, TypedSignatureProblem,
 } from "../common/ports/index.js";
 import type { IdempotencyRecordId } from "../common/ports/idempotency.js";
 import type { SubmittedValue } from "@lagda/core";
@@ -85,6 +86,57 @@ function imageValidator(): SignatureImageValidator {
     } : null,
     digestCanonical: (value: string) =>
       String(value.length).padStart(64, "e"),
+  };
+}
+
+/**
+ * Stands in for the renderer's renderability probe.
+ *
+ * An APPROXIMATION, deliberately: anything above Latin Extended-B is reported
+ * as missing glyphs, and the Devanagari block is reported as a shaping failure
+ * — close enough for these cases, and it keeps the unit tests free of a 1.9 MB
+ * font and a real shaping pass.
+ *
+ * It is deliberately STRICTER than reality in one place: the real shaper only
+ * runs for Devanagari when it LEADS the run, so `Maria नमस्ते` genuinely
+ * renders while this fake would refuse it. No test here uses such a value, and
+ * mirroring that quirk would be fitting a fake to an upstream accident.
+ *
+ * It is not the authority on agreement. That the SUBMISSION check and the
+ * MERGE refuse exactly the same text is asserted in the sealing package,
+ * against the real embedded face and the real merger — see
+ * `signature-renderability.test.ts`. A fake cannot prove two real
+ * implementations agree, and pretending otherwise here would be the more
+ * dangerous kind of green test.
+ */
+function typedSignatures(): TypedSignatureRenderability {
+  const DEVANAGARI_START = 0x0900;
+  const DEVANAGARI_END = 0x097f;
+
+  return {
+    check(text: string): TypedSignatureProblem | null {
+      const missing: number[] = [];
+      const seen = new Set<number>();
+      let shaping = false;
+
+      for (const character of text) {
+        const codePoint = character.codePointAt(0);
+        if (codePoint === undefined || codePoint <= 0x024f) continue;
+        if (codePoint >= DEVANAGARI_START && codePoint <= DEVANAGARI_END) {
+          // Every glyph present, and the real shaper still throws.
+          shaping = true;
+          continue;
+        }
+        if (seen.has(codePoint)) continue;
+        seen.add(codePoint);
+        missing.push(codePoint);
+      }
+
+      // Missing glyphs first, matching the real probe: it is the more specific
+      // answer, and the only one that can name anything.
+      if (missing.length > 0) return { reason: "missing-glyphs", codePoints: missing };
+      return shaping ? { reason: "shaping-failed" } : null;
+    },
   };
 }
 
@@ -168,6 +220,7 @@ function harness(): Harness {
           next("idm") as IdempotencyRecordId,
       },
       signatureImages: imageValidator(),
+      typedSignatures: typedSignatures(),
       policy: {
         consentVersion: CONSENT_VERSION,
         idempotencyRetentionMs: 24 * 3_600_000,
@@ -458,6 +511,183 @@ describe("required coverage", () => {
     const token = await signerSession(h);
     await expect(submit(h, token, [{ fieldId: "f_sig", kind: "signature" }]))
       .rejects.toBeInstanceOf(SigningSubmissionInvalidError);
+  });
+});
+
+// ── Typed-signature renderability ────────────────────────────────────────────
+//
+// The merge refuses text the signature face has no glyphs for, and that
+// refusal is TERMINAL: `unrenderable-value` is classed terminal because
+// retrying identical text fails identically. But the merge runs in the
+// completion pipeline, after the signer has gone.
+//
+// Before this check existed, such a submission was ACCEPTED: the signer was
+// told they were done, the completion run then failed permanently, the request
+// never reached `completed`, and the sender was never notified. These tests
+// pin the failure to submission time, where the signer can still act on it.
+
+describe("typed signature renderability", () => {
+  it("accepts text the renderer can draw", async () => {
+    const h = harness();
+    seed(h, [{ id: "f_sig", type: "signature" }]);
+    const token = await signerSession(h);
+
+    await submit(h, token, [{ fieldId: "f_sig", kind: "signature" }],
+      { signature: TYPED });
+
+    expect(h.store.submissions).toHaveLength(1);
+  });
+
+  it("accepts diacritics, which an earlier renderer could not draw", async () => {
+    // OD-163: Helvetica's WinAnsi range could not carry these, and a recipient
+    // named Peñaflor could not have their document completed at all. The
+    // embedded face fixed that, and this guards against a narrowing that would
+    // quietly bring it back.
+    const h = harness();
+    seed(h, [{ id: "f_sig", type: "signature" }]);
+    const token = await signerSession(h);
+
+    await submit(h, token, [{ fieldId: "f_sig", kind: "signature" }],
+      { signature: { ...TYPED, text: "Peñaflor Ángeles" } });
+
+    expect(h.store.submissions).toHaveLength(1);
+  });
+
+  it("REFUSES text the renderer cannot draw, at submission", async () => {
+    const h = harness();
+    seed(h, [{ id: "f_sig", type: "signature" }]);
+    const token = await signerSession(h);
+
+    await expect(submit(h, token, [{ fieldId: "f_sig", kind: "signature" }],
+      { signature: { ...TYPED, text: "田中太郎" } }))
+      .rejects.toBeInstanceOf(SigningSubmissionInvalidError);
+  });
+
+  it("names the problem specifically rather than as a generic invalid value", async () => {
+    // `field-value-invalid` would tell the signer nothing they could act on.
+    // This is the one problem here with a concrete remedy — a different
+    // spelling, or a drawn signature once that exists.
+    const h = harness();
+    seed(h, [{ id: "f_sig", type: "signature" }]);
+    const token = await signerSession(h);
+
+    const failure = await submit(h, token, [{ fieldId: "f_sig", kind: "signature" }],
+      { signature: { ...TYPED, text: "田中太郎" } }).catch((e: unknown) => e);
+
+    expect(failure).toBeInstanceOf(SigningSubmissionInvalidError);
+    expect((failure as SigningSubmissionInvalidError).problems.map(p => p.code))
+      .toEqual(["signature-unrenderable"]);
+  });
+
+  it("refuses unrenderable INITIALS too, not only signatures", async () => {
+    // Initials render in the same face and are merged by the same path, so a
+    // check that covered only signatures would leave the identical hole open.
+    const h = harness();
+    seed(h, [{ id: "f_ini", type: "initials" }]);
+    const token = await signerSession(h);
+
+    const failure = await submit(h, token, [{ fieldId: "f_ini", kind: "initials" }],
+      { initials: { ...TYPED, text: "田中" } }).catch((e: unknown) => e);
+
+    expect(failure).toBeInstanceOf(SigningSubmissionInvalidError);
+    expect((failure as SigningSubmissionInvalidError).problems.map(p => p.code))
+      .toEqual(["signature-unrenderable"]);
+  });
+
+  it("REFUSES Devanagari, which has every glyph and still cannot be drawn", async () => {
+    // The case that made a glyph-coverage check insufficient. `क` is fully
+    // covered by the face; fontkit's Indic shaper throws inside
+    // `widthOfTextAtSize`, and that failure maps to `sealer-unavailable` —
+    // RETRYABLE — so before this check the completion run burned its whole
+    // attempt budget looking like a transient sealer outage before dying.
+    const h = harness();
+    seed(h, [{ id: "f_sig", type: "signature" }]);
+    const token = await signerSession(h);
+
+    const failure = await submit(h, token, [{ fieldId: "f_sig", kind: "signature" }],
+      { signature: { ...TYPED, text: "क" } }).catch((e: unknown) => e);
+
+    expect(failure).toBeInstanceOf(SigningSubmissionInvalidError);
+    expect((failure as SigningSubmissionInvalidError).problems.map(p => p.code))
+      .toEqual(["signature-unrenderable"]);
+    expect(h.store.submissions).toHaveLength(0);
+  });
+
+  it("refuses an emoji read as ONE code point, not two surrogates", async () => {
+    // An astral character is exactly what gets pasted into a name field. It
+    // must be reported once rather than as two unpaired halves.
+    const h = harness();
+    seed(h, [{ id: "f_sig", type: "signature" }]);
+    const token = await signerSession(h);
+
+    await expect(submit(h, token, [{ fieldId: "f_sig", kind: "signature" }],
+      { signature: { ...TYPED, text: "Maria 🎉" } }))
+      .rejects.toBeInstanceOf(SigningSubmissionInvalidError);
+  });
+
+  it("writes NOTHING — no submission, and no request advance", async () => {
+    // THE property. The old behaviour committed a submission and advanced the
+    // request, so a completion run was created and then failed terminally.
+    // Nothing may be written at all.
+    const h = harness();
+    seed(h, [{ id: "f_sig", type: "signature" }]);
+    const token = await signerSession(h);
+
+    await expect(submit(h, token, [{ fieldId: "f_sig", kind: "signature" }],
+      { signature: { ...TYPED, text: "田中太郎" } })).rejects.toThrow();
+
+    expect(h.store.submissions).toHaveLength(0);
+    expect(h.store.signingRequests[0]?.state).not.toBe("completion-ready");
+    expect(h.store.signingRequests[0]?.completionReadyAt).toBeNull();
+  });
+
+  it("never enqueues completion work for a refused submission", async () => {
+    // The direct statement of "before a completion run is required": if the
+    // scheduler is never called, no run exists to fail terminally later.
+    const h = harness();
+    seed(h, [{ id: "f_sig", type: "signature" }]);
+    const token = await signerSession(h);
+
+    const enqueued: string[] = [];
+    const completionScheduler = {
+      enqueue: (definition: { type: string }) => {
+        enqueued.push(definition.type);
+        return Promise.resolve({ jobId: "job_1", type: definition.type as never });
+      },
+    };
+
+    await expect(submitRecipientSigning({
+      rawSessionToken: token,
+      idempotencyKey: KEY,
+      fieldValues: [{ fieldId: "f_sig", kind: "signature" }],
+      signature: { ...TYPED, text: "田中太郎" },
+    }, { ...h.deps, completionScheduler })).rejects.toThrow();
+
+    expect(enqueued).toEqual([]);
+  });
+
+  it("checks the TRIMMED text, which is what gets stored and drawn", async () => {
+    const h = harness();
+    seed(h, [{ id: "f_sig", type: "signature" }]);
+    const token = await signerSession(h);
+
+    await expect(submit(h, token, [{ fieldId: "f_sig", kind: "signature" }],
+      { signature: { ...TYPED, text: "  田中  " } }))
+      .rejects.toBeInstanceOf(SigningSubmissionInvalidError);
+  });
+
+  it("leaves DRAWN signatures untouched by the text check", async () => {
+    // A raster carries no text and has no font-coverage problem — which is
+    // precisely why it is the remedy this rejection should steer a signer
+    // towards once the capture UI offers it.
+    const h = harness();
+    seed(h, [{ id: "f_sig", type: "signature" }]);
+    const token = await signerSession(h);
+
+    await submit(h, token, [{ fieldId: "f_sig", kind: "signature" }],
+      { signature: { method: "drawn", base64: VALID_PNG_B64 } });
+
+    expect(h.store.submissions).toHaveLength(1);
   });
 });
 

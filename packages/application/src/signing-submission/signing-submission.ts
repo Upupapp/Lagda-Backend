@@ -35,6 +35,7 @@ import type {
   Clock, TransactionManager,
   RecipientSessionTokenFactory, RecipientCeremonyUnitOfWork,
   RecipientSubmissionIdGenerator, SignatureImageValidator,
+  TypedSignatureRenderability,
   NewSigningRepresentation, NewSigningFieldValue, RepresentationPurpose,
   SigningRequestFieldId, SigningConsentId, AcceptedSubmissionRecord,
 } from "../common/ports/index.js";
@@ -157,6 +158,12 @@ export interface SigningSubmissionDependencies {
   readonly idempotencyKeys: IdempotencyKeyDigester;
   readonly idempotencyIds: IdempotencyRecordIdGenerator;
   readonly signatureImages: SignatureImageValidator;
+  /**
+   * Whether the renderer can draw a typed signature, asked HERE rather than
+   * discovered at merge time. See the port's own note: the merge refuses
+   * uncoverable text terminally, and by then the signer is long gone.
+   */
+  readonly typedSignatures: TypedSignatureRenderability;
   readonly policy: {
     readonly consentVersion: string;
     readonly idempotencyRetentionMs: number;
@@ -317,6 +324,22 @@ function prepareRepresentations(
       const styleIndex = supplied.styleIndex ?? -1;
       if (text.trim().length === 0 || styleIndex < 0) {
         throw new SigningSubmissionInvalidError([{ code: "field-value-invalid" }]);
+      }
+      // Can the renderer actually DRAW this? Asked while the signer is still
+      // present, because the merge asks it much later — in the completion
+      // pipeline, after the tab is closed — and its refusal ends the request.
+      //
+      // Both failure modes are the adapter's business, and both must be
+      // refused here: missing glyphs fail the merge terminally on
+      // `unrenderable-value`, and a shaping failure fails it as
+      // `sealer-unavailable`, which is RETRYABLE and therefore burns the whole
+      // attempt budget before dying exhausted. Neither ever completes, and the
+      // sender is never notified either way.
+      //
+      // Checked against the trimmed text because that is what is stored and
+      // therefore what the merge will draw.
+      if (deps.typedSignatures.check(text.trim()) !== null) {
+        throw new SigningSubmissionInvalidError([{ code: "signature-unrenderable" }]);
       }
       // The digest covers the canonical typed payload, so a typed signature has
       // an integrity identifier for the same reasons a raster does.

@@ -22,6 +22,9 @@ import { createRecipientSessionTokenFactory } from "../security/recipient-sessio
 import { createPublicVerificationLookup } from "@lagda/db";
 import { createSignatureImageValidator } from "../security/signature-image.js";
 import {
+  createTypedSignatureRenderability,
+} from "../security/typed-signature.js";
+import {
   createDeliverySecretSealer, createSigningLinkBuilder,
 } from "../security/signing-delivery.js";
 import {
@@ -417,6 +420,11 @@ function buildRecipientCeremony(input: {
       idempotencyKeys: idempotency.digester,
       idempotencyIds: idempotency.ids,
       signatureImages: createSignatureImageValidator(),
+      // Bound to the renderer's own font coverage, so submission refuses
+      // exactly the text the merge would refuse — and refuses it while the
+      // signer is still on the page rather than terminally, later, in the
+      // completion pipeline.
+      typedSignatures: createTypedSignatureRenderability(),
       ...(completionScheduler === undefined ? {} : { completionScheduler }),
       policy: {
         consentVersion: config.recipientConsentVersion,
