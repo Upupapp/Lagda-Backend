@@ -67,6 +67,20 @@ suite("completion retry recovery (real PostgreSQL)", () => {
 
   beforeEach(async () => {
     await truncateAll(owner);
+    await seedFixtures();
+  });
+
+  /**
+   * The workspace, document, artifact and a `completion-ready` signing
+   * request. One function, because the terminal-states case truncates
+   * mid-test and needs exactly the same ground state back.
+   *
+   * `completion_ready_at` is REQUIRED alongside the state — migration 028's
+   * biconditional CHECK refuses a `completion-ready` request without it,
+   * which real PostgreSQL enforced on the first run of this suite and the
+   * in-memory store never would have.
+   */
+  async function seedFixtures() {
     await seedUser(owner, USER);
     const tx = createTransactionManager(owner.db);
     await tx.runForWorkspace(WS, async uow => {
@@ -81,16 +95,13 @@ suite("completion retry recovery (real PostgreSQL)", () => {
       });
     });
 
-    // A signing request and its artifact, written as the superuser: the
-    // signing-request snapshot path needs a preparation this suite does not
-    // care about, and the run is what is under test.
     await sql`
       insert into document_artifacts (
         artifact_id, workspace_id, document_id, artifact_type, storage_reference,
         media_type, size_bytes, digest_algorithm, digest, created_at,
         page_count, rotated_page_count
       ) values (
-        ${"art_retry" as ArtifactId}, ${WS}, ${DOC}, 'original', 'k/retry',
+        'art_retry', ${WS}, ${DOC}, 'original', 'k/retry',
         'application/pdf', 100, 'sha-256', ${DIGEST}, ${new Date(AT)}, 1, 0
       )
     `.execute(owner.db);
@@ -98,14 +109,15 @@ suite("completion retry recovery (real PostgreSQL)", () => {
       insert into signing_requests (
         signing_request_id, workspace_id, document_id, source_artifact_id,
         source_preparation_id, source_preparation_revision, state,
-        document_title, created_by_user_id, created_at, updated_at
+        completion_ready_at, document_title, created_by_user_id,
+        created_at, updated_at
       ) values (
         ${SR}, ${WS}, ${DOC}, 'art_retry', 'prep_retry', 1,
-        'completion-ready', 'Retry probe', ${USER},
+        'completion-ready', ${new Date(AT)}, 'Retry probe', ${USER},
         ${new Date(AT)}, ${new Date(AT)}
       )
     `.execute(owner.db);
-  });
+  }
 
   /** Creates the run, then forces it into a given state as the superuser. */
   async function seedRun(state: string, attempts: number, lastAttemptMinutesAgo: number | null) {
@@ -177,8 +189,7 @@ suite("completion retry recovery (real PostgreSQL)", () => {
   it("drops the index row for succeeded and failed-terminal runs", async () => {
     for (const terminal of ["succeeded", "failed-terminal"]) {
       await truncateAll(owner);
-      await seedUser(owner, USER);
-      await beforeEachSeed();
+      await seedFixtures();
       await seedRun(terminal, 3, 1);
       expect(await indexRows(), terminal).toHaveLength(0);
     }
@@ -454,40 +465,4 @@ suite("completion retry recovery (real PostgreSQL)", () => {
     expect(result.truncated).toBe(true);
   });
 
-  /** Re-seeds the fixtures `beforeEach` builds, for tests that truncate mid-way. */
-  async function beforeEachSeed() {
-    const tx = createTransactionManager(owner.db);
-    await tx.runForWorkspace(WS, async uow => {
-      await uow.workspaces.insert({ workspaceId: WS, name: "Retry", createdAt: AT });
-      await uow.memberships.insert({
-        memberId: "mem_retry" as WorkspaceMemberId, workspaceId: WS,
-        userId: USER, role: "owner", createdAt: AT,
-      });
-      await uow.documents.insert({
-        documentId: DOC, workspaceId: WS, title: "Retry probe",
-        originalFilename: null, createdByUserId: USER, createdAt: AT,
-      });
-    });
-    await sql`
-      insert into document_artifacts (
-        artifact_id, workspace_id, document_id, artifact_type, storage_reference,
-        media_type, size_bytes, digest_algorithm, digest, created_at,
-        page_count, rotated_page_count
-      ) values (
-        'art_retry', ${WS}, ${DOC}, 'original', 'k/retry',
-        'application/pdf', 100, 'sha-256', ${DIGEST}, ${new Date(AT)}, 1, 0
-      )
-    `.execute(owner.db);
-    await sql`
-      insert into signing_requests (
-        signing_request_id, workspace_id, document_id, source_artifact_id,
-        source_preparation_id, source_preparation_revision, state,
-        document_title, created_by_user_id, created_at, updated_at
-      ) values (
-        ${SR}, ${WS}, ${DOC}, 'art_retry', 'prep_retry', 1,
-        'completion-ready', 'Retry probe', ${USER},
-        ${new Date(AT)}, ${new Date(AT)}
-      )
-    `.execute(owner.db);
-  }
 });
