@@ -579,6 +579,44 @@ describe("typed signature renderability", () => {
       .toEqual(["signature-unrenderable"]);
   });
 
+  it("surfaces the reason to the client, not just a refusal", async () => {
+    // The envelope builder reads `details` off an application validation
+    // error. Without this the ceremony receives "could not be accepted" and a
+    // signer whose typed name cannot be drawn has no way to learn that drawing
+    // it instead would work — which would leave Step 1A's hard block a dead
+    // end for exactly the people it affects.
+    const h = harness();
+    seed(h, [{ id: "f_sig", type: "signature" }]);
+    const token = await signerSession(h);
+
+    const failure = await submit(h, token, [{ fieldId: "f_sig", kind: "signature" }],
+      { signature: { ...TYPED, text: "田中太郎" } })
+      .catch((e: unknown) => e) as SigningSubmissionInvalidError;
+
+    expect(failure.details).toHaveLength(1);
+    const [detail] = failure.details;
+    expect(detail?.field).toBe("signature");
+    expect(detail?.code).toBe("signature-unrenderable");
+    // The remedy has to be IN the message, because that string is what the
+    // ceremony shows when it has nothing more specific to say.
+    expect(detail?.message).toContain("draw or upload it instead");
+  });
+
+  it("never echoes the rejected text in the reason", async () => {
+    // A detail that quoted the name would put signing content into logs and
+    // error reporting, which is what §42 and §217 keep it out of.
+    const h = harness();
+    seed(h, [{ id: "f_sig", type: "signature" }]);
+    const token = await signerSession(h);
+
+    const failure = await submit(h, token, [{ fieldId: "f_sig", kind: "signature" }],
+      { signature: { ...TYPED, text: "田中太郎" } })
+      .catch((e: unknown) => e) as SigningSubmissionInvalidError;
+
+    expect(JSON.stringify(failure.details)).not.toContain("田中太郎");
+    expect(failure.message).not.toContain("田中太郎");
+  });
+
   it("refuses unrenderable INITIALS too, not only signatures", async () => {
     // Initials render in the same face and are merged by the same path, so a
     // check that covered only signatures would leave the identical hole open.
