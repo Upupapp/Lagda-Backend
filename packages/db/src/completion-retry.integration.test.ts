@@ -147,7 +147,11 @@ suite("completion retry recovery (real PostgreSQL)", () => {
          set state = ${state},
              attempt_count = ${attempts},
              last_attempt_at = ${lastAttemptMinutesAgo === null
-               ? null : new Date(Date.now() - lastAttemptMinutesAgo * MINUTE)}
+               ? null : new Date(Date.now() - lastAttemptMinutesAgo * MINUTE)},
+             -- Biconditional, enforced by
+             -- `signing_request_completion_runs_succeeded_at_matches_state`:
+             -- the instant is set exactly when the state is `succeeded`.
+             succeeded_at = ${state === "succeeded" ? new Date(AT) : null}
        where completion_run_id = ${RUN}
     `.execute(owner.db);
   }
