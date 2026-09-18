@@ -14,6 +14,7 @@ import {
   type AuthUserRecord, type NewUser, type NewVerificationChallenge,
   type NormalizedEmail, type PasswordHash, type UserId, type UserRecord,
   type UserRepository, type VerificationChallengeRepository,
+  type AccountContact, type AccountContactRepository,
 } from "@lagda/application";
 import type { Database, UsersTable } from "../schema/index.js";
 import { isUniqueViolation } from "../errors.js";
@@ -108,6 +109,35 @@ export function createVerificationChallengeRepository(
         // Registration creates a challenge; only BACKEND-21 consumes one.
         consumed_at: null,
       }).execute();
+    },
+  };
+}
+
+/**
+ * Resolves where to reach one account holder, by id.
+ *
+ * Built from the same `users` table and the same `toUserRecord` projection, so
+ * the address this returns is the same display form every other read of the
+ * account returns. It selects the three columns it needs rather than
+ * `selectAll`, which is not micro-optimisation: `selectAll` would pull
+ * `password_hash` into a row object handed to a caller whose whole reason for
+ * existing is that it should not be able to reach one.
+ */
+export function createAccountContactRepository(
+  db: Kysely<Database> | Transaction<Database>,
+): AccountContactRepository {
+  return {
+    async findContact(userId: UserId): Promise<AccountContact | null> {
+      const row = await db.selectFrom("users")
+        .select(["user_id", "email", "display_name"])
+        .where("user_id", "=", userId)
+        .executeTakeFirst();
+      if (row === undefined) return null;
+      return {
+        userId: row.user_id as UserId,
+        email: row.email,
+        displayName: row.display_name,
+      };
     },
   };
 }

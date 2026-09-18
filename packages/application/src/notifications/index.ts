@@ -11,3 +11,4 @@ export * from "./links.js";
 export * from "./provider-event.js";
 export * from "./invitation-producer.js";
 export * from "./reset-producer.js";
+export * from "./completion-producer.js";

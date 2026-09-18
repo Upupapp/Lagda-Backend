@@ -109,6 +109,21 @@ const passwordReset = {
   secretRef: { kind: "CHALLENGE" as const, challengeId: "chal_1" },
 };
 
+const signingCompleted = {
+  notificationType: "SIGNING_COMPLETED" as const,
+  sourceId: "sreq_1",
+  scope: { kind: "WORKSPACE" as const, workspaceId: "ws_1" as WorkspaceId },
+  audience: { kind: "USER" as const, userId: "usr_1" as UserId },
+  destination: "paulo@example.test",
+  templateInput: {
+    recipientName: "Paulo Reyes",
+    documentTitle: "Lease Agreement",
+    workspaceName: "Reyes Legal",
+    signerCount: 2,
+  },
+  // No `secretRef`. The only type for which that is correct.
+};
+
 describe("the policy table", () => {
   it("declares a policy for every notification type", () => {
     // A `Record` over the closed union, so a missing entry is a compile error.
@@ -282,6 +297,47 @@ describe("creating an intent", () => {
       },
       undefined,
     )).rejects.toThrow(NotificationPolicyViolation);
+  });
+
+  it("creates an intent with NO secret reference at all", async () => {
+    // `SIGNING_COMPLETED` is the first type that carries no credential, and
+    // the row must record that as absence rather than as a placeholder:
+    // migration 030's `notification_intents_secret_ref_check` has an explicit
+    // all-null branch, and a sentinel value would have to be mapped back to
+    // NULL on the way in and out.
+    const { run } = create();
+
+    const result = await run(signingCompleted, undefined);
+
+    expect(result.intent.secretRef).toBeUndefined();
+    expect(JSON.stringify(result.intent)).not.toContain("secretRef");
+  });
+
+  it("rejects a credential offered for a type that carries none", async () => {
+    // Would persist a secret on a row nothing will ever resolve or clear.
+    const { repository, run } = create();
+
+    await expect(run(
+      {
+        ...signingCompleted,
+        secretRef: { kind: "CHALLENGE", challengeId: "chal_1" },
+      },
+      undefined,
+    )).rejects.toThrow(NotificationPolicyViolation);
+    expect(repository.rows.size).toBe(0);
+  });
+
+  it("rejects an OMITTED credential for a type that needs one", async () => {
+    // The direction that matters more. Without this check, dropping the
+    // `secretRef` from an invitation call site would produce a message whose
+    // link is missing — discovered by the recipient, not by a test. Now it is
+    // refused before the row exists.
+    const { repository, run } = create();
+    const { secretRef: _omitted, ...withoutSecret } = signingInvitation;
+
+    await expect(run(withoutSecret as never, undefined))
+      .rejects.toThrow(NotificationPolicyViolation);
+    expect(repository.rows.size).toBe(0);
   });
 
   it("rejects a template input the template cannot render", async () => {

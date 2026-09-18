@@ -77,6 +77,20 @@ export interface NotificationSecretResolver {
 /** Builds first-party URLs from configured base only (S147). */
 export interface NotificationLinkBuilder {
   build(path: string, token: string): string;
+  /**
+   * A first-party URL with NO credential in it.
+   *
+   * Separate from `build` rather than an optional second argument, because a
+   * `build(path, token?)` whose caller forgot the token would silently produce
+   * an unauthenticated link where a credential-bearing one was intended — and
+   * the four existing templates all need the credential. Here, a token-free
+   * link is something a template has to ask for by name.
+   *
+   * The reader of such a link arrives at the ordinary authenticated app and
+   * signs in as usual. That is the point: it is for telling an ACCOUNT HOLDER
+   * where to find something they already have access to.
+   */
+  buildPath(path: string): string;
 }
 
 export interface DeliverNotificationDependencies {
@@ -164,6 +178,7 @@ export function deliverNotification(deps: DeliverNotificationDependencies) {
     const rendered = deps.templates.render(intent.template, intent.templateInput, {
       secret: resolution.secret ?? null,
       buildLink: (path, token) => deps.links.build(path, token),
+      buildPath: path => deps.links.buildPath(path),
     });
 
     const message: EmailMessage = {

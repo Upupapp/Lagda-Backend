@@ -1,21 +1,29 @@
 // The registered template versions.
 //
-// ── Five templates, because LAGDA sends five messages ──────────────────────
+// ── One template per message the product actually produces ────────────────
 //
-// One per transactional message the product actually produces today. There is
-// no reminder template, no expiration notice and no completion mail: BACKEND-46
-// owns the first two and the product has not asked for the third (S231). A
-// template with no producer is dead copy that a future reader will assume is
-// live.
+// There is no reminder template and no expiration notice: BACKEND-46 owns the
+// policy that would decide when those occur. A template with no producer is
+// dead copy that a future reader will assume is live.
 //
-// ── All five carry a secret ────────────────────────────────────────────────
+// `signing-completed` was in that category until BACKEND-38 Phase 2 gave it a
+// producer. The header here used to say the product had not asked for a
+// completion mail (S231); it has, and the template is registered alongside the
+// transaction that now produces its intent.
 //
-// Which is not a coincidence — it is what transactional mail in an eSignature
-// product IS. Every one exists to hand somebody a credential: a verification
-// code, a reset link, an OTP, an invitation link, a signing link. So the
-// secret-handling path is not an edge case bolted onto the side; it is the
-// main path, and the ordinary non-secret case is the one that does not exist
-// yet.
+// ── Four carry a secret; one does not ─────────────────────────────────────
+//
+// The four that do are what transactional mail in an eSignature product mostly
+// IS: each exists to hand somebody a credential they could not otherwise
+// have — a verification code, a reset link, an invitation link, a signing
+// link. So the secret-handling path is the main path, not an edge case.
+//
+// `signing-completed` is the exception, and the reason is worth stating,
+// because it is what makes the exception safe: its reader is the SENDER, who
+// already holds an account and already has authorised access to the document.
+// There is nothing to hand them. A bearer token in this message would be a
+// credential minted for somebody who does not need one, with a lifetime
+// nothing tracks — strictly worse than a link to the ordinary signed-in app.
 //
 // That is why `secret` is a render-time argument rather than a model field
 // (S78, S80). The frozen input persisted in JSONB holds names and titles; the
@@ -31,7 +39,8 @@
 import type { Static } from "@sinclair/typebox";
 import { defineTemplate } from "./template-registry.js";
 import {
-  AccountEmailVerificationModelV1, PasswordResetModelV1, WorkspaceInvitationModelV1, SigningInvitationModelV1,
+  AccountEmailVerificationModelV1, PasswordResetModelV1, WorkspaceInvitationModelV1,
+  SigningInvitationModelV1, SigningCompletedModelV1,
 } from "./template-registry.js";
 import { escapeHtml } from "./rendering.js";
 
@@ -44,7 +53,7 @@ import { escapeHtml } from "./rendering.js";
  */
 const PRODUCT = "LAGDA";
 
-/** Wraps a body in the one shared HTML shell, so five templates share one look. */
+/** Wraps a body in the one shared HTML shell, so every template shares one look. */
 const htmlDocument = (heading: string, bodyHtml: string): string =>
   [
     `<!doctype html>`,
@@ -198,6 +207,67 @@ export const signingInvitationV1 = defineTemplate({
 });
 
 /**
+ * The sender's route to the finished document.
+ *
+ * `/app/documents` and not a per-document deep link. The signed document IS
+ * viewable — the documents list renders real artifact content — but there is
+ * no `/app/documents/:documentId` route in the web platform's router, and
+ * inventing one would produce a 404 in a message whose whole purpose is to say
+ * "it is ready". The list is where the reader finds it, so the list is what
+ * this points at.
+ */
+const SENDER_DOCUMENTS_PATH = "/app/documents";
+
+export const signingCompletedV1 = defineTemplate({
+  key: "signing-completed",
+  version: 1,
+  locale: "en",
+  schema: SigningCompletedModelV1,
+  // The only template that renders without one. `deliverNotification` skips
+  // secret resolution entirely for an intent with no ref, so nothing is
+  // resolved, nothing is discarded, and the registry does not demand one.
+  secretBearing: false,
+  render: (input, context) => {
+    const name = input.recipientName;
+    const title = input.documentTitle;
+    const workspace = input.workspaceName;
+    const signers = input.signerCount;
+    const people = signers === 1 ? "1 signer" : `${String(signers)} signers`;
+    // Token-free: the reader signs in as themselves.
+    const url = context.buildPath(SENDER_DOCUMENTS_PATH);
+    return {
+      // The document title, as in `signing-invitation`. Business-sensitive
+      // (S160) and therefore never logged — but the sender is the party who
+      // owns it.
+      subject: `"${title}" is fully signed`,
+      textBody: [
+        `Hello ${name},`,
+        ``,
+        `All signatures are in. "${title}" has been completed by ${people} and`,
+        `the sealed document is now final.`,
+        ``,
+        // No claim beyond what exists. The sealed artifact is stored and the
+        // documents list renders it; nothing here promises an attachment, a
+        // direct download or a certificate this message does not carry.
+        `Open ${workspace} to view it:`,
+        url,
+        ``,
+        `You are receiving this because you sent this document for signature.`,
+      ].join("\n"),
+      htmlBody: htmlDocument(
+        `Your document is fully signed`,
+        `<p>Hello ${escapeHtml(name)},</p>` +
+          `<p>All signatures are in. "${escapeHtml(title)}" has been completed ` +
+          `by ${escapeHtml(people)} and the sealed document is now final.</p>` +
+          linkHtml(url, `View in ${workspace}`) +
+          `<p>You are receiving this because you sent this document for ` +
+          `signature.</p>`,
+      ),
+    };
+  },
+});
+
+/**
  * Every template version LAGDA can render.
  *
  * A version is removed from this list only when no pending intent references
@@ -209,9 +279,11 @@ export const ALL_TEMPLATES = [
   passwordResetV1,
   workspaceInvitationV1,
   signingInvitationV1,
+  signingCompletedV1,
 ] as const;
 
 export type AccountEmailVerificationModel = Static<typeof AccountEmailVerificationModelV1>;
 export type PasswordResetModel = Static<typeof PasswordResetModelV1>;
 export type WorkspaceInvitationModel = Static<typeof WorkspaceInvitationModelV1>;
 export type SigningInvitationModel = Static<typeof SigningInvitationModelV1>;
+export type SigningCompletedModel = Static<typeof SigningCompletedModelV1>;

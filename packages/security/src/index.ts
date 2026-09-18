@@ -27,4 +27,5 @@ export {
 export {
   createArtifactIdGenerator, createSealIdGenerator, createCompletionIdGenerator,
   createEvidenceEventIdGenerator, createVerificationIdGenerator,
+  createNotificationIntentIdGenerator, createNotificationDeliveryIdGenerator,
 } from "./completion-identifiers.js";

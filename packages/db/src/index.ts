@@ -43,6 +43,7 @@ export {
 } from "./repositories/uploads.js";
 export {
   createUserRepository, createVerificationChallengeRepository,
+  createAccountContactRepository,
 } from "./repositories/users.js";
 // The anonymous verification read. Exported for the same reason the others
 // above are: it belongs to no workspace, so no unit of work can own it. It

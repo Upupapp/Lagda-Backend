@@ -146,6 +146,51 @@ export interface UserRepository {
   ) => Promise<AuthUserRecord | null>;
 }
 
+/**
+ * Where to reach one account holder, by id.
+ *
+ * ── Why this is a separate port and not a method on `UserRepository` ──────
+ *
+ * Because of who needs it. The completion pipeline must tell the SENDER that
+ * their request finished, and the sender is identified by
+ * `signing_requests.created_by_user_id` — a user id, not an address. Nothing
+ * in the application could turn one into the other: `ActorProfileRepository`
+ * is deliberately display-name-only, and `UserRepository` keys on the
+ * normalized email, which is the thing being looked up.
+ *
+ * Handing the sealing step a whole `UserRepository` would hand it
+ * `findAuthByNormalizedEmail` — the one method that returns a password hash —
+ * so that a step which needs an email address could reach a credential. This
+ * port is the two fields it actually needs and nothing else.
+ *
+ * ── Why it is tenant-free, and why that is not a bypass ───────────────────
+ *
+ * For the same reason `UserRepository` is (INV-236): an account exists before
+ * any workspace and may belong to several. It returns nothing workspace-scoped
+ * and takes no workspace, so it cannot be used to read another tenant's data.
+ * The CALLER is responsible for having established, under normal tenancy, that
+ * the user id it passes is the one its own row names.
+ */
+export interface AccountContactRepository {
+  /**
+   * The account's display address and name, or `null` if no such account
+   * exists.
+   *
+   * `null` rather than a throw, because a deleted account is an ordinary
+   * outcome for a caller resolving an address months after a request was
+   * created — and a notification that cannot be addressed must not fail the
+   * transition it was going to describe.
+   */
+  readonly findContact: (userId: UserId) => Promise<AccountContact | null>;
+}
+
+export interface AccountContact {
+  readonly userId: UserId;
+  /** The DISPLAY form of the address, as the account holder typed it. */
+  readonly email: string;
+  readonly displayName: string;
+}
+
 // ── Email verification ───────────────────────────────────────────────────────
 
 export type VerificationChallengeId = string & { readonly __brand: "VerificationChallengeId" };
