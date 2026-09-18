@@ -118,45 +118,6 @@ export interface ValidatedRasterSignature {
  * Returns `null` for anything it cannot prove is a bounded raster image. It
  * never throws on hostile input, because hostile input is the expected case.
  */
-/**
- * Answers whether the document renderer can actually draw a typed signature.
- *
- * ── Why this exists ───────────────────────────────────────────────────────
- *
- * The merge refuses text the signature face has no glyphs for, and that
- * refusal is TERMINAL — `unrenderable-value` is classed terminal because
- * retrying identical text fails identically. But the merge runs in the
- * completion pipeline, long after the signer has closed the tab. Without this
- * check, a name the face cannot draw is accepted at signing, fails the
- * completion run permanently, and leaves the signer believing they signed a
- * document that will never complete and a sender who is never notified.
- *
- * So the same question is asked at submission, while the signer is still there
- * to do something about it.
- *
- * ── Why a port ────────────────────────────────────────────────────────────
- *
- * Font coverage is a property of the embedded typeface, which lives in the
- * sealing package. The application layer must not import it (the architecture
- * guard asserts so), and must not carry a second hand-written charset either:
- * two definitions that agree today would diverge the first time a face
- * changes, silently restoring the gap. The composition root binds this to the
- * renderer's own coverage function, so there is exactly one definition.
- */
-export interface TypedSignatureRenderability {
-  /**
-   * The code points the signature face cannot draw, in first-seen order.
-   *
-   * Empty means renderable. Code points rather than a boolean so the caller
-   * can tell the signer WHICH characters are the problem — and code points
-   * rather than the characters themselves, because the text is the signer's
-   * name and must not reach a log or a persisted error (§42, §217).
-   *
-   * Never throws. Unrenderable text is an expected input here, not a fault.
-   */
-  uncoveredCodePoints(text: string): readonly number[];
-}
-
 export interface SignatureImageValidator {
   validate(base64: string): ValidatedRasterSignature | null;
   /**
@@ -167,6 +128,64 @@ export interface SignatureImageValidator {
    * uses, and the one the sealing architecture guard enumerates.
    */
   digestCanonical(value: string): string;
+}
+
+// ── Typed-signature renderability ────────────────────────────────────────────
+
+/**
+ * Why the renderer cannot draw a typed value.
+ *
+ * Two reasons, because there are two independent failure modes and neither
+ * check finds both:
+ *
+ *   `missing-glyphs`  the face has no glyph for some character. It can name
+ *                     them, as CODE POINTS — never the characters, and never
+ *                     the text, because the value is the signer's name and
+ *                     must not reach a log or a persisted error (§42, §217).
+ *
+ *   `shaping-failed`  every glyph is present and the renderer still cannot
+ *                     lay the text out. Nothing useful can be named: the
+ *                     failure is in the shaper, not in any one character.
+ */
+export type TypedSignatureProblem =
+  | { readonly reason: "missing-glyphs"; readonly codePoints: readonly number[] }
+  | { readonly reason: "shaping-failed" };
+
+/**
+ * Answers whether the document renderer can actually draw a typed signature.
+ *
+ * ── Why this exists ───────────────────────────────────────────────────────
+ *
+ * The merge refuses text it cannot draw, and the signer is long gone by the
+ * time it does: the merge runs in the completion pipeline, after the tab is
+ * closed. Without this check the submission is accepted, the completion run
+ * then fails, the request never reaches `completed`, and neither the signer
+ * nor the sender is told. Both failure modes end there — a missing glyph fails
+ * terminally, a shaping failure retries the whole attempt budget first — so
+ * both are refused here instead.
+ *
+ * ── Why a port ────────────────────────────────────────────────────────────
+ *
+ * Renderability is a property of the embedded typeface and the shaper that
+ * lays it out, both of which live in the sealing package. The application
+ * layer must not import it (the architecture guard asserts so), and must not
+ * carry a hand-written charset either: two definitions that agree today would
+ * diverge the first time a face changes, silently restoring the gap. The
+ * composition root binds this to the renderer's own probe, so there is exactly
+ * one definition.
+ */
+export interface TypedSignatureRenderability {
+  /**
+   * The reason the renderer cannot draw this text, or `null` when it can.
+   *
+   * RENDERABILITY, not glyph coverage. Coverage alone is not the same
+   * question: text can have every glyph and still fail to lay out, and the
+   * adapter is responsible for asking both halves.
+   *
+   * Never throws. Unrenderable text is an expected input here, not a fault —
+   * a throw would surface as a 500 instead of a problem the signer can act on.
+   */
+  check(text: string): TypedSignatureProblem | null;
 }
 
 export interface SubmissionWorkspaceScope {

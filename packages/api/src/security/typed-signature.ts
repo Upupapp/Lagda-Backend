@@ -24,21 +24,41 @@
 // would fail: submission would accept text the merge then refuses, which is
 // precisely the bug being fixed, restored by the fix's own implementation.
 //
-// `uncoveredSignatureCodePoints` is the renderer's own coverage function over
-// the renderer's own embedded bytes, and it is exported in the bound form, so
-// there is no face parameter to get wrong.
+// `signatureTextProblem` is the renderer's own probe over the renderer's own
+// embedded bytes, exported in the bound form, so there is no face parameter to
+// get wrong.
+//
+// ── Why it is not a coverage check ─────────────────────────────────────────
+//
+// It was, briefly, and that was not enough. Glyph coverage and renderability
+// are different questions, measured against the vendored face:
+//
+//   田中 / 🎉 / محمد   no glyphs        layout() SUCCEEDS with .notdef glyphs
+//   क / नमस्ते          every glyph      layout() THROWS
+//
+// So coverage alone accepts Devanagari the merge refuses, and layout alone
+// accepts CJK that renders as blank boxes. The sealing probe asks both halves;
+// this adapter simply passes the question along.
+//
+// ── No side effects ────────────────────────────────────────────────────────
+//
+// The probe shapes text in memory against an already-parsed face. It embeds
+// nothing, constructs no `PDFDocument`, writes nothing, and touches no
+// database, queue or artifact. It is a validation call and nothing else.
 
-import { uncoveredSignatureCodePoints } from "@lagda/sealing";
-import type { TypedSignatureRenderability } from "@lagda/application";
+import { signatureTextProblem } from "@lagda/sealing";
+import type {
+  TypedSignatureRenderability, TypedSignatureProblem,
+} from "@lagda/application";
 
 /**
  * @remarks Stateless. The sealing package caches the parsed face internally,
- * so repeated calls do not re-read or re-parse the font file.
+ * so repeated calls neither re-read nor re-parse the font file.
  */
 export function createTypedSignatureRenderability(): TypedSignatureRenderability {
   return {
-    uncoveredCodePoints(text: string): readonly number[] {
-      return uncoveredSignatureCodePoints(text);
+    check(text: string): TypedSignatureProblem | null {
+      return signatureTextProblem(text);
     },
   };
 }

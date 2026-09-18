@@ -26,7 +26,7 @@ import type {
   SigningAccessGrantId, SigningAccessDigest, SigningConsentId,
   RecipientSessionDigest, RecipientCsrfDigest,
   RecipientSubmissionId, SigningFieldValueId, SigningRepresentationId,
-  SignatureImageValidator, TypedSignatureRenderability,
+  SignatureImageValidator, TypedSignatureRenderability, TypedSignatureProblem,
 } from "../common/ports/index.js";
 import type { IdempotencyRecordId } from "../common/ports/idempotency.js";
 import type { SubmittedValue } from "@lagda/core";
@@ -90,31 +90,52 @@ function imageValidator(): SignatureImageValidator {
 }
 
 /**
- * Stands in for the renderer's font coverage.
+ * Stands in for the renderer's renderability probe.
  *
  * An APPROXIMATION, deliberately: anything above Latin Extended-B is reported
- * uncovered, which is close enough for these cases (Latin and diacritics pass,
- * CJK and emoji do not) and keeps the unit tests free of a 1.9 MB font.
+ * as missing glyphs, and the Devanagari block is reported as a shaping failure
+ * — close enough for these cases, and it keeps the unit tests free of a 1.9 MB
+ * font and a real shaping pass.
+ *
+ * It is deliberately STRICTER than reality in one place: the real shaper only
+ * runs for Devanagari when it LEADS the run, so `Maria नमस्ते` genuinely
+ * renders while this fake would refuse it. No test here uses such a value, and
+ * mirroring that quirk would be fitting a fake to an upstream accident.
  *
  * It is not the authority on agreement. That the SUBMISSION check and the
  * MERGE refuse exactly the same text is asserted in the sealing package,
- * against the real embedded face — see `signature-coverage.test.ts`. A fake
- * cannot prove two real implementations agree, and pretending otherwise here
- * would be the more dangerous kind of green test.
+ * against the real embedded face and the real merger — see
+ * `signature-renderability.test.ts`. A fake cannot prove two real
+ * implementations agree, and pretending otherwise here would be the more
+ * dangerous kind of green test.
  */
 function typedSignatures(): TypedSignatureRenderability {
+  const DEVANAGARI_START = 0x0900;
+  const DEVANAGARI_END = 0x097f;
+
   return {
-    uncoveredCodePoints(text: string): readonly number[] {
+    check(text: string): TypedSignatureProblem | null {
       const missing: number[] = [];
       const seen = new Set<number>();
+      let shaping = false;
+
       for (const character of text) {
         const codePoint = character.codePointAt(0);
         if (codePoint === undefined || codePoint <= 0x024f) continue;
+        if (codePoint >= DEVANAGARI_START && codePoint <= DEVANAGARI_END) {
+          // Every glyph present, and the real shaper still throws.
+          shaping = true;
+          continue;
+        }
         if (seen.has(codePoint)) continue;
         seen.add(codePoint);
         missing.push(codePoint);
       }
-      return missing;
+
+      // Missing glyphs first, matching the real probe: it is the more specific
+      // answer, and the only one that can name anything.
+      if (missing.length > 0) return { reason: "missing-glyphs", codePoints: missing };
+      return shaping ? { reason: "shaping-failed" } : null;
     },
   };
 }
@@ -571,6 +592,25 @@ describe("typed signature renderability", () => {
     expect(failure).toBeInstanceOf(SigningSubmissionInvalidError);
     expect((failure as SigningSubmissionInvalidError).problems.map(p => p.code))
       .toEqual(["signature-unrenderable"]);
+  });
+
+  it("REFUSES Devanagari, which has every glyph and still cannot be drawn", async () => {
+    // The case that made a glyph-coverage check insufficient. `क` is fully
+    // covered by the face; fontkit's Indic shaper throws inside
+    // `widthOfTextAtSize`, and that failure maps to `sealer-unavailable` —
+    // RETRYABLE — so before this check the completion run burned its whole
+    // attempt budget looking like a transient sealer outage before dying.
+    const h = harness();
+    seed(h, [{ id: "f_sig", type: "signature" }]);
+    const token = await signerSession(h);
+
+    const failure = await submit(h, token, [{ fieldId: "f_sig", kind: "signature" }],
+      { signature: { ...TYPED, text: "क" } }).catch((e: unknown) => e);
+
+    expect(failure).toBeInstanceOf(SigningSubmissionInvalidError);
+    expect((failure as SigningSubmissionInvalidError).problems.map(p => p.code))
+      .toEqual(["signature-unrenderable"]);
+    expect(h.store.submissions).toHaveLength(0);
   });
 
   it("refuses an emoji read as ONE code point, not two surrogates", async () => {

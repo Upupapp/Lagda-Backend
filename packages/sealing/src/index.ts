@@ -51,8 +51,8 @@ export {
 export { sha256 } from "./internal/digest.js";
 
 /**
- * `uncoveredSignatureCodePoints`, exported for SUBMISSION — and, like `sha256`
- * above, against the narrow-surface rule, so the reasoning belongs here too.
+ * `signatureTextProblem`, exported for SUBMISSION — and, like `sha256` above,
+ * against the narrow-surface rule, so the reasoning belongs here too.
  *
  * The merge refuses text the signature face cannot draw, and refuses it
  * TERMINALLY: `unrenderable_text` maps to `unrenderable-value`, which
@@ -71,10 +71,19 @@ export { sha256 } from "./internal/digest.js";
  *
  * So the narrow-surface rule yields to the one-implementation rule, exactly as
  * it does for `sha256`. The BOUND form is exported and the face name is not:
- * a caller cannot check coverage against the wrong face, because there is no
- * parameter to get wrong. `mergeFields` and `renderCertificate` stay private.
+ * a caller cannot probe the wrong face, because there is no parameter to get
+ * wrong. `mergeFields` and `renderCertificate` stay private.
+ *
+ * It answers RENDERABILITY, not glyph coverage, and the distinction is the
+ * reason this export exists in its current shape. Coverage alone accepts
+ * Devanagari that the merge refuses — every glyph is present, and fontkit's
+ * Indic shaper then throws inside `widthOfTextAtSize`. Layout alone accepts
+ * CJK that renders as blank boxes. Only the conjunction matches what the
+ * merger actually does.
  */
-export { uncoveredSignatureCodePoints } from "./internal/fonts.js";
+export {
+  signatureTextProblem, type SignatureTextProblem,
+} from "./internal/fonts.js";
 
 export {
   SealingError,

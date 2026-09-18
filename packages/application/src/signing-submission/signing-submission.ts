@@ -325,15 +325,20 @@ function prepareRepresentations(
       if (text.trim().length === 0 || styleIndex < 0) {
         throw new SigningSubmissionInvalidError([{ code: "field-value-invalid" }]);
       }
-      // The renderer's own coverage rule, applied while the signer is still
-      // present. Without it this submission is accepted, and the completion
-      // run then fails TERMINALLY at merge on `unrenderable-value` — the
-      // request never completes, the sender is never notified, and the signer
-      // has already been told they are done.
+      // Can the renderer actually DRAW this? Asked while the signer is still
+      // present, because the merge asks it much later — in the completion
+      // pipeline, after the tab is closed — and its refusal ends the request.
+      //
+      // Both failure modes are the adapter's business, and both must be
+      // refused here: missing glyphs fail the merge terminally on
+      // `unrenderable-value`, and a shaping failure fails it as
+      // `sealer-unavailable`, which is RETRYABLE and therefore burns the whole
+      // attempt budget before dying exhausted. Neither ever completes, and the
+      // sender is never notified either way.
       //
       // Checked against the trimmed text because that is what is stored and
       // therefore what the merge will draw.
-      if (deps.typedSignatures.uncoveredCodePoints(text.trim()).length > 0) {
+      if (deps.typedSignatures.check(text.trim()) !== null) {
         throw new SigningSubmissionInvalidError([{ code: "signature-unrenderable" }]);
       }
       // The digest covers the canonical typed payload, so a typed signature has

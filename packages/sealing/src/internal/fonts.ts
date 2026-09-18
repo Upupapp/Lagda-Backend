@@ -90,8 +90,11 @@ const FACE_FILES: Readonly<Record<FaceName, string>> = Object.freeze({
  */
 const fileCache = new Map<FaceName, Uint8Array>();
 
-/** Parsed faces, kept for coverage queries. Parsing is the expensive half. */
-const coverageCache = new Map<FaceName, { hasGlyphForCodePoint(cp: number): boolean }>();
+/**
+ * Parsed faces, kept for coverage and shaping queries. Parsing is the
+ * expensive half, and a renderability probe must not repeat it per call.
+ */
+const coverageCache = new Map<FaceName, ParsedFace>();
 
 function faceBytes(name: FaceName): Uint8Array {
   const cached = fileCache.get(name);
@@ -114,12 +117,23 @@ function faceBytes(name: FaceName): Uint8Array {
   return bytes;
 }
 
-function coverage(name: FaceName): { hasGlyphForCodePoint(cp: number): boolean } {
+/**
+ * The parsed face, as fontkit sees it.
+ *
+ * `layout` is typed alongside `hasGlyphForCodePoint` because renderability
+ * needs BOTH and they answer different questions — see `signatureTextProblem`.
+ * It is the same object pdf-lib builds internally from the same bytes, so
+ * asking it here and asking it during a merge cannot disagree.
+ */
+interface ParsedFace {
+  hasGlyphForCodePoint(cp: number): boolean;
+  layout(text: string): { readonly glyphs: readonly unknown[] };
+}
+
+function coverage(name: FaceName): ParsedFace {
   const cached = coverageCache.get(name);
   if (cached !== undefined) return cached;
-  const parsed = fontkit.create(faceBytes(name)) as {
-    hasGlyphForCodePoint(cp: number): boolean;
-  };
+  const parsed = fontkit.create(faceBytes(name)) as ParsedFace;
   coverageCache.set(name, parsed);
   return parsed;
 }
@@ -138,21 +152,69 @@ function coverage(name: FaceName): { hasGlyphForCodePoint(cp: number): boolean }
 export const SIGNATURE_FACE: FaceName = "italic";
 
 /**
- * Every code point the SIGNATURE face cannot draw.
+ * Why the SIGNATURE face cannot render this text, or `null` when it can.
  *
- * The bound form, and the only one exposed outside this package. A caller
- * asking "can the merger draw this signature?" must not have to know the
- * answer depends on a face name, because passing the wrong one silently
- * re-opens the gap between what submission accepts and what the merge
- * requires.
+ * ── Two failure modes, and neither check finds both ────────────────────────
  *
- * Empty result means the merger can render it. Callers decide what to do about
- * a non-empty one; this function neither throws nor formats a message, because
- * the recipient-facing wording and the pipeline's wording are different
- * problems.
+ * Measured against the vendored face:
+ *
+ *   text    glyphs present?   layout()
+ *   ----    ---------------   --------------------------------------------
+ *   田中     no                succeeds — returns .notdef glyphs
+ *   🎉      no                succeeds — returns .notdef glyphs
+ *   محمد    no                succeeds — returns .notdef glyphs
+ *   क       YES               THROWS
+ *   नमस्ते     YES               THROWS
+ *
+ * So a coverage check alone accepts Devanagari that the merge then refuses,
+ * and a layout check alone accepts CJK that renders as blank boxes. Actual
+ * renderability is the conjunction, which is why this function exists and why
+ * the coverage-only export it replaced was not sufficient.
+ *
+ * ── Why layout is the authoritative half ───────────────────────────────────
+ *
+ * `widthOfTextAtSize`, which the merge calls to fit a value to its box, is
+ * `font.layout(text)` plus a sum of advance widths. Calling the same `layout`
+ * on the same parsed face is therefore not an approximation of what the merge
+ * does — it is the same operation, minus the arithmetic.
+ *
+ * The Devanagari throw is not a font defect. The face declares Indic shaping
+ * features, so fontkit routes the text to its Indic shaper, which is
+ * Babel-transpiled with generators and references a `regeneratorRuntime` that
+ * `@pdf-lib/fontkit` never bundles. It is an upstream packaging bug; until it
+ * is fixed the merge genuinely cannot draw those scripts, and submission must
+ * say so rather than accept work that will fail later.
+ *
+ * ── No side effects ────────────────────────────────────────────────────────
+ *
+ * Nothing is embedded, no `PDFDocument` is constructed, nothing is written.
+ * `layout` computes a glyph run in memory over a face this module has already
+ * parsed and cached, so the probe costs one shaping pass and touches nothing
+ * outside this process.
+ *
+ * Bound to `SIGNATURE_FACE`; there is no face parameter to get wrong.
  */
-export function uncoveredSignatureCodePoints(text: string): readonly number[] {
-  return uncoveredCodePoints(text, SIGNATURE_FACE);
+export type SignatureTextProblem =
+  | { readonly reason: "missing-glyphs"; readonly codePoints: readonly number[] }
+  | { readonly reason: "shaping-failed" };
+
+export function signatureTextProblem(text: string): SignatureTextProblem | null {
+  // Coverage FIRST. It is the more specific answer — it can name the offending
+  // code points, which a shaping failure cannot — and layout would otherwise
+  // mask missing glyphs by succeeding with .notdef.
+  const missing = uncoveredCodePoints(text, SIGNATURE_FACE);
+  if (missing.length > 0) return { reason: "missing-glyphs", codePoints: missing };
+
+  try {
+    coverage(SIGNATURE_FACE).layout(text);
+  } catch {
+    // Deliberately swallowed. The cause is an upstream shaper fault whose
+    // message is neither stable nor useful to a signer, and rethrowing it
+    // would turn a submission problem into a 500. What matters is the answer:
+    // the merge cannot draw this.
+    return { reason: "shaping-failed" };
+  }
+  return null;
 }
 
 /**

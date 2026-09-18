@@ -174,6 +174,37 @@ describe("submission touches no PDF and no workflow state", () => {
     }
   });
 
+  it("carries no font, charset or script knowledge of its own", () => {
+    // Submission now refuses typed signatures the renderer cannot draw. The
+    // way to get that wrong is to answer the question HERE — a list of allowed
+    // characters, a Unicode range test, a "reject CJK" rule — which would
+    // agree with the renderer on the day it was written and drift the first
+    // time a face changed, silently restoring the very gap the check closes.
+    //
+    // Two measurements from this work show why a local rule cannot be correct
+    // even in principle: Devanagari has every glyph and still fails to shape,
+    // and whether it fails depends on the LEADING script of the run, so
+    // `Maria नमस्ते` renders while `क Maria` does not. No character-class rule
+    // reproduces that. Only asking the renderer does.
+    //
+    // So the application layer must hold a PORT and nothing else.
+    for (const file of FILES) {
+      const source = code(file);
+      // Deliberately NOT a ban on `codePointAt` or `normalize`: the core
+      // module legitimately walks code points to refuse control characters,
+      // which is a text-hygiene rule and has nothing to do with typefaces.
+      // The list below names font, shaper and script knowledge specifically.
+      for (const bad of [
+        "fontkit", "NotoSans", "hasGlyphForCodePoint", "uncoveredCodePoints",
+        "signatureTextProblem", "SIGNATURE_FACE", "@lagda/sealing",
+        // The likely shapes of a hand-rolled script rule.
+        "0x0900", "Devanagari", "p{Script", "Unicode.Script",
+      ]) {
+        expect(source, `${path.basename(file)} names ${bad}`).not.toContain(bad);
+      }
+    }
+  });
+
   it("advances no routing and completes nothing", () => {
     for (const file of FILES) {
       const source = code(file);
