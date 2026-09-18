@@ -29,7 +29,8 @@ import {
 import type { LagdaDatabase } from "./client/index.js";
 import { createTransactionManager } from "./transactions/index.js";
 import {
-  createTestDatabase, truncateAll, hasIntegrationDatabase, seedUser,
+  createTestDatabase, createRuntimeRoleDatabase, truncateAll,
+  hasIntegrationDatabase, seedUser,
 } from "./testing/harness.js";
 
 const AT = Date.parse("2026-09-18T07:00:00.000Z");
@@ -61,9 +62,14 @@ function recordingScheduler() {
 
 suite("completion retry recovery (real PostgreSQL)", () => {
   let owner: LagdaDatabase;
+  /** A connection as a role that INHERITS `lagda_app`, subject to its grants. */
+  let app: LagdaDatabase;
 
-  beforeAll(async () => { owner = await createTestDatabase(); });
-  afterAll(async () => { await owner?.close(); });
+  beforeAll(async () => {
+    owner = await createTestDatabase();
+    app = await createRuntimeRoleDatabase(owner);
+  }, 60_000);
+  afterAll(async () => { await app?.close(); await owner?.close(); });
 
   beforeEach(async () => {
     await truncateAll(owner);
@@ -481,6 +487,40 @@ suite("completion retry recovery (real PostgreSQL)", () => {
     const { enqueued, deps } = sweepDeps();
     expect((await driveDueCompletionRuns(deps)).enqueued).toBe(1);
     expect(enqueued).toHaveLength(1);
+  });
+
+  it("is readable BY THE RUNTIME ROLE, not only by the owner", async () => {
+    // The gap every other case in this file missed. They all run as the
+    // schema OWNER, and an owner is not subject to grants — so the suite was
+    // green while `lagda_app` could not read the index at all, and the
+    // `completion.retry` sweep failed on every production tick with
+    // "permission denied for table signing_request_completion_retry_index".
+    // Migration 047 created the table and omitted the grant that 041 and 034
+    // both make for their own index tables; 048 adds it.
+    await seedRun("waiting-retry", 2, 30);
+
+    const rows = await sql<{ completion_run_id: string }>`
+      select completion_run_id from signing_request_completion_retry_index
+    `.execute(app.db);
+    expect(rows.rows.map(row => row.completion_run_id)).toEqual([RUN]);
+  });
+
+  it("lets the runtime role maintain the index through the trigger", async () => {
+    // The latent second failure a `select`-only grant would have left: the
+    // trigger fires as whoever wrote the run, so the runtime role needs
+    // insert/update/delete on the index too. `ensureRun` as the runtime role
+    // exercises exactly that path.
+    const asRuntime = createTransactionManager(app.db);
+    await asRuntime.runForWorkspace(WS, uow => uow.completion.ensureRun({
+      completionRunId: "crun_runtime_written" as CompletionRunId,
+      signingRequestId: SR, pipelineVersion: 1, createdAt: AT,
+    }));
+
+    const rows = await sql<{ completion_run_id: string }>`
+      select completion_run_id from signing_request_completion_retry_index
+       where completion_run_id = 'crun_runtime_written'
+    `.execute(owner.db);
+    expect(rows.rows).toHaveLength(1);
   });
 
   it("is bounded, and says so when the bound bites", async () => {
