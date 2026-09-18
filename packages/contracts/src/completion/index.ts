@@ -167,6 +167,25 @@ export const COMPLETION_FAILURE_CODES = [
   "output-missing",
   /** A run started under a pipeline version this build cannot resume. */
   "pipeline-version-incompatible",
+  /**
+   * The database REFUSED the write, and will refuse it identically forever.
+   *
+   * A constraint violation, a privilege refusal, an undefined column, a
+   * malformed statement — anything whose SQLSTATE says the statement itself
+   * is wrong rather than the server being unwell. Split from
+   * `database-unavailable` because the two demand opposite handling and were
+   * previously indistinguishable.
+   *
+   * That conflation was not theoretical. Every completion step wraps its
+   * persistence transaction in one catch that mapped ANY throw to
+   * `database-unavailable`, which is retryable — so two schema defects
+   * (an artifact-type CHECK that rejected `merged-candidate`, and a
+   * verification-id CHECK that rejected the format both generators mint)
+   * presented as transient outages and were retried indefinitely instead of
+   * failing loudly. Terminal is the only honest class: a retry cannot change
+   * a CHECK constraint's mind.
+   */
+  "database-rejected",
 
   // Retryable — the same input may succeed later.
   /** Object storage refused or timed out. */
@@ -213,6 +232,7 @@ Readonly<Record<CompletionFailureCode, CompletionFailureClass>> = Object.freeze(
   "unrenderable-value": "terminal",
   "output-missing": "terminal",
   "pipeline-version-incompatible": "terminal",
+  "database-rejected": "terminal",
   "storage-unavailable": "retryable",
   "sealer-unavailable": "retryable",
   "step-not-implemented": "retryable",

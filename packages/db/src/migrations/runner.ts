@@ -53,6 +53,7 @@ import * as m042 from "./042_signing_request_ready_to_send.js";
 import * as m043 from "./043_drop_immutable_artifact_fks.js";
 import * as m044 from "./044_drop_stale_artifact_type_check.js";
 import * as m045 from "./045_verification_id_format.js";
+import * as m046 from "./046_database_rejected_failure_code.js";
 
 /**
  * Migrations listed explicitly rather than read from disk.
@@ -110,6 +111,7 @@ const MIGRATIONS: Record<string, Migration> = {
   "043_drop_immutable_artifact_fks": m043,
   "044_drop_stale_artifact_type_check": m044,
   "045_verification_id_format": m045,
+  "046_database_rejected_failure_code": m046,
 };
 
 class ExplicitMigrationProvider implements MigrationProvider {

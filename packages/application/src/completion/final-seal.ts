@@ -29,7 +29,12 @@
 import type {
   WorkspaceId, DocumentId, Sha256Digest, VerificationId, TransactionId,
 } from "@lagda/contracts";
+import {
+  diagnoseDatabaseFailure, databaseFailureFields,
+  type DatabaseFailureDiagnosis,
+} from "./database-failure.js";
 import type { CompletionFailureCode } from "@lagda/contracts";
+import { COMPLETION_FAILURE_CLASSIFICATION } from "@lagda/contracts";
 import { COMPLETION_PIPELINE_VERSION } from "@lagda/contracts";
 import type {
   Clock, TransactionManager, WorkspaceUnitOfWork,
@@ -68,6 +73,10 @@ export interface FinalSealResult {
   readonly verificationId?: VerificationId;
   readonly completedAt?: number;
   readonly failureCode?: CompletionFailureCode;
+  /** SQLSTATE of a refusing database, when the failure was one. */
+  readonly sqlstate?: string;
+  /** The constraint that refused the write, when it named itself. */
+  readonly constraint?: string;
 }
 
 /** A precondition failure that already knows its bounded code. */
@@ -386,7 +395,8 @@ async function finalize(
     // non-completed and the object is a reconciliation candidate. NOT deleted —
     // deleting on an uncertain transaction outcome is how a real artifact is
     // destroyed, and a retry that finds the accepted step reuses it.
-    return fail(input, deps, "database-unavailable");
+    const diagnosis = diagnoseDatabaseFailure(error);
+    return fail(input, deps, diagnosis.code, diagnosis);
   }
 }
 
@@ -494,26 +504,29 @@ export function sealFailureCode(error: unknown): CompletionFailureCode {
   }
 }
 
-const RETRYABLE = new Set<CompletionFailureCode>([
-  "storage-unavailable", "sealer-unavailable", "step-not-implemented",
-  "typeface-unavailable", "database-unavailable", "attempt-abandoned",
-]);
 
 async function fail(
   input: { readonly workspaceId: WorkspaceId; readonly runId: CompletionRunId },
   deps: FinalSealDependencies,
   code: CompletionFailureCode,
+  // Present only for a DATABASE failure. The SQLSTATE and constraint
+  // name ride out on the result so the worker's job logger records
+  // WHICH rule refused the write, not merely that one did.
+  diagnosis?: DatabaseFailureDiagnosis,
 ): Promise<FinalSealResult> {
   // §186/§187: the request stays `completion-ready`. Signatures, the merged
   // candidate and the certificate all survive, and nobody is asked to re-sign.
   await deps.transactions.runForWorkspace(input.workspaceId, uow =>
     uow.completion.recordRunFailure({
       runId: input.runId,
-      state: RETRYABLE.has(code) ? "waiting-retry" : "failed-terminal",
+      state: isRetryable(code) ? "waiting-retry" : "failed-terminal",
       step: "final-seal",
       code,
     }));
-  return { outcome: "failed", failureCode: code };
+  return {
+    outcome: "failed", failureCode: code,
+    ...(diagnosis === undefined ? {} : databaseFailureFields(diagnosis)),
+  };
 }
 
 async function countParticipants(
@@ -526,3 +539,16 @@ async function countParticipants(
 
 /** Re-exported so the orchestrator can name the type without the module. */
 export type { SealId };
+
+/**
+ * Reads the canonical classification — now actually rather than in name.
+ *
+ * This was a locally restated `Set` in each of the three step files. Three
+ * copies of a total record is three places to forget: a code added as
+ * retryable in `COMPLETION_FAILURE_CLASSIFICATION` but missed here would be
+ * treated as terminal, permanently failing runs the contract says to retry.
+ * The record is frozen and total, so there is nothing to restate.
+ */
+function isRetryable(code: CompletionFailureCode): boolean {
+  return COMPLETION_FAILURE_CLASSIFICATION[code] === "retryable";
+}

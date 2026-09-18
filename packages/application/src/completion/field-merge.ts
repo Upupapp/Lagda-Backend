@@ -29,7 +29,12 @@
 import type {
   WorkspaceId, DocumentId, Sha256Digest, TransactionId,
 } from "@lagda/contracts";
+import {
+  diagnoseDatabaseFailure, databaseFailureFields,
+  type DatabaseFailureDiagnosis,
+} from "./database-failure.js";
 import type { CompletionFailureCode } from "@lagda/contracts";
+import { COMPLETION_FAILURE_CLASSIFICATION } from "@lagda/contracts";
 import type {
   Clock, TransactionManager, WorkspaceUnitOfWork,
   ArtifactId, ArtifactIdGenerator, ArtifactRecord,
@@ -64,6 +69,10 @@ export interface FieldMergeResult {
   readonly outcome: "merged" | "already-merged" | "failed";
   readonly artifactId?: ArtifactId;
   readonly failureCode?: CompletionFailureCode;
+  /** SQLSTATE of a refusing database, when the failure was one. */
+  readonly sqlstate?: string;
+  /** The constraint that refused the write, when it named itself. */
+  readonly constraint?: string;
 }
 
 // ── Mapping the renderer's failures onto the pipeline's vocabulary ───────────
@@ -355,11 +364,12 @@ export async function runFieldMergeStep(
         occurredAt: mergedAt,
       }, stepId));
     });
-  } catch {
+  } catch (error) {
     // Bytes exist, no row. Recoverable and deliberately NOT cleaned up here:
     // deleting on an uncertain transaction outcome is how a real artifact is
     // destroyed (§78). The object is private and unreferenced.
-    return fail(input, deps, "database-unavailable");
+    const diagnosis = diagnoseDatabaseFailure(error);
+    return fail(input, deps, diagnosis.code, diagnosis);
   }
 
   return { outcome: "merged", artifactId };
@@ -419,6 +429,10 @@ async function fail(
   input: { readonly workspaceId: WorkspaceId; readonly runId: CompletionRunId },
   deps: FieldMergeDependencies,
   code: CompletionFailureCode,
+  // Present only for a DATABASE failure. The SQLSTATE and constraint
+  // name ride out on the result so the worker's job logger records
+  // WHICH rule refused the write, not merely that one did.
+  diagnosis?: DatabaseFailureDiagnosis,
 ): Promise<FieldMergeResult> {
   await deps.transactions.runForWorkspace(input.workspaceId, uow =>
     uow.completion.recordRunFailure({
@@ -427,18 +441,25 @@ async function fail(
       step: "field-merge",
       code,
     }));
-  return { outcome: "failed", failureCode: code };
+  return {
+    outcome: "failed", failureCode: code,
+    ...(diagnosis === undefined ? {} : databaseFailureFields(diagnosis)),
+  };
 }
 
-/** Reads the classification rather than restating it. */
+/**
+ * Reads the canonical classification — now actually rather than in name.
+ *
+ * This was a locally restated `Set` in each of the three step files,
+ * under a comment claiming it read the classification. Three copies of a
+ * total record is three places to forget: a code added as retryable in
+ * `COMPLETION_FAILURE_CLASSIFICATION` but missed here would have been
+ * treated as terminal, permanently failing runs the contract says to
+ * retry. The record is frozen and total, so there is nothing to restate.
+ */
 function isRetryable(code: CompletionFailureCode): boolean {
-  return RETRYABLE.has(code);
+  return COMPLETION_FAILURE_CLASSIFICATION[code] === "retryable";
 }
-
-const RETRYABLE = new Set<CompletionFailureCode>([
-  "storage-unavailable", "sealer-unavailable", "step-not-implemented",
-  "typeface-unavailable", "database-unavailable", "attempt-abandoned",
-]);
 
 /** Drains a byte stream into one buffer. */
 async function collect(stream: AsyncIterable<Uint8Array>): Promise<Uint8Array> {
