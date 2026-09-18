@@ -75,10 +75,14 @@ suite("completion retry recovery (real PostgreSQL)", () => {
    * request. One function, because the terminal-states case truncates
    * mid-test and needs exactly the same ground state back.
    *
-   * `completion_ready_at` is REQUIRED alongside the state — migration 028's
-   * biconditional CHECK refuses a `completion-ready` request without it,
-   * which real PostgreSQL enforced on the first run of this suite and the
-   * in-memory store never would have.
+   * `sent_at` AND `completion_ready_at` are both REQUIRED alongside the
+   * state. Two biconditional CHECKs enforce it —
+   * `signing_requests_sent_at_matches_state` (anything past
+   * `ready-to-send` has been sent) and
+   * `signing_requests_completion_ready_at_present` — and real PostgreSQL
+   * refused this fixture twice before they were both set. The in-memory
+   * store has neither constraint, which is precisely why a suite like this
+   * one has to exist.
    */
   async function seedFixtures() {
     await seedUser(owner, USER);
@@ -109,12 +113,12 @@ suite("completion retry recovery (real PostgreSQL)", () => {
       insert into signing_requests (
         signing_request_id, workspace_id, document_id, source_artifact_id,
         source_preparation_id, source_preparation_revision, state,
-        completion_ready_at, document_title, created_by_user_id,
+        sent_at, completion_ready_at, document_title, created_by_user_id,
         created_at, updated_at
       ) values (
         ${SR}, ${WS}, ${DOC}, 'art_retry', 'prep_retry', 1,
-        'completion-ready', ${new Date(AT)}, 'Retry probe', ${USER},
-        ${new Date(AT)}, ${new Date(AT)}
+        'completion-ready', ${new Date(AT)}, ${new Date(AT)},
+        'Retry probe', ${USER}, ${new Date(AT)}, ${new Date(AT)}
       )
     `.execute(owner.db);
   }
