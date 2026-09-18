@@ -76,6 +76,19 @@ const FORMAT = "^LAGDA-VER-[0-9]{4}-[A-Za-z0-9]{6,}$";
 /** Migration 003's, restored by `down`. */
 const OLD_FORMAT = "^LAGDA-[A-Za-z0-9]+-[0-9]{8}-[A-Za-z0-9]{6,}$";
 
+/**
+ * A pattern as a SQL LITERAL, not a bound parameter.
+ *
+ * PostgreSQL does not accept bind parameters in DDL — a `check (...)`
+ * expression is parsed as part of the statement, so passing the pattern with
+ * `${...}` fails at bind time with "supplies 1 parameters, but prepared
+ * statement requires 0". Observed on the first attempt to apply this
+ * migration. Neither pattern contains a quote, so there is nothing here to
+ * escape; `sql.raw` is the same tool migration 026 uses for its own
+ * in-DDL literals.
+ */
+const pattern = (value: string) => sql.raw(`'${value}'`);
+
 export async function up(db: Kysely<unknown>): Promise<void> {
   await sql`
     alter table verification_records
@@ -84,7 +97,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
   await sql`
     alter table verification_records
       add constraint ${sql.ref(CONSTRAINT)}
-      check (verification_id ~ ${FORMAT})
+      check (verification_id ~ ${pattern(FORMAT)})
   `.execute(db);
 }
 
@@ -103,6 +116,6 @@ export async function down(db: Kysely<unknown>): Promise<void> {
   await sql`
     alter table verification_records
       add constraint ${sql.ref(CONSTRAINT)}
-      check (verification_id ~ ${OLD_FORMAT})
+      check (verification_id ~ ${pattern(OLD_FORMAT)})
   `.execute(db);
 }
