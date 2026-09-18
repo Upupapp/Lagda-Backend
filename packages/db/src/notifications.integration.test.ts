@@ -940,6 +940,55 @@ suite("notifications (RLS, runtime role)", () => {
       expect(delivery.destination).toBe("sender@example.test");
     });
 
+    it("becomes DISPATCHABLE work the sweep can find across tenants", async () => {
+      // The last link in the chain, and the one that turns property (2) from a
+      // claim into a fact. A committed intent only survives a provider outage
+      // if something outside the workspace is looking for it: a completion
+      // happens in a worker with no tenant context, and
+      // `notification_deliveries` cannot be scanned across tenants without
+      // BYPASSRLS.
+      //
+      // Migration 034's trigger is unconditional on insert, so it indexes this
+      // row like any other — but "unconditional" was read, not proven, and a
+      // delivery that never reached the index would sit forever while every
+      // other test in this file still passed.
+
+      // Asserted through the repository the sweep actually calls, not by
+      // reading the column. `next_attempt_at` is NULL on a never-attempted
+      // delivery, so a test that checked for a due DATE would have failed
+      // while the system worked — and one that checked the row merely exists
+      // would pass even if `listDue` filtered it out. What matters is that
+      // the sweep RETURNS it.
+      await finalize({ thenFail: false });
+
+      const due = await createTransactionManager(app.db)
+        .runGlobal(uow => uow.notificationDispatch.listDue(AT + 1, 10));
+
+      expect(due).toHaveLength(1);
+      // Scoped to the workspace, and found with NO tenant context at all —
+      // the index carries no policy, which is the whole reason it exists: a
+      // completion happens in a worker that has no workspace in hand.
+      expect(due[0]?.scope).toEqual({ kind: "WORKSPACE", workspaceId: WS_A });
+
+      const row = await owner.db.selectFrom("notification_dispatch_index")
+        .select(["state", "next_attempt_at"]).executeTakeFirstOrThrow();
+      expect(row.state).toBe("PENDING");
+      // NULL is what "never attempted" looks like, and `listDue` treats it as
+      // due immediately rather than coalescing it to an epoch date.
+      expect(row.next_attempt_at).toBeNull();
+    });
+
+    it("leaves no dispatchable work when the transaction rolls back", async () => {
+      // The index is maintained by a trigger, and a trigger fires inside the
+      // statement's transaction — so it must roll back with it. If it did not,
+      // the sweep would find a row pointing at a delivery that does not exist.
+      await expect(finalize({ thenFail: true })).rejects.toThrow();
+
+      const indexed = await owner.db.selectFrom("notification_dispatch_index")
+        .select("notification_delivery_id").execute();
+      expect(indexed).toHaveLength(0);
+    });
+
     it("writes nothing a sender is not entitled to see", async () => {
       // The disclosure check, against the row as actually persisted. None of
       // the signer's bearer token, session credentials, raw signature data or
