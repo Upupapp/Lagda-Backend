@@ -109,6 +109,19 @@ suite("completion retry recovery (real PostgreSQL)", () => {
         'application/pdf', 100, 'sha-256', ${DIGEST}, ${new Date(AT)}, 1, 0
       )
     `.execute(owner.db);
+    // The preparation the request was snapshotted from. Required by
+    // `signing_requests_preparation_fk`, which is compound on
+    // (workspace_id, preparation_id) — so even the fixture cannot accidentally
+    // point at another tenant's preparation.
+    await sql`
+      insert into document_preparations (
+        preparation_id, workspace_id, document_id, source_artifact_id,
+        revision, created_at, updated_at
+      ) values (
+        'prep_retry', ${WS}, ${DOC}, 'art_retry', 1,
+        ${new Date(AT)}, ${new Date(AT)}
+      )
+    `.execute(owner.db);
     await sql`
       insert into signing_requests (
         signing_request_id, workspace_id, document_id, source_artifact_id,
