@@ -136,7 +136,14 @@ suite("completion retry recovery (real PostgreSQL)", () => {
     `.execute(owner.db);
   }
 
-  /** Creates the run, then forces it into a given state as the superuser. */
+  /**
+   * Creates the run, then forces it into a given state as the superuser.
+   *
+   * `succeeded_at` is set exactly when the state is `succeeded`: the
+   * biconditional CHECK `signing_request_completion_runs_succeeded_at_matches_state`
+   * refuses any other pairing, which real PostgreSQL enforced here and the
+   * in-memory store would have allowed.
+   */
   async function seedRun(state: string, attempts: number, lastAttemptMinutesAgo: number | null) {
     const tx = createTransactionManager(owner.db);
     await tx.runForWorkspace(WS, uow => uow.completion.ensureRun({
@@ -148,9 +155,6 @@ suite("completion retry recovery (real PostgreSQL)", () => {
              attempt_count = ${attempts},
              last_attempt_at = ${lastAttemptMinutesAgo === null
                ? null : new Date(Date.now() - lastAttemptMinutesAgo * MINUTE)},
-             -- Biconditional, enforced by
-             -- `signing_request_completion_runs_succeeded_at_matches_state`:
-             -- the instant is set exactly when the state is `succeeded`.
              succeeded_at = ${state === "succeeded" ? new Date(AT) : null}
        where completion_run_id = ${RUN}
     `.execute(owner.db);
