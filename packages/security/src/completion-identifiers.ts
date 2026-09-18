@@ -21,6 +21,8 @@ import type {
   CompletionIdGenerator, CompletionRunId, CompletionStepId,
   EvidenceEventIdGenerator, EvidenceEventId,
   VerificationIdGenerator,
+  NotificationIntentIdGenerator, NotificationIntentId,
+  NotificationDeliveryIdGenerator, NotificationDeliveryId,
 } from "@lagda/application";
 
 function mint(prefix: string): string {
@@ -44,6 +46,30 @@ export function createCompletionIdGenerator(): CompletionIdGenerator {
 
 export function createEvidenceEventIdGenerator(): EvidenceEventIdGenerator {
   return { nextEvidenceEventId: () => mint("ev") as EvidenceEventId };
+}
+
+// ── Notification ids ────────────────────────────────────────────────────────
+//
+// Mirrored here for the same reason as the rest of this file, and needed for
+// the same new reason: BACKEND-38's completion notification is produced INSIDE
+// the finalization transaction, which runs in the worker. Until now the worker
+// only ever DELIVERED notifications the API had created, so it needed no way
+// to mint one.
+//
+// Same prefixes as `packages/api/src/security/identifiers.ts`, so an intent
+// minted by the worker is indistinguishable in storage from one minted by the
+// API — which matters here more than elsewhere, because `SIGNING_INVITATION`
+// intents come from the API and `SIGNING_COMPLETED` intents come from the
+// worker, and both live in one table that operators read by eye.
+
+export function createNotificationIntentIdGenerator(): NotificationIntentIdGenerator {
+  return { nextNotificationIntentId: () => mint("nint") as NotificationIntentId };
+}
+
+export function createNotificationDeliveryIdGenerator(): NotificationDeliveryIdGenerator {
+  return {
+    nextNotificationDeliveryId: () => mint("ndel") as NotificationDeliveryId,
+  };
 }
 
 // ── Verification id — mirrors packages/api/src/security/verification-id.ts ──

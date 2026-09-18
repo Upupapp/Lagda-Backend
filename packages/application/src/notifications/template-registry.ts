@@ -54,6 +54,14 @@ export interface RenderContext {
    * otherwise choose the domain a reset link points at.
    */
   readonly buildLink: (path: string, token: string) => string;
+  /**
+   * Builds a first-party URL carrying NO credential.
+   *
+   * For a template that tells an account holder where to look, rather than
+   * handing a counterparty a way in. Same configured base, same prohibition on
+   * inbound headers.
+   */
+  readonly buildPath: (path: string) => string;
 }
 
 /**
@@ -266,6 +274,26 @@ export const WorkspaceInvitationModelV1 = Type.Object(
   {
     inviterDisplayName: DisplayName,
     workspaceName: DisplayName,
+  },
+  { additionalProperties: false },
+);
+
+export const SigningCompletedModelV1 = Type.Object(
+  {
+    /** The SENDER's display name. This message is addressed to them. */
+    recipientName: DisplayName,
+    documentTitle: BoundedText(300),
+    workspaceName: DisplayName,
+    /**
+     * How many participants completed, as a NUMBER rather than a list.
+     *
+     * A list of signer names and addresses would put the full participant
+     * roster of a legal document into a JSONB column and then into an email
+     * body. The sender can already see the roster in the app, where access is
+     * checked; the count is enough to make the sentence true, and its bound
+     * matches what a request can actually hold.
+     */
+    signerCount: Type.Integer({ minimum: 1, maximum: 1000 }),
   },
   { additionalProperties: false },
 );

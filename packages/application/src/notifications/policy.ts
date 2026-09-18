@@ -40,15 +40,32 @@ export interface NotificationPolicy {
   readonly sourceKind: NotificationSourceKind;
   readonly audienceKind: NotificationAudienceKind;
   /**
-   * How the credential this message carries is referenced.
+   * How the credential this message carries is referenced, or ABSENT when it
+   * carries none.
    *
    * SEALED    an encrypted credential travels with the intent, because it
    *           cannot be recovered from a digest — signing links.
    * CHALLENGE only the id of the auth challenge that owns the credential.
    *           Verification, reset and OTP flows persist digests, and storing
    *           their raw values here would weaken them for uniformity's sake.
+   * absent    the message carries no credential at all. `SIGNING_COMPLETED` is
+   *           the first such message: it notifies an account holder about
+   *           their own request, and the reader follows an ordinary
+   *           authenticated route.
+   *
+   * ── Why optional rather than a third "NONE" value ─────────────────────────
+   *
+   * Because the DATABASE already models it that way. Migration 030's
+   * `notification_intents_secret_kind_check` is
+   * `secret_ref_kind IS NULL OR IN ('SEALED','CHALLENGE')`, and
+   * `notification_intents_secret_ref_check` has an explicit all-null branch.
+   * `NotificationIntentRecord.secretRef` is likewise already optional, and
+   * `deliverNotification` already treats an absent ref as "AVAILABLE, no
+   * secret" without calling the resolver. A `"NONE"` sentinel would be a
+   * fourth spelling of null that the schema would then have to map back to
+   * NULL on the way in and out.
    */
-  readonly secretKind: "SEALED" | "CHALLENGE";
+  readonly secretKind?: "SEALED" | "CHALLENGE";
   /**
    * Whether the intent belongs to a workspace or to an account.
    *
@@ -108,6 +125,31 @@ export const NOTIFICATION_POLICIES: Record<NotificationType, NotificationPolicy>
     sourceKind: "SIGNING_ACCESS_GRANT",
     audienceKind: "SIGNING_REQUEST_RECIPIENT",
     secretKind: "SEALED",
+    scopeKind: "WORKSPACE",
+  },
+  SIGNING_COMPLETED: {
+    notificationType: "SIGNING_COMPLETED",
+    templateKey: "signing-completed",
+    channel: "EMAIL",
+    // The REQUEST, not a grant and not the completion run. There is exactly one
+    // completion per request, so this is the granularity at which
+    // `notification_intents_logical_key` becomes the no-duplicates guarantee.
+    //
+    // Deliberately not the completion RUN: a run is an attempt, and BACKEND-38
+    // may legitimately produce several for one request after a retryable
+    // failure. Keying on the run would mean one email per attempt.
+    sourceKind: "SIGNING_REQUEST",
+    // The SENDER's account, which is why this is the first USER-audience
+    // message that is nonetheless workspace-scoped: the completion is the
+    // workspace's record, but the person told about it is an account holder.
+    audienceKind: "USER",
+    // No `secretKind`. Nothing in this message is a credential.
+    //
+    // Workspace-scoped, unlike the other two USER-audience policies above. A
+    // password reset is a fact about a person and must not be filed under a
+    // workspace (S46); a completed signing request is a fact about the
+    // WORKSPACE's document, and filing it globally would orphan it from the
+    // tenant whose data it describes.
     scopeKind: "WORKSPACE",
   },
 };

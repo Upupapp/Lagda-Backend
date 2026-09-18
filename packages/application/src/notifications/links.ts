@@ -40,5 +40,14 @@ export function createNotificationLinkBuilder(
         + encodeURIComponent(token);
       return url.toString();
     },
+
+    buildPath: (path: string): string => {
+      const url = new URL(base);
+      // Same configured base, same trimming, no credential appended. Nothing
+      // here is secret, so nothing here needs the path-segment treatment
+      // above — but the base still comes only from configuration (S147).
+      url.pathname = `${root}/${path.replace(/^\/+|\/+$/gu, "")}`;
+      return url.toString();
+    },
   };
 }

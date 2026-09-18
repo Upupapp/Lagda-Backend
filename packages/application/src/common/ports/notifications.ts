@@ -90,6 +90,17 @@ export const NOTIFICATION_TYPES = [
   "PASSWORD_RESET",
   "WORKSPACE_INVITATION",
   "SIGNING_INVITATION",
+  /**
+   * The request finished and the sealed document exists (BACKEND-38).
+   *
+   * The FIRST type that carries no credential. Every other value here exists
+   * to hand somebody a link they could not otherwise have; this one tells an
+   * account holder that something they already own has changed state. So it
+   * addresses a USER, and the reader follows an ordinary authenticated route
+   * rather than a bearer token -- which is why `secretKind` had to become
+   * optional on the policy rather than every message pretending to have one.
+   */
+  "SIGNING_COMPLETED",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -174,6 +185,19 @@ export const NOTIFICATION_SOURCE_KINDS = [
   "SIGNING_ACCESS_GRANT",
   "SECURITY_CHALLENGE",
   "WORKSPACE_INVITATION",
+  /**
+   * The signing request itself, for the one message about its whole lifecycle.
+   *
+   * Contrast `SIGNING_ACCESS_GRANT` above: an invitation is per-recipient, so
+   * keying it on the request would collapse five invitations into one (S39).
+   * A completion is the opposite -- there is exactly ONE completion per
+   * request, whatever the recipient count. Keying it on the request is
+   * therefore what makes `notification_intents_logical_key` the duplicate
+   * guarantee: the unique index on (source_kind, source_id, notification_type)
+   * physically cannot hold two SIGNING_COMPLETED rows for one request, so the
+   * producer needs no `if (!exists)` check and no advisory lock.
+   */
+  "SIGNING_REQUEST",
 ] as const;
 export type NotificationSourceKind =
   (typeof NOTIFICATION_SOURCE_KINDS)[number];
@@ -296,6 +320,7 @@ export const NOTIFICATION_TEMPLATE_KEYS = [
   "password-reset",
   "workspace-invitation",
   "signing-invitation",
+  "signing-completed",
 ] as const;
 export type NotificationTemplateKey =
   (typeof NOTIFICATION_TEMPLATE_KEYS)[number];

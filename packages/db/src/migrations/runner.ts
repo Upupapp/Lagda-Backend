@@ -56,6 +56,7 @@ import * as m045 from "./045_verification_id_format.js";
 import * as m046 from "./046_database_rejected_failure_code.js";
 import * as m047 from "./047_completion_retry_index.js";
 import * as m048 from "./048_completion_retry_index_grants.js";
+import * as m049 from "./049_signing_completed_notification.js";
 
 /**
  * Migrations listed explicitly rather than read from disk.
@@ -116,6 +117,7 @@ const MIGRATIONS: Record<string, Migration> = {
   "046_database_rejected_failure_code": m046,
   "047_completion_retry_index": m047,
   "048_completion_retry_index_grants": m048,
+  "049_signing_completed_notification": m049,
 };
 
 class ExplicitMigrationProvider implements MigrationProvider {

@@ -27,7 +27,7 @@
 // PostgreSQL transaction.
 
 import type {
-  WorkspaceId, DocumentId, Sha256Digest, VerificationId, TransactionId,
+  WorkspaceId, DocumentId, Sha256Digest, VerificationId, TransactionId, UserId,
 } from "@lagda/contracts";
 import {
   diagnoseDatabaseFailure, databaseFailureFields,
@@ -51,6 +51,29 @@ import {
 import type {
   ObjectStorage, StorageKeyStrategy, StorageObjectRef,
 } from "../common/ports/storage.js";
+import type { AccountContactRepository } from "../common/ports/auth.js";
+import type {
+  createCompletionNotificationProducer,
+} from "../notifications/completion-producer.js";
+
+/**
+ * What it takes to tell the sender their request finished.
+ *
+ * OPTIONAL on `FinalSealDependencies`, and the direction of that default is
+ * deliberate. A deployment with no notification wiring completes documents and
+ * sends nothing; it does not fail to complete them. Sealing a signed legal
+ * document is the operation that must not be contingent on an email being
+ * configured.
+ */
+export interface CompletionNotificationDependencies {
+  /** The producer. Runs INSIDE the finalization transaction. */
+  readonly produce: ReturnType<typeof createCompletionNotificationProducer>;
+  /**
+   * Resolves the sender's address. Runs OUTSIDE it, and outside any workspace
+   * transaction — `users` is a global table with no tenant.
+   */
+  readonly accountContacts: AccountContactRepository;
+}
 
 export interface FinalSealDependencies {
   readonly transactions: TransactionManager;
@@ -65,6 +88,13 @@ export interface FinalSealDependencies {
    * never does.
    */
   readonly sealer: DocumentSealer;
+  /**
+   * Completion notification wiring, when the deployment has any.
+   *
+   * Absent means no message is produced — see the note on the interface. It is
+   * never a reason to fail a seal.
+   */
+  readonly completionNotification?: CompletionNotificationDependencies;
 }
 
 export interface FinalSealResult {
@@ -96,6 +126,17 @@ interface SealPlan {
   readonly certificateRef: StorageObjectRef;
   readonly certificateDigest: Sha256Digest;
   readonly alreadyFinalArtifactId: ArtifactId | null;
+  /**
+   * The SENDER, from `signing_requests.created_by_user_id`.
+   *
+   * Read here rather than in the finalization transaction because the address
+   * lookup it feeds must happen before that transaction opens, and reading the
+   * id in one transaction and the address in another is the ordering that keeps
+   * the global `users` read out of a workspace-scoped unit of work.
+   */
+  readonly senderUserId: UserId;
+  /** The request's own frozen title. Not the document's current title. */
+  readonly documentTitle: string;
 }
 
 /**
@@ -215,8 +256,38 @@ export async function runFinalSealStep(
     return fail(input, deps, "storage-unavailable");
   }
 
+  // ── 4b. Resolve the sender's address, still outside any transaction ───────
+  //
+  // Here and not inside step 5, because `users` is a global table with no
+  // tenant and step 5 runs in a WORKSPACE transaction. Reading it there would
+  // mean a workspace-scoped unit of work reaching into account data — the
+  // thing `runGlobal` being a separate named method exists to prevent.
+  //
+  // An error PROPAGATES rather than being swallowed. That looks harsh for a
+  // notification, and it is the right trade: nothing is committed yet, so the
+  // run parks in `waiting-retry`, Phase 1's sweep re-drives it, and the
+  // message survives a transient database blip. Swallowing the error would
+  // complete the request and lose the notification permanently — which is
+  // exactly the outcome this phase must not produce.
+  //
+  // A NULL contact is different and is not an error: the account was deleted.
+  // No retry will ever find an address, so the seal proceeds without a
+  // message rather than parking forever.
+  let senderContact: { readonly email: string } | null = null;
+  if (deps.completionNotification !== undefined) {
+    try {
+      senderContact = await deps.completionNotification.accountContacts
+        .findContact(plan.senderUserId);
+    } catch (error) {
+      const diagnosis = diagnoseDatabaseFailure(error);
+      return fail(input, deps, diagnosis.code, diagnosis);
+    }
+  }
+
   // ── 5. THE FINALIZATION TRANSACTION ───────────────────────────────────────
-  return finalize(input, deps, plan, sealed, finalArtifactId, finalRef, sealedAt);
+  return finalize(
+    input, deps, plan, sealed, finalArtifactId, finalRef, sealedAt,
+    senderContact === null ? null : senderContact.email);
 }
 
 // ── The finalization transaction ─────────────────────────────────────────────
@@ -233,6 +304,12 @@ async function finalize(
   finalArtifactId: ArtifactId,
   finalRef: StorageObjectRef,
   sealedAt: number,
+  /**
+   * The sender's address, or `null` when there is no message to produce —
+   * either because the deployment has no notification wiring or because the
+   * account no longer exists.
+   */
+  senderEmail: string | null,
 ): Promise<FinalSealResult> {
   // Generated ONCE, outside the callback, so a retried transaction body cannot
   // mint a second identity for the same completion.
@@ -246,6 +323,13 @@ async function finalize(
         // that makes it true — not when sealing started, and never any
         // recipient's signing time, all of which are earlier.
         const at = deps.clock.now();
+
+        // Counted once and used twice: by the verification record below, and
+        // by the completion notification at the end of this transaction. One
+        // read, so the number the sender is told cannot disagree with the
+        // number the public verification record states.
+        const participantCount = await countParticipants(
+          uow, input.signingRequestId);
 
         await uow.artifacts.insert({
           artifactId: finalArtifactId,
@@ -292,7 +376,7 @@ async function finalize(
             documentId: plan.documentId,
             sealId,
             completedAt: at,
-            participantCount: await countParticipants(uow, input.signingRequestId),
+            participantCount,
           },
         });
 
@@ -382,6 +466,43 @@ async function finalize(
           throw new Precondition("not-completion-ready");
         }
 
+        // ── The completion notification ───────────────────────────────────
+        //
+        // LAST, and inside this transaction. Both of those are the point.
+        //
+        // LAST, because until `markCompleted` returned true the request was
+        // not completed, and a notification is a statement about a fact — it
+        // must not be written before the fact is.
+        //
+        // INSIDE, because that is the only arrangement in which the two
+        // required guarantees both hold. A notification cannot exist for a
+        // completion that rolled back, since the intent rolls back with it.
+        // And a committed completion cannot lose its notification to a
+        // provider outage, since what is written here is an INTENT, not an
+        // email: no network is touched, and the dispatch sweep picks the
+        // committed row up afterwards and retries transport on its own budget.
+        //
+        // Duplicate suppression is `notification_intents_logical_key`, the
+        // UNIQUE index on (source_kind, source_id, notification_type) — not a
+        // check in this file. A re-driven run reaching here a second time is
+        // refused by the index, not by an `if`.
+        if (deps.completionNotification !== undefined && senderEmail !== null) {
+          await deps.completionNotification.produce({
+            signingRequestId: input.signingRequestId,
+            workspaceId: input.workspaceId,
+            senderUserId: plan.senderUserId,
+            senderEmail,
+            documentTitle: plan.documentTitle,
+            signerCount: participantCount,
+          }, {
+            notifications: uow.notifications,
+            workspaces: uow.workspaces,
+            actorProfiles: uow.actorProfiles,
+            // The unit of work IS the transaction handle, as
+            // `scheduleIfConfigured` in `workspaces/invitations.ts` passes it.
+          }, uow);
+        }
+
         return at;
       });
 
@@ -456,6 +577,8 @@ async function buildPlan(
     certificateRef: { zone: "artifacts", key: certificateArtifact.storageReference },
     certificateDigest: certificateArtifact.digest,
     alreadyFinalArtifactId: existing?.finalArtifactId ?? null,
+    senderUserId: request.createdByUserId,
+    documentTitle: request.documentTitle,
   };
 }
 

@@ -19,6 +19,7 @@ import {
   NotificationDispatchJob, JOB_DEFINITIONS,
   CompletionProcessJob, CompletionReconcileJob, CompletionRetryJob,
   createTemplateRegistry, ALL_TEMPLATES, createNotificationLinkBuilder,
+  createCompletionNotificationProducer,
   noopMetrics,
   runFieldMergeStep, runCertificateStep, runFinalSealStep,
   type JobDefinition, type SystemJobContext,
@@ -28,13 +29,14 @@ import {
   type NotificationScope,
   type ObjectStorage, type CompletionDependencies, type CompletionStepRunners,
 } from "@lagda/application";
-import { createTransactionManager } from "@lagda/db";
+import { createTransactionManager, createAccountContactRepository } from "@lagda/db";
 import { loadSmtpConfig, createSmtpEmailProvider, EmailConfigError } from "@lagda/email";
 import {
   createSealedSecretResolver, createChallengeSecretResolver,
   createNotificationSecretResolver,
   createArtifactIdGenerator, createSealIdGenerator, createCompletionIdGenerator,
   createEvidenceEventIdGenerator, createVerificationIdGenerator,
+  createNotificationIntentIdGenerator, createNotificationDeliveryIdGenerator,
 } from "@lagda/security";
 import {
   createS3ObjectStorage, createStorageKeyStrategy, loadStorageConfig,
@@ -209,6 +211,38 @@ export async function startWorker(): Promise<StartedWorker> {
   // it does real, visible-in-the-run-history work (parking) rather than
   // nothing.
   const objectStorage = buildWorkerObjectStorage();
+
+  // ── The completion notification's wiring ──────────────────────────────────
+  //
+  // Hoisted above the completion runners because `finalSeal` needs it, and
+  // built UNCONDITIONALLY — unlike the SMTP provider below, which the worker
+  // tolerates being absent. That asymmetry is deliberate and is the point of
+  // the intent/delivery split: producing an intent is a database write with no
+  // configuration and no network, so it cannot fail for want of a mail server.
+  // A worker with no SMTP still records that the sender is owed a message, and
+  // the dispatch sweep delivers it once a provider exists.
+  //
+  // `templates` is shared with the delivery composition further down rather
+  // than built twice: `createTemplateRegistry` rejects duplicate (key, version)
+  // registrations, and two registries would be two places for a version to
+  // drift.
+  const templates = createTemplateRegistry(ALL_TEMPLATES);
+  const completionNotification = {
+    produce: createCompletionNotificationProducer({
+      templates,
+      ids: {
+        ...createNotificationIntentIdGenerator(),
+        ...createNotificationDeliveryIdGenerator(),
+      },
+      clock,
+    }),
+    // Global, tenant-free, and given the raw database handle rather than a
+    // unit of work — `users` belongs to no workspace, and resolving the
+    // sender's address happens outside the finalization transaction for
+    // exactly that reason.
+    accountContacts: createAccountContactRepository(database.db),
+  };
+
   const completionSteps: CompletionStepRunners | undefined = objectStorage === null
     ? undefined
     : (() => {
@@ -239,6 +273,7 @@ export async function startWorker(): Promise<StartedWorker> {
               ...createVerificationIdGenerator(),
             },
             storage: objectStorage, keys, sealer: new NodeDocumentSealer(),
+            completionNotification,
           }),
       };
     })();
@@ -338,7 +373,7 @@ export async function startWorker(): Promise<StartedWorker> {
       },
       clock,
     );
-    const templates = createTemplateRegistry(ALL_TEMPLATES);
+    // `templates` is the registry hoisted above the completion wiring.
     const links = createNotificationLinkBuilder(config.appBaseUrl);
 
     /**

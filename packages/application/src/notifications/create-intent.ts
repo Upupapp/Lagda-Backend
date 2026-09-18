@@ -51,7 +51,14 @@ export interface CreateNotificationIntentInput {
    */
   readonly destination: string;
   readonly templateInput: NotificationTemplateInput;
-  readonly secretRef: NotificationSecretRef;
+  /**
+   * How the credential travels, or ABSENT for a message carrying none.
+   *
+   * Optional rather than nullable, and checked against the policy below, so
+   * "this type has no credential" is a statement the policy makes once rather
+   * than something each producer may decide per call.
+   */
+  readonly secretRef?: NotificationSecretRef;
 }
 
 export class NotificationPolicyViolation extends Error {
@@ -98,7 +105,23 @@ export function createNotificationIntent(
         `${input.notificationType} is ${policy.scopeKind}-scoped, ` +
           `received ${input.scope.kind}`);
     }
-    if (input.secretRef.kind !== policy.secretKind) {
+    // Both directions matter, which is why this is not a single `!==`.
+    //
+    // A credential passed for a type that has none would persist a secret on a
+    // row nothing will ever resolve or clear; a credential OMITTED for a type
+    // that needs one would render a message with a dead link — the failure S58
+    // exists to prevent, arriving at creation time instead of send time.
+    if (policy.secretKind === undefined) {
+      if (input.secretRef !== undefined) {
+        throw new NotificationPolicyViolation(
+          `${input.notificationType} carries no credential, ` +
+            `received a ${input.secretRef.kind} secret reference`);
+      }
+    } else if (input.secretRef === undefined) {
+      throw new NotificationPolicyViolation(
+        `${input.notificationType} uses a ${policy.secretKind} secret reference, ` +
+          `received none`);
+    } else if (input.secretRef.kind !== policy.secretKind) {
       throw new NotificationPolicyViolation(
         `${input.notificationType} uses a ${policy.secretKind} secret reference, ` +
           `received ${input.secretRef.kind}`);
@@ -128,7 +151,10 @@ export function createNotificationIntent(
       template,
       locale: DEFAULT_LOCALE,
       templateInput: input.templateInput,
-      secretRef: input.secretRef,
+      // Spread conditionally, not assigned as `undefined`: the repository maps
+      // an ABSENT ref to three NULL columns, and `exactOptionalPropertyTypes`
+      // makes the distinction between absent and explicitly-undefined real.
+      ...(input.secretRef === undefined ? {} : { secretRef: input.secretRef }),
       channel: policy.channel,
       destination: input.destination,
     };
