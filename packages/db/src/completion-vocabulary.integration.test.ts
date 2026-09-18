@@ -91,6 +91,21 @@ suite("completion vocabularies match the live database", () => {
   });
 
   it("admits the merged-candidate artifact kind", async () => {
+    // WEAKER THAN IT LOOKS, and it let a real outage through. `checkDefinitions`
+    // concatenates every CHECK on the table, so this passes as long as SOME
+    // constraint spells the value — it cannot see a SECOND constraint that
+    // forbids it. That is exactly what migration 026 left behind (it dropped a
+    // constraint name that never existed, so 003's narrower CHECK survived
+    // beside the wider one), and `merged-candidate` inserts were refused for
+    // months while this assertion stayed green.
+    //
+    // Kept because the concatenated read is still a fair cheap check that the
+    // vocabulary reached the schema at all. The real guarantee — that the
+    // database ACCEPTS each kind, whatever the constraints are named — is
+    // behavioural and lives in `artifact-type-vocabulary.integration.test.ts`,
+    // which inserts one row per kind. Do not strengthen this by adding more
+    // text matching; a schema's answer to "will you take this row" is only
+    // trustworthy when you hand it the row.
     const definitions = await checkDefinitions("document_artifacts");
     expect(definitions).toContain("'merged-candidate'");
   });
