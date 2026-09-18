@@ -58,10 +58,59 @@ import { CompletionProcessJob, CompletionReconcileJob } from "../jobs/definition
 
 // ── Errors ───────────────────────────────────────────────────────────────────
 
+/**
+ * Why each refusal is worth telling the signer.
+ *
+ * The envelope carries a `code` per detail, and the API's code field is
+ * deliberately an open string so a domain command can add one without editing
+ * the contract. So these reach the client as-is and a ceremony can react to
+ * them — which matters most for `signature-unrenderable`: without it a signer
+ * whose typed name cannot be drawn sees "could not be accepted" and has no way
+ * to know that drawing it instead would work.
+ *
+ * No message echoes the submitted value. A detail that quoted a rejected name
+ * would put it in logs and error reporting, which is the thing §42 and §217
+ * keep signing content out of.
+ */
+const PROBLEM_MESSAGES: Record<SubmissionProblem["code"], string> = {
+  "field-not-available": "That field is not available on this request.",
+  "field-duplicated": "A field was supplied more than once.",
+  "field-type-mismatch": "A field was supplied with the wrong kind of value.",
+  "field-required": "A required field is missing.",
+  "field-value-invalid": "A field value is not valid.",
+  "field-server-owned": "That field is filled in by LAGDA and cannot be supplied.",
+  "signature-missing": "A signature is required on this document.",
+  "initials-missing": "Initials are required on this document.",
+  "signature-unrenderable":
+    "This cannot be drawn into the document. Try a different spelling, "
+    + "or draw or upload it instead.",
+};
+
 /** The submission was refused. Carries only fields the caller owns. */
 export class SigningSubmissionInvalidError extends ApplicationError {
   readonly category = "validation" as const;
   readonly code = "signing_submission_invalid";
+  /**
+   * The envelope's `details`, derived from `problems`.
+   *
+   * A derived view rather than a second field the constructor must remember to
+   * populate: one source, so a producer cannot add a problem that never
+   * reaches the client.
+   *
+   * `fieldId` is used as the path when the problem names one — it is a field
+   * the caller already owns and supplied — and the representation purposes are
+   * named directly otherwise, so a ceremony can map a detail to the control
+   * that produced it.
+   */
+  get details(): readonly { field: string; code: string; message: string }[] {
+    return this.problems.map(problem => ({
+      field: problem.fieldId
+        ?? (problem.code === "initials-missing" ? "initials" : "signature"),
+      code: problem.code,
+      message: PROBLEM_MESSAGES[problem.code],
+    }));
+  }
+
   constructor(readonly problems: readonly SubmissionProblem[]) {
     super("The signing submission could not be accepted.");
   }
