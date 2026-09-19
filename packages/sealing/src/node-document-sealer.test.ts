@@ -166,36 +166,66 @@ describe("NodeDocumentSealer.seal", () => {
     expect("completionCertificate" in result).toBe(false);
   });
 
-  it("APPENDS the certificate — signed pages first, certificate last", async () => {
-    // BACKEND-41's composition (§17, §18). The merged fixture is 2 pages and
-    // the certificate is 1, so the final document must be 3.
+  it("does NOT append the certificate — the sealed file is the signed document", async () => {
+    // Reversed from BACKEND-41 §17/§18, deliberately. Sealing used to compose
+    // signed pages + certificate; a recipient downloading their own agreement
+    // got a second page addressed to nobody — a SHA-256 digest, a masked
+    // email, timestamps and a disclaimer — and read it as the file being
+    // wrong rather than as provenance.
+    //
+    // The certificate did not stop existing. It is generated, stored as its
+    // own artifact, and still reachable through /verify; what changed is that
+    // it is no longer bolted onto the thing people actually open. The cost is
+    // real and accepted: a sealed PDF forwarded to a third party now carries
+    // the signature without the proof behind it, and that third party has to
+    // be pointed at the verification record instead.
+    //
+    // The merged fixture is 2 pages, so the sealed document must be 2.
     const result = await sealer.seal(await makeRequest());
     const reopened = await PDFDocument.load(result.sealedDocument);
-    expect(reopened.getPageCount()).toBe(3);
+    expect(reopened.getPageCount()).toBe(2);
   });
 
-  it("appends the certificate ONCE per seal", async () => {
-    // §124/§125. Sealing twice from the same inputs must not accumulate pages —
-    // each call composes from the originals rather than from its own output.
+  it("still binds the certificate by hash, so the evidence chain is intact", async () => {
+    // The guard against "removed the page" quietly becoming "dropped the
+    // certificate". `recordFinalization` stores this digest, and it is how
+    // completion proves the stored artifact is the one that was sealed
+    // against. Not appending is a PRESENTATION decision; unbinding would be
+    // an evidentiary one, and this separates them.
+    const request = await makeRequest();
+    const result = await sealer.seal(request);
+    expect(result.completionCertificateHash).toBe(
+      createHash("sha256").update(request.completionCertificate).digest("hex"));
+  });
+
+  it("seals to the same page count twice", async () => {
+    // §124/§125. Each call composes from the originals rather than from its
+    // own output, so repetition cannot accumulate pages.
     const request = await makeRequest();
     const first = await sealer.seal(request);
     const second = await sealer.seal(request);
-    expect((await PDFDocument.load(first.sealedDocument)).getPageCount()).toBe(3);
-    expect((await PDFDocument.load(second.sealedDocument)).getPageCount()).toBe(3);
+    expect((await PDFDocument.load(first.sealedDocument)).getPageCount()).toBe(2);
+    expect((await PDFDocument.load(second.sealedDocument)).getPageCount()).toBe(2);
   });
 
-  it("grows with a longer certificate, proving the pages are really copied", async () => {
-    // The positive control for the count above: a page count of 3 could also be
-    // produced by ignoring the certificate and adding a blank page.
+  it("does not grow with a longer certificate, while its hash still tracks it", async () => {
+    // The old positive control, inverted into the control for the new
+    // behaviour. A 3-page certificate proves the page count is independent of
+    // the certificate rather than coincidentally 2 — and the changed hash
+    // proves the certificate is still being READ, not ignored outright.
     const threePage = await PDFDocument.create();
     for (let i = 0; i < 3; i += 1) threePage.addPage([595.28, 841.89]);
     threePage.setCreationDate(new Date(0));
     threePage.setModificationDate(new Date(0));
 
+    const baseline = await sealer.seal(await makeRequest());
     const result = await sealer.seal(await makeRequest({
       completionCertificate: await threePage.save(),
     }));
-    expect((await PDFDocument.load(result.sealedDocument)).getPageCount()).toBe(5);
+
+    expect((await PDFDocument.load(result.sealedDocument)).getPageCount()).toBe(2);
+    expect(result.completionCertificateHash)
+      .not.toBe(baseline.completionCertificateHash);
   });
 
   it("refuses a certificate that is not a PDF", async () => {
@@ -211,8 +241,11 @@ describe("NodeDocumentSealer.seal", () => {
   });
 
   it("refuses a certificate with no pages", async () => {
-    // Would seal silently and produce a final document simply lacking its
-    // completion record.
+    // Survives the removal of the append, and has to. The check used to run
+    // as a side effect of copying pages; with nothing copied it would have
+    // silently lapsed, and sealing would have bound the digest of an empty
+    // completion record into the evidence chain as though it said something.
+    // `validateCertificate` exists to keep this assertion true.
     await expect(sealer.seal(await makeRequest({
       completionCertificate: new TextEncoder().encode("%PDF-1.7\n%%EOF\n"),
     }))).rejects.toBeInstanceOf(InvalidPdfError);
