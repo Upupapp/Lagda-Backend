@@ -295,10 +295,36 @@ export function embedFaces(pdf: PDFDocument): EmbeddedFaces {
       const existing = embedded.get(name);
       if (existing !== undefined) return existing;
 
-      // `subset: true` writes only the glyphs actually drawn. Without it each
-      // face adds ~630 KB to every document, so a three-face seal would carry
-      // 1.9 MB of typeface for a handful of characters.
-      const pending = pdf.embedFont(faceBytes(name), { subset: true });
+      // ── `subset: false`, and the reason is a rendering bug ──────────────
+      //
+      // Subsetting was the obvious economy: `subset: true` writes only the
+      // glyphs actually drawn, where the full face adds ~630 KB per document.
+      // It also produced completion certificates that most people could not
+      // read. Reported from production, and measured here:
+      //
+      //   SUBSET TABLES: glyf head hhea hmtx loca maxp prep
+      //
+      // No `cmap`. No `name`, `post` or `OS/2` either. pdf-lib's subsetter
+      // emits only what a PDF strictly needs, and for a CIDFontType2 with an
+      // identity mapping that IS legal — the CID is the glyph index, so no
+      // character map is required to draw.
+      //
+      // Every structural check passes on such a file: the content stream asked
+      // for 49 distinct CIDs, max 49, against a 50-glyph subset with 49
+      // outlines, nothing out of range. pdf.js renders it correctly, which is
+      // why LAGDA's own in-app viewer never showed a problem.
+      //
+      // PDFium (Chrome, Edge) and Quartz (macOS Preview) consult the embedded
+      // TrueType's `cmap` regardless, decline to load a font that has none,
+      // and substitute one — against which the CIDs are meaningless. The page
+      // then renders with most characters missing and a few coincidentally
+      // right: "Certificate of Completion" as "C    of Co     o".
+      //
+      // A signed document is read in whatever the recipient has. A completion
+      // certificate that is legible only in some viewers is not a completion
+      // certificate, so the ~630 KB per face is the correct side of this
+      // trade — the reverse of the judgement made when only size was visible.
+      const pending = pdf.embedFont(faceBytes(name), { subset: false });
       embedded.set(name, pending);
       return pending;
     },
