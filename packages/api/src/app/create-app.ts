@@ -7,7 +7,8 @@
 import { randomUUID } from "node:crypto";
 import { createHandoffCodeDigester } from "../security/crypto.js";
 import {
-  requestSigningLinkIntent, resolveRecipientSession, getSigningCeremony,
+  requestSigningLinkIntent, readSigningAccountLink,
+  resolveRecipientSession, getSigningCeremony,
   normalizeEmail,
 } from "@lagda/application";
 
@@ -815,6 +816,14 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
         signingAccessDependencies: signingAccess,
         // Composed here because minting needs a GLOBAL-scope repository and
         // the ceremony route file deliberately knows only about the ceremony.
+        readAccountLink: async (signingRequestId: string, recipientId: string) => {
+          const access = signingAccess();
+          return access.transactions.runGlobal(async uow => {
+            const link = await readSigningAccountLink(
+              signingRequestId, recipientId, { links: uow.signingAccountLinks });
+            return link.linked ? { maskedEmail: link.maskedEmail } : null;
+          });
+        },
         mintLinkIntent: async (raw: string) => {
           const access = signingAccess();
           return access.transactions.runGlobal(async uow =>

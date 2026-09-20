@@ -86,6 +86,16 @@ const CeremonyResponseSchema = Type.Object({
     mayAcceptConsent: Type.Boolean(),
     mayProceedToInput: Type.Boolean(),
   }, { additionalProperties: false }),
+  /**
+   * Present only once an account has been bound to this recipient.
+   *
+   * The address is MASKED. The ceremony already showed this recipient their
+   * own address, but a field that carries a full one is one refactor away
+   * from carrying it somewhere it was not already known.
+   */
+  accountLink: Type.Optional(Type.Object({
+    maskedEmail: Type.String({ maxLength: 320 }),
+  }, { additionalProperties: false })),
   consent: Type.Object({
     required: Type.Boolean(),
     accepted: Type.Boolean(),
@@ -145,6 +155,17 @@ export interface SigningCeremonyRouteOptions {
     readonly code: string;
     readonly expiresAt: number;
   }>;
+  /**
+   * Whether an account has been bound to this recipient.
+   *
+   * Read SEPARATELY rather than built into the ceremony view, so the
+   * recipient unit of work stays as narrow as it was. The handoff tables are
+   * global and carry no tenancy; reaching them through the ceremony's scope
+   * would mean widening a boundary for a display string.
+   */
+  readonly readAccountLink: (
+    signingRequestId: string, recipientId: string,
+  ) => Promise<{ maskedEmail: string } | null>;
 }
 
 function noStore(reply: FastifyReply): void {
@@ -169,8 +190,12 @@ async function limit(
  * cannot be entered, so a successful response always has `blocker: null` and a
  * field that is always null is noise on the wire.
  */
-function present(view: SigningCeremonyView) {
+function present(
+  view: SigningCeremonyView,
+  accountLink?: { maskedEmail: string } | null,
+) {
   return {
+    ...(accountLink == null ? {} : { accountLink }),
     request: view.request,
     recipient: view.recipient,
     access: {
@@ -259,7 +284,9 @@ export function registerSigningCeremonyRoutes(
       operation: "enter", result: "success", processRole: "api",
     });
 
-    return reply.status(200).send(present(view));
+    const link = await options.readAccountLink(
+      view.request.signingRequestId, view.recipient.recipientId);
+    return reply.status(200).send(present(view, link));
   });
 
   // ── Read ────────────────────────────────────────────────────────────────
@@ -279,7 +306,9 @@ export function registerSigningCeremonyRoutes(
     }]);
 
     const view = await getSigningCeremony(raw, options.ceremonyDependencies());
-    return reply.status(200).send(present(view));
+    const link = await options.readAccountLink(
+      view.request.signingRequestId, view.recipient.recipientId);
+    return reply.status(200).send(present(view, link));
   });
 
   // ── Document bytes ──────────────────────────────────────────────────────
@@ -361,7 +390,9 @@ export function registerSigningCeremonyRoutes(
       operation: "consent", result: "success", processRole: "api",
     });
 
-    return reply.status(200).send(present(view));
+    const link = await options.readAccountLink(
+      view.request.signingRequestId, view.recipient.recipientId);
+    return reply.status(200).send(present(view, link));
   });
 
   // ── Sign-in handoff ─────────────────────────────────────────────────────
