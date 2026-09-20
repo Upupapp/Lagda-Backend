@@ -7,6 +7,7 @@ export * from "./common/ports/index.js";
 export * from "./common/errors/index.js";
 export * from "./common/context.js";
 export * from "./workspaces/index.js";
+export * from "./signing-account-link/index.js";
 
 // Behavioural contract for repository adapters. Consumed by @lagda/db tests.
 export * from "./test-support/repository-contract.js";
