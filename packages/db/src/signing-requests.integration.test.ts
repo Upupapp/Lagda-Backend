@@ -502,10 +502,19 @@ suite("signing requests (RLS, runtime role)", () => {
     it("groups the workspace's requests, with a zero for every other state", async () => {
       await write(WS_A, { requestId: "sr_1", recipientId: "srr_1", fieldId: "srf_1" });
       await write(WS_A, { requestId: "sr_2", recipientId: "srr_2", fieldId: "srf_2" });
-      // `completed_at` too: the CHECK `signing_requests_completed_at_matches_state`
-      // refuses a completed row with no completion instant, and rightly so.
-      await sql`update signing_requests set state = 'completed', completed_at = now() where signing_request_id = 'sr_2'`
-        .execute(owner.db);
+      // A completed row has to be COHERENT, not merely labelled. Two CHECKs
+      // police it and both refused an earlier version of this seed:
+      //
+      //   signing_requests_completed_at_matches_state  completed <=> completed_at
+      //   signing_requests_sent_at_matches_state       any sent state => sent_at
+      //
+      // A document cannot be completed without having been sent, and the
+      // database will not store the claim that it was. Set all three.
+      await sql`
+        update signing_requests
+        set state = 'completed', sent_at = now(), completed_at = now()
+        where signing_request_id = 'sr_2'
+      `.execute(owner.db);
 
       const counts = await createTransactionManager(app.db)
         .runForWorkspace(WS_A, uow => uow.signingRequests.countByState());
