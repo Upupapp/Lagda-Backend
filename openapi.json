@@ -3785,6 +3785,37 @@
         }
       }
     },
+    "/workspaces/{workspaceId}/documents/{documentId}/content": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "documentId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/workspaces/{workspaceId}/folders": {
       "get": {
         "parameters": [
@@ -6055,6 +6086,100 @@
         }
       }
     },
+    "/workspaces/{workspaceId}/signing-requests/stats": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Signing-request counts by state for a workspace.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "SigningRequestStats",
+                  "additionalProperties": false,
+                  "description": "Signing-request counts by state for a workspace.",
+                  "type": "object",
+                  "required": [
+                    "total",
+                    "byState"
+                  ],
+                  "properties": {
+                    "total": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "byState": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "draft",
+                        "ready-to-send",
+                        "sent",
+                        "partially-completed",
+                        "completion-ready",
+                        "completed",
+                        "declined",
+                        "cancelled",
+                        "expired"
+                      ],
+                      "properties": {
+                        "draft": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "ready-to-send": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "sent": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "partially-completed": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "completion-ready": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "completed": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "declined": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "cancelled": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "expired": {
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/workspaces/{workspaceId}/signing-requests/{signingRequestId}": {
       "get": {
         "parameters": [
@@ -6415,6 +6540,351 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/signing-requests/{signingRequestId}/signatures": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "signingRequestId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Signing progress for one request: every party, their standing, and when they acted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "SigningRequestSignatures",
+                  "additionalProperties": false,
+                  "description": "Signing progress for one request: every party, their standing, and when they acted.",
+                  "type": "object",
+                  "required": [
+                    "signingRequestId",
+                    "state",
+                    "signedCount",
+                    "requiredCount",
+                    "signatories"
+                  ],
+                  "properties": {
+                    "signingRequestId": {
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "type": "string"
+                    },
+                    "state": {
+                      "title": "SigningRequestState",
+                      "description": "The request's lifecycle state. Every member of this union can be returned: there is no longer any declared-but-unreachable state.",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "draft"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "ready-to-send"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "sent"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "partially-completed"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "completion-ready"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "completed"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "declined"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "cancelled"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "expired"
+                          ]
+                        }
+                      ]
+                    },
+                    "signedCount": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "requiredCount": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "signatories": {
+                      "type": "array",
+                      "items": {
+                        "title": "Signatory",
+                        "additionalProperties": false,
+                        "description": "One party to a signing request and what they have done about it.",
+                        "type": "object",
+                        "required": [
+                          "recipientId",
+                          "name",
+                          "email",
+                          "organization",
+                          "type",
+                          "isRequired",
+                          "routingOrder",
+                          "state",
+                          "signedAt",
+                          "declinedAt",
+                          "declineReason"
+                        ],
+                        "properties": {
+                          "recipientId": {
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "type": "string"
+                          },
+                          "name": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "email": {
+                            "maxLength": 254,
+                            "type": "string"
+                          },
+                          "organization": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "type": {
+                            "title": "RecipientType",
+                            "description": "What this participant is expected to do. Not a workspace role.",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "signer"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "approver"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "reviewer"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "acknowledgment-recipient"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "viewer"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "carbon-copy"
+                                ]
+                              }
+                            ]
+                          },
+                          "isRequired": {
+                            "type": "boolean"
+                          },
+                          "routingOrder": {
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "state": {
+                            "title": "RecipientWorkflowState",
+                            "description": "Where one recipient stands in one signing request.",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "waiting"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "active"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "signed"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "declined"
+                                ]
+                              }
+                            ]
+                          },
+                          "signedAt": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "declinedAt": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "declineReason": {
+                            "anyOf": [
+                              {
+                                "title": "SigningDeclineReason",
+                                "description": "Why the recipient declined. A closed vocabulary, never free text.",
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "not-agree"
+                                    ]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "not-intended"
+                                    ]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "needs-correction"
+                                    ]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "cannot-complete"
+                                    ]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "other"
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/signing-requests/{signingRequestId}/completed-document": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "signingRequestId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
           }
         }
       }
@@ -7996,6 +8466,29 @@
                       "enum": [
                         "verify-email"
                       ]
+                    },
+                    "verificationHandoff": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "provider",
+                        "customToken",
+                        "challengeId"
+                      ],
+                      "properties": {
+                        "provider": {
+                          "type": "string",
+                          "enum": [
+                            "firebase"
+                          ]
+                        },
+                        "customToken": {
+                          "type": "string"
+                        },
+                        "challengeId": {
+                          "type": "string"
+                        }
+                      }
                     }
                   }
                 }
@@ -8216,6 +8709,92 @@
                       "type": "boolean",
                       "enum": [
                         true
+                      ]
+                    },
+                    "verificationHandoff": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "provider",
+                        "customToken",
+                        "challengeId"
+                      ],
+                      "properties": {
+                        "provider": {
+                          "type": "string",
+                          "enum": [
+                            "firebase"
+                          ]
+                        },
+                        "customToken": {
+                          "type": "string"
+                        },
+                        "challengeId": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/email-verifications/firebase-finalize": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "challengeId"
+                ],
+                "properties": {
+                  "challengeId": {
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "verified",
+                    "nextAction"
+                  ],
+                  "properties": {
+                    "verified": {
+                      "type": "boolean"
+                    },
+                    "nextAction": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "sign-in"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "none"
+                          ]
+                        }
                       ]
                     }
                   }
@@ -9957,6 +10536,15 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/upload-capacity": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
           }
         }
       }

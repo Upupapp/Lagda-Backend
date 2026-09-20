@@ -70,6 +70,10 @@ const app = await createApp({
       limits: { maxBytes: 25 * 1024 * 1024, maxPages: 500 },
       resolveContext: () => null,
       dependenciesFor: () => stub("upload.dependencies"),
+      // Registers GET /upload-capacity. Absent means the deployment has no
+      // capacity constraint to report, and the route is not mounted at all —
+      // so leaving it out here dropped a real path from the contract.
+      resolveActor: () => null,
     }),
     signingAccess: () => stub("signingAccess"),
     publicVerification: () => stub("publicVerification"),
@@ -94,6 +98,11 @@ const app = await createApp({
       preparation: () => stub("workspaces.preparation"),
       recipients: () => stub("workspaces.recipients"),
       signingRequests: () => stub("workspaces.signingRequests"),
+      // Two more conditional groups. Each gates one route, and each was
+      // missing here, so the emitted contract omitted a surface that a
+      // configured deployment genuinely serves.
+      documentContent: () => stub("workspaces.documentContent"),
+      completedArtifact: () => stub("workspaces.completedArtifact"),
       sendSigningRequest: () => stub("workspaces.sendSigningRequest"),
       audit: () => stub("workspaces.audit"),
       organization: () => stub("workspaces.organization"),
@@ -116,7 +125,7 @@ const paths = Object.keys((document as { paths?: Record<string, unknown> }).path
 // So it now asserts a FLOOR and a required set. The floor catches a group going
 // missing wholesale; the required paths catch the case the floor cannot see, by
 // naming the surfaces whose absence is not a smaller contract but a broken one.
-const MINIMUM_PATHS = 49;
+const MINIMUM_PATHS = 70;
 const REQUIRED_PATHS = [
   "/auth/register",
   "/auth/sessions",
@@ -125,6 +134,13 @@ const REQUIRED_PATHS = [
   "/signing-access/bootstrap",
   "/workspaces/{workspaceId}/signing-requests/{signingRequestId}/audit",
   "/workspaces/{workspaceId}/units",
+  // The conditional groups. Each mounts only when its dependency is supplied,
+  // which is exactly how all three went missing from the emitted contract
+  // without anything failing — named here so that cannot recur quietly.
+  "/upload-capacity",
+  "/workspaces/{workspaceId}/documents/{documentId}/content",
+  "/workspaces/{workspaceId}/signing-requests/{signingRequestId}/completed-document",
+  "/workspaces/{workspaceId}/signing-requests/stats",
 ];
 
 const missingRequired = REQUIRED_PATHS.filter(path => !paths.includes(path));
