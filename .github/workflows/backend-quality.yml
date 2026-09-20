@@ -64,6 +64,27 @@ jobs:
       - name: Build
         run: npm run build
 
+      # openapi.json is a COMMITTED artefact, so it can fall out of date
+      # silently — and it did: the copy in the tree was four route-changing
+      # commits behind, missing /signatures, /audit, the completed-document
+      # download, the document content stream and /upload-capacity, while
+      # nothing failed. A generated file nobody regenerates is worse than no
+      # file, because it is read as current.
+      #
+      # Regenerating and diffing is the whole check. The emitter already
+      # refuses to write a partial document (a floor plus a required set), so
+      # this adds the other half: the committed copy must MATCH what the
+      # routes currently produce.
+      - name: OpenAPI document is current
+        run: |
+          npm run openapi:emit
+          if ! git diff --quiet -- openapi.json; then
+            echo "::error::openapi.json is out of date. Run 'npm run openapi:emit' and commit the result."
+            git --no-pager diff --stat -- openapi.json
+            exit 1
+          fi
+          echo "openapi.json matches the current routes."
+
       # NOT CHECKED HERE, deliberately stated rather than implied: the LAGDA
       # frontend does not compile against @lagda/contracts. The strongest reason
       # to share a contracts package is that changing a contract fails CI when
