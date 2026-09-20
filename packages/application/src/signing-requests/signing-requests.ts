@@ -33,7 +33,9 @@ import type {
 } from "@lagda/contracts";
 import type { EvidenceEventIdGenerator } from "../common/ports/index.js";
 // The list row shape lives with the port that produces it.
-import type { SigningRequestSummary } from "../common/ports/signing-requests.js";
+import type {
+  SigningRequestSummary, SigningRequestStateCounts,
+} from "../common/ports/signing-requests.js";
 // BACKEND-43. Factory, never a hand-built event literal.
 import { requestCreated } from "../evidence/events.js";
 import type { SigningRequestState } from "@lagda/contracts";
@@ -614,6 +616,37 @@ export interface SigningRequestListView {
   readonly hasNextPage: boolean;
 }
 
+/**
+ * Counts by state, for the dashboard.
+ *
+ * The list is capped at 100 rows with no status filter, so a client that
+ * bucketed a page was counting a page and presenting it as the workspace.
+ * This is the count the page could not give: one grouped query, every state
+ * present, `total` as the sum of exactly those numbers so the two cannot
+ * disagree.
+ *
+ * `signing-request.view`, the same capability the list and the single read
+ * require. A count is a smaller disclosure than a list, not a different one.
+ */
+export async function getSigningRequestStats(
+  actor: AuthenticatedActor,
+  workspaceId: WorkspaceId,
+  deps: SigningRequestDependencies,
+): Promise<SigningRequestStatsView> {
+  return deps.transactions.runForWorkspace(workspaceId, async uow => {
+    await authorize(uow, actor, "signing-request.view");
+
+    const byState = await uow.signingRequests.countByState();
+    const total = Object.values(byState).reduce((sum, count) => sum + count, 0);
+    return { total, byState };
+  });
+}
+
+export interface SigningRequestStatsView {
+  readonly total: number;
+  readonly byState: SigningRequestStateCounts;
+}
+
 export async function getSigningRequest(
   actor: AuthenticatedActor,
   workspaceId: WorkspaceId,
@@ -661,7 +694,8 @@ export async function getSigningRequest(
  * **updateSigningRequest / patch anything** — a snapshot is immutable, and the
  * runtime role holds no UPDATE grant on either snapshot table.
  *
- * **listSigningRequests** — no product surface needs it. BACKEND-49 owns the
- * dashboard.
+ * **listSigningRequests / getSigningRequestStats** — no longer absent. The
+ * dashboard (BACKEND-49) is the product surface that needed them; both live
+ * above.
  */
 export type SigningRequestOperationsDeferred = never;
