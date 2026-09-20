@@ -10381,6 +10381,299 @@
         }
       }
     },
+    "/me/signatures": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "SavedSignatureList",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "signatures"
+                  ],
+                  "properties": {
+                    "signatures": {
+                      "type": "array",
+                      "items": {
+                        "title": "SavedSignature",
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "purpose",
+                          "method",
+                          "digest",
+                          "validatedAt",
+                          "updatedAt"
+                        ],
+                        "properties": {
+                          "purpose": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "signature"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "initials"
+                                ]
+                              }
+                            ]
+                          },
+                          "method": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "typed"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "drawn"
+                                ]
+                              }
+                            ]
+                          },
+                          "text": {
+                            "type": "string"
+                          },
+                          "styleIndex": {
+                            "type": "integer"
+                          },
+                          "base64": {
+                            "type": "string"
+                          },
+                          "width": {
+                            "type": "integer"
+                          },
+                          "height": {
+                            "type": "integer"
+                          },
+                          "digest": {
+                            "type": "string"
+                          },
+                          "validatedAt": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/signatures/{purpose}": {
+      "put": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "SaveUserSignatureRequest",
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "representation"
+                ],
+                "properties": {
+                  "representation": {
+                    "title": "SignatureRepresentation",
+                    "anyOf": [
+                      {
+                        "title": "TypedSignature",
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "method",
+                          "text",
+                          "styleIndex"
+                        ],
+                        "properties": {
+                          "method": {
+                            "type": "string",
+                            "enum": [
+                              "typed"
+                            ]
+                          },
+                          "text": {
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "type": "string"
+                          },
+                          "styleIndex": {
+                            "minimum": 0,
+                            "maximum": 3,
+                            "type": "integer"
+                          }
+                        }
+                      },
+                      {
+                        "title": "DrawnSignature",
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "method",
+                          "base64"
+                        ],
+                        "properties": {
+                          "method": {
+                            "type": "string",
+                            "enum": [
+                              "drawn"
+                            ]
+                          },
+                          "base64": {
+                            "minLength": 16,
+                            "maxLength": 87510,
+                            "pattern": "^[A-Za-z0-9+/]+={0,2}$",
+                            "type": "string"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "purpose",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "SavedSignature",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "purpose",
+                    "method",
+                    "digest",
+                    "validatedAt",
+                    "updatedAt"
+                  ],
+                  "properties": {
+                    "purpose": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "signature"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "initials"
+                          ]
+                        }
+                      ]
+                    },
+                    "method": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "typed"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "drawn"
+                          ]
+                        }
+                      ]
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "styleIndex": {
+                      "type": "integer"
+                    },
+                    "base64": {
+                      "type": "string"
+                    },
+                    "width": {
+                      "type": "integer"
+                    },
+                    "height": {
+                      "type": "integer"
+                    },
+                    "digest": {
+                      "type": "string"
+                    },
+                    "validatedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "purpose",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/me/password": {
       "post": {
         "requestBody": {

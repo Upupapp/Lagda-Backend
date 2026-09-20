@@ -52,6 +52,8 @@ import {
   nextMfaFactorId, nextRecoveryCodeId, nextPendingAuthenticationId,
   createNotificationIntentIdGenerator, createNotificationDeliveryIdGenerator,
 } from "../security/identifiers.js";
+import { createUserSignatureRepository } from "@lagda/db";
+import { createSignatureImageValidator } from "../security/signature-image.js";
 
 /**
  * The RLS setting a transaction sets to act as one user.
@@ -444,6 +446,11 @@ export function buildIdentity(
           createAccountCredentialRepository(db).findPasswordHash(userId),
         commit: mfaCommit,
       }),
+
+      signatures: () => createUserSignatureRepository(db),
+      signatureImages: () => createSignatureImageValidator(),
+      // `clock` here yields epoch millis; the repository stores timestamptz.
+      now: () => new Date(clock.now()),
 
       currentUser: () => ({ accounts: createAccountProfileRepository(db) }),
       updateProfile: () => ({ clock, commit: accountCommit }),

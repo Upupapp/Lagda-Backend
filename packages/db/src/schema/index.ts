@@ -338,6 +338,35 @@ export interface RecipientSubmissionsTable {
  * The base64 data URL the browser produces is transport formatting and is
  * never what is stored.
  */
+/**
+ * A signature a user saved for reuse.
+ *
+ * A PREFERENCE, not evidence. `signing_representations` is the evidence; this
+ * is the picture someone kept so they need not redraw it. Mutable and
+ * deletable, unlike its evidence counterpart — see migration 050.
+ */
+export interface UserSignaturesTable {
+  user_signature_id: string;
+  user_id: string;
+  /** `signature` or `initials`. */
+  purpose: string;
+  /** `TYPED_SIGNATURE_V1` or `RASTER_SIGNATURE_V1`. */
+  representation_type: string;
+  typed_text: ColumnType<string | null, string | null, string | null>;
+  typed_style_index: ColumnType<number | null, number | null, number | null>;
+  /** Decoded bytes, bounded at 64 KiB by a CHECK. */
+  raster_bytes: ColumnType<Buffer | null, Buffer | null, Buffer | null>;
+  raster_media_type: ColumnType<string | null, string | null, string | null>;
+  raster_width: ColumnType<number | null, number | null, number | null>;
+  raster_height: ColumnType<number | null, number | null, number | null>;
+  /** SHA-256 over the stored bytes. Computed server-side. */
+  digest: string;
+  /** NULL until the bytes passed the format checks — see the route. */
+  validated_at: ColumnType<Date | null, Date | null, Date | null>;
+  created_at: ColumnType<Date, Date, Date>;
+  updated_at: ColumnType<Date, Date, Date>;
+}
+
 export interface SigningRepresentationsTable {
   representation_id: string;
   workspace_id: string;
@@ -1316,6 +1345,7 @@ export interface Database {
   signing_recipient_consents: SigningRecipientConsentsTable;
   recipient_submissions: RecipientSubmissionsTable;
   signing_representations: SigningRepresentationsTable;
+  user_signatures: UserSignaturesTable;
   signing_field_values: SigningFieldValuesTable;
   signing_access_grants: SigningAccessGrantsTable;
   notification_intents: NotificationIntentsTable;

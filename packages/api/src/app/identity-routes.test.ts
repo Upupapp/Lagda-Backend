@@ -4,6 +4,16 @@ import { describe, it, expect } from "vitest";
 import Fastify from "fastify";
 import { registerIdentityRoutes, IDENTITY_PATHS } from "./identity-routes.js";
 import { loadApiConfig } from "../config/index.js";
+import type { UserSignatureRepository } from "@lagda/db";
+import { createSignatureImageValidator } from "../security/signature-image.js";
+
+/** Never exercised here: these tests assert wiring, not signature behaviour. */
+const stubSignatureRepository = (): UserSignatureRepository => ({
+  list: () => Promise.resolve([]),
+  find: () => Promise.resolve(null),
+  save: () => Promise.reject(new Error("not used")),
+  remove: () => Promise.resolve(false),
+});
 
 /**
  * Throws on any use. These tests assert ROUTING, and a stub that answered would
@@ -22,6 +32,9 @@ function app() {
   });
 
   registerIdentityRoutes(instance, config, {
+    signatures: () => stubSignatureRepository(),
+    signatureImages: () => createSignatureImageValidator(),
+    now: () => new Date(1_700_000_000_000),
     register: () => stub("register"),
     login: () => stub("login"),
     verifyEmail: () => stub("verifyEmail"),

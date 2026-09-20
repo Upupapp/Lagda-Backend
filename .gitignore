@@ -12,3 +12,7 @@ coverage/
 # Local-only dev Postgres (not used for deployment)
 docker-compose.local.yml
 scripts/local/
+
+# Claude Code local settings — personal, and carries a production host
+# address. Never committed.
+.claude/settings.local.json

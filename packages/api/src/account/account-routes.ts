@@ -6,6 +6,9 @@
 //   POST   /me/password             change password (requires the current one)
 //   GET    /me/sessions             the caller's own sessions
 //   POST   /me/sessions/revoke      revoke one, or all others
+//   GET    /me/signatures           the caller's saved signatures
+//   PUT    /me/signatures/:purpose  save or replace one
+//   DELETE /me/signatures/:purpose  remove one
 //
 // ── There is no user id in any path ────────────────────────────────────────
 //
@@ -35,6 +38,13 @@ import {
   type UserId, type SessionId, type UpdatePreferencesInput,
 } from "@lagda/application";
 import type { ApiConfig } from "../config/index.js";
+import type {
+  UserSignatureRepository, UserSignaturePurpose, SavedSignature,
+} from "@lagda/db";
+import type { SignatureImageValidator } from "@lagda/application";
+import { SignatureRepresentationSchema } from "@lagda/contracts";
+import { randomUUID } from "node:crypto";
+import { pngCanHaveTransparency } from "../security/signature-image.js";
 import {
   SESSION_COOKIE_NAME, CSRF_COOKIE_NAME,
   clearCookieOptions, clearCsrfCookieOptions,
@@ -46,6 +56,43 @@ const literals = <T extends readonly string[]>(values: T) =>
 const NullableName = Type.Union([
   Type.String({ maxLength: NAME_MAX_LENGTH }), Type.Null(),
 ]);
+
+// ── Saved signatures ────────────────────────────────────────────────────────
+
+const SIGNATURE_PURPOSES = ["signature", "initials"] as const;
+
+/**
+ * The same two shapes the ceremony accepts, deliberately.
+ *
+ * A saved signature exists to be applied to a document later, so anything the
+ * library accepts must be something the ceremony would accept. Reusing the
+ * contract's own schemas rather than restating them is what keeps that true:
+ * if the ceremony's bounds tighten, this tightens with it, in the same commit.
+ */
+const SavedSignatureRequestSchema = Type.Object({
+  representation: SignatureRepresentationSchema,
+}, { title: "SaveUserSignatureRequest", additionalProperties: false });
+
+const SavedSignatureSchema = Type.Object({
+  purpose: literals(SIGNATURE_PURPOSES),
+  method: Type.Union([Type.Literal("typed"), Type.Literal("drawn")]),
+  /** Present for a typed signature only. */
+  text: Type.Optional(Type.String()),
+  styleIndex: Type.Optional(Type.Integer()),
+  /** Present for a drawn signature only. Re-encoded from the stored bytes. */
+  base64: Type.Optional(Type.String()),
+  width: Type.Optional(Type.Integer()),
+  height: Type.Optional(Type.Integer()),
+  /** SHA-256 of the stored bytes. Lets a client detect a change without refetching. */
+  digest: Type.String(),
+  /** Null until the bytes passed validation. An unusable entry says so. */
+  validatedAt: Type.Union([Type.String(), Type.Null()]),
+  updatedAt: Type.String(),
+}, { title: "SavedSignature", additionalProperties: false });
+
+const SavedSignatureListSchema = Type.Object({
+  signatures: Type.Array(SavedSignatureSchema),
+}, { title: "SavedSignatureList", additionalProperties: false });
 
 // ── Response projections ────────────────────────────────────────────────────
 
@@ -164,6 +211,18 @@ export interface AccountRouteOptions {
     readonly userId: UserId;
     readonly sessionId: SessionId;
   } | null>;
+  /**
+   * The same double-submit check `requireSession` installs.
+   *
+   * `/me` is registered OUTSIDE the authenticated scope, so that hook does not
+   * reach it. Every existing route here is either a read or a write already
+   * gated by the current password — but a saved signature is neither, and its
+   * payload is later drawn onto a legally binding document. It gets the check.
+   */
+  readonly validateCsrf: (request: FastifyRequest) => boolean;
+  readonly signatures: () => UserSignatureRepository;
+  readonly signatureImages: () => SignatureImageValidator;
+  readonly now: () => Date;
   readonly currentUserDependencies: () => GetCurrentUserDependencies;
   readonly updateProfileDependencies: () => UpdateProfileDependencies;
   readonly updatePreferencesDependencies: () => UpdatePreferencesDependencies;
@@ -269,6 +328,153 @@ export function registerAccountRoutes(
     }
     if (result.outcome === "not-found") return unauthenticated(reply);
     return reply.status(200).send(project(result.user));
+  });
+
+  // ── Saved signatures ────────────────────────────────────────────────────
+  //
+  // A PREFERENCE, not evidence. Applying one in a ceremony inserts a fresh
+  // representation row with its own digest; the evidence never points here.
+  // See migration 050 for why that separation is load-bearing.
+  //
+  // ── No step-up authentication here, and why that is a decision ──────────
+  //
+  // Saving a signature is not yet dangerous: nothing applies one automatically.
+  // The moment auto-sign exists, a compromised session stops being "read my
+  // documents" and becomes "put my handwritten mark on a binding contract" —
+  // and at THAT point a re-entered password becomes mandatory, on both saving
+  // and applying. This is recorded here rather than left implicit so it reads
+  // as a sequencing choice and not as an omission nobody noticed.
+
+  const projectSignature = (saved: SavedSignature) => {
+    const common = {
+      purpose: saved.purpose,
+      digest: saved.digest,
+      validatedAt: saved.validatedAt === null ? null : saved.validatedAt.toISOString(),
+      updatedAt: saved.updatedAt.toISOString(),
+    };
+    if (saved.representationType === "TYPED_SIGNATURE_V1") {
+      return {
+        ...common,
+        method: "typed" as const,
+        text: saved.typedText ?? "",
+        styleIndex: saved.typedStyleIndex ?? 0,
+      };
+    }
+    return {
+      ...common,
+      method: "drawn" as const,
+      // Re-encoded from the STORED bytes, never echoed from the request.
+      base64: (saved.rasterBytes ?? Buffer.alloc(0)).toString("base64"),
+      width: saved.rasterWidth ?? 0,
+      height: saved.rasterHeight ?? 0,
+    };
+  };
+
+  const readPurpose = (request: FastifyRequest): UserSignaturePurpose | null => {
+    const value = (request.params as { purpose?: string }).purpose;
+    return value === "signature" || value === "initials" ? value : null;
+  };
+
+  app.get("/me/signatures", {
+    schema: { response: { 200: SavedSignatureListSchema } },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await options.authenticatedUser(request);
+    if (actor === null) return unauthenticated(reply);
+
+    const saved = await options.signatures().list(actor.userId);
+    return reply.status(200).send({ signatures: saved.map(projectSignature) });
+  });
+
+  app.put("/me/signatures/:purpose", {
+    schema: {
+      body: SavedSignatureRequestSchema,
+      response: { 200: SavedSignatureSchema },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await options.authenticatedUser(request);
+    if (actor === null) return unauthenticated(reply);
+    if (!options.validateCsrf(request)) return csrfFailed(reply);
+
+    const purpose = readPurpose(request);
+    if (purpose === null) return unknownPurpose(reply);
+
+    const { representation } = request.body as {
+      representation:
+        | { method: "typed"; text: string; styleIndex: number }
+        | { method: "drawn"; base64: string };
+    };
+    const now = options.now();
+    const images = options.signatureImages();
+
+    if (representation.method === "typed") {
+      const saved = await options.signatures().save({
+        userSignatureId: `usig_${randomUUID().replace(/-/g, "")}`,
+        userId: actor.userId,
+        purpose,
+        representationType: "TYPED_SIGNATURE_V1",
+        typedText: representation.text,
+        typedStyleIndex: representation.styleIndex,
+        rasterBytes: null, rasterMediaType: null,
+        rasterWidth: null, rasterHeight: null,
+        // The SAME canonical form the ceremony digests, copied from
+        // signing-submission.ts rather than invented here. Two different
+        // canonical forms would mean the same typed signature has two
+        // different integrity identifiers depending on where it was saved.
+        digest: images.digestCanonical(JSON.stringify({
+          v: 1, text: representation.text, styleIndex: representation.styleIndex,
+        })),
+        validatedAt: now,
+        now,
+      });
+      return reply.status(200).send(projectSignature(saved));
+    }
+
+    // The SAME validator the ceremony uses: magic bytes, IHDR, dimensions,
+    // length, digest. A library that accepted what a ceremony would refuse
+    // would fail at the worst possible moment — mid-signature.
+    const validated = images.validate(representation.base64);
+    if (validated === null) return unusableImage(reply);
+
+    // The sealer embeds with no compositing control, so a fully opaque PNG
+    // paints a rectangle over whatever it lands on. The signer never sees it:
+    // the preview shows their signature and the box appears only in the sealed
+    // document. Refused here rather than discovered there.
+    if (!pngCanHaveTransparency(validated.bytes)) return opaqueImage(reply);
+
+    const saved = await options.signatures().save({
+      userSignatureId: `usig_${randomUUID().replace(/-/g, "")}`,
+      userId: actor.userId,
+      purpose,
+      representationType: "RASTER_SIGNATURE_V1",
+      typedText: null, typedStyleIndex: null,
+      rasterBytes: validated.bytes,
+      rasterMediaType: validated.mediaType,
+      rasterWidth: validated.width,
+      rasterHeight: validated.height,
+      digest: validated.digest,
+      validatedAt: now,
+      now,
+    });
+    return reply.status(200).send(projectSignature(saved));
+  });
+
+  app.delete("/me/signatures/:purpose", {
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await options.authenticatedUser(request);
+    if (actor === null) return unauthenticated(reply);
+    if (!options.validateCsrf(request)) return csrfFailed(reply);
+
+    const purpose = readPurpose(request);
+    if (purpose === null) return unknownPurpose(reply);
+
+    // Idempotent: deleting what is not there is a success, not a 404. The
+    // caller's goal — "I do not have a saved signature" — is satisfied either
+    // way, and a 404 would only invite a retry that cannot help.
+    await options.signatures().remove(actor.userId, purpose);
+    return reply.status(204).send();
   });
 
   // ── Password ────────────────────────────────────────────────────────────
@@ -402,5 +608,43 @@ function messageFor(reason: string): string {
 function unauthenticated(reply: FastifyReply): FastifyReply {
   return reply.status(401).send({
     error: { code: "AUTHENTICATION_REQUIRED", message: "Sign in to continue." },
+  });
+}
+
+function csrfFailed(reply: FastifyReply): FastifyReply {
+  return reply.status(403).send({
+    error: {
+      code: "csrf_validation_failed",
+      message: "The request could not be verified. Please retry from the application.",
+    },
+  });
+}
+
+function unknownPurpose(reply: FastifyReply): FastifyReply {
+  return reply.status(404).send({
+    error: {
+      code: "UNKNOWN_SIGNATURE_PURPOSE",
+      message: "A saved signature is either a signature or a set of initials.",
+    },
+  });
+}
+
+function unusableImage(reply: FastifyReply): FastifyReply {
+  return reply.status(422).send({
+    error: {
+      code: "SIGNATURE_IMAGE_INVALID",
+      message: "That image could not be used. It must be a PNG of your signature.",
+    },
+  });
+}
+
+function opaqueImage(reply: FastifyReply): FastifyReply {
+  return reply.status(422).send({
+    error: {
+      code: "SIGNATURE_IMAGE_OPAQUE",
+      // Says what to do, because the fix is not obvious from the failure.
+      message: "That image has no transparent background, so it would cover part "
+        + "of the document. Upload it again and let the background be removed.",
+    },
   });
 }
