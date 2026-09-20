@@ -25,7 +25,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { Readable } from "node:stream";
 import { Type, type Static } from "@sinclair/typebox";
 import {
-  createSigningRequest, getSigningRequest, listSigningRequests, assertValidKey,
+  createSigningRequest, getSigningRequest, listSigningRequests, getSigningRequestStats, assertValidKey,
   setSigningRequestExpiry,
   markSigningRequestReadyToSend, returnSigningRequestToDraft,
   getCompletedArtifact, getSigningRequestSignatures,
@@ -36,6 +36,7 @@ import {
 } from "@lagda/application";
 import {
   SigningRequestSchema, SigningRequestCreatedSchema, SigningRequestListSchema,
+  SigningRequestStatsSchema,
   SigningRequestStateSchema, SigningRequestSignaturesSchema,
   SetSigningRequestExpirySchema, IDEMPOTENCY_KEY_HEADER,
   type SetSigningRequestExpiryRequest,
@@ -315,6 +316,33 @@ export function registerSigningRequestRoutes(
         expiresAt: item.expiresAt === null ? null : iso(item.expiresAt),
       })),
     });
+  });
+
+  /**
+   * Counts by state — the number the list cannot give.
+   *
+   * The list is paged at 100 with no status filter, so a client bucketing a
+   * page was counting a page and calling it the workspace. This is one
+   * GROUP BY behind the same capability. Registered before the
+   * `/:signingRequestId` read so the static segment is never mistaken for an
+   * id (the router prefers static routes regardless, but the order makes the
+   * intent readable).
+   */
+  app.get("/workspaces/:workspaceId/signing-requests/stats", {
+    schema: {
+      params: ListParamsSchema,
+      response: { 200: SigningRequestStatsSchema },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await actorOf(request);
+    if (actor === null) return unauthenticated(reply);
+
+    const { workspaceId } = request.params as Static<typeof ListParamsSchema>;
+    const stats = await getSigningRequestStats(
+      actor, workspaceId as WorkspaceId, options.signingRequestDependencies());
+
+    return reply.status(200).send(stats);
   });
 
   app.get("/workspaces/:workspaceId/signing-requests/:signingRequestId", {

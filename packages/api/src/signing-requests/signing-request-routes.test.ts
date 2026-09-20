@@ -6,7 +6,9 @@
 
 import { describe, it, expect, afterEach } from "vitest";
 import Fastify, { type FastifyInstance } from "fastify";
-import { CSRF_TOKEN_HEADER, IDEMPOTENCY_KEY_HEADER, type UserId } from "@lagda/contracts";
+import {
+  CSRF_TOKEN_HEADER, IDEMPOTENCY_KEY_HEADER, type UserId, type SigningRequestState,
+} from "@lagda/contracts";
 import {
   createSessionService,
   type SessionRepository, type SessionRecord, type NewSession,
@@ -745,5 +747,61 @@ describe("the completed-document route", () => {
     expect(response.headers["cache-control"]).toBe("private, no-store");
     expect(response.headers["content-disposition"]).toContain("attachment");
     expect(response.body).toBe("%PDF-1.4 completed bytes");
+  });
+  // ── Stats ─────────────────────────────────────────────────────────────────
+
+  describe("GET /workspaces/:workspaceId/signing-requests/stats", () => {
+    const STATS_URL = `/workspaces/${WORKSPACE}/signing-requests/stats`;
+
+    it("counts by state, every state present", async () => {
+      const h = await harness();
+      await create(h);
+      const { cookie } = await h.signIn(OWNER);
+      const response = await h.app.inject({ method: "GET", url: STATS_URL, headers: { cookie } });
+
+      expect(response.statusCode).toBe(200);
+      // Typed over the state union, not `Record<string, …>`: an index
+      // signature would force bracket access and, worse, would let a typo'd
+      // state name compile.
+      const body = response.json<{ total: number; byState: Record<SigningRequestState, number> }>();
+      expect(body.total).toBe(1);
+      expect(body.byState.draft).toBe(1);
+      // Zeros are present, not absent — a dashboard sums these.
+      expect(body.byState.completed).toBe(0);
+      expect(Object.keys(body.byState).sort()).toEqual([
+        "cancelled", "completed", "completion-ready", "declined", "draft",
+        "expired", "partially-completed", "ready-to-send", "sent",
+      ]);
+    });
+
+    it("is never mistaken for a request id", async () => {
+      // `/stats` sits beside `/:signingRequestId`. A router that matched the
+      // parametric route first would answer 404 "no such request".
+      const h = await harness();
+      const { cookie } = await h.signIn(OWNER);
+      const response = await h.app.inject({ method: "GET", url: STATS_URL, headers: { cookie } });
+      expect(response.statusCode).toBe(200);
+      expect(response.json<{ total: number }>().total).toBe(0);
+    });
+
+    it("does not cache", async () => {
+      const h = await harness();
+      const { cookie } = await h.signIn(OWNER);
+      const response = await h.app.inject({ method: "GET", url: STATS_URL, headers: { cookie } });
+      expect(response.headers["cache-control"]).toBe("no-store");
+    });
+
+    it("refuses an anonymous caller", async () => {
+      const h = await harness();
+      const response = await h.app.inject({ method: "GET", url: STATS_URL });
+      expect(response.statusCode).toBe(401);
+    });
+
+    it("gives a non-member 404, like the list", async () => {
+      const h = await harness();
+      const { cookie } = await h.signIn("usr_outsider" as UserId);
+      const response = await h.app.inject({ method: "GET", url: STATS_URL, headers: { cookie } });
+      expect(response.statusCode).toBe(404);
+    });
   });
 });

@@ -18,7 +18,7 @@ import type {
   ContactId, DocumentId, IdempotencyKey, UserId, WorkspaceId, WorkspaceMemberId,
 } from "@lagda/contracts";
 import {
-  createSigningRequest, getSigningRequest,
+  createSigningRequest, getSigningRequest, getSigningRequestStats,
   PreparationNotReadyError, DocumentNotPreparedError,
   type SigningRequestDependencies,
 } from "./signing-requests.js";
@@ -753,5 +753,54 @@ describe("creating a request sends nothing", () => {
     await createSigningRequest(
       { actor: actor(OWNER), workspaceId: h.workspaceId, documentId: DOC }, h.deps);
     expect(JSON.stringify(h.store.artifacts[0])).toBe(before);
+  });
+});
+
+// ── Stats ───────────────────────────────────────────────────────────────────
+//
+// The list is paged at 100 with no status filter; a client bucketing a page
+// was counting a page. This is the count the page could not give.
+
+describe("getSigningRequestStats", () => {
+  it("counts by state, with every state present", async () => {
+    const h = await harness();
+    await ready(h);
+    const first = await createSigningRequest(
+      { actor: actor(OWNER), workspaceId: h.workspaceId, documentId: DOC }, h.deps);
+    await createSigningRequest(
+      { actor: actor(OWNER), workspaceId: h.workspaceId, documentId: DOC,
+        idempotencyKey: "second" as IdempotencyKey }, h.deps);
+
+    // Move one along, directly in the store: the point is the grouping, not
+    // the transition, and the transitions have their own suites.
+    const index = h.store.signingRequests.findIndex(r => r.signingRequestId === first.signingRequestId);
+    h.store.signingRequests[index] = { ...h.store.signingRequests[index]!, state: "completed" };
+
+    const stats = await getSigningRequestStats(actor(OWNER), h.workspaceId, h.deps);
+
+    expect(stats.byState.completed).toBe(1);
+    expect(stats.byState.draft).toBe(1);
+    expect(stats.byState.sent).toBe(0);
+    expect(stats.total).toBe(2);
+    // `total` is the sum of exactly these numbers — the two cannot disagree.
+    expect(Object.values(stats.byState).reduce((a, b) => a + b, 0)).toBe(stats.total);
+  });
+
+  it("reports zeros for an empty workspace, not an empty object", async () => {
+    const h = await harness();
+    const stats = await getSigningRequestStats(actor(OWNER), h.workspaceId, h.deps);
+    expect(stats.total).toBe(0);
+    expect(Object.keys(stats.byState)).toHaveLength(9);
+    expect(stats.byState.draft).toBe(0);
+  });
+
+  it("requires signing-request.view, like the list and the single read", async () => {
+    // An auditor can read a request; whoever cannot read one cannot count
+    // them either. A count is a smaller disclosure than a list, not a
+    // different one — so an outsider gets the same not-found the list gives.
+    const h = await harness();
+    await expect(getSigningRequestStats(
+      actor("usr_outsider" as UserId), h.workspaceId, h.deps,
+    )).rejects.toBeInstanceOf(ResourceNotFoundError);
   });
 });

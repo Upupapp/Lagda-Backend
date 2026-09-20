@@ -25,6 +25,10 @@ import type {
   CompletionInputRepository,
 } from "../common/ports/completion.js";
 import type { UserId, WorkspaceId, WorkspaceMemberId } from "@lagda/contracts";
+// A VALUE import, unlike the two above: the fake's `countByState` starts from
+// a zero for every state the contract enumerates, so the shape it returns is
+// the contract's and cannot drift from it.
+import { SIGNING_REQUEST_STATES, type SigningRequestState } from "@lagda/contracts";
 import type { WorkspaceRole } from "@lagda/core";
 import type { UploadRecord, ScopedUploadRepository } from "../common/ports/upload.js";
 import type {
@@ -2010,6 +2014,16 @@ function scopedSigningRequests(
         };
       });
       return Promise.resolve({ items, total: mine.length });
+    },
+
+    countByState: () => {
+      const counts = Object.fromEntries(
+        SIGNING_REQUEST_STATES.map(state => [state, 0]),
+      ) as Record<SigningRequestState, number>;
+      for (const request of store.signingRequests) {
+        if (request.workspaceId === scope) counts[request.state] += 1;
+      }
+      return Promise.resolve(counts);
     },
 
     createSnapshot: (snapshot: NewSigningRequestSnapshot) => {

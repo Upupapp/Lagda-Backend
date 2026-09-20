@@ -366,6 +366,36 @@ export const SigningRequestListSchema = Type.Object(
   { title: "SigningRequestList", additionalProperties: false },
 );
 
+/**
+ * Counts by state for one workspace, computed in SQL.
+ *
+ * Exists because the LIST is capped at 100 rows and has no status filter, so
+ * a client bucketing a page was counting a page and calling it a workspace.
+ * One `GROUP BY state` answers the question the list cannot.
+ *
+ * `byState` carries EVERY state, zeros included, and is closed. An absent key
+ * would be indistinguishable from "the server has never heard of this state",
+ * and the states are enumerated here rather than written out so this cannot
+ * drift from `SIGNING_REQUEST_STATES` by one entry.
+ */
+export const SigningRequestStatsSchema = Type.Object(
+  {
+    total: Type.Integer({ minimum: 0 }),
+    byState: Type.Object(
+      Object.fromEntries(
+        SIGNING_REQUEST_STATES.map(state => [state, Type.Integer({ minimum: 0 })]),
+      ) as Record<SigningRequestState, ReturnType<typeof Type.Integer>>,
+      { additionalProperties: false },
+    ),
+  },
+  {
+    title: "SigningRequestStats",
+    additionalProperties: false,
+    description: "Signing-request counts by state for a workspace.",
+  },
+);
+export type SigningRequestStatsView = Static<typeof SigningRequestStatsSchema>;
+
 export const SigningRequestSchema = Type.Object(
   {
     signingRequestId: Type.String({ minLength: 1, maxLength: 64 }),

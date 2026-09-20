@@ -187,6 +187,33 @@ export function createScopedSigningRequestRepository(
       };
     },
 
+    /**
+     * One GROUP BY, scoped by the same predicate as the list.
+     *
+     * Started from a zero for every state the contract knows, then
+     * overwritten by whatever the database reports: a state with no rows is
+     * absent from a grouped result, and the caller must not have to know
+     * that to sum the answer.
+     */
+    async countByState() {
+      const rows = await sql<{ state: string; count: string }>`
+        select sr.state, count(*) as count
+        from signing_requests sr
+        where sr.workspace_id = ${scope}
+        group by sr.state
+      `.execute(trx);
+
+      const counts = Object.fromEntries(
+        SIGNING_REQUEST_STATES.map(state => [state, 0]),
+      ) as Record<SigningRequestState, number>;
+      for (const row of rows.rows) {
+        if ((SIGNING_REQUEST_STATES as readonly string[]).includes(row.state)) {
+          counts[row.state as SigningRequestState] = Number(row.count);
+        }
+      }
+      return counts;
+    },
+
     async createSnapshot(snapshot: NewSigningRequestSnapshot): Promise<void> {
       const { request, recipients, fields } = snapshot;
       if (request.workspaceId !== scope) {

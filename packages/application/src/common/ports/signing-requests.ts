@@ -20,7 +20,9 @@
 //   transitionState       BACKEND-33's, when there is a second state to move to
 //   delete                the product has no abandon-unsent-request control
 //   findById(id)          no unscoped lookup
-//   listForWorkspace      no product surface needs it yet
+//
+// `listForWorkspace` and `countByState` were once listed here too. The
+// dashboard (BACKEND-49) is the product surface that needs them.
 
 import type { DocumentId, WorkspaceId, UserId } from "@lagda/contracts";
 import type {
@@ -171,6 +173,15 @@ export interface SigningRequestListPage {
   readonly total: number;
 }
 
+/**
+ * Every state, with a count — zeros included.
+ *
+ * A partial record would make "no requests in this state" and "the
+ * repository did not report this state" the same shape, and a dashboard
+ * summing the values would silently be summing a subset.
+ */
+export type SigningRequestStateCounts = Readonly<Record<SigningRequestState, number>>;
+
 export interface NewSigningRequestSnapshot {
   readonly request: SigningRequestRecord;
   readonly recipients: readonly SigningRequestRecipientRecord[];
@@ -215,6 +226,15 @@ export interface ScopedSigningRequestRepository {
     readonly limit: number;
     readonly offset: number;
   }): Promise<SigningRequestListPage>;
+
+  /**
+   * How many requests are in each state, for the bound workspace.
+   *
+   * One grouped query, not a walk over the list. The list is paged at 100
+   * and a client bucketing a page was counting a page; this is the count the
+   * page could not give. Every state is present in the result, zero or not.
+   */
+  countByState(): Promise<SigningRequestStateCounts>;
 
   /** Ordered by `orderIndex`, then id. Ordered in SQL. */
   listRecipients(
