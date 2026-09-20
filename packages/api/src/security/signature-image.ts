@@ -33,6 +33,58 @@ const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const IHDR_OFFSET = 8;
 const MIN_PNG_BYTES = 24;
 
+/**
+ * Can this PNG have transparent pixels at all?
+ *
+ * ── Why this matters ──────────────────────────────────────────────────────
+ *
+ * The sealer embeds a signature with `drawImage` and no compositing control,
+ * so a FULLY OPAQUE image paints an opaque rectangle over whatever it lands
+ * on in the finished document. The signer never sees it happen: the preview
+ * shows their signature, and the white box appears only in the sealed PDF.
+ *
+ * ── Why this is not a decoder ─────────────────────────────────────────────
+ *
+ * PNG colour type is one byte at a fixed offset in IHDR. 4 (grey+alpha) and 6
+ * (RGB+alpha) carry a per-pixel alpha channel. 3 (palette) can carry
+ * transparency, but only via a `tRNS` chunk, so that case walks the chunk
+ * headers — lengths and four-character names, never chunk CONTENTS. No
+ * inflate, no un-filter, no image library: the same bound this module's header
+ * draws around untrusted bytes.
+ *
+ * Types 0 and 2 have no alpha channel and no tRNS-with-alpha meaning that
+ * would help here, so they are answered false without a scan.
+ *
+ * This reports CAPABILITY, not fact: a type-6 PNG whose every pixel is opaque
+ * passes. Proving actual transparency needs the decoder this module refuses to
+ * add, and the client already removes backgrounds before upload. This exists
+ * to refuse the obviously-wrong case cheaply, not to be a guarantee.
+ */
+export function pngCanHaveTransparency(bytes: Buffer): boolean {
+  const COLOUR_TYPE_OFFSET = IHDR_OFFSET + 17;
+  if (bytes.length <= COLOUR_TYPE_OFFSET) return false;
+
+  const colourType = bytes[COLOUR_TYPE_OFFSET];
+  if (colourType === 4 || colourType === 6) return true;
+  if (colourType !== 3) return false;
+
+  // Palette: look for a tRNS chunk. Chunk layout is
+  // length(4) | type(4) | data(length) | crc(4), starting after the magic.
+  let offset = PNG_MAGIC.length;
+  while (offset + 8 <= bytes.length) {
+    const length = bytes.readUInt32BE(offset);
+    const type = bytes.subarray(offset + 4, offset + 8).toString("ascii");
+    if (type === "tRNS") return true;
+    if (type === "IDAT" || type === "IEND") return false;
+    // A length that would overflow the buffer is malformed; stop rather than
+    // wrap around and read arbitrary offsets.
+    const next = offset + 12 + length;
+    if (next <= offset) return false;
+    offset = next;
+  }
+  return false;
+}
+
 export function createSignatureImageValidator(): SignatureImageValidator {
   return {
     validate(base64: string): ValidatedRasterSignature | null {

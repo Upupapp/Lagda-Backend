@@ -40,6 +40,8 @@ import type {
   ListSessionsDependencies, RevokeSessionDependencies,
   RevokeOtherSessionsDependencies,
 } from "@lagda/application";
+import type { UserSignatureRepository } from "@lagda/db";
+import type { SignatureImageValidator } from "@lagda/application";
 import type { ApiConfig } from "../config/index.js";
 import { registerAuthRoutes } from "../auth/register-route.js";
 import { registerSessionRoutes } from "../auth/session-routes.js";
@@ -105,6 +107,9 @@ export interface IdentityDependencies {
   }>;
   /** Validates double-submit CSRF for an authenticated request. See sign-out. */
   readonly validateCsrf: (request: FastifyRequest) => boolean;
+  readonly signatures: () => UserSignatureRepository;
+  readonly signatureImages: () => SignatureImageValidator;
+  readonly now: () => Date;
   /** Resolves a FULL session. Null for anonymous and for pre-auth credentials. */
   readonly authenticatedUser: (request: FastifyRequest) => Promise<{
     readonly userId: UserId;
@@ -213,6 +218,12 @@ export function registerIdentityRoutes(
   registerAccountRoutes(app, {
     config,
     authenticatedUser: deps.authenticatedUser,
+    // `/me` sits outside the authenticated scope, so `requireSession`'s CSRF
+    // hook never runs here. The saved-signature writes ask for it explicitly.
+    validateCsrf: deps.validateCsrf,
+    signatures: deps.signatures,
+    signatureImages: deps.signatureImages,
+    now: deps.now,
     currentUserDependencies: deps.currentUser,
     updateProfileDependencies: deps.updateProfile,
     updatePreferencesDependencies: deps.updatePreferences,

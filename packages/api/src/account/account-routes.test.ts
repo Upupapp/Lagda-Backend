@@ -14,6 +14,8 @@ import type {
   SessionId, UserId,
 } from "@lagda/application";
 import type { ApiConfig } from "../config/index.js";
+import type { UserSignatureRepository, SavedSignature } from "@lagda/db";
+import { createSignatureImageValidator } from "../security/signature-image.js";
 import {
   registerAccountRoutes, CurrentUserResponseSchema,
   UpdateProfileRequestSchema, ChangePasswordRequestSchema,
@@ -64,6 +66,7 @@ async function build(options: {
   passwordOutcome?: "changed" | "invalid-current-password";
   revokeFound?: boolean;
   revokeCurrent?: boolean;
+  csrfValid?: boolean;
 } = {}): Promise<Built> {
   const app = Fastify({
     logger: false,
@@ -76,6 +79,35 @@ async function build(options: {
   await app.register(cookie);
   const profileWrites: unknown[] = [];
   const revoked: string[] = [];
+
+  // An in-memory stand-in for the saved-signature table, honouring the one
+  // property the real one enforces with a UNIQUE constraint: at most one per
+  // purpose, so saving twice replaces rather than accumulates.
+  const stored = new Map<string, SavedSignature>();
+  const savedSignatures: UserSignatureRepository = {
+    list: () => Promise.resolve([...stored.values()]),
+    find: (_userId, purpose) => Promise.resolve(stored.get(purpose) ?? null),
+    save: (input) => {
+      const row: SavedSignature = {
+        userSignatureId: input.userSignatureId,
+        purpose: input.purpose,
+        representationType: input.representationType,
+        typedText: input.typedText,
+        typedStyleIndex: input.typedStyleIndex,
+        rasterBytes: input.rasterBytes,
+        rasterMediaType: input.rasterMediaType,
+        rasterWidth: input.rasterWidth,
+        rasterHeight: input.rasterHeight,
+        digest: input.digest,
+        validatedAt: input.validatedAt,
+        createdAt: input.now,
+        updatedAt: input.now,
+      };
+      stored.set(input.purpose, row);
+      return Promise.resolve(row);
+    },
+    remove: (_userId, purpose) => Promise.resolve(stored.delete(purpose)),
+  };
 
   const accounts = {
     findCurrentUser: () => Promise.resolve(
@@ -92,6 +124,10 @@ async function build(options: {
 
   registerAccountRoutes(app, {
     config: CONFIG,
+    validateCsrf: () => options.csrfValid !== false,
+    signatures: () => savedSignatures,
+    signatureImages: () => createSignatureImageValidator(),
+    now: () => new Date(1_700_000_000_000),
     authenticatedUser: () => Promise.resolve(
       options.authenticated === false
         ? null
