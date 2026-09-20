@@ -82,6 +82,20 @@ export function createSecurityTokenDigester(): SecurityTokenDigester {
   };
 }
 
+/**
+ * The account-binding handoff code (Phase 2).
+ *
+ * A SIXTH credential domain, prefixed for the same reason as the others: a
+ * handoff code and a session token that happened to be the same string must
+ * not digest alike, or possession of one would be possession of the other.
+ */
+export function createHandoffCodeDigester(): { digestHandoffCode: (code: string) => string } {
+  return {
+    digestHandoffCode: (code: string): string =>
+      createHash("sha256").update(`lagda.signing-handoff:${code}`).digest("hex"),
+  };
+}
+
 // ── Idempotency ──────────────────────────────────────────────────────────────
 
 /**

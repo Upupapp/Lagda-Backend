@@ -499,6 +499,34 @@ export const RATE_LIMIT_POLICIES = {
       + "mutation whose repeat is a no-op; the limit is hygiene.",
   },
 
+  // Minting a sign-in handoff code. Tighter than consent, because each call
+  // creates a credential rather than converging on one row, and a caller with
+  // no reason to mint hundreds is a caller doing something else.
+  "signing-ceremony.link-intent.ip": {
+    id: "signing-ceremony.link-intent.ip",
+    scopeType: "ip",
+    limit: 20,
+    windowMs: MINUTE,
+    failureMode: "fail-open",
+    source: "not specified by the handoff. Phase 2 account binding — each "
+      + "call mints a short-lived credential rather than converging on a row, "
+      + "so the limit is tighter than consent's. Chosen here.",
+  },
+
+  // Claiming one. Fail CLOSED: this is the guess-limiting control on a code
+  // that binds an identity to a signature, and a limiter that opens under
+  // load is no control at all on the one path where guessing is the attack.
+  "signing-account-link.claim.ip": {
+    id: "signing-account-link.claim.ip",
+    scopeType: "ip",
+    limit: 10,
+    windowMs: MINUTE,
+    failureMode: "fail-closed",
+    source: "not specified by the handoff. Phase 2 account binding — this is "
+      + "the guess-limiting control on a code that binds an identity to a "
+      + "signature, so it fails CLOSED. Chosen here.",
+  },
+
   "signing-access.bootstrap.ip": {
     id: "signing-access.bootstrap.ip",
     scopeType: "ip",

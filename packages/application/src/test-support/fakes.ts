@@ -42,6 +42,7 @@ import type {
   EvidenceEventInput, EvidenceEventRecord, ArtifactRecord, ArtifactId,
   EvidenceEventId, EvidenceEventIdGenerator,
   FinalizationInput, SealRecord,
+  SigningAccountLinkRepository,
 } from "../common/ports/index.js";
 import { InMemoryIdempotencyRepository } from "./idempotency-fake.js";
 import type {
@@ -1539,6 +1540,59 @@ function dispatchIndex(): NotificationDispatchRepository {
   };
 }
 
+/**
+ * The account-binding handoff, in memory.
+ *
+ * Module-level maps rather than the shared store: these two tables belong to
+ * no tenant, and putting them in the tenant store would imply a scoping they
+ * do not have.
+ *
+ * `claimIntent` mirrors the conditional UPDATE rather than a read-then-write,
+ * because the race it resolves is the point — two requests presenting one code
+ * must produce exactly one winner.
+ */
+const fakeIntents = new Map<string, {
+  workspaceId: string; signingRequestId: string; recipientId: string;
+  recipientNormalizedEmail: string; expiresAt: Date; consumedAt: Date | null;
+}>();
+const fakeLinks = new Map<string, {
+  userId: string; matchedNormalizedEmail: string; linkedAt: Date;
+}>();
+
+function signingAccountLinks(): SigningAccountLinkRepository {
+  return {
+    createIntent: (input) => {
+      fakeIntents.set(input.intentDigest, {
+        workspaceId: input.workspaceId,
+        signingRequestId: input.signingRequestId,
+        recipientId: input.recipientId,
+        recipientNormalizedEmail: input.recipientNormalizedEmail,
+        expiresAt: input.expiresAt,
+        consumedAt: null,
+      });
+      return Promise.resolve();
+    },
+    claimIntent: (intentDigest, now) => {
+      const row = fakeIntents.get(intentDigest);
+      if (row === undefined || row.consumedAt !== null || row.expiresAt <= now) {
+        return Promise.resolve(null);
+      }
+      row.consumedAt = now;
+      return Promise.resolve({ ...row });
+    },
+    createLink: (input) => {
+      fakeLinks.set(`${input.signingRequestId}:${input.recipientId}`, {
+        userId: input.userId,
+        matchedNormalizedEmail: input.matchedNormalizedEmail,
+        linkedAt: input.linkedAt,
+      });
+      return Promise.resolve();
+    },
+    findLinkForRecipient: (signingRequestId, recipientId) =>
+      Promise.resolve(fakeLinks.get(`${signingRequestId}:${recipientId}`) ?? null),
+  };
+}
+
 function workflowReconciliation(
   store: InMemoryStore,
 ): SigningWorkflowReconciliationRepository {
@@ -2848,6 +2902,7 @@ export class FakeTransactionManager implements TransactionManager {
     try {
       const result = await operation({
         scope: "global",
+        signingAccountLinks: signingAccountLinks(),
         signingWorkflowReconciliation: workflowReconciliation(this.store),
         signingRequestExpiryIndex: expiryIndex(this.store),
         completionRetryIndex: completionRetryIndex(this.store),

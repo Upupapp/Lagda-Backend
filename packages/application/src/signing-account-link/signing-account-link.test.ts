@@ -16,6 +16,15 @@ import type {
 const NOW = 1_700_000_000_000;
 const clock = { now: () => NOW };
 
+/**
+ * The digest domain, stood in for.
+ *
+ * Deliberately not sha256 here: the test asserts that what is STORED is not
+ * the code, and a fake that transforms at all proves that as well as the real
+ * one would — while making it obvious the application layer does no hashing.
+ */
+const codes = { digestHandoffCode: (code: string) => `digest(${code})` };
+
 /** An in-memory stand-in that honours the conditional-claim semantics. */
 function repository() {
   const intents = new Map<string, {
@@ -73,25 +82,25 @@ describe("minting", () => {
   it("returns a code and stores only its digest", async () => {
     const { repo, intents } = repository();
 
-    const minted = await mintSigningLinkIntent(RECIPIENT, { clock, links: repo, ids });
+    const minted = await mintSigningLinkIntent(RECIPIENT, { clock, codes, links: repo, ids });
 
     expect(minted.code).toMatch(/^[A-Za-z0-9_-]+$/);
     // A stolen backup must not yield usable codes.
     expect([...intents.keys()][0]).not.toBe(minted.code);
-    expect([...intents.keys()][0]).toMatch(/^[a-f0-9]{64}$/);
+    expect([...intents.keys()][0]).toBe(`digest(${minted.code})`);
   });
 
   it("expires it quickly", async () => {
     const { repo } = repository();
-    const minted = await mintSigningLinkIntent(RECIPIENT, { clock, links: repo, ids });
+    const minted = await mintSigningLinkIntent(RECIPIENT, { clock, codes, links: repo, ids });
     expect(minted.expiresAt - NOW).toBeLessThanOrEqual(120_000);
     expect(minted.expiresAt).toBeGreaterThan(NOW);
   });
 
   it("mints a different code every time", async () => {
     const { repo } = repository();
-    const a = await mintSigningLinkIntent(RECIPIENT, { clock, links: repo, ids });
-    const b = await mintSigningLinkIntent(RECIPIENT, { clock, links: repo, ids });
+    const a = await mintSigningLinkIntent(RECIPIENT, { clock, codes, links: repo, ids });
+    const b = await mintSigningLinkIntent(RECIPIENT, { clock, codes, links: repo, ids });
     expect(a.code).not.toBe(b.code);
   });
 });
@@ -99,10 +108,10 @@ describe("minting", () => {
 describe("claiming", () => {
   it("binds when a VERIFIED address matches", async () => {
     const { repo, links } = repository();
-    const { code } = await mintSigningLinkIntent(RECIPIENT, { clock, links: repo, ids });
+    const { code } = await mintSigningLinkIntent(RECIPIENT, { clock, codes, links: repo, ids });
 
     const result = await claimSigningLink("usr_1", code, {
-      clock, links: repo, ids,
+      clock, codes, links: repo, ids,
       accounts: accounts({
         normalizedEmail: "signer@example.com", emailVerifiedAt: new Date(NOW),
       }),
@@ -117,10 +126,10 @@ describe("claiming", () => {
     // with a victim's address, never verifies it, and later satisfies the
     // comparison with a forwarded link.
     const { repo, links } = repository();
-    const { code } = await mintSigningLinkIntent(RECIPIENT, { clock, links: repo, ids });
+    const { code } = await mintSigningLinkIntent(RECIPIENT, { clock, codes, links: repo, ids });
 
     await expect(claimSigningLink("usr_1", code, {
-      clock, links: repo, ids,
+      clock, codes, links: repo, ids,
       accounts: accounts({
         normalizedEmail: "signer@example.com", emailVerifiedAt: null,
       }),
@@ -131,10 +140,10 @@ describe("claiming", () => {
 
   it("refuses a different account, however verified", async () => {
     const { repo, links } = repository();
-    const { code } = await mintSigningLinkIntent(RECIPIENT, { clock, links: repo, ids });
+    const { code } = await mintSigningLinkIntent(RECIPIENT, { clock, codes, links: repo, ids });
 
     await expect(claimSigningLink("usr_2", code, {
-      clock, links: repo, ids,
+      clock, codes, links: repo, ids,
       accounts: accounts({
         normalizedEmail: "someone.else@example.com", emailVerifiedAt: new Date(NOW),
       }),
@@ -146,7 +155,7 @@ describe("claiming", () => {
   it("refuses an unknown code", async () => {
     const { repo } = repository();
     await expect(claimSigningLink("usr_1", "never-minted", {
-      clock, links: repo, ids,
+      clock, codes, links: repo, ids,
       accounts: accounts({
         normalizedEmail: "signer@example.com", emailVerifiedAt: new Date(NOW),
       }),
@@ -155,9 +164,9 @@ describe("claiming", () => {
 
   it("refuses a code already used", async () => {
     const { repo } = repository();
-    const { code } = await mintSigningLinkIntent(RECIPIENT, { clock, links: repo, ids });
+    const { code } = await mintSigningLinkIntent(RECIPIENT, { clock, codes, links: repo, ids });
     const deps = {
-      clock, links: repo, ids,
+      clock, codes, links: repo, ids,
       accounts: accounts({
         normalizedEmail: "signer@example.com", emailVerifiedAt: new Date(NOW),
       }),
@@ -171,11 +180,11 @@ describe("claiming", () => {
 
   it("refuses an expired code", async () => {
     const { repo } = repository();
-    const { code } = await mintSigningLinkIntent(RECIPIENT, { clock, links: repo, ids });
+    const { code } = await mintSigningLinkIntent(RECIPIENT, { clock, codes, links: repo, ids });
 
     await expect(claimSigningLink("usr_1", code, {
       clock: { now: () => NOW + 200_000 },
-      links: repo, ids,
+      codes, links: repo, ids,
       accounts: accounts({
         normalizedEmail: "signer@example.com", emailVerifiedAt: new Date(NOW),
       }),
@@ -186,10 +195,10 @@ describe("claiming", () => {
     // A wrong guess must not return the code to the pool, or a stolen code
     // could be tried against account after account until one matched.
     const { repo } = repository();
-    const { code } = await mintSigningLinkIntent(RECIPIENT, { clock, links: repo, ids });
+    const { code } = await mintSigningLinkIntent(RECIPIENT, { clock, codes, links: repo, ids });
 
     await expect(claimSigningLink("usr_2", code, {
-      clock, links: repo, ids,
+      clock, codes, links: repo, ids,
       accounts: accounts({
         normalizedEmail: "someone.else@example.com", emailVerifiedAt: new Date(NOW),
       }),
@@ -197,7 +206,7 @@ describe("claiming", () => {
 
     // Even the rightful owner cannot use it now.
     await expect(claimSigningLink("usr_1", code, {
-      clock, links: repo, ids,
+      clock, codes, links: repo, ids,
       accounts: accounts({
         normalizedEmail: "signer@example.com", emailVerifiedAt: new Date(NOW),
       }),
@@ -217,10 +226,10 @@ describe("claiming", () => {
       { user: "usr_1", code: null, identity: { normalizedEmail: "signer@example.com", emailVerifiedAt: null } },
       { user: "usr_1", code: null, identity: null },
     ]) {
-      const minted = await mintSigningLinkIntent(RECIPIENT, { clock, links: repo, ids });
+      const minted = await mintSigningLinkIntent(RECIPIENT, { clock, codes, links: repo, ids });
       try {
         await claimSigningLink(scenario.user, scenario.code ?? minted.code, {
-          clock, links: repo, ids, accounts: accounts(scenario.identity),
+          clock, codes, links: repo, ids, accounts: accounts(scenario.identity),
         });
       } catch (error) {
         messages.add((error as Error).message);
@@ -234,10 +243,10 @@ describe("claiming", () => {
     // If the account later changes its address, the audit still says which
     // one was compared.
     const { repo, links } = repository();
-    const { code } = await mintSigningLinkIntent(RECIPIENT, { clock, links: repo, ids });
+    const { code } = await mintSigningLinkIntent(RECIPIENT, { clock, codes, links: repo, ids });
 
     await claimSigningLink("usr_1", code, {
-      clock, links: repo, ids,
+      clock, codes, links: repo, ids,
       accounts: accounts({
         normalizedEmail: "signer@example.com", emailVerifiedAt: new Date(NOW),
       }),

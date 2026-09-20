@@ -109,6 +109,12 @@ const CeremonyResponseSchema = Type.Object({
   ]),
 }, { title: "SigningCeremony", additionalProperties: false });
 
+const LinkIntentResponseSchema = Type.Object({
+  /** Returned once. Held in memory by the caller, never persisted here. */
+  code: Type.String(),
+  expiresAt: Type.String(),
+}, { title: "SigningLinkIntent", additionalProperties: false });
+
 const ConsentBodySchema = Type.Object({
   /**
    * The ONLY value a client may send to this surface.
@@ -128,6 +134,17 @@ export interface SigningCeremonyRouteOptions {
   readonly signingAccessDependencies: () => SigningAccessDependencies;
   readonly rateLimit?: RateLimitOptions;
   readonly metrics?: MetricsRecorder;
+  /**
+   * Mints a sign-in handoff code for the recipient whose session this is.
+   *
+   * Injected rather than composed here, because the composition needs a
+   * global-scope repository and this route file deliberately knows only about
+   * the ceremony.
+   */
+  readonly mintLinkIntent: (rawSessionToken: string) => Promise<{
+    readonly code: string;
+    readonly expiresAt: number;
+  }>;
 }
 
 function noStore(reply: FastifyReply): void {
@@ -345,6 +362,45 @@ export function registerSigningCeremonyRoutes(
     });
 
     return reply.status(200).send(present(view));
+  });
+
+  // ── Sign-in handoff ─────────────────────────────────────────────────────
+  //
+  // Mints a short-lived code that an authenticated account can present in the
+  // OTHER realm to say "that recipient is me".
+  //
+  // It does not bind anything. It cannot: this realm has no idea who is
+  // signed in elsewhere, and finding out would mean reading across a boundary
+  // that five separate controls exist to keep shut. All it does is make a
+  // claim checkable by the side that can check it.
+  //
+  // Everything on the intent comes from the resolved session. The body is
+  // empty because there is nothing a caller could usefully say here.
+  app.post("/signing/ceremony/link-intent", {
+    schema: { response: { 200: LinkIntentResponseSchema } },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const raw = sessionOr401(request, reply);
+    if (raw === null) return reply;
+
+    if (!await csrfOk(request, raw)) return recipientCsrfRejected(reply);
+
+    await limit(request, options, [{
+      policy: policyById("signing-ceremony.link-intent.ip"),
+      scope: { type: "ip", ipAddress: request.ip },
+    }]);
+
+    const minted = await options.mintLinkIntent(raw);
+
+    // Ids only. Never the code, which is a credential, and never the address.
+    request.log.info({
+      event: "signing_account_link.intent_minted",
+    }, "signing_account_link.intent_minted");
+
+    return reply.status(200).send({
+      code: minted.code,
+      expiresAt: new Date(minted.expiresAt).toISOString(),
+    });
   });
 }
 

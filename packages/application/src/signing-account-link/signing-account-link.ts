@@ -32,7 +32,7 @@
 // Checked at BIND time rather than trusted from registration, because
 // verification state can change and the binding is what it justifies.
 
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import type { Clock } from "../common/ports/index.js";
 import type {
   SigningAccountLinkRepository,
@@ -49,8 +49,18 @@ function mintCode(): string {
   return randomBytes(16).toString("base64url");
 }
 
-function digest(code: string): string {
-  return createHash("sha256").update(code, "utf8").digest("hex");
+/**
+ * Digesting a handoff code is a CREDENTIAL digest, and credential digests are
+ * domain-separated in one place — `api/security/crypto` — so that two token
+ * types which happen to be the same string cannot produce the same digest.
+ *
+ * Taken as a port rather than computed here. An architecture test asserts
+ * `createHash` appears in a small allowlist of files with stated domains, and
+ * the honest way past it is to use the module that owns the domain, not to
+ * lengthen the list.
+ */
+export interface HandoffCodeDigester {
+  digestHandoffCode: (code: string) => string;
 }
 
 export class SigningLinkNotClaimableError extends Error {
@@ -66,6 +76,7 @@ export class SigningLinkNotClaimableError extends Error {
 
 export interface MintSigningLinkIntentDependencies {
   readonly clock: Clock;
+  readonly codes: HandoffCodeDigester;
   readonly links: SigningAccountLinkRepository;
   readonly ids: () => string;
 }
@@ -96,7 +107,7 @@ export async function mintSigningLinkIntent(
   const code = mintCode();
 
   await deps.links.createIntent({
-    intentDigest: digest(code),
+    intentDigest: deps.codes.digestHandoffCode(code),
     workspaceId: context.workspaceId,
     signingRequestId: context.signingRequestId,
     recipientId: context.recipientId,
@@ -110,6 +121,7 @@ export async function mintSigningLinkIntent(
 
 export interface ClaimSigningLinkDependencies {
   readonly clock: Clock;
+  readonly codes: HandoffCodeDigester;
   readonly links: SigningAccountLinkRepository;
   readonly accounts: {
     /** The caller's own canonical address and whether it is proved. */
@@ -141,7 +153,7 @@ export async function claimSigningLink(
 ): Promise<ClaimedSigningLink> {
   const now = new Date(deps.clock.now());
 
-  const intent = await deps.links.claimIntent(digest(code), now);
+  const intent = await deps.links.claimIntent(deps.codes.digestHandoffCode(code), now);
   if (intent === null) throw new SigningLinkNotClaimableError();
 
   const identity = await deps.accounts.findIdentity(userId);
@@ -165,4 +177,65 @@ export async function claimSigningLink(
     signingRequestId: intent.signingRequestId,
     recipientId: intent.recipientId,
   };
+}
+
+// ── The route-facing halves ────────────────────────────────────────────────
+
+/**
+ * Mints an intent for the recipient whose session this is.
+ *
+ * Takes the RAW session token and resolves it here, so the ceremony's own
+ * identity is the only source of the workspace, request, recipient and
+ * address. There is no parameter a request body could steer — the caller
+ * supplies a credential and nothing else.
+ */
+export async function requestSigningLinkIntent(
+  rawSessionToken: string,
+  deps: MintSigningLinkIntentDependencies & {
+    readonly resolveSession: (raw: string) => Promise<{
+      readonly workspaceId: string;
+      readonly signingRequestId: string;
+      readonly recipientId: string;
+    }>;
+    /** The recipient's delivery address, from the immutable snapshot. */
+    readonly readRecipientEmail: (raw: string) => Promise<string>;
+    readonly normalize: (raw: string) => string | null;
+  },
+): Promise<MintedSigningLinkIntent> {
+  const context = await deps.resolveSession(rawSessionToken);
+  const email = await deps.readRecipientEmail(rawSessionToken);
+
+  const normalized = deps.normalize(email);
+  // A snapshot address that will not normalize cannot be compared with an
+  // account's, so there is nothing to offer. Refused rather than bound to a
+  // value nobody could match.
+  if (normalized === null) throw new SigningLinkNotClaimableError();
+
+  return mintSigningLinkIntent({
+    workspaceId: context.workspaceId,
+    signingRequestId: context.signingRequestId,
+    recipientId: context.recipientId,
+    recipientNormalizedEmail: normalized,
+  }, deps);
+}
+
+/** Whether this recipient is bound, for the ceremony view. */
+export async function readSigningAccountLink(
+  signingRequestId: string,
+  recipientId: string,
+  deps: { readonly links: SigningAccountLinkRepository },
+): Promise<{ readonly linked: true; readonly maskedEmail: string } | { readonly linked: false }> {
+  const link = await deps.links.findLinkForRecipient(signingRequestId, recipientId);
+  if (link === null) return { linked: false };
+  // MASKED on the way out. The ceremony already showed this recipient their
+  // own address, but a view that echoes a full address is one refactor away
+  // from echoing it somewhere it was not already known.
+  return { linked: true, maskedEmail: maskEmail(link.matchedNormalizedEmail) };
+}
+
+function maskEmail(value: string): string {
+  const at = value.indexOf("@");
+  if (at <= 0) return "•••";
+  const first = value.slice(0, 1);
+  return `${first}${"•".repeat(Math.max(1, at - 1))}${value.slice(at)}`;
 }

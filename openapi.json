@@ -10674,6 +10674,58 @@
         }
       }
     },
+    "/me/signing-links": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "ClaimSigningLinkRequest",
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "code": {
+                    "minLength": 8,
+                    "maxLength": 64,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "ClaimSigningLinkResponse",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "signingRequestId",
+                    "recipientId"
+                  ],
+                  "properties": {
+                    "signingRequestId": {
+                      "type": "string"
+                    },
+                    "recipientId": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/me/password": {
       "post": {
         "requestBody": {
@@ -11952,6 +12004,36 @@
                           "type": "null"
                         }
                       ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/signing/ceremony/link-intent": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "SigningLinkIntent",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "expiresAt"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string"
                     }
                   }
                 }
