@@ -166,6 +166,15 @@ export class SigningSubmissionInProgressError extends ApplicationError {
 
 export interface SignatureRepresentationInput {
   readonly method: "typed" | "drawn";
+  /**
+   * How the signer produced this, as their client reports it.
+   *
+   * Absent when the client says nothing, which older clients will. The value
+   * `applied-from-saved` is NOT accepted here — only the server may record
+   * that, because only the server knows whether it took bytes from a stored
+   * signature.
+   */
+  readonly provenance?: "typed-live" | "drawn-live" | "uploaded-live";
   readonly text?: string;
   readonly styleIndex?: number;
   readonly base64?: string;
@@ -404,6 +413,12 @@ function prepareRepresentations(
           rasterBytes: null, rasterMediaType: null,
           rasterWidth: null, rasterHeight: null,
           digest: deps.signatureImages.digestCanonical(canonical),
+          // The client's account of the act, or null when it said nothing.
+          // Never inferred from the payload's shape: a typed payload proves
+          // the mark is typed, not that a person typed it here — and
+          // inventing that distinction would put a claim nobody made into a
+          // row that can never be corrected.
+          captureProvenance: supplied.provenance ?? null,
         }),
       });
       continue;
@@ -427,6 +442,11 @@ function prepareRepresentations(
         // Over the bytes AS STORED. If validation had normalized them, this
         // would still be the stored bytes rather than what arrived (§202).
         digest: validated.digest,
+        // Drawn and uploaded are indistinguishable once both are PNGs, so
+        // this is the client's report rather than an observation. Worth
+        // recording anyway: the alternative in force until now was filing an
+        // uploaded image as though it had been drawn.
+        captureProvenance: supplied.provenance ?? null,
       }),
     });
   }

@@ -41,6 +41,8 @@ export interface NewSigningRepresentation {
   readonly rasterHeight: number | null;
   /** SHA-256 over the bytes AS STORED, computed here, never claimed. */
   readonly digest: string;
+  /** How it was captured, or null when the client did not say. */
+  readonly captureProvenance: string | null;
 }
 
 export interface NewSigningFieldValue {

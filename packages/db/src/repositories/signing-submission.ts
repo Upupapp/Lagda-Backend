@@ -89,6 +89,7 @@ export function createRecipientSubmissionRepository(
             raster_width: rep.rasterWidth,
             raster_height: rep.rasterHeight,
             digest: rep.digest,
+            capture_provenance: rep.captureProvenance,
           })))
           .execute();
       }
