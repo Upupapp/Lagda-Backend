@@ -55,15 +55,10 @@ jobs:
         run: npm run typecheck
 
       # Architecture gate. See the note at the top of this file.
-      - name: Lint
-        run: npm run lint
-
-      - name: Test
-        run: npm test
-
-      - name: Build
-        run: npm run build
-
+      # Placed BEFORE Lint deliberately. Lint has a standing 45-error debt and
+      # fails every run, and a guard that only executes after it would never
+      # execute at all — which is how this file went four commits stale in the
+      # first place. A check downstream of a known-red step is decoration.
       # openapi.json is a COMMITTED artefact, so it can fall out of date
       # silently — and it did: the copy in the tree was four route-changing
       # commits behind, missing /signatures, /audit, the completed-document
@@ -84,6 +79,15 @@ jobs:
             exit 1
           fi
           echo "openapi.json matches the current routes."
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
 
       # NOT CHECKED HERE, deliberately stated rather than implied: the LAGDA
       # frontend does not compile against @lagda/contracts. The strongest reason
