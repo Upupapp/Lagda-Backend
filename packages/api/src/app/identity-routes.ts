@@ -108,6 +108,9 @@ export interface IdentityDependencies {
   /** Validates double-submit CSRF for an authenticated request. See sign-out. */
   readonly validateCsrf: (request: FastifyRequest) => boolean;
   readonly signatures: () => UserSignatureRepository;
+  readonly claimSigningLink: (
+    userId: UserId, code: string,
+  ) => Promise<{ signingRequestId: string; recipientId: string }>;
   readonly signatureImages: () => SignatureImageValidator;
   readonly now: () => Date;
   /** Resolves a FULL session. Null for anonymous and for pre-auth credentials. */
@@ -222,6 +225,7 @@ export function registerIdentityRoutes(
     // hook never runs here. The saved-signature writes ask for it explicitly.
     validateCsrf: deps.validateCsrf,
     signatures: deps.signatures,
+    claimSigningLink: deps.claimSigningLink,
     signatureImages: deps.signatureImages,
     now: deps.now,
     currentUserDependencies: deps.currentUser,

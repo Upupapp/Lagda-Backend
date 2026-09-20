@@ -54,6 +54,10 @@ import {
 } from "../security/identifiers.js";
 import { createUserSignatureRepository } from "@lagda/db";
 import { createSignatureImageValidator } from "../security/signature-image.js";
+import { randomUUID } from "node:crypto";
+import { claimSigningLink, normalizeEmail } from "@lagda/application";
+import { createSigningAccountLinkRepository } from "@lagda/db";
+import { createHandoffCodeDigester } from "../security/crypto.js";
 
 /**
  * The RLS setting a transaction sets to act as one user.
@@ -448,6 +452,38 @@ export function buildIdentity(
       }),
 
       signatures: () => createUserSignatureRepository(db),
+
+      // The workspace half of the account binding. Runs in GLOBAL scope: the
+      // handoff tables belong to no tenant, which is what lets a message pass
+      // between two realms that cannot see each other's scope.
+      claimSigningLink: async (userId: UserId, code: string) =>
+        // A transaction directly on `db`, not a TransactionManager scope:
+        // this module deliberately has no unit of work (see the header), and
+        // the handoff tables carry no row-level security, so there is no
+        // tenant context to establish. The transaction is here for atomicity
+        // alone — consuming the code and writing the link must not come apart.
+        db.transaction().execute(async trx => claimSigningLink(userId, code, {
+          clock: { now: () => clock.now() },
+          codes: createHandoffCodeDigester(),
+          links: createSigningAccountLinkRepository(trx),
+          ids: () => `sal_${randomUUID().replace(/-/g, "")}`,
+          accounts: {
+            findIdentity: async (id: string) => {
+              const row = await createAccountProfileRepository(db)
+                .findCurrentUser(id as UserId);
+              if (row === null) return null;
+              const normalized = normalizeEmail(row.email);
+              if (normalized.outcome !== "ok") return null;
+              return {
+                normalizedEmail: normalized.normalized,
+                // Derived, because the projection exposes a boolean rather
+                // than the timestamp. Either way the question is the same:
+                // has this address been proved?
+                emailVerifiedAt: row.emailVerified ? new Date(clock.now()) : null,
+              };
+            },
+          },
+        })),
       signatureImages: () => createSignatureImageValidator(),
       // `clock` here yields epoch millis; the repository stores timestamptz.
       now: () => new Date(clock.now()),

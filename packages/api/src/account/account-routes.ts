@@ -9,6 +9,7 @@
 //   GET    /me/signatures           the caller's saved signatures
 //   PUT    /me/signatures/:purpose  save or replace one
 //   DELETE /me/signatures/:purpose  remove one
+//   POST   /me/signing-links        claim a signing handoff code
 //
 // ── There is no user id in any path ────────────────────────────────────────
 //
@@ -93,6 +94,16 @@ const SavedSignatureSchema = Type.Object({
 const SavedSignatureListSchema = Type.Object({
   signatures: Type.Array(SavedSignatureSchema),
 }, { title: "SavedSignatureList", additionalProperties: false });
+
+const ClaimSigningLinkRequestSchema = Type.Object({
+  /** The opaque code minted by the ceremony. Never an id, never an address. */
+  code: Type.String({ minLength: 8, maxLength: 64 }),
+}, { title: "ClaimSigningLinkRequest", additionalProperties: false });
+
+const ClaimSigningLinkResponseSchema = Type.Object({
+  signingRequestId: Type.String(),
+  recipientId: Type.String(),
+}, { title: "ClaimSigningLinkResponse", additionalProperties: false });
 
 // ── Response projections ────────────────────────────────────────────────────
 
@@ -221,6 +232,10 @@ export interface AccountRouteOptions {
    */
   readonly validateCsrf: (request: FastifyRequest) => boolean;
   readonly signatures: () => UserSignatureRepository;
+  /** Claims a ceremony handoff code as this account. See migration 051. */
+  readonly claimSigningLink: (
+    userId: UserId, code: string,
+  ) => Promise<{ signingRequestId: string; recipientId: string }>;
   readonly signatureImages: () => SignatureImageValidator;
   readonly now: () => Date;
   readonly currentUserDependencies: () => GetCurrentUserDependencies;
@@ -475,6 +490,51 @@ export function registerAccountRoutes(
     // way, and a 404 would only invite a retry that cannot help.
     await options.signatures().remove(actor.userId, purpose);
     return reply.status(204).send();
+  });
+
+  // ── Signing handoff ─────────────────────────────────────────────────────
+  //
+  // The WORKSPACE half of the account binding. The recipient realm minted a
+  // code saying "whoever presents this claims to be the account for this
+  // address"; this is the side that can check it, because only this side
+  // knows who is signed in.
+  //
+  // It grants nothing. No ceremony is opened, no document becomes readable,
+  // no signature becomes possible. It records that an account and a recipient
+  // are the same person, and the ceremony remains gated by the credential
+  // from the emailed link exactly as before.
+  app.post("/me/signing-links", {
+    schema: {
+      body: ClaimSigningLinkRequestSchema,
+      response: { 200: ClaimSigningLinkResponseSchema },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await options.authenticatedUser(request);
+    if (actor === null) return unauthenticated(reply);
+    if (!options.validateCsrf(request)) return csrfFailed(reply);
+
+    const { code } = request.body as { code: string };
+    try {
+      const claimed = await options.claimSigningLink(actor.userId, code);
+      // Ids only. Never the code, never either address.
+      request.log.info({
+        event: "signing_account_link.claimed",
+        signingRequestId: claimed.signingRequestId,
+      }, "signing_account_link.claimed");
+      return reply.status(200).send(claimed);
+    } catch {
+      // ONE refusal for every cause — unknown, expired, already claimed,
+      // wrong account, unverified address. Distinguishing them would let a
+      // caller holding a code learn that some other account owns that
+      // address, which is exactly what the single error prevents.
+      return reply.status(422).send({
+        error: {
+          code: "SIGNING_LINK_NOT_CLAIMABLE",
+          message: "This sign-in link could not be used. Open the signing link again and retry.",
+        },
+      });
+    }
   });
 
   // ── Password ────────────────────────────────────────────────────────────

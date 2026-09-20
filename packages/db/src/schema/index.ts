@@ -345,6 +345,40 @@ export interface RecipientSubmissionsTable {
  * is the picture someone kept so they need not redraw it. Mutable and
  * deletable, unlike its evidence counterpart — see migration 050.
  */
+/**
+ * A short-lived code joining the recipient realm to the workspace realm.
+ *
+ * Minted in the ceremony, consumed once by an authenticated account. Digested,
+ * never stored raw. See migration 051.
+ */
+export interface SigningLinkIntentsTable {
+  intent_digest: string;
+  workspace_id: string;
+  signing_request_id: string;
+  request_recipient_id: string;
+  recipient_normalized_email: string;
+  created_at: ColumnType<Date, Date, Date>;
+  expires_at: ColumnType<Date, Date, Date>;
+  consumed_at: ColumnType<Date | null, Date | null, Date | null>;
+}
+
+/**
+ * An account bound to a recipient of a signing request.
+ *
+ * WRITE-ONLY FROM THE CEREMONY, READ-ONLY FOR AUDIT. Never a join key for a
+ * list, inbox or dashboard — migration 051 explains at length why that rule is
+ * the thing keeping the two realms apart.
+ */
+export interface SigningAccountLinksTable {
+  signing_account_link_id: string;
+  user_id: string;
+  workspace_id: string;
+  signing_request_id: string;
+  request_recipient_id: string;
+  matched_normalized_email: string;
+  linked_at: ColumnType<Date, Date, Date>;
+}
+
 export interface UserSignaturesTable {
   user_signature_id: string;
   user_id: string;
@@ -1346,6 +1380,8 @@ export interface Database {
   recipient_submissions: RecipientSubmissionsTable;
   signing_representations: SigningRepresentationsTable;
   user_signatures: UserSignaturesTable;
+  signing_link_intents: SigningLinkIntentsTable;
+  signing_account_links: SigningAccountLinksTable;
   signing_field_values: SigningFieldValuesTable;
   signing_access_grants: SigningAccessGrantsTable;
   notification_intents: NotificationIntentsTable;

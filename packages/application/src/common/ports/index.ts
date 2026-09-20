@@ -449,6 +449,23 @@ export interface WorkspaceUnitOfWork {
  */
 export interface GlobalUnitOfWork {
   readonly scope: "global";
+
+  /**
+   * The account-binding handoff (Phase 2).
+   *
+   * Global for the same reason the exceptions above are, with one difference
+   * worth stating: those tables carry no policy because a cross-tenant SWEEP
+   * needs to see every tenant. These two carry none because they are a MESSAGE
+   * BETWEEN realms — an intent minted by a recipient session and claimed by an
+   * account, neither of which can see the other's scope. A message only one
+   * side can read is not a message.
+   *
+   * `signing_account_links` offers no lookup by user, deliberately. Migration
+   * 051 explains why at length; the short version is that a query by user is
+   * the query an inbox would need, and this table must not become the thing an
+   * inbox is built on.
+   */
+  readonly signingAccountLinks: SigningAccountLinkRepository;
   /**
    * Outstanding signing-workflow advances, across every tenant (BACKEND-37).
    *
@@ -712,3 +729,5 @@ export * from "./completion.js";
 export * from "./completion-certificate.js";
 
 export * from "./notifications.js";
+import type { SigningAccountLinkRepository } from "./signing-account-link.js";
+export * from "./signing-account-link.js";

@@ -153,6 +153,7 @@ async function build(options: { authenticated?: boolean; csrfValid?: boolean } =
     config: CONFIG,
     validateCsrf: () => options.csrfValid !== false,
     signatures: () => signatures,
+    claimSigningLink: () => Promise.reject(new Error("not used")),
     signatureImages: () => createSignatureImageValidator(),
     now: () => new Date(1_700_000_000_000),
     authenticatedUser: () => Promise.resolve(

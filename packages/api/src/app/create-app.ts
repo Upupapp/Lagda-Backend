@@ -4,6 +4,13 @@
 // what lets integration tests use `app.inject()` with no TCP port, no free-port
 // races and no cleanup — and it is why importing this package cannot start a
 // server (INV: no listen on import).
+import { randomUUID } from "node:crypto";
+import { createHandoffCodeDigester } from "../security/crypto.js";
+import {
+  requestSigningLinkIntent, readSigningAccountLink,
+  resolveRecipientSession, getSigningCeremony,
+  normalizeEmail,
+} from "@lagda/application";
 
 import Fastify, {
   type FastifyError, type FastifyInstance, type FastifyRequest,
@@ -807,6 +814,42 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
         config,
         ceremonyDependencies: ceremony,
         signingAccessDependencies: signingAccess,
+        // Composed here because minting needs a GLOBAL-scope repository and
+        // the ceremony route file deliberately knows only about the ceremony.
+        readAccountLink: async (signingRequestId: string, recipientId: string) => {
+          const access = signingAccess();
+          return access.transactions.runGlobal(async uow => {
+            const link = await readSigningAccountLink(
+              signingRequestId, recipientId, { links: uow.signingAccountLinks });
+            return link.linked ? { maskedEmail: link.maskedEmail } : null;
+          });
+        },
+        mintLinkIntent: async (raw: string) => {
+          const access = signingAccess();
+          return access.transactions.runGlobal(async uow =>
+            requestSigningLinkIntent(raw, {
+              clock: access.clock,
+              codes: createHandoffCodeDigester(),
+              links: uow.signingAccountLinks,
+              ids: () => `slk_${randomUUID().replace(/-/g, "")}`,
+              resolveSession: async (token) => {
+                const context = await resolveRecipientSession(token, access);
+                return {
+                  workspaceId: context.workspaceId,
+                  signingRequestId: context.signingRequestId,
+                  recipientId: context.recipientId,
+                };
+              },
+              readRecipientEmail: async (token) => {
+                const view = await getSigningCeremony(token, ceremony());
+                return view.recipient.email;
+              },
+              normalize: (raw) => {
+                const result = normalizeEmail(raw);
+                return result.outcome === "ok" ? result.normalized : null;
+              },
+            }));
+        },
         ...(signingLimiter === undefined
           ? {}
           : { rateLimit: { limiter: signingLimiter, metrics } }),

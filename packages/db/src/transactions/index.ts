@@ -38,6 +38,7 @@ import {
   createFinalizationRepository,
 } from "../repositories/evidence.js";
 import { createUploadRepository } from "../repositories/uploads.js";
+import { createSigningAccountLinkRepository } from "../repositories/signing-account-links.js";
 import { createIdempotencyRepository } from "../repositories/idempotency.js";
 import {
   createScopedInvitationRepository, createInvitationCredentialLookup,
@@ -368,6 +369,10 @@ export function createTransactionManager(db: Kysely<Database>): TransactionManag
         // it fails closed rather than seeing everything.
         return operation({
           scope: "global",
+          // The account-binding handoff. Not a sweep exception like the four
+          // below — a message between two credential realms, readable by
+          // neither of their scopes and therefore by this one.
+          signingAccountLinks: createSigningAccountLinkRepository(trx),
           // Identifiers only, from the one table that carries no policy
           // because a cross-tenant scan cannot have one without BYPASSRLS.
           signingWorkflowReconciliation:
