@@ -10798,6 +10798,74 @@
         }
       }
     },
+    "/me/notifications": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "NotificationFeed",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "notifications"
+                  ],
+                  "properties": {
+                    "notifications": {
+                      "type": "array",
+                      "items": {
+                        "title": "FeedNotification",
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "type",
+                          "workspaceId",
+                          "sourceKind",
+                          "sourceId",
+                          "templateInput",
+                          "createdAt"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "workspaceId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "sourceKind": {
+                            "type": "string"
+                          },
+                          "sourceId": {
+                            "type": "string"
+                          },
+                          "templateInput": {},
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/me/password": {
       "post": {
         "requestBody": {
