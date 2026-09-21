@@ -6,12 +6,22 @@
 // not have — but provider behaviour (headers, streams, error shapes, conditional
 // writes) is only ever proven against a real S3-compatible service (§191).
 
+// The port's own module, not the package barrel.
+//
+// This file used to live in @lagda/storage and import the package by name,
+// which closed a cycle: @lagda/storage depends on @lagda/application, so
+// application importing storage made each depend on the other. It resolved
+// only because workspace hoisting put both in one node_modules, and would
+// have broken the moment either package was built or consumed alone.
+//
+// The fake never belonged there. It implements a port application owns and
+// contains no provider code at all — no SDK, no config, no network.
 import {
   ObjectAlreadyExistsError,
   type ByteStream, type ObjectStorage, type PutObjectInput,
   type StorageObjectRef, type StoredObject, type StoredObjectContent,
   type StoredObjectMetadata,
-} from "@lagda/application";
+} from "../common/ports/storage.js";
 
 interface StoredEntry {
   readonly bytes: Uint8Array;

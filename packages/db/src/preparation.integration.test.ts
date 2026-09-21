@@ -18,8 +18,7 @@ import type {
 import type {
   ArtifactId, PreparationId, PreparationFieldId, PreparationFieldRecord,
 } from "@lagda/application";
-import { createDatabase, type LagdaDatabase } from "./client/index.js";
-import { loadDatabaseConfig } from "./config/index.js";
+import { type LagdaDatabase } from "./client/index.js";
 import { createTransactionManager } from "./transactions/index.js";
 import {
   createTestDatabase, createRuntimeRoleDatabase, truncateAll, hasIntegrationDatabase, seedUser,

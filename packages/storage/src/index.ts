@@ -19,9 +19,16 @@ export { mapStorageError, isNotFound } from "./s3/s3-error-mapper.js";
 // SDK. Keeping bucket provisioning behind this boundary is what lets the import
 // ban stay absolute rather than "absolute except in tests".
 
+// Re-exported, not defined here any more.
+//
+// The double implements a port @lagda/application owns and holds no provider
+// code, so it belongs beside the port (INV-005) — and defining it here closed
+// a package cycle, since storage already depends on application. It is still
+// exported from this package so a caller that already imports @lagda/storage
+// does not have to add a second import to get the fake.
 export {
   createInMemoryObjectStorage, collect, type InMemoryObjectStorage,
-} from "./testing/in-memory-object-storage.js";
+} from "@lagda/application/test-support";
 export {
   ensureTestBuckets, testStorageConfig, samplePdf, TEST_BUCKETS,
 } from "./testing/test-service.js";

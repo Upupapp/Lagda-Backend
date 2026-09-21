@@ -18,6 +18,11 @@ const CONFIG = {
   maxPollAttempts: 3,
 };
 
+// `async` with nothing awaited, deliberately. The scanner port takes an
+// AsyncIterable, and only an async generator produces one — dropping `async`
+// here yields a plain Iterable and the call site stops compiling. The rule is
+// right in general and wrong about this shape.
+// eslint-disable-next-line @typescript-eslint/require-await
 async function* oneChunk(bytes: Uint8Array): AsyncIterable<Uint8Array> {
   yield bytes;
 }
@@ -120,7 +125,7 @@ describe("createMetaDefenderScanner", () => {
   });
 
   it("isAvailable resolves true when the apikey endpoint responds ok", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce({ ok: true } as Response));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce({ ok: true }));
     const scanner = createMetaDefenderScanner(CONFIG);
     expect(await scanner.isAvailable()).toBe(true);
   });

@@ -25,8 +25,7 @@ import type {
   RecipientSigningSessionId, SigningConsentId,
   NewSigningRequestSnapshot,
 } from "@lagda/application";
-import { createDatabase, type LagdaDatabase } from "./client/index.js";
-import { loadDatabaseConfig } from "./config/index.js";
+import { type LagdaDatabase } from "./client/index.js";
 import { createTransactionManager } from "./transactions/index.js";
 import {
   createTestDatabase, createRuntimeRoleDatabase, truncateAll, hasIntegrationDatabase, seedUser,

@@ -251,7 +251,7 @@ suite("completion pipeline (real Postgres + pg-boss + MinIO)", () => {
     // direct function call.
     const scheduler = createJobScheduler(boss);
     await scheduler.enqueue(CompletionProcessJob, {
-      workspaceId: WS as string, completionRunId: runId as string,
+      workspaceId: WS, completionRunId: runId,
     });
 
     await until(async () => {
@@ -286,10 +286,10 @@ suite("completion pipeline (real Postgres + pg-boss + MinIO)", () => {
 
     const scheduler = createJobScheduler(boss);
     await scheduler.enqueue(CompletionProcessJob, {
-      workspaceId: WS as string, completionRunId: runId as string,
+      workspaceId: WS, completionRunId: runId,
     });
     await scheduler.enqueue(CompletionProcessJob, {
-      workspaceId: WS as string, completionRunId: runId as string,
+      workspaceId: WS, completionRunId: runId,
     });
 
     await until(async () => {
@@ -329,7 +329,7 @@ suite("completion pipeline (real Postgres + pg-boss + MinIO)", () => {
     `.execute(owner.db);
 
     const scheduler = createJobScheduler(boss);
-    await scheduler.enqueue(CompletionReconcileJob, { workspaceId: WS as string });
+    await scheduler.enqueue(CompletionReconcileJob, { workspaceId: WS });
 
     await until(async () => {
       const state = await sql<{ state: string }>`

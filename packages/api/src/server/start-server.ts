@@ -37,8 +37,7 @@ import {
   createDiskCapacityChecker,
 } from "@lagda/storage";
 import type { ObjectStorage, JobScheduler } from "@lagda/application";
-import { PgBoss } from "pg-boss";
-import { createJobScheduler } from "./job-scheduler.js";
+import { createCompletionQueue, type CompletionQueue } from "./job-scheduler.js";
 import { createClamAvScanner, createMetaDefenderScanner, loadScannerConfig } from "@lagda/scanning";
 import { createPdfInspector, sha256 } from "@lagda/sealing";
 import { createArgon2PasswordHasher } from "../security/password-hasher.js";
@@ -814,22 +813,23 @@ export async function startServer(): Promise<StartedServer> {
   // swallowed, not fatal: an API that could not reach its own database would
   // already have refused to start above, but pg-boss's own schema being
   // briefly unready during a rolling deploy must not take signing down.
-  let completionScheduler: JobScheduler | undefined;
-  let completionBoss: PgBoss | undefined;
+  //
+  // The client itself is built by `createCompletionQueue`, which lives with
+  // the queue adapter rather than here. That is not tidying: this file is the
+  // one most likely to be edited when somebody wants "just one background
+  // thing in the web process", and it previously held a live PgBoss instance
+  // in scope next to the Fastify app, one `.work()` away from starting a
+  // consumer inside an HTTP replica. The factory hands back a publish-only
+  // handle, so that call is no longer reachable from here.
+  let completionQueue: CompletionQueue | undefined;
   try {
-    completionBoss = new PgBoss({
+    completionQueue = await createCompletionQueue({
       connectionString: databaseConfig.connectionString,
-      schema: "pgboss",
-      migrate: false,
-      max: 2,
     });
-    completionBoss.on("error", () => undefined);
-    await completionBoss.start();
-    completionScheduler = createJobScheduler(completionBoss);
   } catch {
-    completionScheduler = undefined;
-    completionBoss = undefined;
+    completionQueue = undefined;
   }
+  const completionScheduler: JobScheduler | undefined = completionQueue?.scheduler;
 
   const app = await createApp({
     config,
@@ -866,9 +866,9 @@ export async function startServer(): Promise<StartedServer> {
   const targets: ShutdownTarget[] = [
     { name: "http", close: () => app.close() },
     { name: "database", close: () => database.close() },
-    ...(completionBoss === undefined
+    ...(completionQueue === undefined
       ? []
-      : [{ name: "completion-scheduler", close: () => completionBoss.stop({ graceful: false }) }]),
+      : [{ name: "completion-scheduler", close: () => completionQueue.close() }]),
   ];
 
   const shutdown = createShutdown({

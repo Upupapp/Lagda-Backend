@@ -50,6 +50,11 @@ async function fakeClamd(
   return { port: address.port, server };
 }
 
+// `async` with nothing awaited, deliberately. The scanner port takes an
+// AsyncIterable, and only an async generator produces one — dropping `async`
+// here yields a plain Iterable and the call site stops compiling. The rule is
+// right in general and wrong about this shape.
+// eslint-disable-next-line @typescript-eslint/require-await
 async function* oneChunk(bytes: Uint8Array): AsyncIterable<Uint8Array> {
   yield bytes;
 }

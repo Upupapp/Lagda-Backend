@@ -48,7 +48,7 @@ const suite = hasIntegrationDatabase() ? describe : describe.skip;
 
 function sqlstateOf(error: unknown): string | undefined {
   return typeof error === "object" && error !== null && "code" in error
-    ? String((error as { code: unknown }).code)
+    ? String((error).code)
     : undefined;
 }
 
@@ -107,7 +107,7 @@ suite("verification_id format, against the live constraint", () => {
     expect(found.rows[0]?.verification_id).toBe(verificationId);
   });
 
-  it("mints identifiers the public verify page also accepts", async () => {
+  it("mints identifiers the public verify page also accepts", () => {
     // Binds all three definitions in one place: minted here, accepted by the
     // database above, and parseable by the frontend's regex. Previously the
     // first and third agreed while the second silently disagreed.

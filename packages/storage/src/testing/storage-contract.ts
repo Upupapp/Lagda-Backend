@@ -11,7 +11,7 @@ import {
   ObjectAlreadyExistsError,
   type ObjectStorage, type StorageObjectRef, type ByteStream,
 } from "@lagda/application";
-import { collect } from "./in-memory-object-storage.js";
+import { collect } from "@lagda/application/test-support";
 
 export interface ContractHarness {
   readonly storage: ObjectStorage;

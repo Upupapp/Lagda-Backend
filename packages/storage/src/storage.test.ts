@@ -12,7 +12,7 @@ import type { WorkspaceId, DocumentId } from "@lagda/contracts";
 import { createStorageKeyStrategy } from "./s3/s3-key-strategy.js";
 import { loadStorageConfig, describeStorageConfig, StorageConfigError } from "./s3/s3-config.js";
 import { mapStorageError, isNotFound } from "./s3/s3-error-mapper.js";
-import { createInMemoryObjectStorage } from "./testing/in-memory-object-storage.js";
+import { createInMemoryObjectStorage } from "@lagda/application/test-support";
 import { runObjectStorageContract } from "./testing/storage-contract.js";
 
 const WS = "ws_alpha" as WorkspaceId;

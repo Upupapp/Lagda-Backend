@@ -62,7 +62,7 @@ const CHECK_VIOLATION = "23514";
 
 function sqlstateOf(error: unknown): string | undefined {
   return typeof error === "object" && error !== null && "code" in error
-    ? String((error as { code: unknown }).code)
+    ? String((error).code)
     : undefined;
 }
 

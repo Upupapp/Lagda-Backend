@@ -23,7 +23,7 @@ import type { WorkspaceId, DocumentId } from "@lagda/contracts";
 import { createS3ObjectStorage } from "./s3/s3-object-storage.js";
 import { createStorageKeyStrategy } from "./s3/s3-key-strategy.js";
 import type { S3StorageConfig } from "./s3/s3-config.js";
-import { collect } from "./testing/in-memory-object-storage.js";
+import { collect } from "@lagda/application/test-support";
 import { runObjectStorageContract, samplePdf } from "./testing/storage-contract.js";
 
 const ENDPOINT = process.env["OBJECT_STORAGE_TEST_ENDPOINT"];
