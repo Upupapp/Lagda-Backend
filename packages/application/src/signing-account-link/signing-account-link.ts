@@ -63,6 +63,33 @@ export interface HandoffCodeDigester {
   digestHandoffCode: (code: string) => string;
 }
 
+/**
+ * The caller is signed in, and this request was addressed to someone else.
+ *
+ * ── Why this one is allowed to be specific ────────────────────────────────
+ *
+ * Every other failure collapses into one message so that a caller holding a
+ * code cannot learn whether some address has an account here. That reasoning
+ * applies to a STRANGER holding a stolen code.
+ *
+ * It does not apply here. To reach this point you have already proved you own
+ * an account, and you hold the link. Being told "this was sent to a different
+ * address" tells you nothing you could not work out — and withholding it
+ * produces exactly what it produced in testing: someone who signed in, typed
+ * their password, and got a blank refusal with no way to discover that they
+ * were simply using the wrong account.
+ *
+ * It names no address. "A different one" is actionable; "bud***@example.com"
+ * would be a disclosure.
+ */
+export class SigningLinkAddressedElsewhereError extends Error {
+  constructor() {
+    super("This document was sent to a different email address. Sign in with "
+      + "the account that address belongs to, or ask the sender to re-issue it.");
+    this.name = "SigningLinkAddressedElsewhereError";
+  }
+}
+
 export class SigningLinkNotClaimableError extends Error {
   constructor() {
     // ONE error for every failure: unknown code, expired code, already
@@ -232,7 +259,9 @@ export async function claimSigningLink(
   if (identity === null) throw new SigningLinkNotClaimableError();
   if (identity.emailVerifiedAt === null) throw new SigningLinkNotClaimableError();
   if (identity.normalizedEmail !== intent.recipientNormalizedEmail) {
-    throw new SigningLinkNotClaimableError();
+    // Specific, because the caller has authenticated. See the error's own
+    // comment for why this is the one failure that may say what it is.
+    throw new SigningLinkAddressedElsewhereError();
   }
 
   await deps.links.createLink({
