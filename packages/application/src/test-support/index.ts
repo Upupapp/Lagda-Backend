@@ -10,5 +10,6 @@
 // rather than doubling them.
 
 export * from "./fakes.js";
+export * from "./in-memory-object-storage.js";
 export * from "./idempotency-fake.js";
 export * from "./idempotency-support.js";

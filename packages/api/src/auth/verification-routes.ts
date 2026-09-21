@@ -220,7 +220,7 @@ export function registerVerificationRoutes(
       const body = request.body as FirebaseFinalizeVerificationRequest;
       const result = await finalizeExternalEmailVerification(
         body.challengeId as VerificationChallengeId,
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+         
         options.firebaseFinalizeDependencies!(),
       );
 

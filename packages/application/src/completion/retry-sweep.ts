@@ -109,8 +109,8 @@ export async function driveDueCompletionRuns(
       // value from a request body, so a hand-written job cannot point the
       // pipeline at another tenant's run.
       await deps.scheduler.enqueue(CompletionProcessJob, {
-        workspaceId: ref.workspaceId as string,
-        completionRunId: ref.completionRunId as string,
+        workspaceId: ref.workspaceId,
+        completionRunId: ref.completionRunId,
       });
       enqueued++;
     } catch {

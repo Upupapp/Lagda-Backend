@@ -20,7 +20,10 @@ import type { AuthenticatedActor, SessionId } from "../common/ports/session.js";
 import {
   FakeTransactionManager, InMemoryStore,
 } from "../test-support/fakes.js";
-import { createInMemoryObjectStorage, collect } from "@lagda/storage";
+// The in-memory double now lives with the port it implements, in this very
+// package. It used to be imported from @lagda/storage, which made
+// @lagda/application depend on a package that depends on it.
+import { createInMemoryObjectStorage, collect } from "../test-support/index.js";
 
 const AT = Date.parse("2026-09-16T10:00:00.000Z");
 const WS = "ws_ca" as WorkspaceId;

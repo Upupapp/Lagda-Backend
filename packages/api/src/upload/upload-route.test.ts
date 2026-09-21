@@ -391,7 +391,7 @@ describe("capacity status (/upload-capacity)", () => {
     const { app } = await build({ capacityAvailable: false });
     const response = await app.inject({ method: "GET", url: "/upload-capacity" });
     expect(response.statusCode).toBe(200);
-    const body = response.json() as { available: boolean; message?: string };
+    const body: { available: boolean; message: string } = response.json();
     expect(body.available).toBe(false);
     expect(body.message).toMatch(/storage is currently full/i);
   });
@@ -417,7 +417,7 @@ describe("capacity guard on the actual upload", () => {
       method: "POST", url: "/test/uploads", payload, headers,
     });
     expect(response.statusCode).toBe(507);
-    const body = response.json() as { error: { code: string; message: string } };
+    const body: { error: { message: string } } = response.json();
     expect(body.error.message).toMatch(/storage is currently full/i);
     // Fails BEFORE any real work — no bytes ever reach storage or the scanner.
     expect(puts).toEqual([]);

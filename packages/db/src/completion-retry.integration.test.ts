@@ -23,7 +23,7 @@ import type {
 } from "@lagda/contracts";
 import {
   driveDueCompletionRuns, CompletionProcessJob,
-  type CompletionRunId, type SigningRequestId, type ArtifactId,
+  type CompletionRunId, type SigningRequestId,
   type JobDefinition, type JobReference,
 } from "@lagda/application";
 import type { LagdaDatabase } from "./client/index.js";

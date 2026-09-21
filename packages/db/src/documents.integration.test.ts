@@ -15,8 +15,7 @@ import type {
   DocumentId, UserId, WorkspaceId, WorkspaceMemberId,
 } from "@lagda/contracts";
 import type { ArtifactId } from "@lagda/application";
-import { createDatabase, type LagdaDatabase } from "./client/index.js";
-import { loadDatabaseConfig } from "./config/index.js";
+import { type LagdaDatabase } from "./client/index.js";
 import { createTransactionManager } from "./transactions/index.js";
 import {
   createTestDatabase, createRuntimeRoleDatabase, truncateAll, hasIntegrationDatabase, seedUser,

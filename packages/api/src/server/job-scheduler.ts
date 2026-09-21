@@ -23,7 +23,23 @@
 // roll back together. See the worker's own copy of this file for the
 // integration test that proves it.
 
-import type { PgBoss, SendOptions } from "pg-boss";
+// INV-190 / OD-046. This file IS the queue adapter the rule says to extract,
+// and after moving the client construction here out of start-server.ts it is
+// the ONLY place under packages/api that names pg-boss at all.
+//
+// The isolation INV-190 protects is not enforced by this comment. It is
+// enforced by two things: `createCompletionQueue` hands back
+// `{ scheduler, close }` with no boss on it, so no caller can reach `.work`;
+// and `job-scheduler.consumer.test.ts` asserts this file's own source
+// contains no consumption call, and fails if a `boss` is ever added to that
+// returned object. Lift verbatim into a shared queue package (OD-046) and
+// delete this directive — the body is already identical to the worker's copy.
+//
+// The directive sits on the line directly above the import on purpose:
+// `eslint-disable-next-line` means the NEXT line, and an explanation placed
+// between the two silently disables nothing.
+// eslint-disable-next-line no-restricted-imports
+import { PgBoss, type SendOptions } from "pg-boss";
 import type { Transaction } from "kysely";
 import { sql } from "kysely";
 import type {
@@ -92,5 +108,40 @@ export function createJobScheduler(boss: PgBoss): JobScheduler {
 
       return { jobId, type: definition.type };
     },
+  };
+}
+
+/**
+ * A PUBLISH-ONLY queue client for the HTTP process.
+ *
+ * Enqueueing and shutting down are the only two things an API process may do
+ * with a queue. The returned handle exposes exactly those and nothing else —
+ * in particular it does not expose the PgBoss instance, so `.work()` is not
+ * reachable from a caller even by accident. That is the difference between an
+ * invariant and a note asking people to remember one.
+ *
+ * `migrate: false` because the WORKER owns pg-boss's schema, for the same
+ * reason the API never runs database migrations: during a rolling deploy
+ * every replica would race to alter it.
+ */
+export interface CompletionQueue {
+  readonly scheduler: JobScheduler;
+  close: () => Promise<void>;
+}
+
+export async function createCompletionQueue(
+  config: { readonly connectionString: string },
+): Promise<CompletionQueue> {
+  const boss = new PgBoss({
+    connectionString: config.connectionString,
+    schema: "pgboss",
+    migrate: false,
+    max: 2,
+  });
+  boss.on("error", () => undefined);
+  await boss.start();
+  return {
+    scheduler: createJobScheduler(boss),
+    close: () => boss.stop({ graceful: false }),
   };
 }

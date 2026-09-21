@@ -30,8 +30,7 @@ import {
 
 /** Feeds the deterministic-but-unique ids the boundary tests mint. */
 let minted = 0;
-import { createDatabase, type LagdaDatabase } from "./client/index.js";
-import { loadDatabaseConfig } from "./config/index.js";
+import { type LagdaDatabase } from "./client/index.js";
 import { createTransactionManager } from "./transactions/index.js";
 import { createNotificationRepository } from "./repositories/notifications.js";
 import {
