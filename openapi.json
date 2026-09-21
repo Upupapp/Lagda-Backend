@@ -6243,6 +6243,34 @@
           },
           {
             "schema": {
+              "maxLength": 200,
+              "type": "string"
+            },
+            "in": "query",
+            "name": "q",
+            "required": false
+          },
+          {
+            "schema": {
+              "pattern": "^(draft|ready-to-send|sent|partially-completed|completion-ready|completed|declined|cancelled|expired)(,(draft|ready-to-send|sent|partially-completed|completion-ready|completed|declined|cancelled|expired))*$",
+              "maxLength": 200,
+              "type": "string"
+            },
+            "in": "query",
+            "name": "state",
+            "required": false
+          },
+          {
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            },
+            "in": "query",
+            "name": "signer",
+            "required": false
+          },
+          {
+            "schema": {
               "minLength": 1,
               "maxLength": 64,
               "type": "string"

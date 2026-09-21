@@ -805,3 +805,33 @@ describe("the completed-document route", () => {
     });
   });
 });
+
+// ── List filtering ──────────────────────────────────────────────────────────
+
+describe("the list's filters", () => {
+  const LIST_URL = `/workspaces/${WORKSPACE}/signing-requests`;
+
+  it("narrows by title, state and signer", async () => {
+    const h = await harness();
+    await create(h);
+    const { cookie } = await h.signIn(OWNER);
+    const count = async (qs: string) => (await h.app.inject({
+      method: "GET", url: `${LIST_URL}?${qs}`, headers: { cookie },
+    })).json<{ total: number }>().total;
+
+    expect(await count("state=draft")).toBe(1);
+    expect(await count("state=sent,completed")).toBe(0);
+    expect(await count("q=no-such-title")).toBe(0);
+    expect(await count("signer=no-such-signer")).toBe(0);
+  });
+
+  it("refuses an unknown state rather than matching nothing", async () => {
+    const h = await harness();
+    const { cookie } = await h.signIn(OWNER);
+    const response = await h.app.inject({
+      method: "GET", url: `${LIST_URL}?state=draft,archived`, headers: { cookie },
+    });
+    // 422: this API's answer to every schema violation.
+    expect(response.statusCode).toBe(422);
+  });
+});

@@ -38,9 +38,9 @@ import {
   SigningRequestSchema, SigningRequestCreatedSchema, SigningRequestListSchema,
   SigningRequestStatsSchema,
   SigningRequestStateSchema, SigningRequestSignaturesSchema,
-  SetSigningRequestExpirySchema, IDEMPOTENCY_KEY_HEADER,
+  SetSigningRequestExpirySchema, IDEMPOTENCY_KEY_HEADER, SIGNING_REQUEST_STATES,
   type SetSigningRequestExpiryRequest,
-  type DocumentId, type WorkspaceId,
+  type DocumentId, type WorkspaceId, type SigningRequestState,
 } from "@lagda/contracts";
 import type { MetricsRecorder } from "../observability/metrics.js";
 
@@ -55,9 +55,29 @@ const ListParamsSchema = Type.Object({
   workspaceId: Type.String({ minLength: 1, maxLength: 64 }),
 });
 
+/**
+ * One or more lifecycle states, comma-separated: "sent,partially-completed".
+ *
+ * A single comma-separated value rather than a repeated key, because a
+ * repeated key parses as a string when it appears once and an array when it
+ * appears twice, and the schema would have to accept both shapes. The pattern
+ * admits only states the contract knows, so an unknown one is a 422 here
+ * rather than a filter that silently matches nothing.
+ */
+const STATE_ALTERNATION = `(${SIGNING_REQUEST_STATES.join("|")})`;
+const StateListSchema = Type.String({
+  pattern: `^${STATE_ALTERNATION}(,${STATE_ALTERNATION})*$`,
+  maxLength: 200,
+});
+
 const ListQuerySchema = Type.Object({
   page: Type.Optional(Type.Integer({ minimum: 1 })),
   perPage: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
+  /** Case-insensitive substring of the document title. */
+  q: Type.Optional(Type.String({ maxLength: 200 })),
+  state: Type.Optional(StateListSchema),
+  /** Case-insensitive substring of any recipient's name or email. Filters only. */
+  signer: Type.Optional(Type.String({ maxLength: 200 })),
 });
 
 const ReadParamsSchema = Type.Object({
@@ -296,7 +316,16 @@ export function registerSigningRequestRoutes(
     const result = await listSigningRequests(
       actor, workspaceId as WorkspaceId,
       { ...(query.page === undefined ? {} : { page: query.page }),
-        ...(query.perPage === undefined ? {} : { perPage: query.perPage }) },
+        ...(query.perPage === undefined ? {} : { perPage: query.perPage }),
+        filter: {
+          ...(query.q === undefined ? {} : { titleContains: query.q }),
+          ...(query.signer === undefined ? {} : { signerContains: query.signer }),
+          // The pattern above admits only known states, so this cast narrows
+          // what validation has already proven.
+          ...(query.state === undefined ? {} : {
+            states: query.state.split(",") as SigningRequestState[],
+          }),
+        } },
       options.signingRequestDependencies());
 
     return reply.status(200).send({

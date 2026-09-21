@@ -15,6 +15,7 @@ import {
 } from "@lagda/contracts";
 import type {
   ScopedSigningRequestRepository, NewSigningRequestSnapshot, SigningRequestSummary,
+  SigningRequestListFilter,
   SigningRequestRecord, SigningRequestRecipientRecord, SigningRequestFieldRecord,
   SigningRequestId, SigningRequestRecipientId, SigningRequestFieldId,
   ArtifactId, PreparationId, PreparationFieldId, RecipientId,
@@ -119,6 +120,47 @@ function toField(row: FieldRow): SigningRequestFieldRecord {
   };
 }
 
+/** PostgreSQL's default LIKE escape character: a single backslash. */
+const LIKE_ESCAPE = String.fromCharCode(92);
+const LIKE_SYNTAX = new Set([LIKE_ESCAPE, "%", "_"]);
+
+/**
+ * LIKE treats the escape character, % and _ as syntax. Escaped, so a search
+ * for "50%" finds titles containing "50%" rather than every title with "50".
+ */
+function likeContains(text: string): string {
+  let escaped = "";
+  for (const ch of text) escaped += LIKE_SYNTAX.has(ch) ? LIKE_ESCAPE + ch : ch;
+  return `%${escaped}%`;
+}
+
+/**
+ * The list's WHERE clause, shared by the page and its count.
+ *
+ * The signer match is an EXISTS over the request's own recipient SNAPSHOT --
+ * the people it was actually sent to -- not the mutable preparation, which may
+ * have been edited since. EXISTS rather than a join, so a request with two
+ * matching recipients is still one row.
+ */
+function listPredicate(scope: WorkspaceId, filter: SigningRequestListFilter | undefined) {
+  const clauses = [sql`sr.workspace_id = ${scope}`];
+  if (filter?.titleContains !== undefined) {
+    clauses.push(sql`sr.document_title ilike ${likeContains(filter.titleContains)}`);
+  }
+  if (filter?.states !== undefined && filter.states.length > 0) {
+    clauses.push(sql`sr.state in (${sql.join(filter.states.map(state => sql`${state}`))})`);
+  }
+  if (filter?.signerContains !== undefined) {
+    const pattern = likeContains(filter.signerContains);
+    clauses.push(sql`exists (
+      select 1 from signing_request_recipients r
+      where r.signing_request_id = sr.signing_request_id
+        and (r.name ilike ${pattern} or r.email ilike ${pattern})
+    )`);
+  }
+  return sql.join(clauses, sql` and `);
+}
+
 export function createScopedSigningRequestRepository(
   trx: Transaction<Database>,
   scope: WorkspaceId,
@@ -137,6 +179,7 @@ export function createScopedSigningRequestRepository(
      * participant as complete.
      */
     async listForWorkspace(query) {
+      const where = listPredicate(scope, query.filter);
       const rows = await sql<{
         signing_request_id: string;
         document_id: string;
@@ -169,15 +212,16 @@ export function createScopedSigningRequestRepository(
             as completed_participant_count
         from signing_requests sr
         left join users u on u.user_id = sr.created_by_user_id
-        where sr.workspace_id = ${scope}
+        where ${where}
         order by sr.created_at desc, sr.signing_request_id desc
         limit ${query.limit} offset ${query.offset}
       `.execute(trx);
 
-      const counted = await trx.selectFrom("signing_requests")
-        .select(eb => eb.fn.countAll<string>().as("total"))
-        .where("workspace_id", "=", scope)
-        .executeTakeFirstOrThrow();
+      // The SAME predicate as the page. A total counted over the unfiltered
+      // workspace would tell a client there are more pages than there are.
+      const counted = await sql<{ total: string }>`
+        select count(*) as total from signing_requests sr where ${where}
+      `.execute(trx);
 
       return {
         items: rows.rows.map(row => ({
@@ -197,7 +241,7 @@ export function createScopedSigningRequestRepository(
           completedAt: row.completed_at === null ? null : row.completed_at.getTime(),
           expiresAt: row.expires_at === null ? null : row.expires_at.getTime(),
         })),
-        total: Number(counted.total),
+        total: Number(counted.rows[0]?.total ?? 0),
       };
     },
 
