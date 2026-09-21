@@ -10731,12 +10731,18 @@
                 "additionalProperties": false,
                 "type": "object",
                 "required": [
-                  "code"
+                  "code",
+                  "currentPassword"
                 ],
                 "properties": {
                   "code": {
                     "minLength": 8,
                     "maxLength": 64,
+                    "type": "string"
+                  },
+                  "currentPassword": {
+                    "minLength": 1,
+                    "maxLength": 1024,
                     "type": "string"
                   }
                 }
@@ -10755,7 +10761,8 @@
                   "type": "object",
                   "required": [
                     "signingRequestId",
-                    "recipientId"
+                    "recipientId",
+                    "preparedCount"
                   ],
                   "properties": {
                     "signingRequestId": {
@@ -10763,6 +10770,9 @@
                     },
                     "recipientId": {
                       "type": "string"
+                    },
+                    "preparedCount": {
+                      "type": "integer"
                     }
                   }
                 }

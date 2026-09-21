@@ -56,7 +56,9 @@ import { createUserSignatureRepository } from "@lagda/db";
 import { createSignatureImageValidator } from "../security/signature-image.js";
 import { randomUUID } from "node:crypto";
 import { claimSigningLink, normalizeEmail } from "@lagda/application";
-import { createSigningAccountLinkRepository } from "@lagda/db";
+import {
+  createSigningAccountLinkRepository, createPreparedSignatureRepository,
+} from "@lagda/db";
 import { createHandoffCodeDigester } from "../security/crypto.js";
 
 /**
@@ -456,17 +458,58 @@ export function buildIdentity(
       // The workspace half of the account binding. Runs in GLOBAL scope: the
       // handoff tables belong to no tenant, which is what lets a message pass
       // between two realms that cannot see each other's scope.
-      claimSigningLink: async (userId: UserId, code: string) =>
+      claimSigningLink: async (userId: UserId, code: string, currentPassword: string) =>
         // A transaction directly on `db`, not a TransactionManager scope:
         // this module deliberately has no unit of work (see the header), and
         // the handoff tables carry no row-level security, so there is no
         // tenant context to establish. The transaction is here for atomicity
         // alone — consuming the code and writing the link must not come apart.
-        db.transaction().execute(async trx => claimSigningLink(userId, code, {
+        db.transaction().execute(async trx => claimSigningLink(userId, code, currentPassword, {
           clock: { now: () => clock.now() },
           codes: createHandoffCodeDigester(),
           links: createSigningAccountLinkRepository(trx),
           ids: () => `sal_${randomUUID().replace(/-/g, "")}`,
+          // The step-up. Same verifier the password-change route uses, so
+          // "prove it is you" means one thing across the account surface.
+          verifyPassword: async (id: string, password: string) => {
+            const stored = await createAccountCredentialRepository(trx)
+              .findPasswordHash(id as UserId);
+            if (stored === null) return false;
+            // (plaintext, hash) — not the other way round.
+            return hasher.verify(password, stored);
+          },
+
+          // Workspace -> ceremony, pushed once. A COPY, so editing or
+          // deleting the library entry afterwards cannot change or empty what
+          // the signer is about to be shown and approve.
+          handOverSavedSignatures: async (input) => {
+            const saved = await createUserSignatureRepository(trx).list(input.userId);
+            const usable = saved.filter(entry => entry.validatedAt !== null);
+            const prepared = createPreparedSignatureRepository(trx);
+            for (const entry of usable) {
+              await prepared.prepare({
+                signingRequestId: input.signingRequestId,
+                recipientId: input.recipientId,
+                purpose: entry.purpose,
+                representationType: entry.representationType,
+                typedText: entry.typedText,
+                typedStyleIndex: entry.typedStyleIndex,
+                rasterBytes: entry.rasterBytes,
+                rasterMediaType: entry.rasterMediaType,
+                rasterWidth: entry.rasterWidth,
+                rasterHeight: entry.rasterHeight,
+                // This row's digest describes this row. Recomputed rather
+                // than carried over, so a copy cannot inherit a digest that
+                // describes bytes it does not hold.
+                digest: entry.digest,
+                sourceDigest: entry.digest,
+                preparedByUserId: input.userId,
+                preparedAt: input.at,
+              });
+            }
+            return usable.length;
+          },
+
           accounts: {
             findIdentity: async (id: string) => {
               const row = await createAccountProfileRepository(db)
