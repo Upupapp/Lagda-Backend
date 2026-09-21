@@ -816,6 +816,33 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
         signingAccessDependencies: signingAccess,
         // Composed here because minting needs a GLOBAL-scope repository and
         // the ceremony route file deliberately knows only about the ceremony.
+        readPreparedSignatures: async (raw: string) => {
+          const access = signingAccess();
+          const context = await resolveRecipientSession(raw, access);
+          return access.transactions.runGlobal(async uow => {
+            const prepared = await uow.preparedSignatures.listForSession(
+              context.signingRequestId, context.recipientId,
+              context.signingSessionId);
+            return prepared.map(entry => entry.representationType === "TYPED_SIGNATURE_V1"
+              ? {
+                  purpose: entry.purpose,
+                  method: "typed",
+                  text: entry.typedText ?? "",
+                  styleIndex: entry.typedStyleIndex ?? 0,
+                }
+              : {
+                  purpose: entry.purpose,
+                  method: "drawn",
+                  // The signer sees exactly what they will sign with. Sent to
+                  // the browser that was verified as the account holder and
+                  // to no other — the session binding is what guarantees it.
+                  base64: (entry.rasterBytes ?? Buffer.alloc(0)).toString("base64"),
+                  width: entry.rasterWidth ?? 0,
+                  height: entry.rasterHeight ?? 0,
+                });
+          });
+        },
+
         readAccountLink: async (signingRequestId: string, recipientId: string) => {
           const access = signingAccess();
           return access.transactions.runGlobal(async uow => {
@@ -838,6 +865,9 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
                   workspaceId: context.workspaceId,
                   signingRequestId: context.signingRequestId,
                   recipientId: context.recipientId,
+                  // Carried so whatever the claim produces is bound back to
+                  // THIS browser, not to the recipient at large.
+                  signingSessionId: context.signingSessionId,
                 };
               },
               readRecipientEmail: async (token) => {

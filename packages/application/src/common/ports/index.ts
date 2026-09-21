@@ -466,6 +466,15 @@ export interface GlobalUnitOfWork {
    * inbox is built on.
    */
   readonly signingAccountLinks: SigningAccountLinkRepository;
+
+  /**
+   * Saved marks handed to one ceremony session, awaiting use.
+   *
+   * Global for the same reason the handoff tables are: written by the
+   * workspace realm, read by the recipient realm, and readable by neither
+   * one's own scope.
+   */
+  readonly preparedSignatures: PreparedSignatureRepository;
   /**
    * Outstanding signing-workflow advances, across every tenant (BACKEND-37).
    *
@@ -730,4 +739,6 @@ export * from "./completion-certificate.js";
 
 export * from "./notifications.js";
 import type { SigningAccountLinkRepository } from "./signing-account-link.js";
+import type { PreparedSignatureRepository } from "./prepared-signatures.js";
 export * from "./signing-account-link.js";
+export * from "./prepared-signatures.js";

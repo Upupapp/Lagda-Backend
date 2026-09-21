@@ -98,11 +98,22 @@ const SavedSignatureListSchema = Type.Object({
 const ClaimSigningLinkRequestSchema = Type.Object({
   /** The opaque code minted by the ceremony. Never an id, never an address. */
   code: Type.String({ minLength: 8, maxLength: 64 }),
+  /**
+   * Re-proved at the moment the capability is granted.
+   *
+   * A session alone is not enough: claiming hands a stored signature to a
+   * ceremony, and from then on one confirmation applies someone's handwriting
+   * to a binding document. Asked once, here, rather than at every use — which
+   * would only train people to type it without reading.
+   */
+  currentPassword: Type.String({ minLength: 1, maxLength: PASSWORD_MAX_LENGTH }),
 }, { title: "ClaimSigningLinkRequest", additionalProperties: false });
 
 const ClaimSigningLinkResponseSchema = Type.Object({
   signingRequestId: Type.String(),
   recipientId: Type.String(),
+  /** How many saved marks were handed to that ceremony. Zero is ordinary. */
+  preparedCount: Type.Integer(),
 }, { title: "ClaimSigningLinkResponse", additionalProperties: false });
 
 // ── Response projections ────────────────────────────────────────────────────
@@ -234,8 +245,10 @@ export interface AccountRouteOptions {
   readonly signatures: () => UserSignatureRepository;
   /** Claims a ceremony handoff code as this account. See migration 051. */
   readonly claimSigningLink: (
-    userId: UserId, code: string,
-  ) => Promise<{ signingRequestId: string; recipientId: string }>;
+    userId: UserId, code: string, currentPassword: string,
+  ) => Promise<{
+    signingRequestId: string; recipientId: string; preparedCount: number;
+  }>;
   readonly signatureImages: () => SignatureImageValidator;
   readonly now: () => Date;
   readonly currentUserDependencies: () => GetCurrentUserDependencies;
@@ -514,20 +527,26 @@ export function registerAccountRoutes(
     if (actor === null) return unauthenticated(reply);
     if (!options.validateCsrf(request)) return csrfFailed(reply);
 
-    const { code } = request.body as { code: string };
+    const { code, currentPassword } =
+      request.body as { code: string; currentPassword: string };
     try {
-      const claimed = await options.claimSigningLink(actor.userId, code);
+      const claimed = await options.claimSigningLink(
+        actor.userId, code, currentPassword);
       // Ids only. Never the code, never either address.
       request.log.info({
         event: "signing_account_link.claimed",
         signingRequestId: claimed.signingRequestId,
+        // A count, never the marks themselves.
+        preparedCount: claimed.preparedCount,
       }, "signing_account_link.claimed");
       return reply.status(200).send(claimed);
     } catch {
       // ONE refusal for every cause — unknown, expired, already claimed,
-      // wrong account, unverified address. Distinguishing them would let a
-      // caller holding a code learn that some other account owns that
-      // address, which is exactly what the single error prevents.
+      // wrong account, unverified address, WRONG PASSWORD. Distinguishing
+      // them would let a caller holding a code learn that some other account
+      // owns that address; separating out the password would additionally
+      // turn this into a password oracle for an account whose address the
+      // caller already knows.
       return reply.status(422).send({
         error: {
           code: "SIGNING_LINK_NOT_CLAIMABLE",

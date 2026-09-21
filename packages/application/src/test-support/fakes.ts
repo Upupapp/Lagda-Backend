@@ -43,6 +43,7 @@ import type {
   EvidenceEventId, EvidenceEventIdGenerator,
   FinalizationInput, SealRecord,
   SigningAccountLinkRepository,
+  PreparedSignatureRepository,
 } from "../common/ports/index.js";
 import { InMemoryIdempotencyRepository } from "./idempotency-fake.js";
 import type {
@@ -1553,11 +1554,56 @@ function dispatchIndex(): NotificationDispatchRepository {
  */
 const fakeIntents = new Map<string, {
   workspaceId: string; signingRequestId: string; recipientId: string;
-  recipientNormalizedEmail: string; expiresAt: Date; consumedAt: Date | null;
+  recipientNormalizedEmail: string; recipientSessionId: string;
+  expiresAt: Date; consumedAt: Date | null;
 }>();
 const fakeLinks = new Map<string, {
   userId: string; matchedNormalizedEmail: string; linkedAt: Date;
 }>();
+
+/** Prepared marks, in memory. Session-scoped, exactly as the table is. */
+const fakePrepared = new Map<string, {
+  purpose: "signature" | "initials";
+  representationType: "TYPED_SIGNATURE_V1" | "RASTER_SIGNATURE_V1";
+  typedText: string | null; typedStyleIndex: number | null;
+  rasterBytes: Buffer | null; rasterMediaType: string | null;
+  rasterWidth: number | null; rasterHeight: number | null;
+  digest: string; sourceDigest: string;
+  preparedByUserId: string; preparedForSessionId: string; preparedAt: Date;
+}>();
+
+function preparedSignatures(): PreparedSignatureRepository {
+  const key = (request: string, recipient: string, purpose: string) =>
+    `${request}:${recipient}:${purpose}`;
+  return {
+    prepare: (input) => {
+      fakePrepared.set(key(input.signingRequestId, input.recipientId, input.purpose), {
+        purpose: input.purpose,
+        representationType: input.representationType,
+        typedText: input.typedText, typedStyleIndex: input.typedStyleIndex,
+        rasterBytes: input.rasterBytes, rasterMediaType: input.rasterMediaType,
+        rasterWidth: input.rasterWidth, rasterHeight: input.rasterHeight,
+        digest: input.digest, sourceDigest: input.sourceDigest,
+        preparedByUserId: input.preparedByUserId,
+        preparedForSessionId: input.preparedForSessionId,
+        preparedAt: input.preparedAt,
+      });
+      return Promise.resolve();
+    },
+    listForSession: (request, recipient, sessionId) => Promise.resolve(
+      [...fakePrepared.entries()]
+        .filter(([k, v]) =>
+          k.startsWith(`${request}:${recipient}:`) &&
+          v.preparedForSessionId === sessionId)
+        .map(([, v]) => v)),
+    consumeForRecipient: (request, recipient) => {
+      for (const k of [...fakePrepared.keys()]) {
+        if (k.startsWith(`${request}:${recipient}:`)) fakePrepared.delete(k);
+      }
+      return Promise.resolve();
+    },
+  };
+}
 
 function signingAccountLinks(): SigningAccountLinkRepository {
   return {
@@ -1567,6 +1613,7 @@ function signingAccountLinks(): SigningAccountLinkRepository {
         signingRequestId: input.signingRequestId,
         recipientId: input.recipientId,
         recipientNormalizedEmail: input.recipientNormalizedEmail,
+        recipientSessionId: input.recipientSessionId,
         expiresAt: input.expiresAt,
         consumedAt: null,
       });
@@ -2903,6 +2950,7 @@ export class FakeTransactionManager implements TransactionManager {
       const result = await operation({
         scope: "global",
         signingAccountLinks: signingAccountLinks(),
+        preparedSignatures: preparedSignatures(),
         signingWorkflowReconciliation: workflowReconciliation(this.store),
         signingRequestExpiryIndex: expiryIndex(this.store),
         completionRetryIndex: completionRetryIndex(this.store),

@@ -357,6 +357,8 @@ export interface SigningLinkIntentsTable {
   signing_request_id: string;
   request_recipient_id: string;
   recipient_normalized_email: string;
+  /** The ceremony session that asked. See migration 051. */
+  recipient_session_id: string;
   created_at: ColumnType<Date, Date, Date>;
   expires_at: ColumnType<Date, Date, Date>;
   consumed_at: ColumnType<Date | null, Date | null, Date | null>;
@@ -377,6 +379,33 @@ export interface SigningAccountLinksTable {
   request_recipient_id: string;
   matched_normalized_email: string;
   linked_at: ColumnType<Date, Date, Date>;
+}
+
+/**
+ * A saved signature copied into one ceremony, at claim time.
+ *
+ * A COPY, not a reference: the library entry may be edited or deleted while
+ * the ceremony is open, and what the signer previews must be what the signer
+ * signs. Deleted by the submission that spends it. See migration 053.
+ */
+export interface PreparedSignaturesTable {
+  signing_request_id: string;
+  request_recipient_id: string;
+  purpose: string;
+  representation_type: string;
+  typed_text: ColumnType<string | null, string | null, string | null>;
+  typed_style_index: ColumnType<number | null, number | null, number | null>;
+  raster_bytes: ColumnType<Buffer | null, Buffer | null, Buffer | null>;
+  raster_media_type: ColumnType<string | null, string | null, string | null>;
+  raster_width: ColumnType<number | null, number | null, number | null>;
+  raster_height: ColumnType<number | null, number | null, number | null>;
+  digest: string;
+  /** Which library entry it came from. Audit only; no foreign key. */
+  source_digest: string;
+  prepared_by_user_id: string;
+  /** Offered only back to the session that asked. See migration 053. */
+  prepared_for_session_id: string;
+  prepared_at: ColumnType<Date, Date, Date>;
 }
 
 export interface UserSignaturesTable {
@@ -1381,6 +1410,7 @@ export interface Database {
   recipient_submissions: RecipientSubmissionsTable;
   signing_representations: SigningRepresentationsTable;
   user_signatures: UserSignaturesTable;
+  prepared_signatures: PreparedSignaturesTable;
   signing_link_intents: SigningLinkIntentsTable;
   signing_account_links: SigningAccountLinksTable;
   signing_field_values: SigningFieldValuesTable;

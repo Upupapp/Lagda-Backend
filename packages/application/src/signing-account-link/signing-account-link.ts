@@ -99,6 +99,8 @@ export async function mintSigningLinkIntent(
     readonly signingRequestId: string;
     readonly recipientId: string;
     readonly recipientNormalizedEmail: string;
+    /** Whatever the claim produces is bound back to this session. */
+    readonly recipientSessionId: string;
   },
   deps: MintSigningLinkIntentDependencies,
 ): Promise<MintedSigningLinkIntent> {
@@ -112,6 +114,7 @@ export async function mintSigningLinkIntent(
     signingRequestId: context.signingRequestId,
     recipientId: context.recipientId,
     recipientNormalizedEmail: context.recipientNormalizedEmail,
+    recipientSessionId: context.recipientSessionId,
     createdAt: now,
     expiresAt,
   });
@@ -123,6 +126,22 @@ export interface ClaimSigningLinkDependencies {
   readonly clock: Clock;
   readonly codes: HandoffCodeDigester;
   readonly links: SigningAccountLinkRepository;
+  /**
+   * Burns the code in a transaction of its own, committed immediately.
+   *
+   * Separate from `links` so the caller cannot accidentally run it inside the
+   * transaction that also does the checks — which is precisely the mistake
+   * that shipped.
+   */
+  readonly consumeIntent: (
+    intentDigest: string, now: Date,
+  ) => Promise<{
+    readonly workspaceId: string;
+    readonly signingRequestId: string;
+    readonly recipientId: string;
+    readonly recipientNormalizedEmail: string;
+    readonly recipientSessionId: string;
+  } | null>;
   readonly accounts: {
     /** The caller's own canonical address and whether it is proved. */
     findIdentity: (userId: string) => Promise<{
@@ -130,12 +149,42 @@ export interface ClaimSigningLinkDependencies {
       readonly emailVerifiedAt: Date | null;
     } | null>;
   };
+  /**
+   * Re-proves the password, for the step-up.
+   *
+   * A session alone is not enough here. Claiming hands a stored signature to
+   * a ceremony, and from that moment one confirmation applies someone's
+   * handwriting to a binding document. That turns a stolen session from "read
+   * my documents" into "sign as me", which is a different category of loss,
+   * and the control that matches it is re-proving the password at the moment
+   * the capability is granted — not at every use, which would train people to
+   * type it without reading.
+   */
+  readonly verifyPassword: (
+    userId: string, password: string,
+  ) => Promise<boolean>;
+  /**
+   * Hands the account's saved marks to this one ceremony.
+   *
+   * Optional: an account with nothing saved still binds, and still gets
+   * "Signed in as ..." in the ceremony. It simply has nothing to apply.
+   */
+  readonly handOverSavedSignatures: (input: {
+    readonly userId: string;
+    readonly signingRequestId: string;
+    readonly recipientId: string;
+    /** Bound to the session that asked, never to the recipient at large. */
+    readonly recipientSessionId: string;
+    readonly at: Date;
+  }) => Promise<number>;
   readonly ids: () => string;
 }
 
 export interface ClaimedSigningLink {
   readonly signingRequestId: string;
   readonly recipientId: string;
+  /** How many saved marks were handed over. Zero is an ordinary outcome. */
+  readonly preparedCount: number;
 }
 
 /**
@@ -149,12 +198,35 @@ export interface ClaimedSigningLink {
 export async function claimSigningLink(
   userId: string,
   code: string,
+  password: string,
   deps: ClaimSigningLinkDependencies,
 ): Promise<ClaimedSigningLink> {
   const now = new Date(deps.clock.now());
 
-  const intent = await deps.links.claimIntent(deps.codes.digestHandoffCode(code), now);
+  // Consumed in its OWN committed transaction, before anything that can fail.
+  //
+  // This was wrong in production and the fix is the whole point of the
+  // separation. The consume and the checks used to share one transaction, so
+  // a refused claim rolled the burn back and the code stayed usable — exactly
+  // the retry-against-many-accounts case the burn exists to prevent. The
+  // in-memory test that asserted the property could not catch it, because a
+  // fake with no transaction has no rollback to model.
+  //
+  // Committing the burn first means a refusal costs the code. That is the
+  // intended trade: a legitimate signer who mistypes their password asks for
+  // a new link, which is cheap, and an attacker gets one attempt per code.
+  const intent = await deps.consumeIntent(deps.codes.digestHandoffCode(code), now);
   if (intent === null) throw new SigningLinkNotClaimableError();
+
+  // The step-up, AFTER the code is claimed and therefore burned.
+  //
+  // Deliberately in that order. If a wrong password left the code usable, a
+  // stolen code could be retried against one account after another until one
+  // of the guesses landed — the burn is what makes each code exactly one
+  // attempt, and moving this check earlier would give that back.
+  if (!await deps.verifyPassword(userId, password)) {
+    throw new SigningLinkNotClaimableError();
+  }
 
   const identity = await deps.accounts.findIdentity(userId);
   if (identity === null) throw new SigningLinkNotClaimableError();
@@ -173,9 +245,21 @@ export async function claimSigningLink(
     linkedAt: now,
   });
 
+  // The handoff: workspace -> ceremony, pushed once, at a moment the account
+  // holder chose and just re-authenticated for. The ceremony never reaches
+  // back the other way.
+  const preparedCount = await deps.handOverSavedSignatures({
+    userId,
+    signingRequestId: intent.signingRequestId,
+    recipientId: intent.recipientId,
+    recipientSessionId: intent.recipientSessionId,
+    at: now,
+  });
+
   return {
     signingRequestId: intent.signingRequestId,
     recipientId: intent.recipientId,
+    preparedCount,
   };
 }
 
@@ -196,6 +280,7 @@ export async function requestSigningLinkIntent(
       readonly workspaceId: string;
       readonly signingRequestId: string;
       readonly recipientId: string;
+      readonly signingSessionId: string;
     }>;
     /** The recipient's delivery address, from the immutable snapshot. */
     readonly readRecipientEmail: (raw: string) => Promise<string>;
@@ -216,6 +301,7 @@ export async function requestSigningLinkIntent(
     signingRequestId: context.signingRequestId,
     recipientId: context.recipientId,
     recipientNormalizedEmail: normalized,
+    recipientSessionId: context.signingSessionId,
   }, deps);
 }
 

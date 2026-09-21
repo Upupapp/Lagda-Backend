@@ -25,6 +25,8 @@ export interface SigningLinkIntentRecord {
   readonly signingRequestId: string;
   readonly recipientId: string;
   readonly recipientNormalizedEmail: string;
+  /** The ceremony session that asked. */
+  readonly recipientSessionId: string;
   readonly expiresAt: Date;
   readonly consumedAt: Date | null;
 }
@@ -35,6 +37,7 @@ export interface CreateSigningLinkIntentInput {
   readonly signingRequestId: string;
   readonly recipientId: string;
   readonly recipientNormalizedEmail: string;
+  readonly recipientSessionId: string;
   readonly createdAt: Date;
   readonly expiresAt: Date;
 }
@@ -76,6 +79,7 @@ export function createSigningAccountLinkRepository(
         signing_request_id: input.signingRequestId,
         request_recipient_id: input.recipientId,
         recipient_normalized_email: input.recipientNormalizedEmail,
+        recipient_session_id: input.recipientSessionId,
         created_at: input.createdAt,
         expires_at: input.expiresAt,
         consumed_at: null,
@@ -103,6 +107,7 @@ export function createSigningAccountLinkRepository(
         signingRequestId: row.signing_request_id,
         recipientId: row.request_recipient_id,
         recipientNormalizedEmail: row.recipient_normalized_email,
+        recipientSessionId: row.recipient_session_id,
         expiresAt: row.expires_at,
         consumedAt: row.consumed_at,
       };

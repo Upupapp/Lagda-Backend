@@ -109,8 +109,10 @@ export interface IdentityDependencies {
   readonly validateCsrf: (request: FastifyRequest) => boolean;
   readonly signatures: () => UserSignatureRepository;
   readonly claimSigningLink: (
-    userId: UserId, code: string,
-  ) => Promise<{ signingRequestId: string; recipientId: string }>;
+    userId: UserId, code: string, currentPassword: string,
+  ) => Promise<{
+    signingRequestId: string; recipientId: string; preparedCount: number;
+  }>;
   readonly signatureImages: () => SignatureImageValidator;
   readonly now: () => Date;
   /** Resolves a FULL session. Null for anonymous and for pre-auth credentials. */
