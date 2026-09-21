@@ -58,6 +58,7 @@ interface Built {
   readonly app: FastifyInstance;
   readonly profileWrites: unknown[];
   readonly revoked: string[];
+  readonly feedQueries: { userId: string; limit: number }[];
 }
 
 async function build(options: {
@@ -67,6 +68,11 @@ async function build(options: {
   revokeFound?: boolean;
   revokeCurrent?: boolean;
   csrfValid?: boolean;
+  notifications?: {
+    notificationIntentId: string; notificationType: string;
+    workspaceId: string | null; sourceKind: string; sourceId: string;
+    templateInput: unknown; createdAt: Date;
+  }[];
 } = {}): Promise<Built> {
   const app = Fastify({
     logger: false,
@@ -78,6 +84,7 @@ async function build(options: {
   });
   await app.register(cookie);
   const profileWrites: unknown[] = [];
+  const feedQueries: { userId: string; limit: number }[] = [];
   const revoked: string[] = [];
 
   // An in-memory stand-in for the saved-signature table, honouring the one
@@ -122,10 +129,18 @@ async function build(options: {
     },
   };
 
+  const notificationFeed = {
+    listForUser: (userId: string, limit: number) => {
+      feedQueries.push({ userId, limit });
+      return Promise.resolve(options.notifications ?? []);
+    },
+  };
+
   registerAccountRoutes(app, {
     config: CONFIG,
     validateCsrf: () => options.csrfValid !== false,
     signatures: () => savedSignatures,
+    notificationFeed: () => notificationFeed,
     claimSigningLink: () => Promise.reject(new Error("not used")),
     signatureImages: () => createSignatureImageValidator(),
     now: () => new Date(1_700_000_000_000),
@@ -196,7 +211,7 @@ async function build(options: {
     }),
   });
   await app.ready();
-  return { app, profileWrites, revoked };
+  return { app, profileWrites, revoked, feedQueries };
 }
 
 const patch = (app: FastifyInstance, url: string, payload: unknown) =>
@@ -492,5 +507,67 @@ describe("session management", () => {
     expect(item.additionalProperties).toBe(false);
     expect(Object.keys(item.properties).sort())
       .toEqual(["createdAt", "expiresAt", "isCurrent", "lastSeenAt", "sessionId"]);
+  });
+});
+
+// ── /me/notifications ───────────────────────────────────────────────────────
+//
+// The feed's whole risk is disclosure: `notification_intents` holds sealed
+// signing-link ciphertexts, and a SIGNING_INVITATION row belongs to a
+// recipient in the other credential realm. These pin the two guards that keep
+// those out — the scope handed to the repository, and the closed response
+// schema.
+
+describe("GET /me/notifications", () => {
+  const ROW = {
+    notificationIntentId: "nti_1",
+    notificationType: "SIGNING_COMPLETED",
+    workspaceId: "wsp_1",
+    sourceKind: "SIGNING_REQUEST",
+    sourceId: "sr_1",
+    templateInput: { documentTitle: "Engagement Letter" },
+    createdAt: new Date(1_700_000_000_000),
+  };
+
+  it("refuses an anonymous caller", async () => {
+    const { app } = await build({ authenticated: false });
+    const res = await app.inject({ method: "GET", url: "/me/notifications" });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("asks only for the authenticated caller's own rows", async () => {
+    const { app, feedQueries } = await build({ notifications: [ROW] });
+    await app.inject({ method: "GET", url: "/me/notifications" });
+    // The route must never widen this: the repository's WHERE clause is the
+    // authorization boundary, and it is only as good as the id passed in.
+    expect(feedQueries).toEqual([{ userId: "usr_1", limit: 100 }]);
+  });
+
+  it("returns the projected notification", async () => {
+    const { app } = await build({ notifications: [ROW] });
+    const res = await app.inject({ method: "GET", url: "/me/notifications" });
+    expect(res.statusCode).toBe(200);
+    const body: { notifications: Record<string, unknown>[] } = res.json();
+    expect(body.notifications).toHaveLength(1);
+    expect(body.notifications[0]).toMatchObject({
+      id: "nti_1", type: "SIGNING_COMPLETED", workspaceId: "wsp_1",
+    });
+  });
+
+  it("strips anything the schema does not name, including a sealed secret", async () => {
+    // Simulates the failure this is here to catch: a later change makes the
+    // repository select a credential column, and it reaches the route.
+    const leaky = {
+      ...ROW,
+      sealedSecret: "SHOULD-NEVER-BE-SERIALIZED",
+      sealedKeyVersion: "v1",
+      challengeId: "chal_1",
+    };
+    const { app } = await build({ notifications: [leaky] });
+    const res = await app.inject({ method: "GET", url: "/me/notifications" });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).not.toContain("SHOULD-NEVER-BE-SERIALIZED");
+    expect(res.body).not.toContain("sealedKeyVersion");
+    expect(res.body).not.toContain("challengeId");
   });
 });
