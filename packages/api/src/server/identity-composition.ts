@@ -466,6 +466,13 @@ export function buildIdentity(
         // alone — consuming the code and writing the link must not come apart.
         db.transaction().execute(async trx => claimSigningLink(userId, code, currentPassword, {
           clock: { now: () => clock.now() },
+          // Its OWN transaction, on `db` rather than `trx`, so the burn
+          // commits whatever happens to the claim that follows. Inside `trx`
+          // a refusal would roll the burn back and leave the code usable —
+          // which is what production was doing.
+          consumeIntent: (intentDigest, at) =>
+            db.transaction().execute(inner =>
+              createSigningAccountLinkRepository(inner).claimIntent(intentDigest, at)),
           codes: createHandoffCodeDigester(),
           links: createSigningAccountLinkRepository(trx),
           ids: () => `sal_${randomUUID().replace(/-/g, "")}`,

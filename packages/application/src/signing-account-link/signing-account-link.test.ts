@@ -26,6 +26,18 @@ const clock = { now: () => NOW };
 const codes = { digestHandoffCode: (code: string) => `digest(${code})` };
 const PASSWORD = "correct horse battery staple";
 
+/**
+ * The burn, as its own committed step.
+ *
+ * Production had this sharing a transaction with the checks, so a refusal
+ * rolled it back and the code stayed usable. The fake below could not catch
+ * that — it has no transaction and therefore no rollback to model — which is
+ * why the separation is now expressed in the SHAPE of the dependency rather
+ * than trusted to a caller.
+ */
+const burn = (repo: SigningAccountLinkRepository) =>
+  (intentDigest: string, at: Date) => repo.claimIntent(intentDigest, at);
+
 /** The step-up and the handoff, both satisfied. */
 const handedOver: unknown[] = [];
 function stepUp(options: { passwordOk?: boolean; saved?: number } = {}) {
@@ -127,7 +139,7 @@ describe("claiming", () => {
     const { code } = await mintSigningLinkIntent(RECIPIENT, { clock, codes, links: repo, ids });
 
     const result: { signingRequestId: string; recipientId: string; preparedCount: number } = await claimSigningLink("usr_1", code, PASSWORD, {
-      clock, codes, links: repo, ids, ...stepUp(),
+      clock, codes, links: repo, ids, ...stepUp(), consumeIntent: burn(repo),
       accounts: accounts({
         normalizedEmail: "signer@example.com", emailVerifiedAt: new Date(NOW),
       }),
@@ -145,7 +157,7 @@ describe("claiming", () => {
     const { code } = await mintSigningLinkIntent(RECIPIENT, { clock, codes, links: repo, ids });
 
     await expect(claimSigningLink("usr_1", code, PASSWORD, {
-      clock, codes, links: repo, ids, ...stepUp(),
+      clock, codes, links: repo, ids, ...stepUp(), consumeIntent: burn(repo),
       accounts: accounts({
         normalizedEmail: "signer@example.com", emailVerifiedAt: null,
       }),
@@ -159,7 +171,7 @@ describe("claiming", () => {
     const { code } = await mintSigningLinkIntent(RECIPIENT, { clock, codes, links: repo, ids });
 
     await expect(claimSigningLink("usr_2", code, PASSWORD, {
-      clock, codes, links: repo, ids, ...stepUp(),
+      clock, codes, links: repo, ids, ...stepUp(), consumeIntent: burn(repo),
       accounts: accounts({
         normalizedEmail: "someone.else@example.com", emailVerifiedAt: new Date(NOW),
       }),
@@ -171,7 +183,7 @@ describe("claiming", () => {
   it("refuses an unknown code", async () => {
     const { repo } = repository();
     await expect(claimSigningLink("usr_1", "never-minted", PASSWORD, {
-      clock, codes, links: repo, ids, ...stepUp(),
+      clock, codes, links: repo, ids, ...stepUp(), consumeIntent: burn(repo),
       accounts: accounts({
         normalizedEmail: "signer@example.com", emailVerifiedAt: new Date(NOW),
       }),
@@ -182,7 +194,7 @@ describe("claiming", () => {
     const { repo } = repository();
     const { code } = await mintSigningLinkIntent(RECIPIENT, { clock, codes, links: repo, ids });
     const deps = {
-      clock, codes, links: repo, ids, ...stepUp(),
+      clock, codes, links: repo, ids, ...stepUp(), consumeIntent: burn(repo),
       accounts: accounts({
         normalizedEmail: "signer@example.com", emailVerifiedAt: new Date(NOW),
       }),
@@ -200,7 +212,7 @@ describe("claiming", () => {
 
     await expect(claimSigningLink("usr_1", code, PASSWORD, {
       clock: { now: () => NOW + 200_000 },
-      codes, links: repo, ids, ...stepUp(),
+      codes, links: repo, ids, ...stepUp(), consumeIntent: burn(repo),
       accounts: accounts({
         normalizedEmail: "signer@example.com", emailVerifiedAt: new Date(NOW),
       }),
@@ -214,7 +226,7 @@ describe("claiming", () => {
     const { code } = await mintSigningLinkIntent(RECIPIENT, { clock, codes, links: repo, ids });
 
     await expect(claimSigningLink("usr_2", code, PASSWORD, {
-      clock, codes, links: repo, ids, ...stepUp(),
+      clock, codes, links: repo, ids, ...stepUp(), consumeIntent: burn(repo),
       accounts: accounts({
         normalizedEmail: "someone.else@example.com", emailVerifiedAt: new Date(NOW),
       }),
@@ -222,7 +234,7 @@ describe("claiming", () => {
 
     // Even the rightful owner cannot use it now.
     await expect(claimSigningLink("usr_1", code, PASSWORD, {
-      clock, codes, links: repo, ids, ...stepUp(),
+      clock, codes, links: repo, ids, ...stepUp(), consumeIntent: burn(repo),
       accounts: accounts({
         normalizedEmail: "signer@example.com", emailVerifiedAt: new Date(NOW),
       }),
@@ -245,7 +257,7 @@ describe("claiming", () => {
       const minted = await mintSigningLinkIntent(RECIPIENT, { clock, codes, links: repo, ids });
       try {
         await claimSigningLink(scenario.user, scenario.code ?? minted.code, PASSWORD, {
-          clock, codes, links: repo, ids, ...stepUp(), accounts: accounts(scenario.identity),
+          clock, codes, links: repo, ids, ...stepUp(), consumeIntent: burn(repo), accounts: accounts(scenario.identity),
         });
       } catch (error) {
         messages.add((error as Error).message);
@@ -262,7 +274,7 @@ describe("claiming", () => {
     const { code } = await mintSigningLinkIntent(RECIPIENT, { clock, codes, links: repo, ids });
 
     await claimSigningLink("usr_1", code, PASSWORD, {
-      clock, codes, links: repo, ids, ...stepUp(),
+      clock, codes, links: repo, ids, ...stepUp(), consumeIntent: burn(repo),
       accounts: accounts({
         normalizedEmail: "signer@example.com", emailVerifiedAt: new Date(NOW),
       }),
@@ -297,7 +309,7 @@ describe("the step-up", () => {
     const { code } = await mintSigningLinkIntent(RECIPIENT, { clock, codes, links: repo, ids });
 
     await expect(claimSigningLink("usr_1", code, "wrong", {
-      clock, codes, links: repo, ids, ...stepUp(),
+      clock, codes, links: repo, ids, ...stepUp(), consumeIntent: burn(repo),
       accounts: accounts({
         normalizedEmail: "signer@example.com", emailVerifiedAt: new Date(NOW),
       }),
@@ -313,7 +325,7 @@ describe("the step-up", () => {
     const { repo } = repository();
     const { code } = await mintSigningLinkIntent(RECIPIENT, { clock, codes, links: repo, ids });
     const good = {
-      clock, codes, links: repo, ids, ...stepUp(),
+      clock, codes, links: repo, ids, ...stepUp(), consumeIntent: burn(repo),
       accounts: accounts({
         normalizedEmail: "signer@example.com", emailVerifiedAt: new Date(NOW),
       }),
@@ -332,7 +344,7 @@ describe("the step-up", () => {
     const { code } = await mintSigningLinkIntent(RECIPIENT, { clock, codes, links: repo, ids });
 
     await expect(claimSigningLink("usr_1", code, "wrong", {
-      clock, codes, links: repo, ids, ...stepUp(),
+      clock, codes, links: repo, ids, ...stepUp(), consumeIntent: burn(repo),
       accounts: accounts({
         normalizedEmail: "signer@example.com", emailVerifiedAt: new Date(NOW),
       }),
@@ -350,7 +362,7 @@ describe("the handoff", () => {
     const { code } = await mintSigningLinkIntent(RECIPIENT, { clock, codes, links: repo, ids });
 
     const result = await claimSigningLink("usr_1", code, PASSWORD, {
-      clock, codes, links: repo, ids, ...stepUp({ saved: 0 }),
+      clock, codes, links: repo, ids, ...stepUp({ saved: 0 }), consumeIntent: burn(repo),
       accounts: accounts({
         normalizedEmail: "signer@example.com", emailVerifiedAt: new Date(NOW),
       }),
@@ -366,7 +378,7 @@ describe("the handoff", () => {
     const { code } = await mintSigningLinkIntent(RECIPIENT, { clock, codes, links: repo, ids });
 
     await claimSigningLink("usr_1", code, PASSWORD, {
-      clock, codes, links: repo, ids, ...stepUp(),
+      clock, codes, links: repo, ids, ...stepUp(), consumeIntent: burn(repo),
       accounts: accounts({
         normalizedEmail: "signer@example.com", emailVerifiedAt: new Date(NOW),
       }),
@@ -382,5 +394,38 @@ describe("the handoff", () => {
       recipientSessionId: "rses_1",
       at: new Date(NOW),
     });
+  });
+});
+
+
+describe("the burn is separated from the checks, structurally", () => {
+  it("consumeIntent is a dependency of its own, not a call on links", async () => {
+    // The production bug was not a wrong line — it was the burn and the
+    // checks sharing a transaction, so a refusal rolled the burn back.
+    //
+    // A fake cannot reproduce that: it has no transaction. So the guarantee
+    // is moved into the SHAPE of the dependency instead. `consumeIntent` is
+    // supplied separately from `links` precisely so a composition cannot
+    // quietly run it inside the transaction that also does the checks, and
+    // this asserts the seam exists rather than asserting a behaviour the
+    // fake is incapable of getting wrong.
+    const { repo } = repository();
+    const calls: string[] = [];
+    const { code } = await mintSigningLinkIntent(
+      RECIPIENT, { clock, codes, links: repo, ids });
+
+    await expect(claimSigningLink("usr_1", code, "wrong", {
+      clock, codes, links: repo, ids, ...stepUp(),
+      consumeIntent: (digest, at) => {
+        calls.push("consume");
+        return repo.claimIntent(digest, at);
+      },
+      accounts: accounts({
+        normalizedEmail: "signer@example.com", emailVerifiedAt: new Date(NOW),
+      }),
+    })).rejects.toThrow();
+
+    // It ran, and it ran before the refusal.
+    expect(calls).toEqual(["consume"]);
   });
 });

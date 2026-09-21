@@ -10597,6 +10597,22 @@
                             "type": "string"
                           }
                         }
+                      },
+                      {
+                        "title": "SavedSignature",
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "method"
+                        ],
+                        "properties": {
+                          "method": {
+                            "type": "string",
+                            "enum": [
+                              "saved"
+                            ]
+                          }
+                        }
                       }
                     ]
                   }
@@ -11213,6 +11229,43 @@
                         }
                       }
                     },
+                    "preparedSignatures": {
+                      "type": "array",
+                      "items": {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "purpose",
+                          "method"
+                        ],
+                        "properties": {
+                          "purpose": {
+                            "maxLength": 16,
+                            "type": "string"
+                          },
+                          "method": {
+                            "maxLength": 16,
+                            "type": "string"
+                          },
+                          "text": {
+                            "maxLength": 200,
+                            "type": "string"
+                          },
+                          "styleIndex": {
+                            "type": "integer"
+                          },
+                          "base64": {
+                            "type": "string"
+                          },
+                          "width": {
+                            "type": "integer"
+                          },
+                          "height": {
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    },
                     "consent": {
                       "additionalProperties": false,
                       "type": "object",
@@ -11535,6 +11588,43 @@
                         "maskedEmail": {
                           "maxLength": 320,
                           "type": "string"
+                        }
+                      }
+                    },
+                    "preparedSignatures": {
+                      "type": "array",
+                      "items": {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "purpose",
+                          "method"
+                        ],
+                        "properties": {
+                          "purpose": {
+                            "maxLength": 16,
+                            "type": "string"
+                          },
+                          "method": {
+                            "maxLength": 16,
+                            "type": "string"
+                          },
+                          "text": {
+                            "maxLength": 200,
+                            "type": "string"
+                          },
+                          "styleIndex": {
+                            "type": "integer"
+                          },
+                          "base64": {
+                            "type": "string"
+                          },
+                          "width": {
+                            "type": "integer"
+                          },
+                          "height": {
+                            "type": "integer"
+                          }
                         }
                       }
                     },
@@ -11891,6 +11981,43 @@
                         "maskedEmail": {
                           "maxLength": 320,
                           "type": "string"
+                        }
+                      }
+                    },
+                    "preparedSignatures": {
+                      "type": "array",
+                      "items": {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "purpose",
+                          "method"
+                        ],
+                        "properties": {
+                          "purpose": {
+                            "maxLength": 16,
+                            "type": "string"
+                          },
+                          "method": {
+                            "maxLength": 16,
+                            "type": "string"
+                          },
+                          "text": {
+                            "maxLength": 200,
+                            "type": "string"
+                          },
+                          "styleIndex": {
+                            "type": "integer"
+                          },
+                          "base64": {
+                            "type": "string"
+                          },
+                          "width": {
+                            "type": "integer"
+                          },
+                          "height": {
+                            "type": "integer"
+                          }
                         }
                       }
                     },
@@ -12358,6 +12485,22 @@
                             "type": "string"
                           }
                         }
+                      },
+                      {
+                        "title": "SavedSignature",
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "method"
+                        ],
+                        "properties": {
+                          "method": {
+                            "type": "string",
+                            "enum": [
+                              "saved"
+                            ]
+                          }
+                        }
                       }
                     ]
                   },
@@ -12458,6 +12601,22 @@
                             "maxLength": 87510,
                             "pattern": "^[A-Za-z0-9+/]+={0,2}$",
                             "type": "string"
+                          }
+                        }
+                      },
+                      {
+                        "title": "SavedSignature",
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "method"
+                        ],
+                        "properties": {
+                          "method": {
+                            "type": "string",
+                            "enum": [
+                              "saved"
+                            ]
                           }
                         }
                       }

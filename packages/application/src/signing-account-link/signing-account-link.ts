@@ -126,6 +126,22 @@ export interface ClaimSigningLinkDependencies {
   readonly clock: Clock;
   readonly codes: HandoffCodeDigester;
   readonly links: SigningAccountLinkRepository;
+  /**
+   * Burns the code in a transaction of its own, committed immediately.
+   *
+   * Separate from `links` so the caller cannot accidentally run it inside the
+   * transaction that also does the checks — which is precisely the mistake
+   * that shipped.
+   */
+  readonly consumeIntent: (
+    intentDigest: string, now: Date,
+  ) => Promise<{
+    readonly workspaceId: string;
+    readonly signingRequestId: string;
+    readonly recipientId: string;
+    readonly recipientNormalizedEmail: string;
+    readonly recipientSessionId: string;
+  } | null>;
   readonly accounts: {
     /** The caller's own canonical address and whether it is proved. */
     findIdentity: (userId: string) => Promise<{
@@ -187,7 +203,19 @@ export async function claimSigningLink(
 ): Promise<ClaimedSigningLink> {
   const now = new Date(deps.clock.now());
 
-  const intent = await deps.links.claimIntent(deps.codes.digestHandoffCode(code), now);
+  // Consumed in its OWN committed transaction, before anything that can fail.
+  //
+  // This was wrong in production and the fix is the whole point of the
+  // separation. The consume and the checks used to share one transaction, so
+  // a refused claim rolled the burn back and the code stayed usable — exactly
+  // the retry-against-many-accounts case the burn exists to prevent. The
+  // in-memory test that asserted the property could not catch it, because a
+  // fake with no transaction has no rollback to model.
+  //
+  // Committing the burn first means a refusal costs the code. That is the
+  // intended trade: a legitimate signer who mistypes their password asks for
+  // a new link, which is cheap, and an attacker gets one attempt per code.
+  const intent = await deps.consumeIntent(deps.codes.digestHandoffCode(code), now);
   if (intent === null) throw new SigningLinkNotClaimableError();
 
   // The step-up, AFTER the code is claimed and therefore burned.

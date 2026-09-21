@@ -82,8 +82,21 @@ export const DrawnSignatureSchema = Type.Object({
   }),
 }, { title: "DrawnSignature", additionalProperties: false });
 
+/**
+ * "Use the mark you were handed."
+ *
+ * Carries no bytes and no text — only the instruction. The server already
+ * holds what was prepared, bound to this session, and a client that could
+ * supply the content could claim `applied-from-saved` for anything it liked.
+ * The absence of a payload here is what makes that provenance value mean
+ * something.
+ */
+export const SavedSignatureSchema = Type.Object({
+  method: Type.Literal("saved"),
+}, { title: "SavedSignature", additionalProperties: false });
+
 export const SignatureRepresentationSchema = Type.Union(
-  [TypedSignatureSchema, DrawnSignatureSchema],
+  [TypedSignatureSchema, DrawnSignatureSchema, SavedSignatureSchema],
   { title: "SignatureRepresentation" },
 );
 export type SignatureRepresentationInput = Static<typeof SignatureRepresentationSchema>;

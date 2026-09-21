@@ -96,6 +96,22 @@ const CeremonyResponseSchema = Type.Object({
   accountLink: Type.Optional(Type.Object({
     maskedEmail: Type.String({ maxLength: 320 }),
   }, { additionalProperties: false })),
+  /**
+   * Marks this account handed to THIS session, ready to apply.
+   *
+   * Carries the bytes so the signer can see exactly what they are about to
+   * sign with. That is not a convenience: applying a signature the signer has
+   * not looked at is the one thing this feature must never do.
+   */
+  preparedSignatures: Type.Optional(Type.Array(Type.Object({
+    purpose: Type.String({ maxLength: 16 }),
+    method: Type.String({ maxLength: 16 }),
+    text: Type.Optional(Type.String({ maxLength: 200 })),
+    styleIndex: Type.Optional(Type.Integer()),
+    base64: Type.Optional(Type.String()),
+    width: Type.Optional(Type.Integer()),
+    height: Type.Optional(Type.Integer()),
+  }, { additionalProperties: false }))),
   consent: Type.Object({
     required: Type.Boolean(),
     accepted: Type.Boolean(),
@@ -166,6 +182,20 @@ export interface SigningCeremonyRouteOptions {
   readonly readAccountLink: (
     signingRequestId: string, recipientId: string,
   ) => Promise<{ maskedEmail: string } | null>;
+  /**
+   * What was prepared for the session this token belongs to.
+   *
+   * Takes the RAW token and resolves it itself, so the session is the one
+   * that is actually making the request. Passing ids instead would let a
+   * future caller hand in a recipient without proving it holds that
+   * recipient's session — which is exactly the mistake the session binding
+   * exists to prevent.
+   */
+  readonly readPreparedSignatures: (rawSessionToken: string) => Promise<readonly {
+    purpose: string; method: string;
+    text?: string; styleIndex?: number;
+    base64?: string; width?: number; height?: number;
+  }[]>;
 }
 
 function noStore(reply: FastifyReply): void {
@@ -193,12 +223,22 @@ async function limit(
 function present(
   view: SigningCeremonyView,
   accountLink?: { maskedEmail: string } | null,
+  preparedSignatures?: readonly {
+    purpose: string; method: string;
+    text?: string; styleIndex?: number;
+    base64?: string; width?: number; height?: number;
+  }[],
 ) {
   return {
     // Absent when no account is bound, and absent rather than null — the
     // schema marks it optional, so an unbound ceremony's response is byte for
     // byte what it was before this field existed.
     ...(accountLink === null || accountLink === undefined ? {} : { accountLink }),
+    // Same posture: a ceremony with nothing prepared is byte for byte what it
+    // was, so no existing client can notice this arriving.
+    ...(preparedSignatures === undefined || preparedSignatures.length === 0
+      ? {}
+      : { preparedSignatures }),
     request: view.request,
     recipient: view.recipient,
     access: {
@@ -289,7 +329,8 @@ export function registerSigningCeremonyRoutes(
 
     const link = await options.readAccountLink(
       view.request.signingRequestId, view.recipient.recipientId);
-    return reply.status(200).send(present(view, link));
+    const prepared = await options.readPreparedSignatures(raw);
+    return reply.status(200).send(present(view, link, prepared));
   });
 
   // ── Read ────────────────────────────────────────────────────────────────
@@ -311,7 +352,8 @@ export function registerSigningCeremonyRoutes(
     const view = await getSigningCeremony(raw, options.ceremonyDependencies());
     const link = await options.readAccountLink(
       view.request.signingRequestId, view.recipient.recipientId);
-    return reply.status(200).send(present(view, link));
+    const prepared = await options.readPreparedSignatures(raw);
+    return reply.status(200).send(present(view, link, prepared));
   });
 
   // ── Document bytes ──────────────────────────────────────────────────────
@@ -395,7 +437,8 @@ export function registerSigningCeremonyRoutes(
 
     const link = await options.readAccountLink(
       view.request.signingRequestId, view.recipient.recipientId);
-    return reply.status(200).send(present(view, link));
+    const prepared = await options.readPreparedSignatures(raw);
+    return reply.status(200).send(present(view, link, prepared));
   });
 
   // ── Sign-in handoff ─────────────────────────────────────────────────────

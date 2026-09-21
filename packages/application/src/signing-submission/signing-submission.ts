@@ -22,6 +22,7 @@
 // scheduling artefact presented as a fact.
 
 import type { WorkspaceId } from "@lagda/contracts";
+import type { PreparedSignature } from "../common/ports/prepared-signatures.js";
 import {
   assessCeremonyAccess, resolveSubmission, canonicalSubmissionFingerprint,
   CEREMONY_CONSENT_TYPE,
@@ -165,7 +166,7 @@ export class SigningSubmissionInProgressError extends ApplicationError {
 // ── Input and output ─────────────────────────────────────────────────────────
 
 export interface SignatureRepresentationInput {
-  readonly method: "typed" | "drawn";
+  readonly method: "typed" | "drawn" | "saved";
   /**
    * How the signer produced this, as their client reports it.
    *
@@ -265,9 +266,20 @@ export async function submitRecipientSigning(
   const digest = deps.sessionTokens.digestToken(input.rawSessionToken);
   if (digest === null) throw new SigningNotPermittedError("session");
 
+  // What this session was handed, if anything. Read before the transaction
+  // for the same reason the image validation is: a database lock must not be
+  // held while unrelated work happens.
+  //
+  // Session-scoped, so a forwarded link cannot reach a mark prepared for the
+  // browser that was actually verified.
+  const handed = await deps.transactions.runGlobal(async uow =>
+    uow.preparedSignatures.listForSession(
+      String(context.signingRequestId), String(context.recipientId),
+      String(context.signingSessionId)));
+
   // Decoded and validated OUTSIDE the transaction. §129: a database lock must
   // not be held while an image header is parsed.
-  const prepared = prepareRepresentations(input, deps);
+  const prepared = prepareRepresentations(input, deps, handed);
 
   const now = deps.clock.now();
   const scope: IdempotencyScope = {
@@ -351,6 +363,25 @@ export async function submitRecipientSigning(
     // path must not be where that surfaces (§197, §199).
   }
 
+  // The handoff ends here.
+  //
+  // AFTER the submission has committed, and best-effort. A prepared mark is a
+  // copy — the evidence row already holds its own bytes and its own digest,
+  // and nothing signed depends on this row surviving. So a failure here
+  // leaves a spent copy behind rather than costing a signature, which is the
+  // right way round: the alternative is holding the submission open to tidy
+  // up after it.
+  //
+  // It is session-scoped and the session is about to end, so a stray row is
+  // unreachable even if it lingers.
+  if (handed.length > 0) {
+    try {
+      await deps.transactions.runGlobal(async uow =>
+        uow.preparedSignatures.consumeForRecipient(
+          String(context.signingRequestId), String(context.recipientId)));
+    } catch { /* a spent copy outliving its use is not worth a failed sign. */ }
+  }
+
   return accepted;
 }
 
@@ -370,12 +401,45 @@ interface PreparedRepresentation {
 function prepareRepresentations(
   input: SubmitRecipientSigningInput,
   deps: SigningSubmissionDependencies,
+  handed: readonly PreparedSignature[],
 ): readonly PreparedRepresentation[] {
   const prepared: PreparedRepresentation[] = [];
   for (const [purpose, supplied] of [
     ["signature", input.signature], ["initials", input.initials],
   ] as const) {
     if (supplied === undefined) continue;
+
+    if (supplied.method === "saved") {
+      // The bytes come from what the server was handed, never from the
+      // request. That is what makes `applied-from-saved` a fact rather than
+      // a claim: a client that could supply the content could assert this
+      // provenance for anything.
+      const source = handed.find(entry => entry.purpose === purpose);
+      if (source === undefined) {
+        throw new SigningSubmissionInvalidError([{ code: "field-value-invalid" }]);
+      }
+      prepared.push({
+        purpose,
+        build: id => ({
+          representationId: id as never,
+          purpose,
+          representationType: source.representationType,
+          typedText: source.typedText,
+          typedStyleIndex: source.typedStyleIndex,
+          // A FRESH evidence row holding its own copy of the bytes. It does
+          // not reference the prepared row or the library entry, so deleting
+          // either afterwards cannot reach into a signed document.
+          rasterBytes: source.rasterBytes,
+          rasterMediaType: source.rasterMediaType,
+          rasterWidth: source.rasterWidth,
+          rasterHeight: source.rasterHeight,
+          digest: source.digest,
+          // Server-decided. The only provenance value a client cannot say.
+          captureProvenance: "applied-from-saved",
+        }),
+      });
+      continue;
+    }
 
     if (supplied.method === "typed") {
       const text = supplied.text ?? "";

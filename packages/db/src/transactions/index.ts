@@ -39,6 +39,7 @@ import {
 } from "../repositories/evidence.js";
 import { createUploadRepository } from "../repositories/uploads.js";
 import { createSigningAccountLinkRepository } from "../repositories/signing-account-links.js";
+import { createPreparedSignatureRepository } from "../repositories/prepared-signatures.js";
 import { createIdempotencyRepository } from "../repositories/idempotency.js";
 import {
   createScopedInvitationRepository, createInvitationCredentialLookup,
@@ -373,6 +374,7 @@ export function createTransactionManager(db: Kysely<Database>): TransactionManag
           // below — a message between two credential realms, readable by
           // neither of their scopes and therefore by this one.
           signingAccountLinks: createSigningAccountLinkRepository(trx),
+          preparedSignatures: createPreparedSignatureRepository(trx),
           // Identifiers only, from the one table that carries no policy
           // because a cross-tenant scan cannot have one without BYPASSRLS.
           signingWorkflowReconciliation:
