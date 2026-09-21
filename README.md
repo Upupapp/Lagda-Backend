@@ -48,6 +48,7 @@ npm install   # when adding or changing dependencies
 | `npm run test:coverage` | Vitest with coverage. |
 | `npm run db:migrate` | Applies migrations to `DATABASE_URL`. Up only. |
 | `npm run db:migrate:status` | Reports which migrations have run. |
+| `npm run signing:reconcile` | Applies outstanding signing-workflow advances once (e.g. declines recorded before declines advanced immediately). Idempotent. |
 | `npm run openapi:emit` | Regenerates `openapi.json` from the contracts. |
 | `npm run dev:api` / `npm run dev:worker` | The two processes, watched. |
 | `npm run start:api` / `npm run start:worker` | The same, from `dist/`. |

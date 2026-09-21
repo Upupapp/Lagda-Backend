@@ -569,8 +569,15 @@ export function buildIdentity(
       // plain transactions, for the same reason the claim above is: these
       // rows belong to no tenant.
       listDocumentsToSign: async (userId: UserId) => {
-        const entries = await createUserSigningRecordsRepository(db)
-          .listOpenInboxForUser(userId, clock.now(), 100);
+        const records = createUserSigningRecordsRepository(db);
+        // Invitations that arrived before this account existed or verified
+        // its address wait unclaimed (057). Claimed here, by the VERIFIED
+        // address only, so opening the list is what brings them in.
+        const identity = await findAccountIdentity(userId);
+        if (identity !== null && identity.emailVerified) {
+          await records.claimInboxForAddress(userId, identity.normalizedEmail);
+        }
+        const entries = await records.listOpenInboxForUser(userId, clock.now(), 100);
         return entries.map(presentInboxItem);
       },
       listSignedDocuments: async (userId: UserId) => {

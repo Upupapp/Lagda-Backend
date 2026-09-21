@@ -28,6 +28,7 @@
 // two cookies coexist and neither implies the other.
 
 import type { WorkspaceId } from "@lagda/contracts";
+import { isRequestSignableState } from "@lagda/core";
 import type {
   Clock, TransactionManager,
   SigningRequestId, SigningRequestRecipientId,
@@ -303,7 +304,12 @@ function assertUsable(resolved: ResolvedSigningAccess, now: number): void {
   // mint credentials before sending, so this is defence in depth — and it is
   // also what will refuse `cancelled`, `completed` and `expired` the day those
   // states exist, without another edit here.
-  if (resolved.requestState !== "sent") throw new SigningLinkInvalidOrExpiredError();
+  //
+  // The canonical signable set, not "sent" alone. It used to be the literal
+  // "sent", written before `partially-completed` existed -- so once the first
+  // of several signers signed, the request moved to partially-completed and
+  // every later signer's link was refused as invalid.
+  if (!isRequestSignableState(resolved.requestState)) throw new SigningLinkInvalidOrExpiredError();
 
   // Routing. NULL means send never wrote an activation row, which is not a
   // state the system produces — treated as ineligible rather than as
