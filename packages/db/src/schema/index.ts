@@ -425,7 +425,8 @@ export interface UserSignedDocumentsTable {
 
 /** Migration 056. Written at invitation, read only by its owner. */
 export interface UserSigningInboxTable {
-  user_id: string;
+  /** NULL until a verified account with this address claims it (057). */
+  user_id: ColumnType<string | null, string | null, string | null>;
   signing_request_id: string;
   request_recipient_id: string;
   /** For reference only. Never a filter. */

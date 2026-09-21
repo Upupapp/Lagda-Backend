@@ -4,7 +4,7 @@
 // Every owner read takes the authenticated user id and filters on it. None
 // filters on workspace_id -- see the rule at the top of each migration.
 
-import type { Kysely, Selectable, Transaction } from "kysely";
+import { sql, type Kysely, type Selectable, type Transaction } from "kysely";
 import type {
   UserSigningRecordsRepository, UserSignedDocumentRecord, UserSigningInboxRecord,
   SigningResumeIntentRepository, SigningResumeIntentRecord, InboxClosedReason,
@@ -99,12 +99,24 @@ export function createUserSigningRecordsRepository(db: Db): UserSigningRecordsRe
         // A re-issued grant refreshes an OPEN entry. A closed one stays closed.
         .onConflict(oc => oc.columns(["signing_request_id", "request_recipient_id"])
           .doUpdateSet(eb => ({
+            // An owner, once known, is kept; an unclaimed row gains one.
+            user_id: sql<string | null>`coalesce(user_signing_inbox.user_id, excluded.user_id)`,
             grant_credential_digest: eb.ref("excluded.grant_credential_digest"),
             expires_at: eb.ref("excluded.expires_at"),
             invited_at: eb.ref("excluded.invited_at"),
           }))
           .where("user_signing_inbox.closed_at", "is", null))
         .execute();
+    },
+
+    async claimInboxForAddress(userId, normalizedEmail) {
+      const result = await db.updateTable("user_signing_inbox")
+        .set({ user_id: userId })
+        .where("user_id", "is", null)
+        .where("recipient_normalized_email", "=", normalizedEmail)
+        .where("closed_at", "is", null)
+        .executeTakeFirst();
+      return Number(result.numUpdatedRows);
     },
 
     async closeInboxForRequest(signingRequestId, reason, at) {

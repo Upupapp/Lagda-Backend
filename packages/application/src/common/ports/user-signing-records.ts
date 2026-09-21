@@ -25,7 +25,8 @@ export interface UserSignedDocumentRecord extends SenderSnapshot {
 }
 
 export interface UserSigningInboxRecord extends SenderSnapshot {
-  readonly userId: string;
+  /** Null until a verified account with this address claims it (057). */
+  readonly userId: string | null;
   readonly signingRequestId: string;
   readonly recipientId: string;
   /** For reference only. Never a filter. */
@@ -55,6 +56,11 @@ export interface UserSigningRecordsRepository {
    * recipient who already signed is not asked again by a stray re-issue.
    */
   openInboxEntry(entry: Omit<UserSigningInboxRecord, "closedAt" | "closedReason">): Promise<void>;
+  /**
+   * Gives this account every OPEN, unclaimed entry sent to its address.
+   * The caller has already proved the address is verified and its own.
+   */
+  claimInboxForAddress(userId: string, normalizedEmail: string): Promise<number>;
   /** A sender cancelled: every open entry for the request closes. */
   closeInboxForRequest(signingRequestId: string, reason: InboxClosedReason, at: number): Promise<void>;
 

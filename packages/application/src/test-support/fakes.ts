@@ -1651,11 +1651,22 @@ export function userSigningRecords(): UserSigningRecordsRepository {
         fakeSigningInbox.set(key, { ...entry, closedAt: null, closedReason: null });
       } else if (existing.closedAt === null) {
         fakeSigningInbox.set(key, {
-          ...existing, grantCredentialDigest: entry.grantCredentialDigest,
+          ...existing, userId: existing.userId ?? entry.userId,
+          grantCredentialDigest: entry.grantCredentialDigest,
           expiresAt: entry.expiresAt, invitedAt: entry.invitedAt,
         });
       }
       return Promise.resolve();
+    },
+    claimInboxForAddress: (userId, email) => {
+      let claimed = 0;
+      for (const [key, entry] of fakeSigningInbox) {
+        if (entry.userId === null && entry.closedAt === null && entry.recipientNormalizedEmail === email) {
+          fakeSigningInbox.set(key, { ...entry, userId });
+          claimed++;
+        }
+      }
+      return Promise.resolve(claimed);
     },
     closeInboxForRequest: (signingRequestId, reason, at) => {
       for (const [key, entry] of fakeSigningInbox) {

@@ -502,10 +502,11 @@ export async function provisionSigningRecipientAccess(
     },
   }, uow);
 
-  // "Documents I must sign" (migration 056), in THIS transaction, beside the
-  // invitation it mirrors. Only when the invited address belongs to a
-  // VERIFIED account: the entry tells that account exactly what the email
-  // tells its inbox, and nobody else.
+  // "Documents I must sign" (migrations 056, 057), in THIS transaction,
+  // beside the invitation it mirrors. Written for every invited address; it
+  // is owned now if a VERIFIED account holds the address, and otherwise waits
+  // for one to claim it. Either way it tells that inbox exactly what the
+  // email does, and nobody else.
   await openSigningInboxEntry(uow, {
     request, recipient, now,
     grantCredentialDigest: credential.digest,
@@ -518,7 +519,7 @@ export async function provisionSigningRecipientAccess(
 }
 
 /**
- * Opens the invited account's "must sign" entry, if there is such an account.
+ * Opens the invited address's "must sign" entry, owned if an account holds it.
  *
  * The sender is the request's CREATOR -- the person whose document it is --
  * snapshotted with the workspace name so the entry keeps saying who sent it
@@ -536,13 +537,12 @@ async function openSigningInboxEntry(
 ): Promise<void> {
   const { request, recipient } = input;
   const account = await uow.userSigningRecords.findVerifiedAccountByEmail(recipient.normalizedEmail);
-  if (account === null) return;
 
   const sender = await uow.userSigningRecords.findUserContact(String(request.createdByUserId));
   const workspace = await uow.workspaces.find();
 
   await uow.userSigningRecords.openInboxEntry({
-    userId: account.userId,
+    userId: account?.userId ?? null,
     signingRequestId: String(request.signingRequestId),
     recipientId: String(recipient.recipientId),
     workspaceId: String(request.workspaceId),
