@@ -308,6 +308,9 @@ export function registerSigningRequestRoutes(
         documentTitle: item.documentTitle,
         participantCount: item.participantCount,
         completedParticipantCount: item.completedParticipantCount,
+        // Who sent it. Null when that account no longer exists — the request
+        // is the workspace's record and outlives its sender.
+        initiator: item.initiator,
         createdAt: iso(item.createdAt),
         // Nullable timestamps stay null. A draft has not been sent, and the
         // epoch is a date rather than an absence.

@@ -148,10 +148,18 @@ export function createScopedSigningRequestRepository(
         expires_at: Date | null;
         participant_count: string;
         completed_participant_count: string;
+        initiator_name: string | null;
+        initiator_email: string | null;
       }>`
         select
           sr.signing_request_id, sr.document_id, sr.state, sr.document_title,
           sr.created_at, sr.sent_at, sr.completed_at, sr.expires_at,
+          -- Who sent it. A LEFT join, because created_by_user_id has no
+          -- foreign key to users and a deleted account must not make the
+          -- request itself disappear from the list: the request is the
+          -- workspace record, not the sender one.
+          u.display_name as initiator_name,
+          u.email        as initiator_email,
           (select count(*) from signing_request_recipients r
              where r.signing_request_id = sr.signing_request_id)
             as participant_count,
@@ -160,6 +168,7 @@ export function createScopedSigningRequestRepository(
                and a.recipient_state = 'signed')
             as completed_participant_count
         from signing_requests sr
+        left join users u on u.user_id = sr.created_by_user_id
         where sr.workspace_id = ${scope}
         order by sr.created_at desc, sr.signing_request_id desc
         limit ${query.limit} offset ${query.offset}
@@ -178,6 +187,11 @@ export function createScopedSigningRequestRepository(
           documentTitle: row.document_title,
           participantCount: Number(row.participant_count),
           completedParticipantCount: Number(row.completed_participant_count),
+          // Null when the account has gone. The row stays; the attribution
+          // degrades rather than the record vanishing.
+          initiator: row.initiator_name === null && row.initiator_email === null
+            ? null
+            : { name: row.initiator_name ?? "", email: row.initiator_email ?? "" },
           createdAt: row.created_at.getTime(),
           sentAt: row.sent_at === null ? null : row.sent_at.getTime(),
           completedAt: row.completed_at === null ? null : row.completed_at.getTime(),
