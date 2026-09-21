@@ -174,6 +174,48 @@ suite("recipient signing access (RLS, runtime role)", () => {
       expect(resolved).toBeNull();
     });
 
+    // Regression: migration 024 widened `recipient_state` to also allow
+    // "signed" and "declined", and this mapper's allowlist was never updated
+    // to match. It crashed bootstrap with an unhandled 500 -- rather than a
+    // clean refusal -- for anyone reopening a link after signing or
+    // declining, or a later signer checking whether an earlier one finished.
+    it("resolves a SIGNED recipient without crashing, so the caller can refuse cleanly", async () => {
+      await sql`
+        insert into recipient_submissions
+          (submission_id, workspace_id, signing_request_id, request_recipient_id,
+           accepted_at, signing_session_id, authentication_method, consent_id)
+        values ('sub_regress', ${WS_A}, ${requestOf(WS_A)}, ${recipientOf(WS_A)},
+                ${new Date(AT)}, 'sess_regress', 'link-only', null)
+      `.execute(owner.db);
+      await sql`
+        update signing_request_recipient_activation
+        set recipient_state = 'signed', signed_at = ${new Date(AT)}, submission_id = 'sub_regress'
+        where workspace_id = ${WS_A} and signing_request_id = ${requestOf(WS_A)}
+          and request_recipient_id = ${recipientOf(WS_A)}
+      `.execute(owner.db);
+
+      const resolved = await createTransactionManager(app.db)
+        .runForSigningCredential(DIGEST_A,
+          uow => uow.access.findByCredentialDigest(DIGEST_A));
+
+      expect(resolved?.activationState).toBe("signed");
+    });
+
+    it("resolves a DECLINED recipient without crashing, so the caller can refuse cleanly", async () => {
+      await sql`
+        update signing_request_recipient_activation
+        set recipient_state = 'declined', declined_at = ${new Date(AT)}, decline_reason = 'not-agree'
+        where workspace_id = ${WS_A} and signing_request_id = ${requestOf(WS_A)}
+          and request_recipient_id = ${recipientOf(WS_A)}
+      `.execute(owner.db);
+
+      const resolved = await createTransactionManager(app.db)
+        .runForSigningCredential(DIGEST_A,
+          uow => uow.access.findByCredentialDigest(DIGEST_A));
+
+      expect(resolved?.activationState).toBe("declined");
+    });
+
     it("cannot see the OTHER tenant's grant, even asking for it directly", async () => {
       // The policy matches on the SETTING, not on the argument. Setting A's
       // digest and querying B's returns nothing.
