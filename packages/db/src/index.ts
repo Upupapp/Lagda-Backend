@@ -82,3 +82,8 @@ export {
   type UserSignatureRepository, type SavedSignature,
   type SaveSignatureInput, type UserSignaturePurpose,
 } from "./repositories/user-signatures.js";
+export {
+  createNotificationFeedRepository,
+  type NotificationFeedRepository, type FeedNotification,
+  type FeedNotificationType,
+} from "./repositories/notification-feed.js";

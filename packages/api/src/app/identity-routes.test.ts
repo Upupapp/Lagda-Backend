@@ -33,6 +33,7 @@ function app() {
 
   registerIdentityRoutes(instance, config, {
     signatures: () => stubSignatureRepository(),
+    notificationFeed: () => ({ listForUser: () => Promise.resolve([]) }),
     claimSigningLink: () => Promise.reject(new Error("not used")),
     signatureImages: () => createSignatureImageValidator(),
     now: () => new Date(1_700_000_000_000),

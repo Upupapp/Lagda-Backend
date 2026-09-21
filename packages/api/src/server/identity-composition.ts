@@ -52,7 +52,7 @@ import {
   nextMfaFactorId, nextRecoveryCodeId, nextPendingAuthenticationId,
   createNotificationIntentIdGenerator, createNotificationDeliveryIdGenerator,
 } from "../security/identifiers.js";
-import { createUserSignatureRepository } from "@lagda/db";
+import { createUserSignatureRepository, createNotificationFeedRepository } from "@lagda/db";
 import { createSignatureImageValidator } from "../security/signature-image.js";
 import { randomUUID } from "node:crypto";
 import { claimSigningLink, normalizeEmail } from "@lagda/application";
@@ -454,6 +454,7 @@ export function buildIdentity(
       }),
 
       signatures: () => createUserSignatureRepository(db),
+      notificationFeed: () => createNotificationFeedRepository(db),
 
       // The workspace half of the account binding. Runs in GLOBAL scope: the
       // handoff tables belong to no tenant, which is what lets a message pass

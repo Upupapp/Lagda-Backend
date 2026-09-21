@@ -10,6 +10,7 @@
 //   PUT    /me/signatures/:purpose  save or replace one
 //   DELETE /me/signatures/:purpose  remove one
 //   POST   /me/signing-links        claim a signing handoff code
+//   GET    /me/notifications        messages addressed to this account
 //
 // ── There is no user id in any path ────────────────────────────────────────
 //
@@ -42,6 +43,7 @@ import {
 import type { ApiConfig } from "../config/index.js";
 import type {
   UserSignatureRepository, UserSignaturePurpose, SavedSignature,
+  NotificationFeedRepository,
 } from "@lagda/db";
 import type { SignatureImageValidator } from "@lagda/application";
 import { SignatureRepresentationSchema } from "@lagda/contracts";
@@ -224,6 +226,43 @@ export type UpdatePreferencesRequest = Static<typeof UpdatePreferencesRequestSch
 export type ChangePasswordRequest = Static<typeof ChangePasswordRequestSchema>;
 export type RevokeSessionRequest = Static<typeof RevokeSessionRequestSchema>;
 
+// ── Notification feed ───────────────────────────────────────────────────────
+
+/**
+ * A page of the feed, not the whole history.
+ *
+ * Bounded because the row count grows with every message the account is ever
+ * sent, and an unbounded read would become slower for the heaviest users —
+ * precisely the ones who would notice. 100 is roughly three screens; paging
+ * can be added when something actually needs it.
+ */
+const NOTIFICATION_FEED_LIMIT = 100;
+
+/**
+ * Closed, and every field named.
+ *
+ * `additionalProperties: false` is the guard: `template_input` is a jsonb
+ * column and the row objects are built by hand, so a future field added
+ * upstream is dropped at serialization rather than forwarded. The one thing
+ * this must never forward is a sealed signing-link ciphertext.
+ */
+const FeedNotificationSchema = Type.Object({
+  id: Type.String(),
+  type: Type.String(),
+  workspaceId: Type.Union([Type.String(), Type.Null()]),
+  sourceKind: Type.String(),
+  sourceId: Type.String(),
+  // Bounded by the template registry on the way in. Deliberately opaque here:
+  // the API does not re-model every template's variables, it forwards what was
+  // frozen at creation and lets the client render it.
+  templateInput: Type.Unknown(),
+  createdAt: Type.String(),
+}, { title: "FeedNotification", additionalProperties: false });
+
+const NotificationFeedResponseSchema = Type.Object({
+  notifications: Type.Array(FeedNotificationSchema),
+}, { title: "NotificationFeed", additionalProperties: false });
+
 export interface AccountRouteOptions {
   readonly config: ApiConfig;
   /**
@@ -251,6 +290,8 @@ export interface AccountRouteOptions {
     signingRequestId: string; recipientId: string; preparedCount: number;
   }>;
   readonly signatureImages: () => SignatureImageValidator;
+  /** The caller's own in-app notification feed. See migration 030. */
+  readonly notificationFeed: () => NotificationFeedRepository;
   readonly now: () => Date;
   readonly currentUserDependencies: () => GetCurrentUserDependencies;
   readonly updateProfileDependencies: () => UpdateProfileDependencies;
@@ -569,6 +610,42 @@ export function registerAccountRoutes(
         },
       });
     }
+  });
+
+  // ── Notifications ───────────────────────────────────────────────────────
+  //
+  // A READ of messages this account was the audience of. It returns no
+  // credential and no address, and it cannot reach another account's rows:
+  // the repository filters on `audience_user_id` in SQL, so there is no
+  // authorization comparison here to get wrong.
+  //
+  // The response schema below is `additionalProperties: false` and names
+  // every field. That is the second of two independent guards — the
+  // repository already refuses to select `sealed_secret`, and if a later
+  // change made it select one anyway, serialization would strip it rather
+  // than ship a signing-link ciphertext to a browser.
+  app.get("/me/notifications", {
+    schema: { response: { 200: NotificationFeedResponseSchema } },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await options.authenticatedUser(request);
+    if (actor === null) return unauthenticated(reply);
+
+    const rows = await options.notificationFeed()
+      .listForUser(actor.userId, NOTIFICATION_FEED_LIMIT);
+
+    return reply.status(200).send({
+      notifications: rows.map(row => ({
+        id: row.notificationIntentId,
+        type: row.notificationType,
+        workspaceId: row.workspaceId,
+        sourceKind: row.sourceKind,
+        sourceId: row.sourceId,
+        // Frozen, schema-checked, non-secret by construction (migration 030).
+        templateInput: row.templateInput ?? {},
+        createdAt: row.createdAt.toISOString(),
+      })),
+    });
   });
 
   // ── Password ────────────────────────────────────────────────────────────
