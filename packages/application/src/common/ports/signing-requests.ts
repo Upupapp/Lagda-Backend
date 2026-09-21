@@ -179,6 +179,24 @@ export interface SigningRequestSummary {
   readonly expiresAt: number | null;
 }
 
+/**
+ * Narrows the list. Every member is optional and they combine with AND.
+ *
+ * A FILTER, not a projection: \`signerContains\` matches against the request's
+ * recipients but nothing about them is returned. The row shape stays exactly
+ * the summary above, so the privacy rule on it is untouched -- and anyone who
+ * can read this list can already open each request and read its recipients,
+ * so matching reveals nothing the same permission does not already show.
+ */
+export interface SigningRequestListFilter {
+  /** Case-insensitive substring of the title as it was sent. */
+  readonly titleContains?: string;
+  /** Any of these states. Absent means every state; never empty. */
+  readonly states?: readonly SigningRequestState[];
+  /** Case-insensitive substring of any recipient's name or email. */
+  readonly signerContains?: string;
+}
+
 export interface SigningRequestListPage {
   readonly items: readonly SigningRequestSummary[];
   /** Counted in the same transaction as the page, so the two cannot disagree. */
@@ -237,6 +255,8 @@ export interface ScopedSigningRequestRepository {
   listForWorkspace(query: {
     readonly limit: number;
     readonly offset: number;
+    /** \`total\` counts the FILTERED set, so paging stays honest. */
+    readonly filter?: SigningRequestListFilter;
   }): Promise<SigningRequestListPage>;
 
   /**

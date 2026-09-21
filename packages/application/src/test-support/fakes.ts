@@ -99,7 +99,7 @@ import type {
   SigningRequestExpiryIndexRepository,
   SigningRequestRecord, SigningRequestRecipientRecord, SigningRequestFieldRecord,
   SigningRequestId, SigningRequestRecipientId, SigningRequestFieldId,
-  SigningRequestIdGenerator,
+  SigningRequestIdGenerator, SigningRequestListFilter,
 } from "../common/ports/signing-requests.js";
 import type {
   NotificationRepository, NewNotificationIntent, NotificationIntentRecord,
@@ -2089,14 +2089,29 @@ function scopedSigningRequests(
      * "0 of 0 signed" would type-check, pass, and describe every request as
      * untouched.
      */
-    listForWorkspace: (query: { limit: number; offset: number }) => {
+    listForWorkspace: (query: {
+      limit: number; offset: number; filter?: SigningRequestListFilter;
+    }) => {
+      const filter = query.filter;
+      const title = filter?.titleContains?.toLowerCase();
+      const signer = filter?.signerContains?.toLowerCase();
+      const recipientsOf = (id: SigningRequestId) => store.signingRequestRecipients.filter(
+        r => store.snapshotOwners.get(String(r.recipientId)) === id);
       const mine = store.signingRequests
         .filter(request => request.workspaceId === scope)
+        // Mirrors the SQL predicate: ILIKE substring on the sent title, state
+        // membership, and a match on any SNAPSHOT recipient's name or email.
+        .filter(request => title === undefined
+          || request.documentTitle.toLowerCase().includes(title))
+        .filter(request => filter?.states === undefined || filter.states.length === 0
+          || filter.states.includes(request.state))
+        .filter(request => signer === undefined
+          || recipientsOf(request.signingRequestId).some(r =>
+            r.name.toLowerCase().includes(signer) || r.email.toLowerCase().includes(signer)))
         .sort((a, b) => b.createdAt - a.createdAt);
 
       const items = mine.slice(query.offset, query.offset + query.limit).map(request => {
-        const recipients = store.signingRequestRecipients.filter(
-          r => store.snapshotOwners.get(String(r.recipientId)) === request.signingRequestId);
+        const recipients = recipientsOf(request.signingRequestId);
         const signed = store.activations.filter(
           a => a.signingRequestId === request.signingRequestId && a.state === "signed");
         return {

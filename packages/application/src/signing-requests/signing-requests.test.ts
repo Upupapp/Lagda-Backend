@@ -18,7 +18,7 @@ import type {
   ContactId, DocumentId, IdempotencyKey, UserId, WorkspaceId, WorkspaceMemberId,
 } from "@lagda/contracts";
 import {
-  createSigningRequest, getSigningRequest, getSigningRequestStats,
+  createSigningRequest, getSigningRequest, getSigningRequestStats, listSigningRequests,
   PreparationNotReadyError, DocumentNotPreparedError,
   type SigningRequestDependencies,
 } from "./signing-requests.js";
@@ -32,7 +32,7 @@ import { renameDocument, type DocumentDependencies } from "../documents/document
 import { CreateWorkspace } from "../workspaces/create-workspace.js";
 import { ResourceNotFoundError } from "../common/errors/index.js";
 import type { AuthenticatedActor, SessionId } from "../common/ports/session.js";
-import type { ArtifactId } from "../common/ports/index.js";
+import type { ArtifactId, SigningRequestListFilter } from "../common/ports/index.js";
 import {
   FixedClock, SequentialWorkspaceIds, SequentialMemberIds,
   SequentialPreparationIds, SequentialRecipientIds, SequentialSigningRequestIds,
@@ -802,5 +802,68 @@ describe("getSigningRequestStats", () => {
     await expect(getSigningRequestStats(
       actor("usr_outsider" as UserId), h.workspaceId, h.deps,
     )).rejects.toBeInstanceOf(ResourceNotFoundError);
+  });
+});
+
+// ── List filtering ───────────────────────────────────────────────────────────
+
+describe("listSigningRequests filtering", () => {
+  /** Two requests: "Office Lease" to Maria Santos, and a renamed one moved to completed. */
+  async function twoRequests() {
+    const h = await harness();
+    await ready(h);
+    const first = await createSigningRequest(
+      { actor: actor(OWNER), workspaceId: h.workspaceId, documentId: DOC }, h.deps);
+    const second = await createSigningRequest(
+      { actor: actor(OWNER), workspaceId: h.workspaceId, documentId: DOC,
+        idempotencyKey: "second" as IdempotencyKey }, h.deps);
+    // Directly in the store, as the stats suite does: the subject is the
+    // filter, and the transitions have their own suites.
+    const index = h.store.signingRequests.findIndex(r => r.signingRequestId === second.signingRequestId);
+    h.store.signingRequests[index] = {
+      ...h.store.signingRequests[index]!, state: "completed", documentTitle: "Employment Agreement",
+    };
+    return { h, first, second };
+  }
+
+  const list = (h: Harness, filter: SigningRequestListFilter) =>
+    listSigningRequests(actor(OWNER), h.workspaceId, { filter }, h.deps);
+
+  it("matches the title case-insensitively, as a substring", async () => {
+    const { h, second } = await twoRequests();
+    const result = await list(h, { titleContains: "employ" });
+    expect(result.items.map(i => i.signingRequestId)).toEqual([second.signingRequestId]);
+  });
+
+  it("matches any of the given states", async () => {
+    const { h, first } = await twoRequests();
+    const result = await list(h, { states: ["draft", "sent"] });
+    expect(result.items.map(i => i.signingRequestId)).toEqual([first.signingRequestId]);
+  });
+
+  it("matches a signer by name or by email, and returns nothing about them", async () => {
+    const { h } = await twoRequests();
+    expect((await list(h, { signerContains: "maria" })).total).toBe(2);
+    expect((await list(h, { signerContains: "AYALALAND" })).total).toBe(2);
+    expect((await list(h, { signerContains: "nobody" })).total).toBe(0);
+    // A filter, not a projection: the row shape carries no recipient data.
+    const [row] = (await list(h, { signerContains: "maria" })).items;
+    expect(JSON.stringify(row)).not.toMatch(/maria|ayala/i);
+  });
+
+  it("combines filters with AND, and counts the filtered set", async () => {
+    const { h, first } = await twoRequests();
+    const result = await list(h, { signerContains: "maria", states: ["draft"] });
+    expect(result.items.map(i => i.signingRequestId)).toEqual([first.signingRequestId]);
+    expect(result.total).toBe(1);
+    expect(result.hasNextPage).toBe(false);
+  });
+
+  it("treats blank text and an empty state list as no filter", async () => {
+    // An empty state list taken literally matches nothing; a cleared status
+    // picker must not empty the list.
+    const { h } = await twoRequests();
+    const result = await list(h, { titleContains: "   ", signerContains: "", states: [] });
+    expect(result.total).toBe(2);
   });
 });

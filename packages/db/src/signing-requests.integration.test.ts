@@ -23,7 +23,7 @@ import type {
   ArtifactId, PreparationId, PreparationFieldId, PreparationFieldRecord,
   RecipientId, SigningRequestId, SigningRequestRecipientId, SigningRequestFieldId,
   EvidenceEventId,
-  NewSigningRequestSnapshot,
+  NewSigningRequestSnapshot, SigningRequestListFilter,
 } from "@lagda/application";
 import { createSigningRequest } from "@lagda/application";
 import {
@@ -124,6 +124,8 @@ suite("signing requests (RLS, runtime role)", () => {
       requestId?: string; recipientId?: string; fieldId?: string;
       fieldRecipientId?: string; preparationId?: PreparationId;
       documentId?: DocumentId; artifactId?: string;
+      title?: string; recipientName?: string; recipientEmail?: string;
+      createdAt?: number;
     } = {},
   ): NewSigningRequestSnapshot => {
     const requestId = (over.requestId ?? "sr_1") as SigningRequestId;
@@ -141,17 +143,17 @@ suite("signing requests (RLS, runtime role)", () => {
         expiresAt: null,
         completedAt: null,
         terminationReason: null, cancellationNote: null,
-        documentTitle: "Office Lease",
+        documentTitle: over.title ?? "Office Lease",
         createdByUserId: USER,
-        createdAt: AT,
+        createdAt: over.createdAt ?? AT,
         updatedAt: AT,
       },
       recipients: [{
         recipientId,
         sourcePreparationRecipientId: RCP_A,
-        name: "Juan dela Cruz",
-        email: "Juan@Example.com",
-        normalizedEmail: "juan@example.com",
+        name: over.recipientName ?? "Juan dela Cruz",
+        email: over.recipientEmail ?? "Juan@Example.com",
+        normalizedEmail: (over.recipientEmail ?? "Juan@Example.com").toLowerCase(),
         organization: null,
         type: "signer",
         isRequired: true,
@@ -173,6 +175,59 @@ suite("signing requests (RLS, runtime role)", () => {
   const write = (workspaceId: WorkspaceId, over = {}) =>
     createTransactionManager(app.db).runForWorkspace(workspaceId, uow =>
       uow.signingRequests.createSnapshot(snapshot(workspaceId, over)));
+
+  // ── List filtering ────────────────────────────────────────────────────────
+
+  describe("listForWorkspace filters", () => {
+    const list = (filter: SigningRequestListFilter) =>
+      createTransactionManager(app.db).runForWorkspace(WS_A, uow =>
+        uow.signingRequests.listForWorkspace({ limit: 50, offset: 0, filter }));
+
+    beforeEach(async () => {
+      await write(WS_A, {
+        requestId: "sr_lease", recipientId: "srr_lease", fieldId: "srf_lease",
+        title: "Office Lease 50% deposit", createdAt: AT,
+      });
+      await write(WS_A, {
+        requestId: "sr_emp", recipientId: "srr_emp", fieldId: "srf_emp",
+        title: "Employment Agreement", recipientName: "Maria Santos",
+        recipientEmail: "maria@ayala.example", createdAt: AT + 1000,
+      });
+    });
+
+    it("matches the title with ILIKE, and counts only the matches", async () => {
+      const page = await list({ titleContains: "EMPLOY" });
+      expect(page.items.map(i => i.signingRequestId)).toEqual(["sr_emp"]);
+      expect(page.total).toBe(1);
+    });
+
+    it("treats % and _ in the search as literal characters", async () => {
+      // Unescaped, "50%" would be a pattern matching every title containing
+      // "50", and "_" would match any single character.
+      expect((await list({ titleContains: "50%" })).total).toBe(1);
+      expect((await list({ titleContains: "0_d" })).total).toBe(0);
+    });
+
+    it("matches a snapshot recipient by name or email", async () => {
+      expect((await list({ signerContains: "santos" })).items.map(i => i.signingRequestId))
+        .toEqual(["sr_emp"]);
+      expect((await list({ signerContains: "EXAMPLE.COM" })).items.map(i => i.signingRequestId))
+        .toEqual(["sr_lease"]);
+    });
+
+    it("filters by state membership", async () => {
+      expect((await list({ states: ["draft"] })).total).toBe(2);
+      expect((await list({ states: ["sent", "completed"] })).total).toBe(0);
+    });
+
+    it("stays inside the bound workspace whatever the filter", async () => {
+      const seen = await createTransactionManager(app.db).runForWorkspace(WS_B, uow =>
+        uow.signingRequests.listForWorkspace({
+          limit: 50, offset: 0, filter: { signerContains: "maria" },
+        }));
+      expect(seen.total).toBe(0);
+    });
+  });
 
   // ── Tenancy ───────────────────────────────────────────────────────────────
 

@@ -34,7 +34,7 @@ import type {
 import type { EvidenceEventIdGenerator } from "../common/ports/index.js";
 // The list row shape lives with the port that produces it.
 import type {
-  SigningRequestSummary, SigningRequestStateCounts,
+  SigningRequestSummary, SigningRequestStateCounts, SigningRequestListFilter,
 } from "../common/ports/signing-requests.js";
 // BACKEND-43. Factory, never a hand-built event literal.
 import { requestCreated } from "../evidence/events.js";
@@ -585,17 +585,23 @@ async function resolveSourceArtifact(
 export async function listSigningRequests(
   actor: AuthenticatedActor,
   workspaceId: WorkspaceId,
-  input: { readonly page?: number; readonly perPage?: number },
+  input: {
+    readonly page?: number;
+    readonly perPage?: number;
+    readonly filter?: SigningRequestListFilter;
+  },
   deps: SigningRequestDependencies,
 ): Promise<SigningRequestListView> {
   const page = Math.max(1, input.page ?? 1);
   const perPage = Math.min(Math.max(1, input.perPage ?? DEFAULT_PER_PAGE), MAX_PER_PAGE);
+  const filter = normalizeListFilter(input.filter);
 
   return deps.transactions.runForWorkspace(workspaceId, async uow => {
     await authorize(uow, actor, "signing-request.view");
 
     const result = await uow.signingRequests.listForWorkspace({
       limit: perPage, offset: (page - 1) * perPage,
+      ...(filter === undefined ? {} : { filter }),
     });
 
     return {
@@ -606,6 +612,31 @@ export async function listSigningRequests(
       hasNextPage: page * perPage < result.total,
     };
   });
+}
+
+/**
+ * Drops the parts of a filter that would not narrow anything.
+ *
+ * Blank text is "no search", not "titles containing nothing" -- which would
+ * match every row anyway, but only by accident of how LIKE treats an empty
+ * pattern. An empty state list is dropped for the opposite reason: taken
+ * literally it matches NOTHING, and a cleared status picker must not empty
+ * the list.
+ */
+function normalizeListFilter(
+  filter: SigningRequestListFilter | undefined,
+): SigningRequestListFilter | undefined {
+  if (filter === undefined) return undefined;
+  const titleContains = filter.titleContains?.trim();
+  const signerContains = filter.signerContains?.trim();
+  const states = filter.states !== undefined && filter.states.length > 0
+    ? [...new Set(filter.states)] : undefined;
+  const normalized: SigningRequestListFilter = {
+    ...(titleContains ? { titleContains } : {}),
+    ...(signerContains ? { signerContains } : {}),
+    ...(states ? { states } : {}),
+  };
+  return Object.keys(normalized).length === 0 ? undefined : normalized;
 }
 
 export interface SigningRequestListView {
