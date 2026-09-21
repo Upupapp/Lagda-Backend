@@ -37,8 +37,29 @@ export const SUBMISSION_MAX_FIELDS = 500;
  * put one, which is how §60 is satisfied — by the absence of a property rather
  * than by sanitising its contents.
  */
+/**
+ * How the signer produced this mark, as their client reports it.
+ *
+ * `applied-from-saved` is absent deliberately: the server decides that one,
+ * because only the server knows whether it took bytes from a stored
+ * signature. A client cannot claim it, which is what makes it worth trusting.
+ *
+ * The other values are an honest client's account of an honest act. Nothing
+ * here can tell a drawn stroke from an uploaded image once both are PNGs, so
+ * this is a record, not a control — and recording it is still better than the
+ * status quo, where an uploaded image is filed as though it had been drawn.
+ */
+export const CAPTURE_PROVENANCE = ["typed-live", "drawn-live", "uploaded-live"] as const;
+
+export const CaptureProvenanceSchema = Type.Union(
+  CAPTURE_PROVENANCE.map(value => Type.Literal(value)),
+  { title: "CaptureProvenance" },
+);
+
 export const TypedSignatureSchema = Type.Object({
   method: Type.Literal("typed"),
+  /** Optional: a client that does not send it leaves the record blank. */
+  provenance: Type.Optional(CaptureProvenanceSchema),
   text: Type.String({ minLength: 1, maxLength: TYPED_SIGNATURE_MAX_LENGTH }),
   styleIndex: Type.Integer({ minimum: 0, maximum: TYPED_SIGNATURE_STYLE_COUNT - 1 }),
 }, { title: "TypedSignature", additionalProperties: false });
@@ -53,6 +74,7 @@ export const TypedSignatureSchema = Type.Object({
  */
 export const DrawnSignatureSchema = Type.Object({
   method: Type.Literal("drawn"),
+  provenance: Type.Optional(CaptureProvenanceSchema),
   base64: Type.String({
     minLength: 16,
     maxLength: RASTER_SIGNATURE_MAX_TRANSPORT_CHARS,

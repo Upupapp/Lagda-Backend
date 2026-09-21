@@ -10517,6 +10517,29 @@
                               "typed"
                             ]
                           },
+                          "provenance": {
+                            "title": "CaptureProvenance",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "typed-live"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "drawn-live"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "uploaded-live"
+                                ]
+                              }
+                            ]
+                          },
                           "text": {
                             "minLength": 1,
                             "maxLength": 200,
@@ -10542,6 +10565,29 @@
                             "type": "string",
                             "enum": [
                               "drawn"
+                            ]
+                          },
+                          "provenance": {
+                            "title": "CaptureProvenance",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "typed-live"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "drawn-live"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "uploaded-live"
+                                ]
+                              }
                             ]
                           },
                           "base64": {
@@ -12222,6 +12268,29 @@
                               "typed"
                             ]
                           },
+                          "provenance": {
+                            "title": "CaptureProvenance",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "typed-live"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "drawn-live"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "uploaded-live"
+                                ]
+                              }
+                            ]
+                          },
                           "text": {
                             "minLength": 1,
                             "maxLength": 200,
@@ -12247,6 +12316,29 @@
                             "type": "string",
                             "enum": [
                               "drawn"
+                            ]
+                          },
+                          "provenance": {
+                            "title": "CaptureProvenance",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "typed-live"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "drawn-live"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "uploaded-live"
+                                ]
+                              }
                             ]
                           },
                           "base64": {
@@ -12278,6 +12370,29 @@
                               "typed"
                             ]
                           },
+                          "provenance": {
+                            "title": "CaptureProvenance",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "typed-live"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "drawn-live"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "uploaded-live"
+                                ]
+                              }
+                            ]
+                          },
                           "text": {
                             "minLength": 1,
                             "maxLength": 200,
@@ -12303,6 +12418,29 @@
                             "type": "string",
                             "enum": [
                               "drawn"
+                            ]
+                          },
+                          "provenance": {
+                            "title": "CaptureProvenance",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "typed-live"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "drawn-live"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "uploaded-live"
+                                ]
+                              }
                             ]
                           },
                           "base64": {

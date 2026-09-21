@@ -421,6 +421,7 @@ export interface SigningRepresentationsTable {
   raster_height: ColumnType<number | null, number | null, number | null>;
   /** SHA-256 over the bytes AS STORED. A client hash is a claim, not this. */
   digest: string;
+  capture_provenance: ColumnType<string | null, string | null, string | null>;
 }
 
 /**

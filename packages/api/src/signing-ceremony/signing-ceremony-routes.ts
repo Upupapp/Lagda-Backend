@@ -195,7 +195,10 @@ function present(
   accountLink?: { maskedEmail: string } | null,
 ) {
   return {
-    ...(accountLink == null ? {} : { accountLink }),
+    // Absent when no account is bound, and absent rather than null — the
+    // schema marks it optional, so an unbound ceremony's response is byte for
+    // byte what it was before this field existed.
+    ...(accountLink === null || accountLink === undefined ? {} : { accountLink }),
     request: view.request,
     recipient: view.recipient,
     access: {
