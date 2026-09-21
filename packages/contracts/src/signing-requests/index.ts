@@ -318,6 +318,25 @@ export const SigningRequestSummarySchema = Type.Object(
     documentTitle: Type.String(),
     participantCount: Type.Integer({ minimum: 0 }),
     completedParticipantCount: Type.Integer({ minimum: 0 }),
+    /**
+     * Who started this request — a workspace member, not a recipient.
+     *
+     * The list deliberately carries no participant names or addresses: those
+     * are outside parties, and a list readable by anyone with document.view
+     * is not the place to aggregate them. The initiator is different — a
+     * colleague already visible in the member directory, and "who sent this"
+     * is the first question asked of any document in an admin view.
+     *
+     * Null when that account has since been removed. The request is the
+     * workspace's record and outlives its sender.
+     */
+    initiator: Type.Union([
+      Type.Object({
+        name: Type.String(),
+        email: Type.String(),
+      }, { additionalProperties: false }),
+      Type.Null(),
+    ]),
     createdAt: Type.String({ format: "date-time" }),
     sentAt: Type.Union([Type.String({ format: "date-time" }), Type.Null()]),
     completedAt: Type.Union([Type.String({ format: "date-time" }), Type.Null()]),

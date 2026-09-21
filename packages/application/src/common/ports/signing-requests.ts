@@ -160,6 +160,18 @@ export interface SigningRequestSummary {
   readonly documentTitle: string;
   readonly participantCount: number;
   readonly completedParticipantCount: number;
+  /**
+   * Who started this request — a WORKSPACE member, not a recipient.
+   *
+   * Distinct from the privacy rule above, which withholds participants: those
+   * are outside parties whose involvement is not the list's to broadcast. The
+   * initiator is a colleague, already visible in the member directory to
+   * anyone who can read this list, and "who sent this" is the first question
+   * asked of any document in an admin view.
+   *
+   * Null when the account has been removed. The request survives its sender.
+   */
+  readonly initiator: { readonly name: string; readonly email: string } | null;
   readonly createdAt: number;
   readonly sentAt: number | null;
   readonly completedAt: number | null;

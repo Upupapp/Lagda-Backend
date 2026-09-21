@@ -2106,6 +2106,12 @@ function scopedSigningRequests(
           documentTitle: request.documentTitle,
           participantCount: recipients.length,
           completedParticipantCount: signed.length,
+          // Null, and honestly so: this store holds no accounts, so there is
+          // nothing here to resolve a sender's name against. The real query
+          // LEFT JOINs `users`; a fake that invented a name would report a
+          // resolution it never performed, and would hide the deleted-sender
+          // case the real null exists to represent.
+          initiator: null,
           createdAt: request.createdAt,
           // The record carries no `sentAt`; the real column does. Inventing one
           // would assert a timestamp nothing stored.

@@ -5936,6 +5936,7 @@
                           "documentTitle",
                           "participantCount",
                           "completedParticipantCount",
+                          "initiator",
                           "createdAt",
                           "sentAt",
                           "completedAt",
@@ -6022,6 +6023,29 @@
                           "completedParticipantCount": {
                             "minimum": 0,
                             "type": "integer"
+                          },
+                          "initiator": {
+                            "anyOf": [
+                              {
+                                "additionalProperties": false,
+                                "type": "object",
+                                "required": [
+                                  "name",
+                                  "email"
+                                ],
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "email": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "createdAt": {
                             "format": "date-time",
