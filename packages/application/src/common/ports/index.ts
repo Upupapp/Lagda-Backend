@@ -7,6 +7,9 @@
 // Every port here has a NAMED CONSUMER except one, and that exception is
 // called out where it appears. A port nobody consumes is the same failure as a
 // field nobody reads.
+import type {
+  UserSigningRecordsRepository, SigningResumeIntentRepository,
+} from "./user-signing-records.js";
 import type { ScopedUploadRepository } from "./upload.js";
 import type { IdempotencyRepository } from "./idempotency.js";
 import type {
@@ -438,6 +441,12 @@ export interface WorkspaceUnitOfWork {
   readonly completionReconciliation: CompletionReconciliationRepository;
   /** BACKEND-38. Completion's read-only view of accepted signing facts. */
   readonly completionInputs: CompletionInputRepository;
+  /**
+   * Migration 056's invitation-side writes: an invited recipient whose
+   * address belongs to a verified account gets an entry that account alone
+   * can read. Never read back from here -- see the migration's rule.
+   */
+  readonly userSigningRecords: UserSigningRecordsRepository;
 }
 
 /**
@@ -466,6 +475,15 @@ export interface GlobalUnitOfWork {
    * inbox is built on.
    */
   readonly signingAccountLinks: SigningAccountLinkRepository;
+
+  /**
+   * An account's own signing records (migrations 055, 056), read by the
+   * account's user id. Global because the rows span every workspace the
+   * account was ever sent a document from, and no tenant scope holds them.
+   */
+  readonly userSigningRecords: UserSigningRecordsRepository;
+  /** The account-to-ceremony handoff for continuing to sign from the app. */
+  readonly signingResumeIntents: SigningResumeIntentRepository;
 
   /**
    * Saved marks handed to one ceremony session, awaiting use.
@@ -727,6 +745,7 @@ export * from "./preparation.js";
 export * from "./recipients.js";
 
 export * from "./signing-requests.js";
+export * from "./user-signing-records.js";
 
 export * from "./signing-access.js";
 

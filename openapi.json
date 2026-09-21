@@ -11197,6 +11197,240 @@
         }
       }
     },
+    "/me/documents-to-sign": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "DocumentsToSign",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "signingRequestId",
+                          "recipientId",
+                          "documentTitle",
+                          "senderName",
+                          "senderEmail",
+                          "workspaceName",
+                          "invitedAt",
+                          "expiresAt"
+                        ],
+                        "properties": {
+                          "signingRequestId": {
+                            "type": "string"
+                          },
+                          "recipientId": {
+                            "type": "string"
+                          },
+                          "documentTitle": {
+                            "type": "string"
+                          },
+                          "senderName": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "senderEmail": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "workspaceName": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "invitedAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "expiresAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/signed-documents": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "SignedDocuments",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "signingRequestId",
+                          "documentTitle",
+                          "senderName",
+                          "senderEmail",
+                          "workspaceName",
+                          "signedAt"
+                        ],
+                        "properties": {
+                          "signingRequestId": {
+                            "type": "string"
+                          },
+                          "documentTitle": {
+                            "type": "string"
+                          },
+                          "senderName": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "senderEmail": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "workspaceName": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "signedAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/documents-to-sign/continue": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "ContinueSigningRequest",
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "signingRequestId",
+                  "recipientId",
+                  "currentPassword"
+                ],
+                "properties": {
+                  "signingRequestId": {
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "type": "string"
+                  },
+                  "recipientId": {
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "type": "string"
+                  },
+                  "currentPassword": {
+                    "minLength": 1,
+                    "maxLength": 1024,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "ContinueSigningResponse",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "expiresAt"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/me/notifications": {
       "get": {
         "responses": {
@@ -11526,9 +11760,110 @@
                       "type": "string"
                     },
                     "authenticationMethod": {
-                      "type": "string",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "link-only"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "account-password"
+                          ]
+                        }
+                      ]
+                    },
+                    "authenticatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/signing-access/continue": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "SigningAccessContinueRequest",
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "code": {
+                    "minLength": 22,
+                    "maxLength": 22,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "SigningAccessBootstrapped",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "authenticated",
+                    "signingRequestId",
+                    "documentTitle",
+                    "recipientName",
+                    "maskedEmail",
+                    "authenticationMethod",
+                    "authenticatedAt"
+                  ],
+                  "properties": {
+                    "authenticated": {
+                      "type": "boolean",
                       "enum": [
-                        "link-only"
+                        true
+                      ]
+                    },
+                    "signingRequestId": {
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "type": "string"
+                    },
+                    "documentTitle": {
+                      "type": "string"
+                    },
+                    "recipientName": {
+                      "type": "string"
+                    },
+                    "maskedEmail": {
+                      "type": "string"
+                    },
+                    "authenticationMethod": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "link-only"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "account-password"
+                          ]
+                        }
                       ]
                     },
                     "authenticatedAt": {
@@ -11572,9 +11907,19 @@
                       "type": "string"
                     },
                     "authenticationMethod": {
-                      "type": "string",
-                      "enum": [
-                        "link-only"
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "link-only"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "account-password"
+                          ]
+                        }
                       ]
                     }
                   }

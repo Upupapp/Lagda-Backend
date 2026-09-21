@@ -155,6 +155,9 @@ async function build(options: { authenticated?: boolean; csrfValid?: boolean } =
     signatures: () => signatures,
     notificationFeed: () => ({ listForUser: () => Promise.resolve([]) }),
     claimSigningLink: () => Promise.reject(new Error("not used")),
+    listDocumentsToSign: () => Promise.resolve([]),
+    listSignedDocuments: () => Promise.resolve([]),
+    beginInAppSigning: () => Promise.reject(new Error("not used")),
     signatureImages: () => createSignatureImageValidator(),
     now: () => new Date(1_700_000_000_000),
     authenticatedUser: () => Promise.resolve(

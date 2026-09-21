@@ -41,7 +41,9 @@ import type {
   RevokeOtherSessionsDependencies,
 } from "@lagda/application";
 import type { UserSignatureRepository, NotificationFeedRepository } from "@lagda/db";
-import type { SignatureImageValidator } from "@lagda/application";
+import type {
+  SignatureImageValidator, SigningInboxItemView, SignedDocumentView,
+} from "@lagda/application";
 import type { ApiConfig } from "../config/index.js";
 import { registerAuthRoutes } from "../auth/register-route.js";
 import { registerSessionRoutes } from "../auth/session-routes.js";
@@ -116,6 +118,15 @@ export interface IdentityDependencies {
     signingRequestId: string; recipientId: string; preparedCount: number;
   }>;
   readonly signatureImages: () => SignatureImageValidator;
+  /** "Documents I must sign" (migration 056), read by the caller's own id. */
+  readonly listDocumentsToSign: (userId: UserId) => Promise<readonly SigningInboxItemView[]>;
+  /** "Signed by me" (migration 055), read by the caller's own id. */
+  readonly listSignedDocuments: (userId: UserId) => Promise<readonly SignedDocumentView[]>;
+  /** The second verification before continuing to sign from the app. */
+  readonly beginInAppSigning: (
+    userId: UserId,
+    input: { signingRequestId: string; recipientId: string; password: string },
+  ) => Promise<{ code: string; expiresAt: number }>;
   readonly now: () => Date;
   /** Resolves a FULL session. Null for anonymous and for pre-auth credentials. */
   readonly authenticatedUser: (request: FastifyRequest) => Promise<{
@@ -231,6 +242,9 @@ export function registerIdentityRoutes(
     signatures: deps.signatures,
     notificationFeed: deps.notificationFeed,
     claimSigningLink: deps.claimSigningLink,
+    listDocumentsToSign: deps.listDocumentsToSign,
+    listSignedDocuments: deps.listSignedDocuments,
+    beginInAppSigning: deps.beginInAppSigning,
     signatureImages: deps.signatureImages,
     now: deps.now,
     currentUserDependencies: deps.currentUser,

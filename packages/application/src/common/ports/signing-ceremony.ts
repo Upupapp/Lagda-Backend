@@ -17,6 +17,8 @@
 // every ceremony read to the session's own recipient, so a repository bug
 // still returns nothing.
 
+import type { UserSigningRecordsRepository } from "./user-signing-records.js";
+import type { SigningAccountLinkRepository } from "./signing-account-link.js";
 import type { WorkspaceId } from "@lagda/contracts";
 import type { RecipientSubmissionRepository } from "./signing-submission.js";
 import type { RecipientWorkflowRepository } from "./signing-workflow.js";
@@ -191,6 +193,14 @@ export interface RecipientCeremonyUnitOfWork {
    * was reachable to prove it, and the integration suite skips. See OD-172.
    */
   readonly evidence: ScopedEvidenceRepository;
+  /**
+   * Migration 055/056, on the SAME transaction as the submission: the
+   * "signed by me" record and the inbox entry's closing commit with the
+   * signature they describe, or not at all.
+   */
+  readonly userSigningRecords: UserSigningRecordsRepository;
+  /** Whether this recipient was bound to an account. The one read 051 permits. */
+  readonly accountLinks: Pick<SigningAccountLinkRepository, "findLinkForRecipient">;
 }
 
 export interface SigningConsentIdGenerator {

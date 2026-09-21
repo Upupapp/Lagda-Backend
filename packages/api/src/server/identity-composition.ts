@@ -51,13 +51,18 @@ import {
   nextUserId, nextVerificationChallengeId, nextPasswordResetChallengeId,
   nextMfaFactorId, nextRecoveryCodeId, nextPendingAuthenticationId,
   createNotificationIntentIdGenerator, createNotificationDeliveryIdGenerator,
+  createRecipientSigningSessionIdGenerator,
 } from "../security/identifiers.js";
 import { createUserSignatureRepository, createNotificationFeedRepository } from "@lagda/db";
 import { createSignatureImageValidator } from "../security/signature-image.js";
 import { randomUUID } from "node:crypto";
-import { claimSigningLink, normalizeEmail } from "@lagda/application";
+import {
+  claimSigningLink, normalizeEmail, beginInAppSigning,
+  presentInboxItem, presentSignedDocument,
+} from "@lagda/application";
 import {
   createSigningAccountLinkRepository, createPreparedSignatureRepository,
+  createUserSigningRecordsRepository, createSigningResumeIntentRepository,
 } from "@lagda/db";
 import { createHandoffCodeDigester } from "../security/crypto.js";
 
@@ -323,6 +328,68 @@ export function buildIdentity(
     challenges: createVerificationChallengeRepository(trx),
   }));
 
+  /** Whatever the repository factories accept: the pool or a transaction on it. */
+  type RepositoryTransaction = Parameters<typeof createAccountCredentialRepository>[0];
+
+  // ── Shared by the account link and by continuing from the app ─────────
+  //
+  // One password verifier, one identity lookup and one saved-signature
+  // handoff, so "prove it is you" and "hand over my marks" each mean one
+  // thing wherever they happen.
+
+  const verifyPasswordIn = (trx: RepositoryTransaction) =>
+    async (id: string, password: string): Promise<boolean> => {
+      const stored = await createAccountCredentialRepository(trx)
+        .findPasswordHash(id as UserId);
+      if (stored === null) return false;
+      // (plaintext, hash) — not the other way round.
+      return hasher.verify(password, stored);
+    };
+
+  const findAccountIdentity = async (id: string) => {
+    const row = await createAccountProfileRepository(db).findCurrentUser(id as UserId);
+    if (row === null) return null;
+    const normalized = normalizeEmail(row.email);
+    if (normalized.outcome !== "ok") return null;
+    return { normalizedEmail: normalized.normalized, emailVerified: row.emailVerified };
+  };
+
+  // Workspace -> ceremony, pushed once. A COPY, so editing or deleting the
+  // library entry afterwards cannot change or empty what the signer is about
+  // to be shown and approve.
+  const handOverSavedSignaturesIn = (trx: RepositoryTransaction) =>
+    async (input: {
+      readonly userId: string; readonly signingRequestId: string;
+      readonly recipientId: string; readonly recipientSessionId: string; readonly at: Date;
+    }): Promise<number> => {
+      const saved = await createUserSignatureRepository(trx).list(input.userId);
+      const usable = saved.filter(entry => entry.validatedAt !== null);
+      const prepared = createPreparedSignatureRepository(trx);
+      for (const entry of usable) {
+        await prepared.prepare({
+          signingRequestId: input.signingRequestId,
+          recipientId: input.recipientId,
+          purpose: entry.purpose,
+          representationType: entry.representationType,
+          typedText: entry.typedText,
+          typedStyleIndex: entry.typedStyleIndex,
+          rasterBytes: entry.rasterBytes,
+          rasterMediaType: entry.rasterMediaType,
+          rasterWidth: entry.rasterWidth,
+          rasterHeight: entry.rasterHeight,
+          // This row's digest describes this row. Recomputed rather than
+          // carried over, so a copy cannot inherit a digest that describes
+          // bytes it does not hold.
+          digest: entry.digest,
+          sourceDigest: entry.digest,
+          preparedByUserId: input.userId,
+          preparedForSessionId: input.recipientSessionId,
+          preparedAt: input.at,
+        });
+      }
+      return usable.length;
+    };
+
   return {
     identity: () => ({
       register: () => ({
@@ -479,62 +546,57 @@ export function buildIdentity(
           ids: () => `sal_${randomUUID().replace(/-/g, "")}`,
           // The step-up. Same verifier the password-change route uses, so
           // "prove it is you" means one thing across the account surface.
-          verifyPassword: async (id: string, password: string) => {
-            const stored = await createAccountCredentialRepository(trx)
-              .findPasswordHash(id as UserId);
-            if (stored === null) return false;
-            // (plaintext, hash) — not the other way round.
-            return hasher.verify(password, stored);
-          },
-
-          // Workspace -> ceremony, pushed once. A COPY, so editing or
-          // deleting the library entry afterwards cannot change or empty what
-          // the signer is about to be shown and approve.
-          handOverSavedSignatures: async (input) => {
-            const saved = await createUserSignatureRepository(trx).list(input.userId);
-            const usable = saved.filter(entry => entry.validatedAt !== null);
-            const prepared = createPreparedSignatureRepository(trx);
-            for (const entry of usable) {
-              await prepared.prepare({
-                signingRequestId: input.signingRequestId,
-                recipientId: input.recipientId,
-                purpose: entry.purpose,
-                representationType: entry.representationType,
-                typedText: entry.typedText,
-                typedStyleIndex: entry.typedStyleIndex,
-                rasterBytes: entry.rasterBytes,
-                rasterMediaType: entry.rasterMediaType,
-                rasterWidth: entry.rasterWidth,
-                rasterHeight: entry.rasterHeight,
-                // This row's digest describes this row. Recomputed rather
-                // than carried over, so a copy cannot inherit a digest that
-                // describes bytes it does not hold.
-                digest: entry.digest,
-                sourceDigest: entry.digest,
-                preparedByUserId: input.userId,
-                preparedForSessionId: input.recipientSessionId,
-                preparedAt: input.at,
-              });
-            }
-            return usable.length;
-          },
-
+          verifyPassword: verifyPasswordIn(trx),
+          handOverSavedSignatures: handOverSavedSignaturesIn(trx),
           accounts: {
             findIdentity: async (id: string) => {
-              const row = await createAccountProfileRepository(db)
-                .findCurrentUser(id as UserId);
-              if (row === null) return null;
-              const normalized = normalizeEmail(row.email);
-              if (normalized.outcome !== "ok") return null;
+              const identity = await findAccountIdentity(id);
+              if (identity === null) return null;
               return {
-                normalizedEmail: normalized.normalized,
+                normalizedEmail: identity.normalizedEmail,
                 // Derived, because the projection exposes a boolean rather
                 // than the timestamp. Either way the question is the same:
                 // has this address been proved?
-                emailVerifiedAt: row.emailVerified ? new Date(clock.now()) : null,
+                emailVerifiedAt: identity.emailVerified ? new Date(clock.now()) : null,
               };
             },
           },
+        })),
+
+      // ── "Documents I must sign" / "Signed by me" (migrations 055, 056) ──
+      //
+      // Read by the authenticated user id and nothing else. Global scope, on
+      // plain transactions, for the same reason the claim above is: these
+      // rows belong to no tenant.
+      listDocumentsToSign: async (userId: UserId) => {
+        const entries = await createUserSigningRecordsRepository(db)
+          .listOpenInboxForUser(userId, clock.now(), 100);
+        return entries.map(presentInboxItem);
+      },
+      listSignedDocuments: async (userId: UserId) => {
+        const records = await createUserSigningRecordsRepository(db)
+          .listSignedForUser(userId, 100);
+        return records.map(presentSignedDocument);
+      },
+      // "Continue signing": the second verification, then a single-use code.
+      // One transaction, so the link, the handed-over marks and the code
+      // commit together or not at all.
+      beginInAppSigning: async (
+        userId: UserId,
+        input: { signingRequestId: string; recipientId: string; password: string },
+      ) =>
+        db.transaction().execute(async trx => beginInAppSigning(userId, input, {
+          clock: { now: () => clock.now() },
+          codes: createHandoffCodeDigester(),
+          findOpenEntry: (id, request, recipient, now) =>
+            createUserSigningRecordsRepository(trx).findOpenInboxEntry(id, request, recipient, now),
+          verifyPassword: verifyPasswordIn(trx),
+          findIdentity: findAccountIdentity,
+          links: createSigningAccountLinkRepository(trx),
+          handOverSavedSignatures: handOverSavedSignaturesIn(trx),
+          resumeIntents: createSigningResumeIntentRepository(trx),
+          newSessionId: () => createRecipientSigningSessionIdGenerator().nextRecipientSigningSessionId(),
+          newLinkId: () => `sal_${randomUUID().replace(/-/g, "")}`,
         })),
       signatureImages: () => createSignatureImageValidator(),
       // `clock` here yields epoch millis; the repository stores timestamptz.

@@ -26,6 +26,7 @@ import {
   bootstrapSigningAccess, resolveRecipientSession,
   SigningLinkInvalidOrExpiredError,
   type SigningAccessDependencies, type RecipientSigningView,
+  type BootstrappedSigningAccess,
   type RateLimitCheck,
 } from "@lagda/application";
 import { policyById } from "@lagda/application";
@@ -51,6 +52,23 @@ import type { MetricsRecorder } from "../observability/metrics.js";
  * 43 characters exactly — the credential's real encoded length. A wrong length
  * never reaches the digest function.
  */
+/**
+ * How THIS session was authenticated.
+ *
+ * "link-only" for the emailed link; "account-password" for a session opened
+ * from the app by a signed-in account that re-entered its password (migration
+ * 056). Stated, not collapsed: the ceremony and the evidence must say which.
+ */
+const SessionMethodSchema = Type.Union([
+  Type.Literal("link-only"), Type.Literal("account-password"),
+]);
+type SessionMethod = Static<typeof SessionMethodSchema>;
+
+/** A code from POST /me/documents-to-sign/continue. 16 bytes, base64url. */
+const ContinueBodySchema = Type.Object({
+  code: Type.String({ minLength: 22, maxLength: 22 }),
+}, { title: "SigningAccessContinueRequest", additionalProperties: false });
+
 const BootstrapBodySchema = Type.Object({
   token: Type.String({ minLength: 43, maxLength: 43 }),
 }, {
@@ -75,14 +93,14 @@ const BootstrapResponseSchema = Type.Object({
   recipientName: Type.String(),
   /** `m***@example.com`. Enough to confirm, not enough to harvest. */
   maskedEmail: Type.String(),
-  authenticationMethod: Type.Literal("link-only"),
+  authenticationMethod: SessionMethodSchema,
   authenticatedAt: Type.String({ format: "date-time" }),
 }, { title: "SigningAccessBootstrapped", additionalProperties: false });
 
 const ContextResponseSchema = Type.Object({
   authenticated: Type.Literal(true),
   signingRequestId: Type.String({ minLength: 1, maxLength: 64 }),
-  authenticationMethod: Type.Literal("link-only"),
+  authenticationMethod: SessionMethodSchema,
 }, { title: "RecipientSigningContext", additionalProperties: false });
 
 // ── Options ─────────────────────────────────────────────────────────────────
@@ -90,6 +108,11 @@ const ContextResponseSchema = Type.Object({
 export interface SigningAccessRouteOptions {
   readonly config: ApiConfig;
   readonly signingAccessDependencies: () => SigningAccessDependencies;
+  /**
+   * Spends a code minted by the account realm after its second verification
+   * and opens the ceremony from the recipient's own grant (migration 056).
+   */
+  readonly continueInAppSigning: (code: string) => Promise<BootstrappedSigningAccess>;
   readonly rateLimit?: RateLimitOptions;
   readonly metrics?: MetricsRecorder;
 }
@@ -117,7 +140,7 @@ const present = (view: RecipientSigningView) => ({
   documentTitle: view.documentTitle,
   recipientName: view.recipientName,
   maskedEmail: view.maskedEmail,
-  authenticationMethod: view.authenticationMethod as "link-only",
+  authenticationMethod: view.authenticationMethod as SessionMethod,
   authenticatedAt: new Date(view.authenticatedAt).toISOString(),
 });
 
@@ -166,12 +189,60 @@ export function registerSigningAccessRoutes(
       throw error;
     }
 
-    // ── Cookies, then the body ────────────────────────────────────────────
-    //
-    // The session row is already durable — the use case committed before
-    // returning — so a cookie that fails to reach the browser leaves an unused
-    // session that expires on its own. The reverse order would hand out a
-    // credential for a row that might not exist.
+    return establish(request, reply, bootstrapped, "bootstrap");
+  });
+
+  // ── Continue from the app (migration 056) ───────────────────────────────
+  //
+  // The recipient realm's half of "Continue signing". The code carries the
+  // digest of the recipient's own grant, so this bootstraps exactly as the
+  // emailed link does: a revoked or expired grant, a finished request or an
+  // inactive recipient refuse here by the same check, with the same error.
+  app.post("/signing-access/continue", {
+    schema: {
+      body: ContinueBodySchema,
+      response: { 200: BootstrapResponseSchema },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    await limit(request, options, [{
+      policy: policyById("signing-access.bootstrap.ip"),
+      scope: { type: "ip", ipAddress: request.ip },
+    }]);
+
+    const { code } = request.body as Static<typeof ContinueBodySchema>;
+    let continued;
+    try {
+      continued = await options.continueInAppSigning(code);
+    } catch (error) {
+      request.log.info({
+        event: "signing_access.continue_failed",
+        result: error instanceof SigningLinkInvalidOrExpiredError
+          ? "invalid_or_expired"
+          : "not_active",
+      }, "signing_access.continue_failed");
+      metrics?.increment("signing_access_attempts_total", {
+        operation: "bootstrap", result: "denied", processRole: "api",
+      });
+      throw error;
+    }
+    return establish(request, reply, continued, "continue");
+  });
+
+  /**
+   * Cookies, then the body.
+   *
+   * The session row is already durable — the use case committed before
+   * returning — so a cookie that fails to reach the browser leaves an unused
+   * session that expires on its own. The reverse order would hand out a
+   * credential for a row that might not exist.
+   */
+  function establish(
+    request: FastifyRequest,
+    reply: FastifyReply,
+    bootstrapped: BootstrappedSigningAccess,
+    via: "bootstrap" | "continue",
+  ) {
     const maxAgeSeconds = Math.max(
       0,
       Math.floor((bootstrapped.credentials.expiresAt - Date.now()) / 1000));
@@ -197,6 +268,7 @@ export function registerSigningAccessRoutes(
     request.log.info({
       event: "signing_access.session_created",
       result: "success",
+      via,
       signingRequestId: bootstrapped.context.signingRequestId,
       recipientId: bootstrapped.context.recipientId,
       authenticationMethod: bootstrapped.context.authenticationMethod,
@@ -207,7 +279,7 @@ export function registerSigningAccessRoutes(
     });
 
     return reply.status(200).send(present(bootstrapped.view));
-  });
+  }
 
   // ── Context ─────────────────────────────────────────────────────────────
   //
@@ -229,7 +301,7 @@ export function registerSigningAccessRoutes(
     return reply.status(200).send({
       authenticated: true as const,
       signingRequestId: context.signingRequestId,
-      authenticationMethod: context.authenticationMethod as "link-only",
+      authenticationMethod: context.authenticationMethod as SessionMethod,
     });
   });
 }

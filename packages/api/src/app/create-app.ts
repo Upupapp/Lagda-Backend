@@ -22,7 +22,7 @@ import swagger from "@fastify/swagger";
 import cookie from "@fastify/cookie";
 import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import { ApiErrorSchema, REQUEST_ID_HEADER, type RequestId } from "@lagda/contracts";
-import { RateLimitedError } from "@lagda/application";
+import { RateLimitedError, continueInAppSigning } from "@lagda/application";
 import type { ApiConfig } from "../config/index.js";
 import { buildLoggerOptions } from "../logging/index.js";
 import {
@@ -799,6 +799,17 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
     registerSigningAccessRoutes(app, {
       config,
       signingAccessDependencies: signingAccess,
+      // Migration 056. The code is burned in its OWN committed transaction
+      // before the bootstrap runs, so a refused bootstrap still costs it.
+      continueInAppSigning: (code: string) => {
+        const access = signingAccess();
+        return continueInAppSigning(code, {
+          ...access,
+          codes: createHandoffCodeDigester(),
+          consumeResumeIntent: (digest, now) =>
+            access.transactions.runGlobal(uow => uow.signingResumeIntents.consume(digest, now)),
+        });
+      },
       ...(signingLimiter === undefined
         ? {}
         : { rateLimit: { limiter: signingLimiter, metrics } }),

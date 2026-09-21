@@ -305,7 +305,7 @@ export async function declineSigningRequest(
   const now = deps.clock.now();
   const intentId = deps.workflowIds.nextSigningWorkflowIntentId();
 
-  return deps.transactions.runForRecipientSession(digest, sessionUow =>
+  const result = await deps.transactions.runForRecipientSession(digest, sessionUow =>
     sessionUow.enterWorkspace(
       {
         workspaceId: context.workspaceId,
@@ -343,9 +343,36 @@ export async function declineSigningRequest(
         await uow.workflow.enqueueAdvance({
           intentId, trigger: "decline", submissionId: null, createdAt: now,
         });
+        // The decliner's "must sign" entry closes with the decline (056).
+        await uow.userSigningRecords.closeInboxForRecipient(
+          String(uow.signingRequestId), String(uow.recipientId), "declined", now);
         return { declinedAt: now, applied: true };
       },
     ));
+
+  // ── The advance, AFTER the commit, exactly as a signature does it ─────────
+  //
+  // The decline above records the RECIPIENT's refusal and an advance intent.
+  // Turning that into the REQUEST's `declined` state is the workspace-side
+  // advance, which this realm cannot run inside its own transaction (see
+  // `advanceSigningWorkflow`). A signature runs it straight after committing;
+  // a decline did not, and nothing else runs it -- so a declined request
+  // stayed "sent" indefinitely on the sender's list.
+  //
+  // Best-effort, for the same reason as the submission's: the refusal is
+  // already durable, and failing this response would tell the signer their
+  // decline failed when it did not.
+  if (result.applied) {
+    try {
+      await advanceSigningWorkflow(
+        { workspaceId: context.workspaceId, signingRequestId: context.signingRequestId },
+        deps);
+    } catch {
+      // Swallowed without the error object, as the submission path does.
+    }
+  }
+
+  return result;
 }
 
 // ── The workspace-side advance ───────────────────────────────────────────────
@@ -510,6 +537,9 @@ async function applyPlan(
     if (moved) {
       await uow.signingWorkflow.revokeActiveGrants({ signingRequestId, revokedAt: now });
       await uow.signingWorkflow.revokeRecipientSessions({ signingRequestId, revokedAt: now });
+      // Nobody else can sign a declined request: every remaining "must sign"
+      // entry closes with it (migration 056).
+      await uow.userSigningRecords.closeInboxForRequest(signingRequestId, "declined", now);
     }
     return { outcome: "declined", activatedCount, provisionedCount };
   }
@@ -705,6 +735,9 @@ export async function cancelSigningRequest(
     const revokedSessionCount = await uow.signingWorkflow.revokeRecipientSessions({
       signingRequestId, revokedAt: now,
     });
+    // Nothing left to sign: every recipient's "must sign" entry closes with
+    // the cancellation (migration 056).
+    await uow.userSigningRecords.closeInboxForRequest(signingRequestId, "cancelled", now);
 
     return {
       signingRequestId: input.signingRequestId,

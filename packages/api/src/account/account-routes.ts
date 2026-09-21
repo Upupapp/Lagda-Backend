@@ -39,6 +39,8 @@ import {
   type RevokeOtherSessionsDependencies,
   type UserId, type SessionId, type UpdatePreferencesInput,
   SigningLinkAddressedElsewhereError,
+  InAppSigningPasswordError, InAppSigningUnverifiedError, InAppSigningUnavailableError,
+  type SigningInboxItemView, type SignedDocumentView,
 } from "@lagda/application";
 import type { ApiConfig } from "../config/index.js";
 import type {
@@ -118,6 +120,48 @@ const ClaimSigningLinkResponseSchema = Type.Object({
   /** How many saved marks were handed to that ceremony. Zero is ordinary. */
   preparedCount: Type.Integer(),
 }, { title: "ClaimSigningLinkResponse", additionalProperties: false });
+
+// ── "Documents I must sign" / "Signed by me" (migrations 055, 056) ─────────
+
+/** Who sent it, as the invitation described them. */
+const SenderFields = {
+  senderName: Type.Union([Type.String(), Type.Null()]),
+  senderEmail: Type.Union([Type.String(), Type.Null()]),
+  workspaceName: Type.Union([Type.String(), Type.Null()]),
+};
+
+const DocumentsToSignResponseSchema = Type.Object({
+  items: Type.Array(Type.Object({
+    signingRequestId: Type.String(),
+    recipientId: Type.String(),
+    documentTitle: Type.String(),
+    ...SenderFields,
+    invitedAt: Type.String({ format: "date-time" }),
+    expiresAt: Type.String({ format: "date-time" }),
+  }, { additionalProperties: false })),
+}, { title: "DocumentsToSign", additionalProperties: false });
+
+const SignedDocumentsResponseSchema = Type.Object({
+  items: Type.Array(Type.Object({
+    signingRequestId: Type.String(),
+    documentTitle: Type.String(),
+    ...SenderFields,
+    signedAt: Type.String({ format: "date-time" }),
+  }, { additionalProperties: false })),
+}, { title: "SignedDocuments", additionalProperties: false });
+
+const ContinueSigningRequestSchema = Type.Object({
+  signingRequestId: Type.String({ minLength: 1, maxLength: 64 }),
+  recipientId: Type.String({ minLength: 1, maxLength: 64 }),
+  /** The second verification. Re-proved now, as the account link does. */
+  currentPassword: Type.String({ minLength: 1, maxLength: PASSWORD_MAX_LENGTH }),
+}, { title: "ContinueSigningRequest", additionalProperties: false });
+
+const ContinueSigningResponseSchema = Type.Object({
+  /** Single use, two minutes. Handed to the signing page, which spends it. */
+  code: Type.String(),
+  expiresAt: Type.String({ format: "date-time" }),
+}, { title: "ContinueSigningResponse", additionalProperties: false });
 
 // ── Response projections ────────────────────────────────────────────────────
 
@@ -290,6 +334,15 @@ export interface AccountRouteOptions {
     signingRequestId: string; recipientId: string; preparedCount: number;
   }>;
   readonly signatureImages: () => SignatureImageValidator;
+  /** "Documents I must sign" (migration 056), read by the caller's own id. */
+  readonly listDocumentsToSign: (userId: UserId) => Promise<readonly SigningInboxItemView[]>;
+  /** "Signed by me" (migration 055), read by the caller's own id. */
+  readonly listSignedDocuments: (userId: UserId) => Promise<readonly SignedDocumentView[]>;
+  /** The second verification before continuing to sign from the app. */
+  readonly beginInAppSigning: (
+    userId: UserId,
+    input: { signingRequestId: string; recipientId: string; password: string },
+  ) => Promise<{ code: string; expiresAt: number }>;
   /** The caller's own in-app notification feed. See migration 030. */
   readonly notificationFeed: () => NotificationFeedRepository;
   readonly now: () => Date;
@@ -609,6 +662,90 @@ export function registerAccountRoutes(
           message: "This sign-in link could not be used. Open the signing link again and retry.",
         },
       });
+    }
+  });
+
+  // ── "Documents I must sign" / "Signed by me" ────────────────────────────
+  //
+  // Reads of this account's OWN rows, by its user id. Nothing here takes a
+  // workspace id, and neither response carries an address other than the
+  // sender's, which the invitation email already showed this inbox.
+  app.get("/me/documents-to-sign", {
+    schema: { response: { 200: DocumentsToSignResponseSchema } },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await options.authenticatedUser(request);
+    if (actor === null) return unauthenticated(reply);
+    const items = await options.listDocumentsToSign(actor.userId);
+    return reply.status(200).send({
+      items: items.map(item => ({
+        ...item,
+        invitedAt: new Date(item.invitedAt).toISOString(),
+        expiresAt: new Date(item.expiresAt).toISOString(),
+      })),
+    });
+  });
+
+  app.get("/me/signed-documents", {
+    schema: { response: { 200: SignedDocumentsResponseSchema } },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await options.authenticatedUser(request);
+    if (actor === null) return unauthenticated(reply);
+    const items = await options.listSignedDocuments(actor.userId);
+    return reply.status(200).send({
+      items: items.map(item => ({ ...item, signedAt: new Date(item.signedAt).toISOString() })),
+    });
+  });
+
+  // "Continue signing": the second verification. Returns a single-use code
+  // for the signing page; the ceremony itself is opened by that page, in the
+  // recipient realm, from the recipient's own grant.
+  app.post("/me/documents-to-sign/continue", {
+    schema: {
+      body: ContinueSigningRequestSchema,
+      response: { 200: ContinueSigningResponseSchema },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await options.authenticatedUser(request);
+    if (actor === null) return unauthenticated(reply);
+    if (!options.validateCsrf(request)) return csrfFailed(reply);
+
+    const body = request.body as {
+      signingRequestId: string; recipientId: string; currentPassword: string;
+    };
+    try {
+      const begun = await options.beginInAppSigning(actor.userId, {
+        signingRequestId: body.signingRequestId,
+        recipientId: body.recipientId,
+        password: body.currentPassword,
+      });
+      // Ids only. Never the code.
+      request.log.info({
+        event: "in_app_signing.begun", signingRequestId: body.signingRequestId,
+      }, "in_app_signing.begun");
+      return reply.status(200).send({
+        code: begun.code, expiresAt: new Date(begun.expiresAt).toISOString(),
+      });
+    } catch (error) {
+      // Specific messages are safe here: the caller is signed in and is
+      // naming a row from their own list. See InAppSigningPasswordError.
+      if (error instanceof InAppSigningPasswordError) {
+        return reply.status(422).send({ error: { code: "PASSWORD_INCORRECT", message: error.message } });
+      }
+      if (error instanceof InAppSigningUnverifiedError) {
+        return reply.status(403).send({ error: { code: "EMAIL_NOT_VERIFIED", message: error.message } });
+      }
+      if (error instanceof SigningLinkAddressedElsewhereError) {
+        return reply.status(409).send({
+          error: { code: "SIGNING_LINK_ADDRESSED_ELSEWHERE", message: error.message },
+        });
+      }
+      if (error instanceof InAppSigningUnavailableError) {
+        return reply.status(404).send({ error: { code: "SIGNING_UNAVAILABLE", message: error.message } });
+      }
+      throw error;
     }
   });
 

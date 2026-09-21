@@ -71,6 +71,10 @@ const AUTHENTICATION_WORDING:
 Readonly<Record<CertifiedAuthenticationMethod, string>> = Object.freeze({
   "link-only": "Signing link",
   "email-otp": "Email one-time passcode",
+  // Signed in to a LAGDA account whose verified address is the one the
+  // request was sent to, with the password re-entered. An account, not an
+  // identity document -- and so, like the others, never "Verified".
+  "account-password": "LAGDA account (password re-entered)",
 });
 
 /**

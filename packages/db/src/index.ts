@@ -67,6 +67,9 @@ export {
   createAccountSessionRepository,
 } from "./repositories/account.js";
 export {
+  createUserSigningRecordsRepository, createSigningResumeIntentRepository,
+} from "./repositories/user-signing-records.js";
+export {
   createPreparedSignatureRepository,
   type PreparedSignatureRepository, type PreparedSignature,
   type PrepareSignatureInput,

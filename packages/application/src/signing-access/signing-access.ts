@@ -33,7 +33,7 @@ import type {
   SigningRequestId, SigningRequestRecipientId,
   SigningAccessTokenFactory, SigningAccessGrantId,
   RecipientSessionTokenFactory, RecipientSigningSessionIdGenerator,
-  RecipientSigningSessionId, RecipientAuthenticationMethod,
+  RecipientSigningSessionId, RecipientAuthenticationMethod, SigningAccessDigest,
   ResolvedSigningAccess,
 } from "../common/ports/index.js";
 import { ApplicationError } from "../common/errors/index.js";
@@ -198,11 +198,34 @@ export async function bootstrapSigningAccess(
   // and will be sprayed; a wrong-shaped value costs a regex.
   const digest = deps.bootstrapTokens.digest(rawCredential);
   if (digest === null) throw new SigningLinkInvalidOrExpiredError();
+  return bootstrapFromCredentialDigest(digest, { authenticationMethod: "link-only" }, deps);
+}
 
+/**
+ * Enters a ceremony from a credential DIGEST.
+ *
+ * The emailed link and continuing from the app both arrive here, so every
+ * condition a grant must satisfy is checked in one place for both. They
+ * differ only in what the session records about how it was authenticated,
+ * and, for the app, in a session id allocated in advance so that saved
+ * signatures could be handed to exactly this session.
+ */
+export async function bootstrapFromCredentialDigest(
+  digest: string,
+  options: {
+    readonly authenticationMethod: RecipientAuthenticationMethod;
+    readonly signingSessionId?: string;
+  },
+  deps: SigningAccessDependencies,
+): Promise<BootstrappedSigningAccess> {
   const now = deps.clock.now();
+  const method = options.authenticationMethod;
+  // The same branded digest the emailed path produces; this path receives it
+  // already computed, from a resume intent that stored it.
+  const credentialDigest = digest as SigningAccessDigest;
 
-  return deps.transactions.runForSigningCredential(digest, async credential => {
-    const resolved = await credential.access.findByCredentialDigest(digest);
+  return deps.transactions.runForSigningCredential(credentialDigest, async credential => {
+    const resolved = await credential.access.findByCredentialDigest(credentialDigest);
     // Unknown credential. Indistinguishable from every other failure below.
     if (resolved === null) throw new SigningLinkInvalidOrExpiredError();
 
@@ -215,7 +238,9 @@ export async function bootstrapSigningAccess(
       // derived from it — a session token that was a function of the emailed
       // link would inherit the link's exposure.
       const issued = deps.sessionTokens.issue();
-      const signingSessionId = deps.ids.nextRecipientSigningSessionId();
+      const signingSessionId = (options.signingSessionId
+        ?? deps.ids.nextRecipientSigningSessionId()) as ReturnType<
+        RecipientSigningSessionIdGenerator["nextRecipientSigningSessionId"]>;
       const expiresAt = now + deps.policy.sessionLifetimeMs;
 
       await uow.recipientSessions.insert({
@@ -228,7 +253,7 @@ export async function bootstrapSigningAccess(
         tokenDigest: issued.tokenDigest,
         csrfTokenDigest: issued.csrfDigest,
         // The exact method. Not "verified", not "identity confirmed".
-        authenticationMethod: "link-only",
+        authenticationMethod: method,
         authenticatedAt: now,
         createdAt: now,
         expiresAt,
@@ -240,7 +265,7 @@ export async function bootstrapSigningAccess(
           recipientId: resolved.recipientId,
           workspaceId: resolved.workspaceId,
           signingSessionId,
-          authenticationMethod: "link-only" as const,
+          authenticationMethod: method,
           sourceGrantId: resolved.grantId,
         },
         view: {
@@ -248,7 +273,7 @@ export async function bootstrapSigningAccess(
           documentTitle: resolved.documentTitle,
           recipientName: resolved.recipientName,
           maskedEmail: maskEmail(resolved.recipientEmail),
-          authenticationMethod: "link-only" as const,
+          authenticationMethod: method,
           authenticatedAt: now,
         },
         credentials: {

@@ -39,6 +39,7 @@ import type {
   TypedSignatureRenderability,
   NewSigningRepresentation, NewSigningFieldValue, RepresentationPurpose,
   SigningRequestFieldId, SigningConsentId, AcceptedSubmissionRecord,
+  SigningRequestRecord,
 } from "../common/ports/index.js";
 import { ApplicationError } from "../common/errors/index.js";
 import {
@@ -659,6 +660,15 @@ async function acceptSubmission(args: {
     newEvidenceEventId: () => deps.ids.nextEvidenceEventId(),
   });
 
+  // ── "Signed by me" and "must sign", IN THIS TRANSACTION ───────────────────
+  //
+  // Migration 055: when this recipient was bound to an account, that account
+  // gets a record of what it signed, committing with the signature itself.
+  // Migration 056: the account's "must sign" entry closes, for the same
+  // reason -- a signature that landed while the entry still said "waiting"
+  // would be the two tables disagreeing about one act.
+  await recordForAccountHolder(uow, { request, now });
+
   const result = {
     submissionId: String(submissionId),
     acceptedAt: now,
@@ -670,6 +680,49 @@ async function acceptSubmission(args: {
     recordId, { version: 1, statusCode: 201, body: result }, now);
 
   return { ...result, replayed: false };
+}
+
+/**
+ * The account holder's side of a signature, written with it.
+ *
+ * Only when `findLinkForRecipient` returns a link: an account that never
+ * signed in for this recipient is not the signer as far as the record is
+ * concerned, whatever its address is.
+ *
+ * The sender comes from the "must sign" entry the invitation opened, which
+ * snapshotted it in the workspace realm. When there is no entry (the account
+ * was created after the invitation), the creator is looked up directly: the
+ * account table is global, and a name is all that is read.
+ */
+async function recordForAccountHolder(
+  uow: RecipientCeremonyUnitOfWork,
+  input: { readonly request: SigningRequestRecord; readonly now: number },
+): Promise<void> {
+  const signingRequestId = String(uow.signingRequestId);
+  const recipientId = String(uow.recipientId);
+
+  const entry = await uow.userSigningRecords.findInboxEntryForRecipient(signingRequestId, recipientId);
+  await uow.userSigningRecords.closeInboxForRecipient(signingRequestId, recipientId, "signed", input.now);
+
+  const link = await uow.accountLinks.findLinkForRecipient(signingRequestId, recipientId);
+  if (link === null) return;
+
+  const sender = entry !== null
+    ? { name: entry.senderName, email: entry.senderEmail }
+    : await uow.userSigningRecords.findUserContact(String(input.request.createdByUserId));
+
+  await uow.userSigningRecords.recordSigned({
+    userId: link.userId,
+    signingRequestId,
+    recipientId,
+    workspaceId: String(uow.workspaceId),
+    documentTitle: input.request.documentTitle,
+    senderName: sender?.name ?? null,
+    senderEmail: sender?.email ?? null,
+    workspaceName: entry?.workspaceName ?? null,
+    signedAt: input.now,
+    recordedAt: input.now,
+  });
 }
 
 /**

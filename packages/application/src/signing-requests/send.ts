@@ -502,9 +502,59 @@ export async function provisionSigningRecipientAccess(
     },
   }, uow);
 
+  // "Documents I must sign" (migration 056), in THIS transaction, beside the
+  // invitation it mirrors. Only when the invited address belongs to a
+  // VERIFIED account: the entry tells that account exactly what the email
+  // tells its inbox, and nobody else.
+  await openSigningInboxEntry(uow, {
+    request, recipient, now,
+    grantCredentialDigest: credential.digest,
+    expiresAt: now + deps.policy.bootstrapLifetimeMs,
+  });
+
   // The link is NOT built here and NOT stored. `deps.links` exists so the
   // renderer can build it from the sealed token; building it now would mean
   // persisting a URL, and a persisted URL is a persisted host.
+}
+
+/**
+ * Opens the invited account's "must sign" entry, if there is such an account.
+ *
+ * The sender is the request's CREATOR -- the person whose document it is --
+ * snapshotted with the workspace name so the entry keeps saying who sent it
+ * even if they later rename themselves or leave.
+ */
+async function openSigningInboxEntry(
+  uow: WorkspaceUnitOfWork,
+  input: {
+    readonly request: SigningRequestRecord;
+    readonly recipient: SigningRequestRecipientRecord;
+    readonly now: number;
+    readonly grantCredentialDigest: string;
+    readonly expiresAt: number;
+  },
+): Promise<void> {
+  const { request, recipient } = input;
+  const account = await uow.userSigningRecords.findVerifiedAccountByEmail(recipient.normalizedEmail);
+  if (account === null) return;
+
+  const sender = await uow.userSigningRecords.findUserContact(String(request.createdByUserId));
+  const workspace = await uow.workspaces.find();
+
+  await uow.userSigningRecords.openInboxEntry({
+    userId: account.userId,
+    signingRequestId: String(request.signingRequestId),
+    recipientId: String(recipient.recipientId),
+    workspaceId: String(request.workspaceId),
+    recipientNormalizedEmail: recipient.normalizedEmail,
+    grantCredentialDigest: input.grantCredentialDigest,
+    documentTitle: request.documentTitle,
+    senderName: sender?.name ?? null,
+    senderEmail: sender?.email ?? null,
+    workspaceName: workspace?.name ?? null,
+    invitedAt: input.now,
+    expiresAt: input.expiresAt,
+  });
 }
 
 /**

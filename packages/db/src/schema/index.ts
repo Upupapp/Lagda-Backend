@@ -408,6 +408,54 @@ export interface PreparedSignaturesTable {
   prepared_at: ColumnType<Date, Date, Date>;
 }
 
+/** Migration 055. Written once at submission, read only by its owner. */
+export interface UserSignedDocumentsTable {
+  user_id: string;
+  signing_request_id: string;
+  request_recipient_id: string;
+  /** For reference only. Never a filter. */
+  workspace_id: string;
+  document_title: string;
+  sender_name: ColumnType<string | null, string | null, string | null>;
+  sender_email: ColumnType<string | null, string | null, string | null>;
+  workspace_name: ColumnType<string | null, string | null, string | null>;
+  signed_at: Timestamptz;
+  recorded_at: Timestamptz;
+}
+
+/** Migration 056. Written at invitation, read only by its owner. */
+export interface UserSigningInboxTable {
+  user_id: string;
+  signing_request_id: string;
+  request_recipient_id: string;
+  /** For reference only. Never a filter. */
+  workspace_id: string;
+  recipient_normalized_email: string;
+  /** Never projected to a client. */
+  grant_credential_digest: string;
+  document_title: string;
+  sender_name: ColumnType<string | null, string | null, string | null>;
+  sender_email: ColumnType<string | null, string | null, string | null>;
+  workspace_name: ColumnType<string | null, string | null, string | null>;
+  invited_at: Timestamptz;
+  expires_at: Timestamptz;
+  closed_at: ColumnType<Date | null, Date | null, Date | null>;
+  closed_reason: ColumnType<string | null, string | null, string | null>;
+}
+
+/** Migration 056. The account-to-ceremony handoff. */
+export interface SigningResumeIntentsTable {
+  intent_digest: string;
+  user_id: string;
+  signing_request_id: string;
+  request_recipient_id: string;
+  grant_credential_digest: string;
+  signing_session_id: string;
+  created_at: Timestamptz;
+  expires_at: Timestamptz;
+  consumed_at: ColumnType<Date | null, Date | null, Date | null>;
+}
+
 export interface UserSignaturesTable {
   user_signature_id: string;
   user_id: string;
@@ -1411,6 +1459,9 @@ export interface Database {
   signing_representations: SigningRepresentationsTable;
   user_signatures: UserSignaturesTable;
   prepared_signatures: PreparedSignaturesTable;
+  user_signed_documents: UserSignedDocumentsTable;
+  user_signing_inbox: UserSigningInboxTable;
+  signing_resume_intents: SigningResumeIntentsTable;
   signing_link_intents: SigningLinkIntentsTable;
   signing_account_links: SigningAccountLinksTable;
   signing_field_values: SigningFieldValuesTable;

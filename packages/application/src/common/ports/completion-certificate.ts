@@ -58,7 +58,7 @@ export type CompletionCertificateRendererVersion =
  * handed a method it has no wording for. An unknown value fails closed (§179);
  * it is never labelled "Verified".
  */
-export type CertifiedAuthenticationMethod = "link-only" | "email-otp";
+export type CertifiedAuthenticationMethod = "link-only" | "email-otp" | "account-password";
 
 /** One acceptance of one disclosure version, exactly as recorded. */
 export interface CertifiedConsent {
