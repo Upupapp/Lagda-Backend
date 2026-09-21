@@ -90,6 +90,16 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       prepared_by_user_id       varchar(64)  not null
         references users (user_id) on delete cascade,
 
+      -- The ceremony session this was handed to, carried from the intent.
+      --
+      -- A prepared signature is offered ONLY back to the browser that asked
+      -- for it. A signing link can be forwarded, and the credential in it
+      -- proves the holder may open the document — not that they are the
+      -- person whose account was verified a moment ago. Without this, a
+      -- forwarded link after a claim would inherit someone else's handwriting
+      -- and the right to apply it.
+      prepared_for_session_id   varchar(64)  not null,
+
       prepared_at               timestamptz  not null,
 
       constraint prepared_signatures_pkey

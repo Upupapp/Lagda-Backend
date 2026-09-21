@@ -1553,7 +1553,8 @@ function dispatchIndex(): NotificationDispatchRepository {
  */
 const fakeIntents = new Map<string, {
   workspaceId: string; signingRequestId: string; recipientId: string;
-  recipientNormalizedEmail: string; expiresAt: Date; consumedAt: Date | null;
+  recipientNormalizedEmail: string; recipientSessionId: string;
+  expiresAt: Date; consumedAt: Date | null;
 }>();
 const fakeLinks = new Map<string, {
   userId: string; matchedNormalizedEmail: string; linkedAt: Date;
@@ -1567,6 +1568,7 @@ function signingAccountLinks(): SigningAccountLinkRepository {
         signingRequestId: input.signingRequestId,
         recipientId: input.recipientId,
         recipientNormalizedEmail: input.recipientNormalizedEmail,
+        recipientSessionId: input.recipientSessionId,
         expiresAt: input.expiresAt,
         consumedAt: null,
       });

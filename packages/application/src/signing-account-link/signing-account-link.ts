@@ -99,6 +99,8 @@ export async function mintSigningLinkIntent(
     readonly signingRequestId: string;
     readonly recipientId: string;
     readonly recipientNormalizedEmail: string;
+    /** Whatever the claim produces is bound back to this session. */
+    readonly recipientSessionId: string;
   },
   deps: MintSigningLinkIntentDependencies,
 ): Promise<MintedSigningLinkIntent> {
@@ -112,6 +114,7 @@ export async function mintSigningLinkIntent(
     signingRequestId: context.signingRequestId,
     recipientId: context.recipientId,
     recipientNormalizedEmail: context.recipientNormalizedEmail,
+    recipientSessionId: context.recipientSessionId,
     createdAt: now,
     expiresAt,
   });
@@ -154,6 +157,8 @@ export interface ClaimSigningLinkDependencies {
     readonly userId: string;
     readonly signingRequestId: string;
     readonly recipientId: string;
+    /** Bound to the session that asked, never to the recipient at large. */
+    readonly recipientSessionId: string;
     readonly at: Date;
   }) => Promise<number>;
   readonly ids: () => string;
@@ -219,6 +224,7 @@ export async function claimSigningLink(
     userId,
     signingRequestId: intent.signingRequestId,
     recipientId: intent.recipientId,
+    recipientSessionId: intent.recipientSessionId,
     at: now,
   });
 
@@ -246,6 +252,7 @@ export async function requestSigningLinkIntent(
       readonly workspaceId: string;
       readonly signingRequestId: string;
       readonly recipientId: string;
+      readonly signingSessionId: string;
     }>;
     /** The recipient's delivery address, from the immutable snapshot. */
     readonly readRecipientEmail: (raw: string) => Promise<string>;
@@ -266,6 +273,7 @@ export async function requestSigningLinkIntent(
     signingRequestId: context.signingRequestId,
     recipientId: context.recipientId,
     recipientNormalizedEmail: normalized,
+    recipientSessionId: context.signingSessionId,
   }, deps);
 }
 

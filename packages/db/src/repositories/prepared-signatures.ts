@@ -26,6 +26,8 @@ export interface PreparedSignature {
   readonly digest: string;
   readonly sourceDigest: string;
   readonly preparedByUserId: string;
+  /** Offered only back to this session. */
+  readonly preparedForSessionId: string;
   readonly preparedAt: Date;
 }
 
@@ -37,8 +39,16 @@ export interface PrepareSignatureInput extends Omit<PreparedSignature, "prepared
 
 export interface PreparedSignatureRepository {
   prepare: (input: PrepareSignatureInput) => Promise<void>;
-  listForRecipient: (
-    signingRequestId: string, recipientId: string,
+  /**
+   * What was prepared FOR THIS SESSION.
+   *
+   * The session is a required argument rather than an optional filter,
+   * because a caller that forgets it would silently get someone else's
+   * prepared signature — and the one thing this table must never do is hand
+   * a mark to a browser that did not earn it.
+   */
+  listForSession: (
+    signingRequestId: string, recipientId: string, sessionId: string,
   ) => Promise<PreparedSignature[]>;
   /** Spends every prepared row for this recipient. */
   consumeForRecipient: (
@@ -58,6 +68,7 @@ interface Row {
   digest: string;
   source_digest: string;
   prepared_by_user_id: string;
+  prepared_for_session_id: string;
   prepared_at: Date;
 }
 
@@ -74,6 +85,7 @@ function toPrepared(row: Row): PreparedSignature {
     digest: row.digest,
     sourceDigest: row.source_digest,
     preparedByUserId: row.prepared_by_user_id,
+    preparedForSessionId: row.prepared_for_session_id,
     preparedAt: row.prepared_at,
   };
 }
@@ -100,6 +112,7 @@ export function createPreparedSignatureRepository(
         digest: input.digest,
         source_digest: input.sourceDigest,
         prepared_by_user_id: input.preparedByUserId,
+        prepared_for_session_id: input.preparedForSessionId,
         prepared_at: input.preparedAt,
       })
         .onConflict(conflict => conflict
@@ -115,15 +128,17 @@ export function createPreparedSignatureRepository(
             digest: input.digest,
             source_digest: input.sourceDigest,
             prepared_by_user_id: input.preparedByUserId,
+            prepared_for_session_id: input.preparedForSessionId,
             prepared_at: input.preparedAt,
           }))
         .execute();
     },
 
-    async listForRecipient(signingRequestId, recipientId): Promise<PreparedSignature[]> {
+    async listForSession(signingRequestId, recipientId, sessionId): Promise<PreparedSignature[]> {
       const rows = await db.selectFrom("prepared_signatures").selectAll()
         .where("signing_request_id", "=", signingRequestId)
         .where("request_recipient_id", "=", recipientId)
+        .where("prepared_for_session_id", "=", sessionId)
         .orderBy("purpose")
         .execute();
       return rows.map(row => toPrepared(row as unknown as Row));

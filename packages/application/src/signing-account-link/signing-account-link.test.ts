@@ -54,6 +54,7 @@ function repository() {
           signingRequestId: input.signingRequestId,
           recipientId: input.recipientId,
           recipientNormalizedEmail: input.recipientNormalizedEmail,
+          recipientSessionId: input.recipientSessionId,
           expiresAt: input.expiresAt,
           consumedAt: null,
         },
@@ -81,6 +82,7 @@ const RECIPIENT = {
   signingRequestId: "sr_1",
   recipientId: "rcp_1",
   recipientNormalizedEmail: "signer@example.com",
+  recipientSessionId: "rses_1",
 };
 
 function accounts(identity: {
@@ -374,6 +376,10 @@ describe("the handoff", () => {
       userId: "usr_1",
       signingRequestId: "sr_1",
       recipientId: "rcp_1",
+      // Bound to the session that asked. A signing link can be forwarded;
+      // without this, whoever held a forwarded link after a claim would
+      // inherit the mark and the right to apply it.
+      recipientSessionId: "rses_1",
       at: new Date(NOW),
     });
   });

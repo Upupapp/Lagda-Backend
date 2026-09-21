@@ -10,6 +10,8 @@ export interface SigningLinkIntentRecord {
   readonly signingRequestId: string;
   readonly recipientId: string;
   readonly recipientNormalizedEmail: string;
+  /** The ceremony session that asked. */
+  readonly recipientSessionId: string;
   readonly expiresAt: Date;
   readonly consumedAt: Date | null;
 }
@@ -27,6 +29,7 @@ export interface SigningAccountLinkRepository {
     readonly signingRequestId: string;
     readonly recipientId: string;
     readonly recipientNormalizedEmail: string;
+    readonly recipientSessionId: string;
     readonly createdAt: Date;
     readonly expiresAt: Date;
   }) => Promise<void>;

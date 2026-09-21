@@ -504,6 +504,7 @@ export function buildIdentity(
                 digest: entry.digest,
                 sourceDigest: entry.digest,
                 preparedByUserId: input.userId,
+                preparedForSessionId: input.recipientSessionId,
                 preparedAt: input.at,
               });
             }

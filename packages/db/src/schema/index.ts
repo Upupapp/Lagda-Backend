@@ -357,6 +357,8 @@ export interface SigningLinkIntentsTable {
   signing_request_id: string;
   request_recipient_id: string;
   recipient_normalized_email: string;
+  /** The ceremony session that asked. See migration 051. */
+  recipient_session_id: string;
   created_at: ColumnType<Date, Date, Date>;
   expires_at: ColumnType<Date, Date, Date>;
   consumed_at: ColumnType<Date | null, Date | null, Date | null>;
@@ -401,6 +403,8 @@ export interface PreparedSignaturesTable {
   /** Which library entry it came from. Audit only; no foreign key. */
   source_digest: string;
   prepared_by_user_id: string;
+  /** Offered only back to the session that asked. See migration 053. */
+  prepared_for_session_id: string;
   prepared_at: ColumnType<Date, Date, Date>;
 }
 

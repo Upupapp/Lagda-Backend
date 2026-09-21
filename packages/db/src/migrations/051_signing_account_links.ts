@@ -87,6 +87,16 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       -- trusted from registration.
       recipient_normalized_email  varchar(254) not null,
 
+      -- WHICH ceremony session asked for this.
+      --
+      -- Carried so that whatever the claim produces can be bound back to the
+      -- browser that started it. A signing link can be forwarded; without
+      -- this, someone holding a forwarded link after a claim had happened
+      -- would inherit whatever the claim handed over. The credential proves
+      -- you may open the document, not that you are the person whose account
+      -- was just verified.
+      recipient_session_id        varchar(64)  not null,
+
       created_at                  timestamptz  not null,
       expires_at                  timestamptz  not null,
       consumed_at                 timestamptz,

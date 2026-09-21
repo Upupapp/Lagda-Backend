@@ -838,6 +838,9 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
                   workspaceId: context.workspaceId,
                   signingRequestId: context.signingRequestId,
                   recipientId: context.recipientId,
+                  // Carried so whatever the claim produces is bound back to
+                  // THIS browser, not to the recipient at large.
+                  signingSessionId: context.signingSessionId,
                 };
               },
               readRecipientEmail: async (token) => {
