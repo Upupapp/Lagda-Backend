@@ -102,6 +102,10 @@ import type {
   SigningRequestIdGenerator, SigningRequestListFilter,
 } from "../common/ports/signing-requests.js";
 import type {
+  UserSigningRecordsRepository, UserSignedDocumentRecord, UserSigningInboxRecord,
+  SigningResumeIntentRepository, SigningResumeIntentRecord,
+} from "../common/ports/user-signing-records.js";
+import type {
   NotificationRepository, NewNotificationIntent, NotificationIntentRecord,
   NotificationDispatchRepository, NotificationScope,
   NotificationDeliveryRecord, NotificationIntentId, NotificationDeliveryId,
@@ -1605,6 +1609,112 @@ function preparedSignatures(): PreparedSignatureRepository {
   };
 }
 
+// ── Migrations 055 / 056 ─────────────────────────────────────────────────────
+//
+// Module-level, like the prepared signatures and link intents above: these
+// rows belong to no tenant, so the per-workspace store snapshot does not hold
+// them. Tests reset them with `resetUserSigningRecordFakes`.
+
+/** Verified accounts, by normalized email. The store itself holds no users. */
+export const fakeVerifiedAccounts = new Map<string, {
+  readonly userId: string; readonly name: string; readonly email: string;
+}>();
+export const fakeSignedDocuments = new Map<string, UserSignedDocumentRecord>();
+export const fakeSigningInbox = new Map<string, UserSigningInboxRecord>();
+const fakeResumeIntents = new Map<string, { record: SigningResumeIntentRecord; consumed: boolean }>();
+
+export function resetUserSigningRecordFakes(): void {
+  fakeVerifiedAccounts.clear();
+  fakeSignedDocuments.clear();
+  fakeSigningInbox.clear();
+  fakeResumeIntents.clear();
+}
+
+const recipientKey = (request: string, recipient: string) => `${request}:${recipient}`;
+
+export function userSigningRecords(): UserSigningRecordsRepository {
+  const isOpen = (entry: UserSigningInboxRecord, now: number) =>
+    entry.closedAt === null && entry.expiresAt > now;
+  return {
+    findVerifiedAccountByEmail: email => {
+      const account = fakeVerifiedAccounts.get(email);
+      return Promise.resolve(account === undefined ? null : { userId: account.userId });
+    },
+    findUserContact: userId => {
+      const account = [...fakeVerifiedAccounts.values()].find(a => a.userId === userId);
+      return Promise.resolve(account === undefined ? null : { name: account.name, email: account.email });
+    },
+    openInboxEntry: entry => {
+      const key = recipientKey(entry.signingRequestId, entry.recipientId);
+      const existing = fakeSigningInbox.get(key);
+      if (existing === undefined) {
+        fakeSigningInbox.set(key, { ...entry, closedAt: null, closedReason: null });
+      } else if (existing.closedAt === null) {
+        fakeSigningInbox.set(key, {
+          ...existing, grantCredentialDigest: entry.grantCredentialDigest,
+          expiresAt: entry.expiresAt, invitedAt: entry.invitedAt,
+        });
+      }
+      return Promise.resolve();
+    },
+    closeInboxForRequest: (signingRequestId, reason, at) => {
+      for (const [key, entry] of fakeSigningInbox) {
+        if (entry.signingRequestId === signingRequestId && entry.closedAt === null) {
+          fakeSigningInbox.set(key, { ...entry, closedAt: at, closedReason: reason });
+        }
+      }
+      return Promise.resolve();
+    },
+    findInboxEntryForRecipient: (signingRequestId, recipientId) =>
+      Promise.resolve(fakeSigningInbox.get(recipientKey(signingRequestId, recipientId)) ?? null),
+    closeInboxForRecipient: (signingRequestId, recipientId, reason, at) => {
+      const key = recipientKey(signingRequestId, recipientId);
+      const entry = fakeSigningInbox.get(key);
+      if (entry !== undefined && entry.closedAt === null) {
+        fakeSigningInbox.set(key, { ...entry, closedAt: at, closedReason: reason });
+      }
+      return Promise.resolve();
+    },
+    recordSigned: record => {
+      const key = recipientKey(record.signingRequestId, record.recipientId);
+      if (!fakeSignedDocuments.has(key)) fakeSignedDocuments.set(key, record);
+      return Promise.resolve();
+    },
+    listSignedForUser: (userId, limit) => Promise.resolve(
+      [...fakeSignedDocuments.values()]
+        .filter(r => r.userId === userId)
+        .sort((a, b) => b.signedAt - a.signedAt)
+        .slice(0, limit)),
+    listOpenInboxForUser: (userId, now, limit) => Promise.resolve(
+      [...fakeSigningInbox.values()]
+        .filter(e => e.userId === userId && isOpen(e, now))
+        .sort((a, b) => b.invitedAt - a.invitedAt)
+        .slice(0, limit)),
+    findOpenInboxEntry: (userId, signingRequestId, recipientId, now) => {
+      const entry = fakeSigningInbox.get(recipientKey(signingRequestId, recipientId));
+      return Promise.resolve(entry !== undefined && entry.userId === userId && isOpen(entry, now)
+        ? entry : null);
+    },
+  };
+}
+
+export function signingResumeIntents(): SigningResumeIntentRepository {
+  return {
+    create: intent => {
+      fakeResumeIntents.set(intent.intentDigest, { record: intent, consumed: false });
+      return Promise.resolve();
+    },
+    consume: (digest, now) => {
+      const held = fakeResumeIntents.get(digest);
+      if (held === undefined || held.consumed || held.record.expiresAt <= now) {
+        return Promise.resolve(null);
+      }
+      held.consumed = true;
+      return Promise.resolve(held.record);
+    },
+  };
+}
+
 function signingAccountLinks(): SigningAccountLinkRepository {
   return {
     createIntent: (input) => {
@@ -2587,6 +2697,7 @@ export class FakeTransactionManager implements TransactionManager {
         // than fabricated. Null exercises the caller's fallback, which is the
         // path a deleted inviter takes.
         actorProfiles: { displayNameOf: () => Promise.resolve(null) },
+        userSigningRecords: userSigningRecords(),
         organizationUnits: scopedOrganizationUnits(this.store, workspaceId),
         workspaces: scopedWorkspaces(this.store, workspaceId),
         memberships: scopedMemberships(this.store, workspaceId),
@@ -2670,6 +2781,7 @@ export class FakeTransactionManager implements TransactionManager {
           return inner({
             workspaceId,
             actorProfiles: { displayNameOf: () => Promise.resolve(null) },
+            userSigningRecords: userSigningRecords(),
             organizationUnits: scopedOrganizationUnits(store, workspaceId),
             folders: scopedFolders(store, workspaceId),
             workspaces: scopedWorkspaces(store, workspaceId),
@@ -2832,6 +2944,8 @@ export class FakeTransactionManager implements TransactionManager {
           && row.recipientId === scope.recipientId;
 
         return inner({
+          userSigningRecords: userSigningRecords(),
+          accountLinks: signingAccountLinks(),
           workspaceId: scope.workspaceId,
           signingRequestId: scope.signingRequestId,
           recipientId: scope.recipientId,
@@ -2986,6 +3100,8 @@ export class FakeTransactionManager implements TransactionManager {
         scope: "global",
         signingAccountLinks: signingAccountLinks(),
         preparedSignatures: preparedSignatures(),
+        userSigningRecords: userSigningRecords(),
+        signingResumeIntents: signingResumeIntents(),
         signingWorkflowReconciliation: workflowReconciliation(this.store),
         signingRequestExpiryIndex: expiryIndex(this.store),
         completionRetryIndex: completionRetryIndex(this.store),

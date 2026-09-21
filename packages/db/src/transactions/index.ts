@@ -40,6 +40,9 @@ import {
 import { createUploadRepository } from "../repositories/uploads.js";
 import { createSigningAccountLinkRepository } from "../repositories/signing-account-links.js";
 import { createPreparedSignatureRepository } from "../repositories/prepared-signatures.js";
+import {
+  createUserSigningRecordsRepository, createSigningResumeIntentRepository,
+} from "../repositories/user-signing-records.js";
 import { createIdempotencyRepository } from "../repositories/idempotency.js";
 import {
   createScopedInvitationRepository, createInvitationCredentialLookup,
@@ -146,6 +149,8 @@ function buildUnitOfWork(
     completionReconciliation:
       createCompletionReconciliationRepository(trx, workspaceId),
     completionInputs: createCompletionInputRepository(trx, workspaceId),
+    // Migration 056's invitation-side write, on the send's own transaction.
+    userSigningRecords: createUserSigningRecordsRepository(trx),
   };
 }
 
@@ -356,6 +361,9 @@ export function createTransactionManager(db: Kysely<Database>): TransactionManag
               // (§50). Scoped to the workspace this transaction already set as
               // the RLS variable — the same one `tenant_isolation` reads.
               evidence: createEvidenceRepository(trx, scope.workspaceId),
+              // Migrations 055/056, committing with the submission.
+              userSigningRecords: createUserSigningRecordsRepository(trx),
+              accountLinks: createSigningAccountLinkRepository(trx),
             });
           },
         });
@@ -375,6 +383,9 @@ export function createTransactionManager(db: Kysely<Database>): TransactionManag
           // neither of their scopes and therefore by this one.
           signingAccountLinks: createSigningAccountLinkRepository(trx),
           preparedSignatures: createPreparedSignatureRepository(trx),
+          // An account's own records, read by its user id (055, 056).
+          userSigningRecords: createUserSigningRecordsRepository(trx),
+          signingResumeIntents: createSigningResumeIntentRepository(trx),
           // Identifiers only, from the one table that carries no policy
           // because a cross-tenant scan cannot have one without BYPASSRLS.
           signingWorkflowReconciliation:

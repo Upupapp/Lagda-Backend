@@ -62,6 +62,8 @@ import * as m051 from "./051_signing_account_links.js";
 import * as m052 from "./052_signature_capture_provenance.js";
 import * as m053 from "./053_prepared_signatures.js";
 import * as m054 from "./054_intent_session_binding.js";
+import * as m055 from "./055_user_signed_documents.js";
+import * as m056 from "./056_in_app_signing.js";
 
 /**
  * Migrations listed explicitly rather than read from disk.
@@ -128,6 +130,8 @@ const MIGRATIONS: Record<string, Migration> = {
   "052_signature_capture_provenance": m052,
   "053_prepared_signatures": m053,
   "054_intent_session_binding": m054,
+  "055_user_signed_documents": m055,
+  "056_in_app_signing": m056,
 };
 
 class ExplicitMigrationProvider implements MigrationProvider {

@@ -55,7 +55,7 @@ export type CertificateFactProblem =
  * not be labelled by whatever default the renderer would otherwise pick (§179).
  */
 const CERTIFIABLE_METHODS: readonly CertifiedAuthenticationMethod[] =
-  ["link-only", "email-otp"];
+  ["link-only", "email-otp", "account-password"];
 
 function certifiableMethod(value: string, recipientId: string): CertifiedAuthenticationMethod {
   const found = CERTIFIABLE_METHODS.find(candidate => candidate === value);

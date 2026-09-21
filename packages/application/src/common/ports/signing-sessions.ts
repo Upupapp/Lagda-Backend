@@ -44,7 +44,12 @@ export type RecipientSigningSessionId =
  * second method arrives, existing rows must still describe themselves
  * correctly. Declaring it does not make it work.
  */
-export const RECIPIENT_AUTHENTICATION_METHODS = ["link-only", "email-otp"] as const;
+export const RECIPIENT_AUTHENTICATION_METHODS = [
+  "link-only", "email-otp",
+  // Migration 056. Continued from inside the app: a signed-in account whose
+  // verified address matches the invitation, with the password re-entered.
+  "account-password",
+] as const;
 export type RecipientAuthenticationMethod =
   (typeof RECIPIENT_AUTHENTICATION_METHODS)[number];
 

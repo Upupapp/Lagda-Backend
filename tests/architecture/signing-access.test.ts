@@ -33,6 +33,8 @@ const sqlOf = (file: string): string => code(file).replace(/^\s*--.*$/gm, "");
 
 const USE_CASE = path.join(
   PACKAGES, "application", "src", "signing-access", "signing-access.ts");
+const IN_APP_USE_CASE = path.join(
+  PACKAGES, "application", "src", "signing-account-link", "in-app-signing.ts");
 const PORTS = path.join(
   PACKAGES, "application", "src", "common", "ports", "signing-sessions.ts");
 const REPOSITORY = path.join(PACKAGES, "db", "src", "repositories", "signing-sessions.ts");
@@ -411,9 +413,16 @@ describe("credentials and telemetry", () => {
   });
 
   it("declares exactly the methods the product supports", () => {
-    expect(RECIPIENT_AUTHENTICATION_METHODS).toEqual(["link-only", "email-otp"]);
-    // And only one is reachable: the use case writes a literal.
+    expect(RECIPIENT_AUTHENTICATION_METHODS)
+      .toEqual(["link-only", "email-otp", "account-password"]);
+    // Two are reachable, each from exactly one path, each as a literal:
+    // the emailed link records link-only...
     expect(code(USE_CASE)).toContain('authenticationMethod: "link-only"');
+    expect(code(USE_CASE)).not.toContain('"account-password"');
+    // ...and only continuing from the app records account-password (056).
+    expect(code(IN_APP_USE_CASE)).toContain('authenticationMethod: "account-password"');
+    // email-otp is still declared and unreachable.
     expect(code(USE_CASE)).not.toContain('"email-otp"');
+    expect(code(IN_APP_USE_CASE)).not.toContain('"email-otp"');
   });
 });
