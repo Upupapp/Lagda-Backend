@@ -5253,6 +5253,353 @@
             }
           }
         }
+      },
+      "put": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "ReplaceRecipientsRequest",
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "recipients"
+                ],
+                "properties": {
+                  "recipients": {
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "title": "AddRecipientRequest",
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "source",
+                            "name",
+                            "email",
+                            "type"
+                          ],
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "manual"
+                              ]
+                            },
+                            "name": {
+                              "minLength": 1,
+                              "maxLength": 200,
+                              "type": "string"
+                            },
+                            "email": {
+                              "minLength": 1,
+                              "maxLength": 254,
+                              "type": "string"
+                            },
+                            "organization": {
+                              "anyOf": [
+                                {
+                                  "maxLength": 200,
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "type": {
+                              "title": "RecipientType",
+                              "description": "What this participant is expected to do. Not a workspace role.",
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "signer"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "approver"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "reviewer"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "acknowledgment-recipient"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "viewer"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "carbon-copy"
+                                  ]
+                                }
+                              ]
+                            },
+                            "isRequired": {
+                              "type": "boolean"
+                            },
+                            "routingOrder": {
+                              "minimum": 1,
+                              "type": "integer"
+                            }
+                          }
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "source",
+                            "contactId",
+                            "type"
+                          ],
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "contact"
+                              ]
+                            },
+                            "contactId": {
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "type": "string"
+                            },
+                            "type": {
+                              "title": "RecipientType",
+                              "description": "What this participant is expected to do. Not a workspace role.",
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "signer"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "approver"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "reviewer"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "acknowledgment-recipient"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "viewer"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "carbon-copy"
+                                  ]
+                                }
+                              ]
+                            },
+                            "isRequired": {
+                              "type": "boolean"
+                            },
+                            "routingOrder": {
+                              "minimum": 1,
+                              "type": "integer"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "documentId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "RecipientList",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "recipients"
+                  ],
+                  "properties": {
+                    "recipients": {
+                      "type": "array",
+                      "items": {
+                        "title": "Recipient",
+                        "additionalProperties": false,
+                        "description": "A signing participant, snapshotted onto one preparation. Not a contact, not a user, and not an authenticated identity.",
+                        "type": "object",
+                        "required": [
+                          "recipientId",
+                          "name",
+                          "email",
+                          "organization",
+                          "type",
+                          "isRequired",
+                          "orderIndex",
+                          "routingOrder",
+                          "sourceContactId",
+                          "createdAt",
+                          "updatedAt"
+                        ],
+                        "properties": {
+                          "recipientId": {
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "type": "string"
+                          },
+                          "name": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "email": {
+                            "maxLength": 254,
+                            "type": "string"
+                          },
+                          "organization": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "type": {
+                            "title": "RecipientType",
+                            "description": "What this participant is expected to do. Not a workspace role.",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "signer"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "approver"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "reviewer"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "acknowledgment-recipient"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "viewer"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "carbon-copy"
+                                ]
+                              }
+                            ]
+                          },
+                          "isRequired": {
+                            "type": "boolean"
+                          },
+                          "orderIndex": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "routingOrder": {
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "sourceContactId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "createdAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/workspaces/{workspaceId}/documents/{documentId}/recipients/{recipientId}": {

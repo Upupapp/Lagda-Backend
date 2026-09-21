@@ -367,6 +367,185 @@ interface RecipientDetails {
   readonly sourceContactId: ContactId | null;
 }
 
+
+/**
+ * Replaces a preparation's recipient list, atomically.
+ *
+ * ── Why this exists ───────────────────────────────────────────────────────
+ *
+ * Sending a document out again to different people was composed on the
+ * CLIENT from four calls: list the recipients, add the new ones, remove the
+ * old ones, create the request. Each one commits on its own, so a failure or
+ * a closed tab between any two left the document pointing at a recipient list
+ * nobody chose — half the new addresses, half the old, and no request.
+ *
+ * The person who then opened that document saw a configuration they had never
+ * assembled, with no indication anything had gone wrong.
+ *
+ * One transaction. Either the list is exactly what was asked for, or it is
+ * untouched.
+ *
+ * ── Why REPLACE rather than add ───────────────────────────────────────────
+ *
+ * The caller is naming who should receive this document now. Merging with
+ * whoever was there before would send it to people the caller did not list
+ * and cannot see — the previous recipients are not on screen when this is
+ * called.
+ *
+ * Requests already created keep their own snapshots and are untouched by
+ * this; that is what makes replacing safe. A sent request is a record of who
+ * was asked, and it does not change because the document later pointed
+ * somewhere else.
+ */
+export async function replaceRecipients(
+  actor: AuthenticatedActor,
+  workspaceId: WorkspaceId,
+  documentId: DocumentId,
+  inputs: readonly AddRecipientInput[],
+  deps: RecipientDependencies,
+): Promise<readonly RecipientView[]> {
+  if (inputs.length === 0) {
+    throw new ApplicationValidationError(
+      "A document needs at least one recipient.", ["recipients: at least 1"]);
+  }
+  if (inputs.length > MAX_RECIPIENTS_PER_PREPARATION) {
+    throw new ApplicationValidationError(
+      "This document has too many recipients.",
+      [`recipients: at most ${String(MAX_RECIPIENTS_PER_PREPARATION)}`]);
+  }
+  for (const input of inputs) {
+    const routingOrder = input.routingOrder ?? 1;
+    if (!isValidRoutingOrder(routingOrder)) {
+      throw new ApplicationValidationError(
+        "That recipient could not be added.", ["routingOrder: must be 1 or greater"]);
+    }
+  }
+
+  return deps.transactions.runForWorkspace(workspaceId, async uow => {
+    await authorize(uow, actor, "document.prepare");
+    const now = deps.clock.now();
+    const preparation = await editablePreparation(uow, documentId, deps, now);
+
+    const previous = await uow.recipients.list(preparation.preparationId);
+
+    // Resolve BEFORE touching anything. A contact that cannot be resolved must
+    // fail while the old list is still intact, not after it is gone.
+    const resolved = [];
+    for (const input of inputs) {
+      resolved.push({ input, details: await resolveDetails(uow, input) });
+    }
+
+    const seen = new Set<string>();
+    for (const { details } of resolved) {
+      if (seen.has(details.emailKey)) throw new DuplicateRecipientError();
+      seen.add(details.emailKey);
+    }
+
+    // ── Step 1: somebody already on the document STAYS ─────────────────
+    //
+    // Re-sending to a person who is already a recipient used to fail with
+    // "already has a recipient with that email address": the old flow added
+    // the new people before removing the old ones, so the same address
+    // collided with itself.
+    //
+    // Keeping the existing row is not a workaround, it is the right answer.
+    // That person's fields are already placed and assigned to them, and
+    // deleting and re-adding them would detach every one.
+    const previousByKey = new Map(previous.map(r => [r.emailKey, r]));
+    const keptIds = new Set<string>();
+
+    const finalIds: RecipientId[] = [];
+    let index = 0;
+    for (const { input, details } of resolved) {
+      const existing = previousByKey.get(details.emailKey);
+      if (existing !== undefined) {
+        keptIds.add(existing.recipientId);
+        finalIds.push(existing.recipientId);
+        index += 1;
+        continue;
+      }
+
+      const recipientId = deps.ids.nextRecipientId();
+      try {
+        await uow.recipients.insert({
+          recipientId,
+          workspaceId: uow.workspaceId,
+          preparationId: preparation.preparationId,
+          sourceContactId: details.sourceContactId,
+          name: details.name,
+          email: details.email,
+          emailKey: details.emailKey,
+          organization: details.organization,
+          type: input.type,
+          isRequired: input.isRequired ?? true,
+          // Parked past the end, renumbered below. Inserting at `index` while
+          // departing rows still hold the low positions would collide.
+          orderIndex: previous.length + index,
+          routingOrder: input.routingOrder ?? 1,
+          createdAt: now,
+        });
+      } catch {
+        throw new DuplicateRecipientError();
+      }
+      finalIds.push(recipientId);
+      index += 1;
+    }
+
+    // ── Step 2: the departing hand their fields to a replacement ───────
+    //
+    // "Remove this recipient's fields before removing them" came from here.
+    // A field's foreign key to its recipient is RESTRICT, and every sent
+    // document has fields — you cannot send without a signature block — so
+    // no departing signer could ever be deleted.
+    //
+    // The fields are already where they belong on the page. What is wrong is
+    // only WHO they are for. So they move, position for position: the first
+    // departing recipient's fields go to the first newcomer, and so on. For
+    // the common case — one signer replaced by another — that is exactly
+    // right, and the sender does not re-place a single field.
+    //
+    // A departing recipient with no counterpart (fewer people than before)
+    // hands their fields to the LAST newcomer rather than orphaning them. A
+    // field left with nobody is a field the validator will flag, so the
+    // sender sees it at Review rather than losing it silently.
+    const departing = previous.filter(r => !keptIds.has(r.recipientId));
+    const newcomers = finalIds.filter(id => !keptIds.has(id));
+    const fallback = finalIds[finalIds.length - 1];
+
+    for (const [position, leaver] of departing.entries()) {
+      const heir = newcomers[position] ?? newcomers[newcomers.length - 1] ?? fallback;
+      if (heir !== undefined) {
+        await uow.recipients.reassignFields({
+          preparationId: preparation.preparationId,
+          fromRecipientId: leaver.recipientId,
+          toRecipientId: heir,
+        });
+      }
+      await uow.recipients.remove({
+        preparationId: preparation.preparationId,
+        recipientId: leaver.recipientId,
+      });
+    }
+
+    // ── Step 3: close the order ────────────────────────────────────────
+    // In the order the caller listed them, dense from zero.
+    for (const [position, recipientId] of finalIds.entries()) {
+      await uow.recipients.update({
+        preparationId: preparation.preparationId,
+        recipientId,
+        patch: { orderIndex: position },
+        now,
+      });
+    }
+
+    const views: RecipientView[] = [];
+    for (const recipientId of finalIds) {
+      views.push(toView(await resolveRecipient(uow, preparation.preparationId, recipientId)));
+    }
+    return views;
+  });
+}
+
 async function resolveDetails(
   uow: WorkspaceUnitOfWork,
   input: AddRecipientInput,

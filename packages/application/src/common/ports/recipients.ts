@@ -134,6 +134,27 @@ export interface ScopedRecipientRepository {
     readonly preparationId: PreparationId;
     readonly recipientId: RecipientId;
   }): Promise<number>;
+
+  /**
+   * Moves every field from one recipient of a preparation to another.
+   *
+   * The reason a re-send can keep the fields the sender already placed. A
+   * field's foreign key to its recipient is RESTRICT, so a recipient who owns
+   * fields cannot be deleted — deliberately, so nobody silently loses an
+   * afternoon of positioning. Handing the fields to the replacement first is
+   * what makes the old recipient deletable without losing any work.
+   *
+   * Both ids are bound to the SAME preparation in the WHERE clause, so a field
+   * cannot be moved onto a recipient of another document — the three-column
+   * foreign key would refuse it anyway, and this refuses it first.
+   *
+   * Returns how many fields moved.
+   */
+  reassignFields(input: {
+    readonly preparationId: PreparationId;
+    readonly fromRecipientId: RecipientId;
+    readonly toRecipientId: RecipientId;
+  }): Promise<number>;
 }
 
 export interface RecipientIdGenerator {

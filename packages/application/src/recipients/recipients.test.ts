@@ -18,6 +18,7 @@ import type {
 } from "@lagda/contracts";
 import {
   listRecipients, addRecipient, updateRecipient, removeRecipient, reorderRecipients,
+  replaceRecipients,
   DuplicateRecipientError, RecipientHasFieldsError,
   type RecipientDependencies,
 } from "./recipients.js";
@@ -706,5 +707,102 @@ describe("listRecipients", () => {
     ]) {
       expect(serialized, `exposes ${absent}`).not.toContain(absent);
     }
+  });
+});
+
+
+// ── Replace (the re-send path) ───────────────────────────────────────────────
+//
+// Both failures reported from the live re-send are pinned here, because both
+// are the kind that pass every unit test of the individual calls and only
+// appear when they are composed against a document that has actually been
+// prepared.
+
+describe("replaceRecipients", () => {
+  const signatureFieldFor = (recipientId: string) => ({
+    type: "signature" as const, pageNumber: 1,
+    rect: { x: 0.1, y: 0.2, width: 0.3, height: 0.05 },
+    required: true, label: "Signature", layer: 0,
+    recipientId,
+  });
+
+  it("hands the departing signer's fields to the new one instead of refusing", async () => {
+    // Reported as "Remove this recipient's fields before removing them from
+    // the document". Every sent document has a signature field — you cannot
+    // send without one — so the old composition failed on EVERY re-send.
+    const h = await harness();
+    const old = await addRecipient(actor(OWNER), h.workspaceId, DOC, manual(), h.deps);
+    await saveDocumentPreparation(actor(OWNER), h.workspaceId, DOC, {
+      expectedRevision: 1, fields: [signatureFieldFor(old.recipientId)],
+    }, h.prep);
+
+    const replaced = await replaceRecipients(actor(OWNER), h.workspaceId, DOC,
+      [manual({ name: "Maria Santos", email: "maria@example.com" })], h.deps);
+
+    expect(replaced).toHaveLength(1);
+    const heir = replaced[0]?.recipientId;
+    // The field SURVIVES, and now belongs to the replacement. The sender does
+    // not re-place anything.
+    expect(h.store.preparationFields).toHaveLength(1);
+    expect(h.store.preparationFields[0]?.recipientId).toBe(heir);
+  });
+
+  it("keeps somebody already on the document instead of colliding with them", async () => {
+    // Reported as "This document already has a recipient with that email
+    // address". The old flow added before it removed, so re-sending to the
+    // same person collided with that person.
+    const h = await harness();
+    const kept = await addRecipient(actor(OWNER), h.workspaceId, DOC, manual(), h.deps);
+    await saveDocumentPreparation(actor(OWNER), h.workspaceId, DOC, {
+      expectedRevision: 1, fields: [signatureFieldFor(kept.recipientId)],
+    }, h.prep);
+
+    const replaced = await replaceRecipients(actor(OWNER), h.workspaceId, DOC,
+      [manual()], h.deps);
+
+    // Same row, same id — so their fields never had to move at all.
+    expect(replaced.map(r => r.recipientId)).toEqual([kept.recipientId]);
+    expect(h.store.preparationFields[0]?.recipientId).toBe(kept.recipientId);
+  });
+
+  it("keeps an existing person AND replaces the rest in one call", async () => {
+    const h = await harness();
+    const stays = await addRecipient(actor(OWNER), h.workspaceId, DOC, manual(), h.deps);
+    const leaves = await addRecipient(actor(OWNER), h.workspaceId, DOC,
+      manual({ name: "Pedro Reyes", email: "pedro@example.com" }), h.deps);
+    await saveDocumentPreparation(actor(OWNER), h.workspaceId, DOC, {
+      expectedRevision: 1,
+      fields: [signatureFieldFor(stays.recipientId), signatureFieldFor(leaves.recipientId)],
+    }, h.prep);
+
+    const replaced = await replaceRecipients(actor(OWNER), h.workspaceId, DOC, [
+      manual(),
+      manual({ name: "Ana Lim", email: "ana@example.com" }),
+    ], h.deps);
+
+    expect(replaced).toHaveLength(2);
+    expect(replaced[0]?.recipientId).toBe(stays.recipientId);
+    const newcomer = replaced[1]?.recipientId;
+    const owners = h.store.preparationFields.map(f => f.recipientId).sort();
+    expect(owners).toEqual([stays.recipientId, newcomer].sort());
+  });
+
+  it("leaves the list untouched when the request is invalid", async () => {
+    // The whole point of doing this in one transaction.
+    const h = await harness();
+    await addRecipient(actor(OWNER), h.workspaceId, DOC, manual(), h.deps);
+    await expect(replaceRecipients(actor(OWNER), h.workspaceId, DOC, [
+      manual({ email: "same@example.com" }),
+      manual({ email: "SAME@example.com" }),
+    ], h.deps)).rejects.toBeInstanceOf(DuplicateRecipientError);
+
+    const after = await listRecipients(actor(OWNER), h.workspaceId, DOC, h.deps);
+    expect(after.map(r => r.email)).toEqual(["juan@example.com"]);
+  });
+
+  it("refuses an empty list", async () => {
+    const h = await harness();
+    await expect(replaceRecipients(actor(OWNER), h.workspaceId, DOC, [], h.deps))
+      .rejects.toThrow(/at least one recipient/i);
   });
 });

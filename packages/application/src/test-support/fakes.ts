@@ -2367,6 +2367,20 @@ function scopedRecipients(
 
     countAssignedFields: (input) => Promise.resolve(
       assignedCount(input.preparationId, input.recipientId)),
+
+    // Mutates the SAME records the real UPDATE would, and only within the one
+    // preparation — so a test cannot pass by moving fields across documents
+    // that the real three-column foreign key would refuse.
+    reassignFields: (input) => {
+      let moved = 0;
+      store.preparationFields = store.preparationFields.map(field => {
+        if (preparationOf(store, field) !== input.preparationId) return field;
+        if (field.recipientId !== input.fromRecipientId) return field;
+        moved += 1;
+        return { ...field, recipientId: input.toRecipientId };
+      });
+      return Promise.resolve(moved);
+    },
   };
 }
 

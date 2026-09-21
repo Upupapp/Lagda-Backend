@@ -162,5 +162,15 @@ export function createScopedRecipientRepository(
         .executeTakeFirstOrThrow();
       return Number(counted.total);
     },
+
+    async reassignFields(input) {
+      const result = await trx.updateTable("preparation_fields")
+        .set({ recipient_id: input.toRecipientId })
+        .where("workspace_id", "=", scope)
+        .where("preparation_id", "=", input.preparationId)
+        .where("recipient_id", "=", input.fromRecipientId)
+        .executeTakeFirst();
+      return Number(result.numUpdatedRows);
+    },
   };
 }
