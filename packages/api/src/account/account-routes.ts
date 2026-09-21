@@ -37,6 +37,7 @@ import {
   type ListSessionsDependencies, type RevokeSessionDependencies,
   type RevokeOtherSessionsDependencies,
   type UserId, type SessionId, type UpdatePreferencesInput,
+  SigningLinkAddressedElsewhereError,
 } from "@lagda/application";
 import type { ApiConfig } from "../config/index.js";
 import type {
@@ -540,13 +541,27 @@ export function registerAccountRoutes(
         preparedCount: claimed.preparedCount,
       }, "signing_account_link.claimed");
       return reply.status(200).send(claimed);
-    } catch {
-      // ONE refusal for every cause — unknown, expired, already claimed,
-      // wrong account, unverified address, WRONG PASSWORD. Distinguishing
-      // them would let a caller holding a code learn that some other account
-      // owns that address; separating out the password would additionally
-      // turn this into a password oracle for an account whose address the
-      // caller already knows.
+    } catch (error) {
+      // ONE refusal for almost every cause — unknown, expired, already
+      // claimed, unverified address, WRONG PASSWORD. Distinguishing them
+      // would let a caller holding a code learn that some other account owns
+      // that address; separating out the password would additionally turn
+      // this into a password oracle for an account whose address the caller
+      // already knows.
+      //
+      // The single exception is "addressed to someone else", which is allowed
+      // to say so BECAUSE the caller has already authenticated. Collapsing it
+      // produced a signer who typed their password and got a blank refusal
+      // with no way to discover they were using the wrong account — a real
+      // failure observed in testing, traded for a disclosure that is not one.
+      if (error instanceof SigningLinkAddressedElsewhereError) {
+        return reply.status(409).send({
+          error: {
+            code: "SIGNING_LINK_ADDRESSED_ELSEWHERE",
+            message: error.message,
+          },
+        });
+      }
       return reply.status(422).send({
         error: {
           code: "SIGNING_LINK_NOT_CLAIMABLE",

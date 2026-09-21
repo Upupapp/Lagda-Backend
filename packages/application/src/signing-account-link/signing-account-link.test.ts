@@ -8,6 +8,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   mintSigningLinkIntent, claimSigningLink, SigningLinkNotClaimableError,
+  SigningLinkAddressedElsewhereError,
 } from "./signing-account-link.js";
 import type {
   SigningAccountLinkRepository, SigningLinkIntentRecord,
@@ -166,6 +167,27 @@ describe("claiming", () => {
     expect(links).toHaveLength(0);
   });
 
+  it("tells an AUTHENTICATED caller the document was sent elsewhere", async () => {
+    // The one failure allowed to be specific. The caller has proved they own
+    // an account; withholding this produced a signer who typed their password
+    // and got a blank refusal with no way to discover they had the wrong
+    // account. It still names no address.
+    const { repo } = repository();
+    const { code } = await mintSigningLinkIntent(RECIPIENT, { clock, codes, links: repo, ids });
+
+    await expect(claimSigningLink("usr_2", code, PASSWORD, {
+      clock, codes, links: repo, ids, ...stepUp(), consumeIntent: burn(repo),
+      accounts: accounts({
+        normalizedEmail: "someone.else@example.com", emailVerifiedAt: new Date(NOW),
+      }),
+    })).rejects.toBeInstanceOf(SigningLinkAddressedElsewhereError);
+  });
+
+  it("names no address when it says so", () => {
+    const error = new SigningLinkAddressedElsewhereError();
+    expect(error.message).not.toMatch(/@/);
+  });
+
   it("refuses a different account, however verified", async () => {
     const { repo, links } = repository();
     const { code } = await mintSigningLinkIntent(RECIPIENT, { clock, codes, links: repo, ids });
@@ -175,7 +197,7 @@ describe("claiming", () => {
       accounts: accounts({
         normalizedEmail: "someone.else@example.com", emailVerifiedAt: new Date(NOW),
       }),
-    })).rejects.toBeInstanceOf(SigningLinkNotClaimableError);
+    })).rejects.toBeInstanceOf(SigningLinkAddressedElsewhereError);
 
     expect(links).toHaveLength(0);
   });
@@ -242,7 +264,9 @@ describe("claiming", () => {
   });
 
   it("says the same thing however it failed", async () => {
-    // Unknown, expired, claimed, wrong account, unverified — one message.
+    // Unknown, expired, claimed, unverified — one message. "Addressed
+    // elsewhere" is deliberately excluded: it is the one an authenticated
+    // caller is allowed to be told.
     // "Wrong account" in particular would otherwise confirm that some other
     // account owns that address.
     const { repo } = repository();
@@ -250,7 +274,6 @@ describe("claiming", () => {
 
     for (const scenario of [
       { user: "usr_1", code: "unknown", identity: { normalizedEmail: "signer@example.com", emailVerifiedAt: new Date(NOW) } },
-      { user: "usr_2", code: null, identity: { normalizedEmail: "other@example.com", emailVerifiedAt: new Date(NOW) } },
       { user: "usr_1", code: null, identity: { normalizedEmail: "signer@example.com", emailVerifiedAt: null } },
       { user: "usr_1", code: null, identity: null },
     ]) {
