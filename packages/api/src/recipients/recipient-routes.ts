@@ -28,7 +28,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { Type, type Static } from "@sinclair/typebox";
 import {
-  listRecipients, addRecipient, updateRecipient, removeRecipient, reorderRecipients,
+  listRecipients, addRecipient, replaceRecipients, updateRecipient, removeRecipient, reorderRecipients,
   type RecipientDependencies, type RecipientView,
   type SessionId, type UserId,
 } from "@lagda/application";
@@ -140,6 +140,17 @@ const ReorderRequestSchema = Type.Object({
     { maxItems: MAX_RECIPIENTS_PER_PREPARATION },
   ),
 }, { additionalProperties: false });
+
+/**
+ * The whole list, in one request.
+ *
+ * Bounded at the same limit the application enforces, so an oversized body is
+ * refused by the schema before any of it is read — rather than after the
+ * transaction has started and found the same thing.
+ */
+const ReplaceRecipientsRequestSchema = Type.Object({
+  recipients: Type.Array(AddRecipientRequestSchema, { minItems: 1, maxItems: 50 }),
+}, { title: "ReplaceRecipientsRequest", additionalProperties: false });
 
 const RecipientListSchema = Type.Object({
   recipients: Type.Array(RecipientSchema),
@@ -283,6 +294,48 @@ export function registerRecipientRoutes(
 
     return reply.status(201).send(present(recipient));
   });
+
+  // ── Replace the whole list, atomically ──────────────────────────────────
+  //
+  // PUT, not POST: this is idempotent in the way PUT means — send the same
+  // list twice and the second call leaves the same state, rather than adding
+  // everybody again.
+  //
+  // It exists because "send this out again to different people" was composed
+  // on the client from four separate calls, each committing on its own. A
+  // failure between any two left the document pointing at a recipient list
+  // nobody chose: half new addresses, half old, and no request. This is one
+  // transaction — the list is either exactly what was asked for or untouched.
+  app.put("/workspaces/:workspaceId/documents/:documentId/recipients", {
+    schema: {
+      params: DocumentParamsSchema,
+      body: ReplaceRecipientsRequestSchema,
+      response: { 200: RecipientListSchema },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await actorOf(request);
+    if (actor === null) return unauthenticated(reply);
+
+    const { workspaceId, documentId } = request.params as Static<typeof DocumentParamsSchema>;
+    const body = request.body as { recipients: AddRecipientBody[] };
+
+    const recipients = await replaceRecipients(
+      actor, workspaceId as WorkspaceId, documentId as DocumentId,
+      body.recipients, options.recipientDependencies());
+
+    record(request, "document.recipients.replaced", {
+      workspaceId,
+      documentId,
+      actorUserId: actor.userId,
+      // A count, never the addresses. The audit trail says the list changed
+      // and how large it became; who is on it lives in the recipient rows.
+      recipientCount: recipients.length,
+    });
+
+    return reply.status(200).send({ recipients: recipients.map(present) });
+  });
+
 
   // ── Update ──────────────────────────────────────────────────────────────
   app.patch("/workspaces/:workspaceId/documents/:documentId/recipients/:recipientId", {
