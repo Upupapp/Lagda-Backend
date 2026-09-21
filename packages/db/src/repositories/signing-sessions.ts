@@ -16,11 +16,24 @@ import type {
   SigningRequestId, SigningRequestRecipientId, RecipientActivationState,
 } from "@lagda/application";
 import { RECIPIENT_AUTHENTICATION_METHODS } from "@lagda/application";
+import { RECIPIENT_WORKFLOW_STATES } from "@lagda/contracts";
 import type { Database } from "../schema/index.js";
 import { PersistenceMappingError } from "../mapping/index.js";
 import { WorkspaceScopeMismatchError, translatePersistenceError } from "../errors.js";
 
-const ACTIVATION_STATES: readonly RecipientActivationState[] = ["waiting", "active"];
+// The FULL set a recipient's activation row can hold, not just the two
+// values that let them into the ceremony.
+//
+// This used to be `["waiting", "active"]`, and bootstrap crashed with an
+// unhandled PersistenceMappingError -- a 500, not a clean refusal -- for any
+// recipient whose row had since moved to "signed" or "declined": someone
+// reopening a link after signing, or after declining, or a later signer on a
+// multi-signer request checking whether an earlier signer already finished.
+// Migration 024 widened the COLUMN to allow those two states; this mapper was
+// never updated to match. `assertUsable` already refuses anything that is not
+// exactly "active" with a clean SigningAccessNotActiveError -- the missing
+// piece was only letting the value THROUGH the mapping to reach that check.
+const ACTIVATION_STATES: readonly RecipientActivationState[] = RECIPIENT_WORKFLOW_STATES;
 
 function oneOf<T extends string>(
   allowed: readonly T[], table: string, column: string, value: string,
