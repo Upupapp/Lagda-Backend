@@ -244,8 +244,36 @@ export async function applyRecipientSubmissionToWorkflow(
     signingRequestId: uow.signingRequestId as unknown as TransactionId,
     occurredAt: input.acceptedAt,
   };
+
+  // ── WHICH BYTES this signature is about ───────────────────────────────────
+  //
+  // Read through `uow.ceremony`, and that choice is the point: it is the SAME
+  // method, on the same repository, in the same transaction, that served the
+  // document to this recipient in the first place. Reading the artifact id
+  // from anywhere else — the request row, a join written for this purpose —
+  // would record what we believe was served rather than what was served, and
+  // the two could drift without anything failing.
+  //
+  // `null` cannot occur under the schema: `signing_requests.source_artifact_id`
+  // is NOT NULL behind a RESTRICT foreign key into `document_artifacts`, and
+  // this recipient demonstrably received the document. It is therefore a
+  // corruption check, and it REFUSES rather than writing an event that cannot
+  // say what was signed — the same position the ceremony takes on a missing
+  // source artifact, and the same position §132 argues for generally: a
+  // silently incomplete evidence row is unrecoverable after the fact.
+  const signedArtifact = await uow.ceremony.getSourceArtifact();
+  if (signedArtifact === null) {
+    throw new SigningWorkflowIntegrityError(
+      "the request's frozen source artifact is unreadable");
+  }
+  const artifactRef = {
+    artifactId: signedArtifact.artifactId,
+    digest: signedArtifact.digest,
+  };
+
   await uow.evidence.append(
-    submissionAccepted(evidenceBase, uow.recipientId, input.submissionId));
+    submissionAccepted(
+      evidenceBase, uow.recipientId, input.submissionId, artifactRef));
   await uow.evidence.append(
     recipientSigned(evidenceBase, uow.recipientId, input.submissionId));
 }

@@ -991,3 +991,102 @@ describe("what submission does NOT do", () => {
     expect(h.store.submissions[0]?.acceptedAt).toBe(AT);
   });
 });
+
+// ── Which bytes the signature is about ───────────────────────────────────────
+//
+// `submission-accepted` now carries the artifact id and digest of the document
+// the recipient was served. These tests exist because "the field is populated"
+// is not the property that matters — the recorded digest has to be the digest
+// of the bytes THAT RECIPIENT actually saw, and there are two realistic ways
+// for those to diverge:
+//
+//   * the event records the document's CURRENT artifact rather than the
+//     request's frozen one, so a document edited after sending re-labels a
+//     signature that was made against the older bytes;
+//   * the event records a hard-coded or defaulted digest that happens to look
+//     plausible.
+//
+// A test that only checked for presence would pass under both.
+
+describe("submission-accepted records the bytes that were signed", () => {
+  const payloadOf = (h: ReturnType<typeof harness>) => {
+    const event = h.store.evidence.find(
+      e => e.eventType === "submission-accepted");
+    return event?.details?.payload as
+      { artifactId?: string; digest?: string } | undefined;
+  };
+
+  it("records the artifact the ceremony served, digest and all", async () => {
+    const h = harness();
+    seed(h, [{ id: "f_sig", type: "signature" }]);
+    const token = await signerSession(h);
+    await submit(h, token, [{ fieldId: "f_sig", kind: "signature" }],
+      { signature: TYPED });
+
+    // Asserted against the SEEDED artifact, not against whatever the event
+    // happens to contain.
+    const seeded = h.store.artifacts.find(a => a.artifactId === "art_1");
+    expect(seeded).toBeDefined();
+
+    expect(payloadOf(h)).toEqual({
+      artifactId: "art_1",
+      digest: String(seeded!.digest),
+    });
+  });
+
+  it("records the request's FROZEN artifact, not the document's newest", async () => {
+    // The decisive case. A newer artifact on the same document must not change
+    // what a signature already made against the frozen bytes says it was made
+    // against. This is what separates "reads the request" from "reads the
+    // document", and only the first is defensible.
+    const h = harness();
+    seed(h, [{ id: "f_sig", type: "signature" }]);
+    const token = await signerSession(h);
+
+    h.store.artifacts.push({
+      artifactId: "art_NEWER" as ArtifactId, workspaceId: WS,
+      documentId: "doc_1" as DocumentId, artifactType: "original",
+      storageReference: "artifacts/ws_1/art_NEWER.pdf" as never,
+      mediaType: "application/pdf", sizeBytes: 999,
+      digestAlgorithm: "sha-256", digest: "b".repeat(64) as never,
+      pageCount: 9, rotatedPageCount: 0, createdAt: AT + 1_000,
+    });
+
+    await submit(h, token, [{ fieldId: "f_sig", kind: "signature" }],
+      { signature: TYPED });
+
+    const payload = payloadOf(h);
+    expect(payload?.artifactId).toBe("art_1");
+    expect(payload?.digest).toBe("a".repeat(64));
+    expect(payload?.digest).not.toBe("b".repeat(64));
+  });
+
+  it("carries a digest of the real length, not a placeholder", async () => {
+    // Guards against a default or truncated value looking like a real one.
+    const h = harness();
+    seed(h, [{ id: "f_sig", type: "signature" }]);
+    const token = await signerSession(h);
+    await submit(h, token, [{ fieldId: "f_sig", kind: "signature" }],
+      { signature: TYPED });
+
+    const digest = payloadOf(h)?.digest;
+    expect(digest).toBeDefined();
+    expect(digest).toHaveLength(64);
+  });
+
+  it("does NOT duplicate the reference onto signature-completed", async () => {
+    // Deliberate: that event shares this one's submission source, so a reader
+    // reaches the payload through the join it is already making. Pinned so the
+    // omission reads as a decision rather than an oversight.
+    const h = harness();
+    seed(h, [{ id: "f_sig", type: "signature" }]);
+    const token = await signerSession(h);
+    await submit(h, token, [{ fieldId: "f_sig", kind: "signature" }],
+      { signature: TYPED });
+
+    const signed = h.store.evidence.find(
+      e => e.eventType === "signature-completed");
+    expect(signed).toBeDefined();
+    expect(signed?.details ?? null).toBeNull();
+  });
+});

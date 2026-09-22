@@ -17,6 +17,9 @@ const USER = "usr_1" as UserId;
 const DOC = "doc_1" as DocumentId;
 // The IMMUTABLE signing-request recipient. Evidence never cites the mutable
 // preparation recipient — see the note on the port.
+/** The frozen artifact a recipient was served. */
+const ARTIFACT_REF = { artifactId: "art_frozen", digest: "sha256:frozen" };
+
 const REC = "srr_1" as SigningRequestRecipientId;
 const AT = Date.parse("2026-08-11T10:00:00.000Z");
 
@@ -37,7 +40,7 @@ function all(): readonly EvidenceEventInput[] {
     events.recipientAuthenticated(base(), REC, "ses_1", "signing-link"),
     events.ceremonyEntered(base(), REC),
     events.consentAccepted(base(), REC, "con_1", "electronic-signature", "1"),
-    events.submissionAccepted(base(), REC, "sub_1"),
+    events.submissionAccepted(base(), REC, "sub_1", ARTIFACT_REF),
     events.recipientSigned(base(), REC, "sub_1"),
     events.participantDeclined(base(), REC),
     events.completionReady(base(), "run_1"),
@@ -136,7 +139,7 @@ describe("actors are never conflated", () => {
     for (const event of [
       events.recipientAuthenticated(base(), REC, "ses_1", "signing-link"),
       events.ceremonyEntered(base(), REC),
-      events.submissionAccepted(base(), REC, "sub_1"),
+      events.submissionAccepted(base(), REC, "sub_1", ARTIFACT_REF),
       events.recipientSigned(base(), REC, "sub_1"),
     ]) {
       expect(event.actor).toEqual({ type: "recipient", actorId: REC });
@@ -215,7 +218,7 @@ describe("submission accepted and recipient signed are distinct facts", () => {
   it("emits two different event types from one submission", () => {
     // §62 vs §63. The backend accepting an immutable record and the workflow
     // transitioning the recipient are different facts.
-    const accepted = events.submissionAccepted(base(), REC, "sub_1");
+    const accepted = events.submissionAccepted(base(), REC, "sub_1", ARTIFACT_REF);
     const signed = events.recipientSigned(base(), REC, "sub_1");
 
     expect(accepted.eventType).toBe("submission-accepted");
@@ -225,7 +228,7 @@ describe("submission accepted and recipient signed are distinct facts", () => {
   it("shares one timestamp between them", () => {
     // §248 requires it. They describe the same instant from two angles, so
     // event precedence rather than the clock is what orders them for a reader.
-    const accepted = events.submissionAccepted(base(), REC, "sub_1");
+    const accepted = events.submissionAccepted(base(), REC, "sub_1", ARTIFACT_REF);
     const signed = events.recipientSigned(base(), REC, "sub_1");
     expect(signed.occurredAt).toBe(accepted.occurredAt);
   });
@@ -234,7 +237,7 @@ describe("submission accepted and recipient signed are distinct facts", () => {
     // Both are sourced from the same submission, and the index is keyed on
     // (workspace, TYPE, sourceType, sourceId) — so the differing type is what
     // lets both exist. If the index dropped `event_type`, one would be refused.
-    const accepted = events.submissionAccepted(base(), REC, "sub_1");
+    const accepted = events.submissionAccepted(base(), REC, "sub_1", ARTIFACT_REF);
     const signed = events.recipientSigned(base(), REC, "sub_1");
     expect(accepted.source).toEqual(signed.source);
     expect(accepted.eventType).not.toBe(signed.eventType);
