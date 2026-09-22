@@ -469,9 +469,26 @@ export type SigningRequestCreated = Static<typeof SigningRequestCreatedSchema>;
  * client always knows whether it is holding "what was agreed" or "what has
  * happened since".
  *
- * Identity here is the same already-visible party data the snapshot carries
- * (a name, an address). Never an account: no `userId`, no `normalizedEmail`,
- * no token — a recipient is a party to a document, not a user of the product.
+ * Identity here is the party data the snapshot carries (a name, an address,
+ * an organization) -- what the SENDER wrote when the request was prepared.
+ *
+ * ── `linkedAccountName` / `linkedAccountEmail`: the one exception ─────────
+ *
+ * A signer who bound a LAGDA account to this recipient (migration 051) may
+ * have signed as a DIFFERENT name or address than the snapshot carries --
+ * someone the sender typed as "J. Cruz" who happens to hold an account as
+ * "Juan Dela Cruz" at a different but verified address. For a legal record
+ * that is the exact question this view exists to answer, so the sender's
+ * own audit surface is allowed to show it. Null when no account was bound;
+ * a client must never treat their absence as "nobody signed".
+ *
+ * This is still not a route INTO the account: no `userId`, no normalized
+ * form, no token. It is a display name and a display address, the same
+ * shape the snapshot fields already are, read only by someone who already
+ * has `signing-request.view` on this exact request via `runForWorkspace`.
+ * Migration 051's rule survives unchanged: this is a per-request audit
+ * read, not a join key, and it appears nowhere a workspace could use it to
+ * ask "who else at this recipient's address holds a LAGDA account".
  */
 export const SignatorySchema = Type.Object(
   {
@@ -488,6 +505,9 @@ export const SignatorySchema = Type.Object(
     signedAt: Type.Union([Type.String({ format: "date-time" }), Type.Null()]),
     declinedAt: Type.Union([Type.String({ format: "date-time" }), Type.Null()]),
     declineReason: Type.Union([SigningDeclineReasonSchema, Type.Null()]),
+    /** The account bound to this recipient (051), if any. See the header. */
+    linkedAccountName: Type.Union([Type.String(), Type.Null()]),
+    linkedAccountEmail: Type.Union([Type.String(), Type.Null()]),
   },
   {
     title: "Signatory",

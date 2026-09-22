@@ -201,6 +201,8 @@ const presentSignatures = (view: SigningRequestSignaturesView) => ({
     signedAt: signatory.signedAt === null ? null : iso(signatory.signedAt),
     declinedAt: signatory.declinedAt === null ? null : iso(signatory.declinedAt),
     declineReason: signatory.declineReason,
+    linkedAccountName: signatory.linkedAccountName,
+    linkedAccountEmail: signatory.linkedAccountEmail,
   })),
 });
 

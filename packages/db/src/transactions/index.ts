@@ -151,6 +151,8 @@ function buildUnitOfWork(
     completionInputs: createCompletionInputRepository(trx, workspaceId),
     // Migration 056's invitation-side write, on the send's own transaction.
     userSigningRecords: createUserSigningRecordsRepository(trx),
+    // The one workspace-side read migration 051 permits: per-request audit.
+    accountLinks: createSigningAccountLinkRepository(trx),
   };
 }
 
