@@ -13,10 +13,10 @@
 // A pre-read for either would have a window, and the window is exactly where
 // the bug lives.
 
-import type { Kysely, Selectable, Transaction } from "kysely";
+import { sql, type Kysely, type Selectable, type Transaction } from "kysely";
 import type {
   ScopedOrganizationUnitRepository, OrganizationUnitRecord,
-  OrganizationUnitId,
+  OrganizationUnitId, UnitMembership,
 } from "@lagda/application";
 import type { OrganizationUnitKind } from "@lagda/core";
 import { isOrganizationUnitKind } from "@lagda/core";
@@ -113,24 +113,28 @@ export function createScopedOrganizationUnitRepository(
       return Number(result.numUpdatedRows ?? 0n) === 1;
     },
 
-    async listMembers(unitId: OrganizationUnitId) {
+    async listMembers(unitId: OrganizationUnitId): Promise<readonly UnitMembership[]> {
       const rows = await trx.selectFrom("organization_unit_members")
-        .select("user_id")
+        .select(["user_id", "title"])
         .where("workspace_id", "=", scope)
         .where("unit_id", "=", unitId as string)
         .orderBy("created_at", "asc")
         .execute();
-      return rows.map(row => row.user_id as UserId);
+      return rows.map(row => ({ userId: row.user_id as UserId, title: row.title }));
     },
 
     async addMember(input) {
       // ON CONFLICT DO NOTHING: adding somebody twice is the state the caller
-      // asked for, and a second click should not be an error.
+      // asked for, and a second click should not be an error. That includes a
+      // repeated `title` — changing an EXISTING member's title is
+      // `setMemberTitle`'s job, not this one's, so a conflicting add leaves
+      // whatever title they already had untouched rather than overwriting it.
       await trx.insertInto("organization_unit_members").values({
         unit_id: input.unitId,
         workspace_id: scope,
         user_id: input.userId,
         created_at: new Date(input.now),
+        title: input.title ?? null,
       })
         .onConflict(conflict => conflict
           .columns(["unit_id", "user_id"])
@@ -145,6 +149,29 @@ export function createScopedOrganizationUnitRepository(
         .where("user_id", "=", input.userId as string)
         .executeTakeFirst();
       return Number(result.numDeletedRows ?? 0n) === 1;
+    },
+
+    async setMemberTitle(input) {
+      const result = await trx.updateTable("organization_unit_members")
+        .set({ title: input.title })
+        .where("workspace_id", "=", scope)
+        .where("unit_id", "=", input.unitId as string)
+        .where("user_id", "=", input.userId as string)
+        .executeTakeFirst();
+      return Number(result.numUpdatedRows ?? 0n) === 1;
+    },
+
+    async findByTitle(unitId: OrganizationUnitId, title: string) {
+      // Case- and whitespace-insensitive, matching the partial unique index
+      // (061) that makes this lookup meaningful in the first place — a title
+      // stored as "Department Head" must be found by "department head" too.
+      const row = await trx.selectFrom("organization_unit_members")
+        .select("user_id")
+        .where("workspace_id", "=", scope)
+        .where("unit_id", "=", unitId as string)
+        .where(sql`lower(btrim(title))`, "=", sql`lower(btrim(${title}))`)
+        .executeTakeFirst();
+      return row === undefined ? null : (row.user_id as UserId);
     },
 
     async unitsForUser(userId: UserId) {

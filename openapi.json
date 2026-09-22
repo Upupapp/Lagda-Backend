@@ -3320,6 +3320,35 @@
                                       ]
                                     }
                                   ]
+                                },
+                                "resolution": {
+                                  "title": "WorkflowRoleResolution",
+                                  "additionalProperties": false,
+                                  "description": "Resolves a slot to whoever currently holds a title in an organization unit.",
+                                  "type": "object",
+                                  "required": [
+                                    "mode",
+                                    "unitId",
+                                    "title"
+                                  ],
+                                  "properties": {
+                                    "mode": {
+                                      "type": "string",
+                                      "enum": [
+                                        "unit-title"
+                                      ]
+                                    },
+                                    "unitId": {
+                                      "minLength": 1,
+                                      "maxLength": 64,
+                                      "type": "string"
+                                    },
+                                    "title": {
+                                      "minLength": 1,
+                                      "maxLength": 120,
+                                      "type": "string"
+                                    }
+                                  }
                                 }
                               }
                             }
@@ -3542,6 +3571,35 @@
                               ]
                             }
                           ]
+                        },
+                        "resolution": {
+                          "title": "WorkflowRoleResolution",
+                          "additionalProperties": false,
+                          "description": "Resolves a slot to whoever currently holds a title in an organization unit.",
+                          "type": "object",
+                          "required": [
+                            "mode",
+                            "unitId",
+                            "title"
+                          ],
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "unit-title"
+                              ]
+                            },
+                            "unitId": {
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "type": "string"
+                            },
+                            "title": {
+                              "minLength": 1,
+                              "maxLength": 120,
+                              "type": "string"
+                            }
+                          }
                         }
                       }
                     }
@@ -3751,6 +3809,35 @@
                                 ]
                               }
                             ]
+                          },
+                          "resolution": {
+                            "title": "WorkflowRoleResolution",
+                            "additionalProperties": false,
+                            "description": "Resolves a slot to whoever currently holds a title in an organization unit.",
+                            "type": "object",
+                            "required": [
+                              "mode",
+                              "unitId",
+                              "title"
+                            ],
+                            "properties": {
+                              "mode": {
+                                "type": "string",
+                                "enum": [
+                                  "unit-title"
+                                ]
+                              },
+                              "unitId": {
+                                "minLength": 1,
+                                "maxLength": 64,
+                                "type": "string"
+                              },
+                              "title": {
+                                "minLength": 1,
+                                "maxLength": 120,
+                                "type": "string"
+                              }
+                            }
                           }
                         }
                       }
@@ -4007,6 +4094,35 @@
                                 ]
                               }
                             ]
+                          },
+                          "resolution": {
+                            "title": "WorkflowRoleResolution",
+                            "additionalProperties": false,
+                            "description": "Resolves a slot to whoever currently holds a title in an organization unit.",
+                            "type": "object",
+                            "required": [
+                              "mode",
+                              "unitId",
+                              "title"
+                            ],
+                            "properties": {
+                              "mode": {
+                                "type": "string",
+                                "enum": [
+                                  "unit-title"
+                                ]
+                              },
+                              "unitId": {
+                                "minLength": 1,
+                                "maxLength": 64,
+                                "type": "string"
+                              },
+                              "title": {
+                                "minLength": 1,
+                                "maxLength": 120,
+                                "type": "string"
+                              }
+                            }
                           }
                         }
                       }
@@ -4226,6 +4342,35 @@
                               ]
                             }
                           ]
+                        },
+                        "resolution": {
+                          "title": "WorkflowRoleResolution",
+                          "additionalProperties": false,
+                          "description": "Resolves a slot to whoever currently holds a title in an organization unit.",
+                          "type": "object",
+                          "required": [
+                            "mode",
+                            "unitId",
+                            "title"
+                          ],
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "enum": [
+                                "unit-title"
+                              ]
+                            },
+                            "unitId": {
+                              "minLength": 1,
+                              "maxLength": 64,
+                              "type": "string"
+                            },
+                            "title": {
+                              "minLength": 1,
+                              "maxLength": 120,
+                              "type": "string"
+                            }
+                          }
                         }
                       }
                     }
@@ -4445,6 +4590,35 @@
                                 ]
                               }
                             ]
+                          },
+                          "resolution": {
+                            "title": "WorkflowRoleResolution",
+                            "additionalProperties": false,
+                            "description": "Resolves a slot to whoever currently holds a title in an organization unit.",
+                            "type": "object",
+                            "required": [
+                              "mode",
+                              "unitId",
+                              "title"
+                            ],
+                            "properties": {
+                              "mode": {
+                                "type": "string",
+                                "enum": [
+                                  "unit-title"
+                                ]
+                              },
+                              "unitId": {
+                                "minLength": 1,
+                                "maxLength": 64,
+                                "type": "string"
+                              },
+                              "title": {
+                                "minLength": 1,
+                                "maxLength": 120,
+                                "type": "string"
+                              }
+                            }
                           }
                         }
                       }
@@ -4758,6 +4932,35 @@
                                 ]
                               }
                             ]
+                          },
+                          "resolution": {
+                            "title": "WorkflowRoleResolution",
+                            "additionalProperties": false,
+                            "description": "Resolves a slot to whoever currently holds a title in an organization unit.",
+                            "type": "object",
+                            "required": [
+                              "mode",
+                              "unitId",
+                              "title"
+                            ],
+                            "properties": {
+                              "mode": {
+                                "type": "string",
+                                "enum": [
+                                  "unit-title"
+                                ]
+                              },
+                              "unitId": {
+                                "minLength": 1,
+                                "maxLength": 64,
+                                "type": "string"
+                              },
+                              "title": {
+                                "minLength": 1,
+                                "maxLength": 120,
+                                "type": "string"
+                              }
+                            }
                           }
                         }
                       }
@@ -5012,6 +5215,35 @@
                                 ]
                               }
                             ]
+                          },
+                          "resolution": {
+                            "title": "WorkflowRoleResolution",
+                            "additionalProperties": false,
+                            "description": "Resolves a slot to whoever currently holds a title in an organization unit.",
+                            "type": "object",
+                            "required": [
+                              "mode",
+                              "unitId",
+                              "title"
+                            ],
+                            "properties": {
+                              "mode": {
+                                "type": "string",
+                                "enum": [
+                                  "unit-title"
+                                ]
+                              },
+                              "unitId": {
+                                "minLength": 1,
+                                "maxLength": 64,
+                                "type": "string"
+                              },
+                              "title": {
+                                "minLength": 1,
+                                "maxLength": 120,
+                                "type": "string"
+                              }
+                            }
                           }
                         }
                       }
@@ -5577,6 +5809,103 @@
                           "layer": {
                             "minimum": 0,
                             "type": "integer"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/workflow-templates/{workflowTemplateId}/role-assignments": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workflowTemplateId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "WorkflowRoleAssignmentList",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "title": "WorkflowRoleAssignment",
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "slotId",
+                          "status"
+                        ],
+                        "properties": {
+                          "slotId": {
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "type": "string"
+                          },
+                          "status": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "manual"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "resolved"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "unresolved"
+                                ]
+                              }
+                            ]
+                          },
+                          "userId": {
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "type": "string"
+                          },
+                          "displayName": {
+                            "type": "string"
+                          },
+                          "email": {
+                            "type": "string"
                           }
                         }
                       }
@@ -10686,6 +11015,82 @@
       }
     },
     "/workspaces/{workspaceId}/units/{unitId}/members": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "unitId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "members"
+                  ],
+                  "properties": {
+                    "members": {
+                      "type": "array",
+                      "items": {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "userId",
+                          "title",
+                          "displayName",
+                          "email"
+                        ],
+                        "properties": {
+                          "userId": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "displayName": {
+                            "type": "string"
+                          },
+                          "email": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "requestBody": {
           "required": true,
@@ -10702,6 +11107,18 @@
                     "minLength": 1,
                     "maxLength": 64,
                     "type": "string"
+                  },
+                  "title": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 }
               }
@@ -10738,6 +11155,73 @@
       }
     },
     "/workspaces/{workspaceId}/units/{unitId}/members/{userId}": {
+      "patch": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "title"
+                ],
+                "properties": {
+                  "title": {
+                    "anyOf": [
+                      {
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "unitId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "userId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Default Response"
+          }
+        }
+      },
       "delete": {
         "parameters": [
           {

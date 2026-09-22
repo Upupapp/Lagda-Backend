@@ -91,6 +91,36 @@ export const WorkflowSlotAuthMethodSchema = Type.Union(
   { title: "WorkflowSlotAuthMethod" },
 );
 
+// ── Role resolution (061) ───────────────────────────────────────────────────
+
+/**
+ * How a slot's PERSON is found automatically, instead of being typed by
+ * hand every time the template is used.
+ *
+ * One mode today: "whoever currently holds this TITLE in this organization
+ * unit" — "the Department Head of Records," resolved at apply time rather
+ * than pinned to whoever holds that title when the template is authored. A
+ * slot with no `resolution` is unchanged from 058: the sender types a name
+ * and email, exactly as before this existed.
+ *
+ * A discriminated union of one variant rather than a bare object, so a
+ * second resolution strategy (by workspace role, say) can be added later
+ * without a breaking change to this one.
+ */
+export const WorkflowRoleResolutionSchema = Type.Object(
+  {
+    mode: Type.Literal("unit-title"),
+    unitId: Type.String({ minLength: 1, maxLength: 64 }),
+    title: Type.String({ minLength: 1, maxLength: 120 }),
+  },
+  {
+    title: "WorkflowRoleResolution",
+    additionalProperties: false,
+    description: "Resolves a slot to whoever currently holds a title in an organization unit.",
+  },
+);
+export type WorkflowRoleResolution = Static<typeof WorkflowRoleResolutionSchema>;
+
 // ── Role slot ────────────────────────────────────────────────────────────────
 
 /**
@@ -123,6 +153,9 @@ export const WorkflowRoleSlotSchema = Type.Object(
     /** 1-based. Equal values across slots mean parallel. */
     routingStep: Type.Integer({ minimum: 1, maximum: 100 }),
     defaultAuthMethod: WorkflowSlotAuthMethodSchema,
+    /** 061. Absent means manual — the sender types a name and email at
+     *  apply time, exactly as every slot worked before this existed. */
+    resolution: Type.Optional(WorkflowRoleResolutionSchema),
   },
   {
     title: "WorkflowRoleSlot",
@@ -153,6 +186,7 @@ export const WorkflowRoleSlotWriteSchema = Type.Object(
     required: Type.Boolean(),
     routingStep: Type.Integer({ minimum: 1, maximum: 100 }),
     defaultAuthMethod: WorkflowSlotAuthMethodSchema,
+    resolution: Type.Optional(WorkflowRoleResolutionSchema),
   },
   {
     title: "WorkflowRoleSlotWrite",
@@ -345,3 +379,34 @@ export const WorkflowTemplateFieldListSchema = Type.Object(
   { title: "WorkflowTemplateFieldList", additionalProperties: false },
 );
 export type WorkflowTemplateFieldList = Static<typeof WorkflowTemplateFieldListSchema>;
+
+// ── Resolved role assignments (061) ─────────────────────────────────────────
+//
+// The APPLY-time read: for every slot, what `resolution` produces right now.
+// Three states, not a nullable person, because "no resolution configured"
+// and "resolution configured but nobody currently holds the title" call for
+// different UI — the first is ordinary (type a name), the second is a gap
+// worth flagging (the Department Head slot is empty) before the sender
+// finds out by launching the workflow.
+
+export const WORKFLOW_ROLE_ASSIGNMENT_STATUSES = ["manual", "resolved", "unresolved"] as const;
+export type WorkflowRoleAssignmentStatus = (typeof WORKFLOW_ROLE_ASSIGNMENT_STATUSES)[number];
+
+export const WorkflowRoleAssignmentSchema = Type.Object(
+  {
+    slotId: Type.String({ minLength: 1, maxLength: 64 }),
+    status: Type.Union(WORKFLOW_ROLE_ASSIGNMENT_STATUSES.map(s => Type.Literal(s))),
+    /** Present only when `status` is `"resolved"`. */
+    userId: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
+    displayName: Type.Optional(Type.String()),
+    email: Type.Optional(Type.String()),
+  },
+  { title: "WorkflowRoleAssignment", additionalProperties: false },
+);
+export type WorkflowRoleAssignment = Static<typeof WorkflowRoleAssignmentSchema>;
+
+export const WorkflowRoleAssignmentListSchema = Type.Object(
+  { items: Type.Array(WorkflowRoleAssignmentSchema) },
+  { title: "WorkflowRoleAssignmentList", additionalProperties: false },
+);
+export type WorkflowRoleAssignmentList = Static<typeof WorkflowRoleAssignmentListSchema>;

@@ -68,6 +68,7 @@ import * as m057 from "./057_signing_inbox_unclaimed.js";
 import * as m058 from "./058_workflow_templates.js";
 import * as m059 from "./059_workflow_template_document.js";
 import * as m060 from "./060_workflow_template_fields.js";
+import * as m061 from "./061_organization_unit_member_titles.js";
 
 /**
  * Migrations listed explicitly rather than read from disk.
@@ -140,6 +141,7 @@ const MIGRATIONS: Record<string, Migration> = {
   "058_workflow_templates": m058,
   "059_workflow_template_document": m059,
   "060_workflow_template_fields": m060,
+  "061_organization_unit_member_titles": m061,
 };
 
 class ExplicitMigrationProvider implements MigrationProvider {

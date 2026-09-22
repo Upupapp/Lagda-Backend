@@ -487,7 +487,7 @@ export class InMemoryStore {
   organizationUnits: OrganizationUnitRecord[] = [];
   organizationUnitMembers: {
     unitId: OrganizationUnitId; workspaceId: WorkspaceId;
-    userId: UserId; createdAt: number;
+    userId: UserId; createdAt: number; title: string | null;
   }[] = [];
   activations: ActivationRow[] = [];
   workflowIntents: WorkflowIntentRow[] = [];
@@ -823,7 +823,7 @@ function scopedOrganizationUnits(
     listMembers: unitId => Promise.resolve(
       store.organizationUnitMembers
         .filter(m => m.workspaceId === scope && m.unitId === unitId)
-        .map(m => m.userId)),
+        .map(m => ({ userId: m.userId, title: m.title }))),
 
     addMember: input => {
       // The real table enforces this with a compound FK to
@@ -839,9 +839,22 @@ function scopedOrganizationUnits(
         m.workspaceId === scope && m.unitId === input.unitId
         && m.userId === input.userId);
       if (!already) {
+        // Mirrors the real partial unique index (061): a second person
+        // added with a title already held in this unit is refused, not
+        // silently left to displace the current holder.
+        const title = input.title ?? null;
+        if (title !== null) {
+          const key = (t: string) => t.trim().toLowerCase();
+          const clash = store.organizationUnitMembers.some(m =>
+            m.workspaceId === scope && m.unitId === input.unitId
+            && m.title !== null && key(m.title) === key(title));
+          if (clash) {
+            throw new Error(`Someone already holds the title "${title}" in this unit.`);
+          }
+        }
         store.organizationUnitMembers.push({
           unitId: input.unitId, workspaceId: scope,
-          userId: input.userId, createdAt: input.now,
+          userId: input.userId, createdAt: input.now, title,
         });
       }
       return Promise.resolve();
@@ -853,6 +866,33 @@ function scopedOrganizationUnits(
         !(m.workspaceId === scope && m.unitId === input.unitId
           && m.userId === input.userId));
       return Promise.resolve(store.organizationUnitMembers.length < before);
+    },
+
+    setMemberTitle: input => {
+      const index = store.organizationUnitMembers.findIndex(m =>
+        m.workspaceId === scope && m.unitId === input.unitId
+        && m.userId === input.userId);
+      if (index === -1) return Promise.resolve(false);
+      if (input.title !== null) {
+        const key = (t: string) => t.trim().toLowerCase();
+        const clash = store.organizationUnitMembers.some((m, i) =>
+          i !== index && m.workspaceId === scope && m.unitId === input.unitId
+          && m.title !== null && key(m.title) === key(input.title!));
+        if (clash) {
+          throw new Error(`Someone already holds the title "${input.title}" in this unit.`);
+        }
+      }
+      const current = store.organizationUnitMembers[index]!;
+      store.organizationUnitMembers[index] = { ...current, title: input.title };
+      return Promise.resolve(true);
+    },
+
+    findByTitle: (unitId, title) => {
+      const key = title.trim().toLowerCase();
+      const found = store.organizationUnitMembers.find(m =>
+        m.workspaceId === scope && m.unitId === unitId
+        && m.title !== null && m.title.trim().toLowerCase() === key);
+      return Promise.resolve(found?.userId ?? null);
     },
 
     unitsForUser: userId => Promise.resolve(

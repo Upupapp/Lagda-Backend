@@ -9,6 +9,7 @@
 //   DELETE /workspaces/:id/workflow-templates/:templateId/document
 //   GET    /workspaces/:id/workflow-templates/:templateId/fields
 //   PUT    /workspaces/:id/workflow-templates/:templateId/fields
+//   GET    /workspaces/:id/workflow-templates/:templateId/role-assignments
 //
 // Registered inside the authenticated workspace scope, so `requireSession`
 // has already run its CSRF hook — the same position the contact routes take,
@@ -36,15 +37,17 @@ import {
   updateWorkflowTemplate, deleteWorkflowTemplate,
   attachWorkflowTemplateDocument, detachWorkflowTemplateDocument,
   listWorkflowTemplateFields, saveWorkflowTemplateFields,
+  resolveWorkflowRoleAssignments,
   WorkflowTemplateNameTakenError,
   type WorkflowTemplateDependencies, type WorkflowTemplateRecord,
-  type WorkflowTemplateFieldRecord,
+  type WorkflowTemplateFieldRecord, type WorkflowRoleAssignment,
   type SessionId, type UserId, type ArtifactId,
 } from "@lagda/application";
 import {
   WorkflowTemplateSchema, WorkflowTemplateWriteSchema, WorkflowTemplateListSchema,
   WorkflowTemplateDocumentInputSchema,
   WorkflowTemplateFieldListSchema, WorkflowTemplateFieldsWriteSchema,
+  WorkflowRoleAssignmentListSchema,
   type WorkflowTemplateWrite, type WorkflowTemplateDocumentInput,
   type WorkflowTemplateFieldsWrite,
   type WorkspaceId, type DocumentId,
@@ -109,6 +112,10 @@ const present = (template: WorkflowTemplateRecord) => ({
     required: slot.required,
     routingStep: slot.routingStep,
     defaultAuthMethod: slot.defaultAuthMethod,
+    // 061. Spread, not a `resolution: slot.resolution ?? undefined` — the
+    // latter would send an explicit `null` the write-back schema (Optional,
+    // not nullable) does not accept, breaking a plain read-then-PUT.
+    ...(slot.resolution === undefined ? {} : { resolution: slot.resolution }),
   })),
   completionSettings: {
     notifySenderOnComplete: template.completionSettings.notifySenderOnComplete,
@@ -131,6 +138,18 @@ const presentField = (field: WorkflowTemplateFieldRecord) => ({
   label: field.label,
   layer: field.layer,
 });
+
+/** What a slot's resolved assignment looks like on the wire — the
+ *  `userId`/`displayName`/`email` triple is present only when `status` is
+ *  `"resolved"`, matching `WorkflowRoleAssignmentSchema`'s own shape. */
+const presentAssignment = (assignment: WorkflowRoleAssignment) =>
+  assignment.status === "resolved"
+    ? {
+        slotId: assignment.slotId, status: assignment.status,
+        userId: assignment.userId, displayName: assignment.displayName,
+        email: assignment.email,
+      }
+    : { slotId: assignment.slotId, status: assignment.status };
 
 export function registerWorkflowTemplateRoutes(
   app: FastifyInstance,
@@ -427,5 +446,32 @@ export function registerWorkflowTemplateRoutes(
     });
 
     return reply.status(200).send({ items: fields.map(presentField) });
+  });
+
+  // ── Role assignments (061) ─────────────────────────────────────────────
+  //
+  // Read-only, and its own route rather than folded into GET .../:id: this
+  // one pays for a directory join (`memberships.listWithAccounts()`) that a
+  // plain template read has no reason to make, and it answers a different
+  // question — not "what does this template say" but "who does that mean
+  // right now."
+  app.get("/workspaces/:workspaceId/workflow-templates/:workflowTemplateId/role-assignments", {
+    schema: {
+      params: TemplateParamsSchema,
+      response: { 200: WorkflowRoleAssignmentListSchema },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await actorOf(request);
+    if (actor === null) return unauthenticated(reply);
+
+    const { workspaceId, workflowTemplateId } =
+      request.params as Static<typeof TemplateParamsSchema>;
+
+    const assignments = await resolveWorkflowRoleAssignments(
+      actor, workspaceId as WorkspaceId, workflowTemplateId,
+      options.workflowTemplateDependencies());
+
+    return reply.status(200).send({ items: assignments.map(presentAssignment) });
   });
 }

@@ -45,6 +45,19 @@ export interface OrganizationUnitRecord {
 }
 
 /**
+ * One person's membership in one unit, WITH the title they hold there (061).
+ *
+ * `title: null` is the ordinary case — most members hold no distinguished
+ * role, they simply belong. A title names something like "Department Head":
+ * a fact about who currently occupies that position, never an authorization
+ * grant (this module's own header rule).
+ */
+export interface UnitMembership {
+  readonly userId: UserId;
+  readonly title: string | null;
+}
+
+/**
  * Unit persistence, bound to ONE workspace and ONE transaction.
  *
  * `list` returns archived units too. A caller deciding where to place a new
@@ -66,17 +79,38 @@ export interface ScopedOrganizationUnitRepository {
     readonly now: number;
   }): Promise<boolean>;
 
-  listMembers(unitId: OrganizationUnitId): Promise<readonly UserId[]>;
-  /** Idempotent: adding somebody twice is a no-op, not an error. */
+  listMembers(unitId: OrganizationUnitId): Promise<readonly UnitMembership[]>;
+  /** Idempotent: adding somebody twice is a no-op, not an error — including
+   *  when a `title` is given again; see `setMemberTitle` for CHANGING one. */
   addMember(input: {
     readonly unitId: OrganizationUnitId;
     readonly userId: UserId;
     readonly now: number;
+    readonly title?: string | null;
   }): Promise<void>;
   removeMember(input: {
     readonly unitId: OrganizationUnitId;
     readonly userId: UserId;
   }): Promise<boolean>;
+  /**
+   * Sets (or, with `null`, clears) the title an EXISTING member holds.
+   *
+   * `false` when they are not a member — a title cannot be granted to
+   * someone who does not belong to the unit at all.
+   */
+  setMemberTitle(input: {
+    readonly unitId: OrganizationUnitId;
+    readonly userId: UserId;
+    readonly title: string | null;
+  }): Promise<boolean>;
+  /**
+   * Whoever currently holds this title in this unit, or null if nobody does.
+   *
+   * Never more than one — the partial unique index (061) makes two
+   * simultaneous holders of the same title unrepresentable, which is what
+   * lets a workflow template slot resolve a title to exactly one person.
+   */
+  findByTitle(unitId: OrganizationUnitId, title: string): Promise<UserId | null>;
   /** Every unit this person belongs to. For "my department" queries. */
   unitsForUser(userId: UserId): Promise<readonly OrganizationUnitId[]>;
 }
@@ -250,6 +284,22 @@ export interface UnitMemberInput {
   readonly workspaceId: WorkspaceId;
   readonly unitId: string;
   readonly userId: string;
+  /** 061. Optional at add-time — most members hold no title. */
+  readonly title?: string | null;
+}
+
+function assertTitle(raw: string): string {
+  const title = raw.trim();
+  if (title === "") {
+    throw new ApplicationValidationError("A title needs a name.");
+  }
+  // Same bound as a unit's own name (UNIT_NAME_MAX_LENGTH) — both are
+  // short, human-typed labels stored in the same-width column.
+  if ([...title].length > UNIT_NAME_MAX_LENGTH) {
+    throw new ApplicationValidationError(
+      `A title may not exceed ${String(UNIT_NAME_MAX_LENGTH)} characters.`);
+  }
+  return title;
 }
 
 /**
@@ -259,6 +309,11 @@ export interface UnitMemberInput {
  * compound FK to `workspace_memberships`. That is the guarantee rather than a
  * pre-read: a check followed by an insert has a window, and the window is
  * exactly where a removed member gets filed into a department.
+ *
+ * A `title` given here goes through the SAME uniqueness the database
+ * enforces (061's partial index) — a second person added with a title
+ * already held in this unit fails the insert, surfaced as a conflict rather
+ * than silently displacing the current holder.
  */
 export async function addUnitMember(
   input: UnitMemberInput,
@@ -266,6 +321,9 @@ export async function addUnitMember(
 ): Promise<void> {
   await requireCapability(
     input.actor.userId, input.workspaceId, "unit.member.manage", deps);
+
+  const title = input.title === undefined || input.title === null
+    ? input.title : assertTitle(input.title);
 
   await deps.transactions.runForWorkspace(input.workspaceId, async uow => {
     const unit = await uow.organizationUnits.findById(
@@ -277,6 +335,94 @@ export async function addUnitMember(
       unitId: unit.unitId,
       userId: input.userId as UserId,
       now: deps.clock.now(),
+      // Spread, so an ABSENT `title` stays absent under
+      // `exactOptionalPropertyTypes` rather than becoming a present key
+      // holding `undefined` — a different thing the port does not accept.
+      ...(title === undefined ? {} : { title }),
+    });
+  });
+}
+
+export interface SetUnitMemberTitleInput {
+  readonly actor: { readonly userId: UserId };
+  readonly workspaceId: WorkspaceId;
+  readonly unitId: string;
+  readonly userId: string;
+  /** `null` clears the title — the member stays, they simply no longer hold
+   *  a distinguished role in this unit. */
+  readonly title: string | null;
+}
+
+/**
+ * Changes the title an ALREADY-a-member holds, without removing and
+ * re-adding them — which would briefly (and observably, to a concurrent
+ * `resolveWorkflowRoleAssignments` read) leave the title unheld.
+ */
+export async function setUnitMemberTitle(
+  input: SetUnitMemberTitleInput,
+  deps: OrganizationDependencies,
+): Promise<void> {
+  await requireCapability(
+    input.actor.userId, input.workspaceId, "unit.member.manage", deps);
+
+  const title = input.title === null ? null : assertTitle(input.title);
+
+  await deps.transactions.runForWorkspace(input.workspaceId, async uow => {
+    const applied = await uow.organizationUnits.setMemberTitle({
+      unitId: input.unitId as OrganizationUnitId,
+      userId: input.userId as UserId,
+      title,
+    });
+    if (!applied) throw new ResourceNotFoundError("OrganizationUnitMember");
+  });
+}
+
+export interface ListUnitMembersInput {
+  readonly actor: { readonly userId: UserId };
+  readonly workspaceId: WorkspaceId;
+  readonly unitId: string;
+}
+
+/** One unit's roster, each member's title alongside their directory entry
+ *  (display name and email) — the same join `resolveWorkflowRoleAssignments`
+ *  performs for a single resolved person, done here for the whole unit so an
+ *  admin can see who holds what before wiring a template slot to it. */
+export interface UnitMemberDirectoryEntry {
+  readonly userId: UserId;
+  readonly title: string | null;
+  readonly displayName: string;
+  readonly email: string;
+}
+
+export async function listUnitMembers(
+  input: ListUnitMembersInput,
+  deps: OrganizationDependencies,
+): Promise<readonly UnitMemberDirectoryEntry[]> {
+  await requireCapability(
+    input.actor.userId, input.workspaceId, "unit.view", deps);
+
+  return deps.transactions.runForWorkspace(input.workspaceId, async uow => {
+    const unitId = input.unitId as OrganizationUnitId;
+    const unit = await uow.organizationUnits.findById(unitId);
+    if (unit === null) throw new ResourceNotFoundError("OrganizationUnit");
+
+    const [members, directory] = await Promise.all([
+      uow.organizationUnits.listMembers(unitId),
+      uow.memberships.listWithAccounts(),
+    ]);
+    const directoryByUser = new Map(directory.map(entry => [entry.userId, entry]));
+
+    return members.map(member => {
+      const entry = directoryByUser.get(member.userId);
+      return {
+        userId: member.userId,
+        title: member.title,
+        // A member whose workspace membership was removed between the two
+        // reads above (a genuine but narrow race) falls back honestly
+        // rather than throwing over a directory that is momentarily stale.
+        displayName: entry?.displayName ?? "",
+        email: entry?.email ?? "",
+      };
     });
   });
 }
