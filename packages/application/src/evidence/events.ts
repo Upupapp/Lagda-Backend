@@ -230,6 +230,52 @@ export function recipientAuthenticated(
  * `occurredAt` must be the AUTHORITATIVE `firstEnteredAt`, not the current
  * call's clock — under concurrency the winning timestamp may be another call's.
  */
+/**
+ * Which bytes a recipient was shown, and signed.
+ *
+ * ── Why this is recorded rather than inferred ──────────────────────────────
+ *
+ * Every recipient of a request is served the request's FROZEN source artifact
+ * (`signing-ceremony.ts`: it never reads the document's current artifact), so
+ * "what did this person see?" was previously answerable only by knowing that
+ * rule and joining `signing_requests.source_artifact_id`.
+ *
+ * That is an inference from system design, not a fact in the record. An
+ * evidence row is supposed to stand on its own — exported, handed to a
+ * reviewer, read years later by someone who cannot re-derive the routing
+ * rules of the version that wrote it. §132's whole argument is that a
+ * silently-wrong record is unrecoverable afterwards, and an ABSENT fact is a
+ * record that cannot be checked at all.
+ *
+ * So the artifact identity travels with the event.
+ *
+ * `digest` is a denormalization of `document_artifacts.digest` and is stored
+ * deliberately. Artifacts are immutable — migration 043 leaves the runtime
+ * role no UPDATE or DELETE grant — so the digest for an id can never drift,
+ * and carrying it makes an exported event verifiable against bytes WITHOUT
+ * database access. That is the property an audit export needs.
+ */
+export interface SignedArtifactRef {
+  readonly artifactId: string;
+  /** SHA-256 of the exact bytes served. */
+  readonly digest: string;
+}
+
+/**
+ * DELIBERATELY carries no artifact reference, unlike `submissionAccepted`.
+ *
+ * This event fires when a recipient ENTERS the ceremony, and entry does not
+ * imply the document was shown: `buildCeremonyView` withholds it until
+ * consent is satisfied (`if (access.mayViewDocument)` — otherwise `document`
+ * stays `null`). Attaching an artifact id here would assert "this recipient
+ * viewed these bytes" for a visit where they were shown nothing.
+ *
+ * Writing a fact that is sometimes false into append-only evidence is worse
+ * than omitting it, and §132's argument applies directly: a silently wrong
+ * row is unrecoverable afterwards. If "document actually rendered" needs to
+ * be evidenced, it wants its own event raised where the bytes are served —
+ * not a field bolted onto entry.
+ */
 export function ceremonyEntered(
   base: EventBase, recipientId: SigningRequestRecipientId,
   observed?: ObservedRequestContext,
@@ -269,11 +315,25 @@ export function consentAccepted(
  */
 export function submissionAccepted(
   base: EventBase, recipientId: SigningRequestRecipientId, submissionId: string,
+  artifact: SignedArtifactRef,
 ): EvidenceEventInput {
   return build(base, "submission-accepted",
     { type: "recipient", actorId: recipientId },
     { type: "recipient-submission", id: submissionId },
-    { recipientId });
+    {
+      recipientId,
+      // The bytes this signature is ABOUT. Without it the record says a
+      // submission was accepted and leaves what it was accepted against to be
+      // reconstructed from elsewhere.
+      //
+      // Not repeated on `recipientSigned` below: that event shares this one's
+      // submission source, so a reader reaches this payload by the join it is
+      // already making, and evidence payloads are capped at 8 KB.
+      details: {
+        version: 1,
+        payload: { artifactId: artifact.artifactId, digest: artifact.digest },
+      },
+    });
 }
 
 /**
