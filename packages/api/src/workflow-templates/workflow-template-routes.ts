@@ -7,6 +7,8 @@
 //   DELETE /workspaces/:id/workflow-templates/:templateId
 //   PUT    /workspaces/:id/workflow-templates/:templateId/document
 //   DELETE /workspaces/:id/workflow-templates/:templateId/document
+//   GET    /workspaces/:id/workflow-templates/:templateId/fields
+//   PUT    /workspaces/:id/workflow-templates/:templateId/fields
 //
 // Registered inside the authenticated workspace scope, so `requireSession`
 // has already run its CSRF hook — the same position the contact routes take,
@@ -33,14 +35,18 @@ import {
   createWorkflowTemplate, listWorkflowTemplates, getWorkflowTemplate,
   updateWorkflowTemplate, deleteWorkflowTemplate,
   attachWorkflowTemplateDocument, detachWorkflowTemplateDocument,
+  listWorkflowTemplateFields, saveWorkflowTemplateFields,
   WorkflowTemplateNameTakenError,
   type WorkflowTemplateDependencies, type WorkflowTemplateRecord,
+  type WorkflowTemplateFieldRecord,
   type SessionId, type UserId, type ArtifactId,
 } from "@lagda/application";
 import {
   WorkflowTemplateSchema, WorkflowTemplateWriteSchema, WorkflowTemplateListSchema,
   WorkflowTemplateDocumentInputSchema,
+  WorkflowTemplateFieldListSchema, WorkflowTemplateFieldsWriteSchema,
   type WorkflowTemplateWrite, type WorkflowTemplateDocumentInput,
+  type WorkflowTemplateFieldsWrite,
   type WorkspaceId, type DocumentId,
 } from "@lagda/contracts";
 import type { MetricsRecorder } from "../observability/metrics.js";
@@ -97,6 +103,7 @@ const present = (template: WorkflowTemplateRecord) => ({
   name: template.name,
   routingMode: template.routingMode,
   roleSlots: template.roleSlots.map(slot => ({
+    slotId: slot.slotId,
     label: slot.label,
     role: slot.role,
     required: slot.required,
@@ -110,6 +117,19 @@ const present = (template: WorkflowTemplateRecord) => ({
   sourceArtifactId: template.sourceArtifactId,
   createdAt: iso(template.createdAt),
   updatedAt: iso(template.updatedAt),
+});
+
+/** What a field placement looks like on the wire. No `workspaceId`, no
+ *  `workflowTemplateId` — both are already in the URL the caller used. */
+const presentField = (field: WorkflowTemplateFieldRecord) => ({
+  fieldId: field.fieldId,
+  slotId: field.slotId,
+  type: field.type,
+  pageNumber: field.pageNumber,
+  rect: { x: field.x, y: field.y, width: field.width, height: field.height },
+  required: field.required,
+  label: field.label,
+  layer: field.layer,
 });
 
 export function registerWorkflowTemplateRoutes(
@@ -350,5 +370,62 @@ export function registerWorkflowTemplateRoutes(
     });
 
     return reply.status(200).send(present(template));
+  });
+
+  // ── Field placements (060) ─────────────────────────────────────────────
+  //
+  // Their OWN resource, not embedded in `WorkflowTemplateSchema` — the same
+  // choice `document_preparations`/`preparation_fields` already made for a
+  // real document: most callers that want a template have no use for its
+  // geometry, and embedding it would make every template read pay for a
+  // field fetch it does not need.
+  app.get("/workspaces/:workspaceId/workflow-templates/:workflowTemplateId/fields", {
+    schema: {
+      params: TemplateParamsSchema,
+      response: { 200: WorkflowTemplateFieldListSchema },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await actorOf(request);
+    if (actor === null) return unauthenticated(reply);
+
+    const { workspaceId, workflowTemplateId } =
+      request.params as Static<typeof TemplateParamsSchema>;
+
+    const fields = await listWorkflowTemplateFields(
+      actor, workspaceId as WorkspaceId, workflowTemplateId,
+      options.workflowTemplateDependencies());
+
+    return reply.status(200).send({ items: fields.map(presentField) });
+  });
+
+  // Whole-layout replace, the same PUT-not-PATCH reasoning the template's
+  // own update route states: a partial update of geometry keyed by id has
+  // no obvious meaning when the editor already holds the whole layout.
+  app.put("/workspaces/:workspaceId/workflow-templates/:workflowTemplateId/fields", {
+    schema: {
+      params: TemplateParamsSchema,
+      body: WorkflowTemplateFieldsWriteSchema,
+      response: { 200: WorkflowTemplateFieldListSchema },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await actorOf(request);
+    if (actor === null) return unauthenticated(reply);
+
+    const { workspaceId, workflowTemplateId } =
+      request.params as Static<typeof TemplateParamsSchema>;
+    const body = request.body as WorkflowTemplateFieldsWrite;
+
+    const fields = await saveWorkflowTemplateFields(
+      actor, workspaceId as WorkspaceId, workflowTemplateId, body.fields,
+      options.workflowTemplateDependencies());
+
+    record(request, "workflow_template.fields_saved", {
+      workspaceId, workflowTemplateId, actorUserId: actor.userId,
+      fieldCount: fields.length,
+    });
+
+    return reply.status(200).send({ items: fields.map(presentField) });
   });
 }

@@ -3218,6 +3218,7 @@
                               "description": "A named role placeholder, not a person.",
                               "type": "object",
                               "required": [
+                                "slotId",
                                 "label",
                                 "role",
                                 "required",
@@ -3225,6 +3226,11 @@
                                 "defaultAuthMethod"
                               ],
                               "properties": {
+                                "slotId": {
+                                  "minLength": 1,
+                                  "maxLength": 64,
+                                  "type": "string"
+                                },
                                 "label": {
                                   "minLength": 1,
                                   "maxLength": 120,
@@ -3430,9 +3436,9 @@
                     "maxItems": 50,
                     "type": "array",
                     "items": {
-                      "title": "WorkflowRoleSlot",
+                      "title": "WorkflowRoleSlotWrite",
                       "additionalProperties": false,
-                      "description": "A named role placeholder, not a person.",
+                      "description": "A named role placeholder, not a person. slotId is optional here only.",
                       "type": "object",
                       "required": [
                         "label",
@@ -3442,6 +3448,11 @@
                         "defaultAuthMethod"
                       ],
                       "properties": {
+                        "slotId": {
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "type": "string"
+                        },
                         "label": {
                           "minLength": 1,
                           "maxLength": 120,
@@ -3638,6 +3649,7 @@
                         "description": "A named role placeholder, not a person.",
                         "type": "object",
                         "required": [
+                          "slotId",
                           "label",
                           "role",
                           "required",
@@ -3645,6 +3657,11 @@
                           "defaultAuthMethod"
                         ],
                         "properties": {
+                          "slotId": {
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "type": "string"
+                          },
                           "label": {
                             "minLength": 1,
                             "maxLength": 120,
@@ -3888,6 +3905,7 @@
                         "description": "A named role placeholder, not a person.",
                         "type": "object",
                         "required": [
+                          "slotId",
                           "label",
                           "role",
                           "required",
@@ -3895,6 +3913,11 @@
                           "defaultAuthMethod"
                         ],
                         "properties": {
+                          "slotId": {
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "type": "string"
+                          },
                           "label": {
                             "minLength": 1,
                             "maxLength": 120,
@@ -4097,9 +4120,9 @@
                     "maxItems": 50,
                     "type": "array",
                     "items": {
-                      "title": "WorkflowRoleSlot",
+                      "title": "WorkflowRoleSlotWrite",
                       "additionalProperties": false,
-                      "description": "A named role placeholder, not a person.",
+                      "description": "A named role placeholder, not a person. slotId is optional here only.",
                       "type": "object",
                       "required": [
                         "label",
@@ -4109,6 +4132,11 @@
                         "defaultAuthMethod"
                       ],
                       "properties": {
+                        "slotId": {
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "type": "string"
+                        },
                         "label": {
                           "minLength": 1,
                           "maxLength": 120,
@@ -4315,6 +4343,7 @@
                         "description": "A named role placeholder, not a person.",
                         "type": "object",
                         "required": [
+                          "slotId",
                           "label",
                           "role",
                           "required",
@@ -4322,6 +4351,11 @@
                           "defaultAuthMethod"
                         ],
                         "properties": {
+                          "slotId": {
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "type": "string"
+                          },
                           "label": {
                             "minLength": 1,
                             "maxLength": 120,
@@ -4622,6 +4656,7 @@
                         "description": "A named role placeholder, not a person.",
                         "type": "object",
                         "required": [
+                          "slotId",
                           "label",
                           "role",
                           "required",
@@ -4629,6 +4664,11 @@
                           "defaultAuthMethod"
                         ],
                         "properties": {
+                          "slotId": {
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "type": "string"
+                          },
                           "label": {
                             "minLength": 1,
                             "maxLength": 120,
@@ -4870,6 +4910,7 @@
                         "description": "A named role placeholder, not a person.",
                         "type": "object",
                         "required": [
+                          "slotId",
                           "label",
                           "role",
                           "required",
@@ -4877,6 +4918,11 @@
                           "defaultAuthMethod"
                         ],
                         "properties": {
+                          "slotId": {
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "type": "string"
+                          },
                           "label": {
                             "minLength": 1,
                             "maxLength": 120,
@@ -5015,6 +5061,525 @@
                     "updatedAt": {
                       "format": "date-time",
                       "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/workflow-templates/{workflowTemplateId}/fields": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workflowTemplateId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "WorkflowTemplateFieldList",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "title": "WorkflowTemplateField",
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "fieldId",
+                          "slotId",
+                          "type",
+                          "pageNumber",
+                          "rect",
+                          "required",
+                          "label",
+                          "layer"
+                        ],
+                        "properties": {
+                          "fieldId": {
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "type": "string"
+                          },
+                          "slotId": {
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "type": "string"
+                          },
+                          "type": {
+                            "title": "PreparationFieldType",
+                            "description": "What the field asks for. Closed set; unknown types are refused.",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "signature"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "initials"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "date-signed"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "text"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "checkbox"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "full-name"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "email"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "title"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "company"
+                                ]
+                              }
+                            ]
+                          },
+                          "pageNumber": {
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "rect": {
+                            "title": "PreparationRect",
+                            "additionalProperties": false,
+                            "type": "object",
+                            "required": [
+                              "x",
+                              "y",
+                              "width",
+                              "height"
+                            ],
+                            "properties": {
+                              "x": {
+                                "minimum": 0,
+                                "maximum": 1,
+                                "type": "number"
+                              },
+                              "y": {
+                                "minimum": 0,
+                                "maximum": 1,
+                                "type": "number"
+                              },
+                              "width": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 1,
+                                "type": "number"
+                              },
+                              "height": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 1,
+                                "type": "number"
+                              }
+                            }
+                          },
+                          "required": {
+                            "type": "boolean"
+                          },
+                          "label": {
+                            "maxLength": 200,
+                            "type": "string"
+                          },
+                          "layer": {
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "WorkflowTemplateFieldsWrite",
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "fields"
+                ],
+                "properties": {
+                  "fields": {
+                    "maxItems": 500,
+                    "type": "array",
+                    "items": {
+                      "title": "WorkflowTemplateFieldInput",
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "slotId",
+                        "type",
+                        "pageNumber",
+                        "rect",
+                        "required",
+                        "label",
+                        "layer"
+                      ],
+                      "properties": {
+                        "fieldId": {
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "type": "string"
+                        },
+                        "slotId": {
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "type": "string"
+                        },
+                        "type": {
+                          "title": "PreparationFieldType",
+                          "description": "What the field asks for. Closed set; unknown types are refused.",
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "signature"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "initials"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "date-signed"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "text"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "checkbox"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "full-name"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "email"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "title"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "company"
+                              ]
+                            }
+                          ]
+                        },
+                        "pageNumber": {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "rect": {
+                          "title": "PreparationRect",
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "x",
+                            "y",
+                            "width",
+                            "height"
+                          ],
+                          "properties": {
+                            "x": {
+                              "minimum": 0,
+                              "maximum": 1,
+                              "type": "number"
+                            },
+                            "y": {
+                              "minimum": 0,
+                              "maximum": 1,
+                              "type": "number"
+                            },
+                            "width": {
+                              "exclusiveMinimum": 0,
+                              "maximum": 1,
+                              "type": "number"
+                            },
+                            "height": {
+                              "exclusiveMinimum": 0,
+                              "maximum": 1,
+                              "type": "number"
+                            }
+                          }
+                        },
+                        "required": {
+                          "type": "boolean"
+                        },
+                        "label": {
+                          "maxLength": 200,
+                          "type": "string"
+                        },
+                        "layer": {
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workflowTemplateId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "WorkflowTemplateFieldList",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "title": "WorkflowTemplateField",
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "fieldId",
+                          "slotId",
+                          "type",
+                          "pageNumber",
+                          "rect",
+                          "required",
+                          "label",
+                          "layer"
+                        ],
+                        "properties": {
+                          "fieldId": {
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "type": "string"
+                          },
+                          "slotId": {
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "type": "string"
+                          },
+                          "type": {
+                            "title": "PreparationFieldType",
+                            "description": "What the field asks for. Closed set; unknown types are refused.",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "signature"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "initials"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "date-signed"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "text"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "checkbox"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "full-name"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "email"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "title"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "company"
+                                ]
+                              }
+                            ]
+                          },
+                          "pageNumber": {
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "rect": {
+                            "title": "PreparationRect",
+                            "additionalProperties": false,
+                            "type": "object",
+                            "required": [
+                              "x",
+                              "y",
+                              "width",
+                              "height"
+                            ],
+                            "properties": {
+                              "x": {
+                                "minimum": 0,
+                                "maximum": 1,
+                                "type": "number"
+                              },
+                              "y": {
+                                "minimum": 0,
+                                "maximum": 1,
+                                "type": "number"
+                              },
+                              "width": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 1,
+                                "type": "number"
+                              },
+                              "height": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 1,
+                                "type": "number"
+                              }
+                            }
+                          },
+                          "required": {
+                            "type": "boolean"
+                          },
+                          "label": {
+                            "maxLength": 200,
+                            "type": "string"
+                          },
+                          "layer": {
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        }
+                      }
                     }
                   }
                 }

@@ -16,6 +16,10 @@
 
 import { Type, type Static } from "@sinclair/typebox";
 import { RecipientTypeSchema } from "../recipients/index.js";
+import {
+  PreparationFieldTypeSchema, PreparationRectSchema,
+  PREPARATION_FIELD_LABEL_MAX_LENGTH, PREPARATION_MAX_FIELDS,
+} from "../preparation/index.js";
 
 // ── Routing mode ─────────────────────────────────────────────────────────────
 
@@ -104,6 +108,14 @@ export const WorkflowSlotAuthMethodSchema = Type.Union(
  */
 export const WorkflowRoleSlotSchema = Type.Object(
   {
+    /**
+     * 060. Stable across an edit that does not touch this slot — a role
+     * renamed or reordered keeps its id, which is what lets a field placed
+     * "for the HR Approver" stay attached to the HR Approver after the
+     * template is edited. Server-assigned; see `WorkflowRoleSlotWriteSchema`
+     * for how a write may (or may not) supply one.
+     */
+    slotId: Type.String({ minLength: 1, maxLength: 64 }),
     /** What the admin calls this hole: "Client Signer", "HR Approver". */
     label: Type.String({ minLength: 1, maxLength: 120 }),
     role: RecipientTypeSchema,
@@ -119,6 +131,36 @@ export const WorkflowRoleSlotSchema = Type.Object(
   },
 );
 export type WorkflowRoleSlot = Static<typeof WorkflowRoleSlotSchema>;
+
+/**
+ * The write shape of a slot. `slotId` is OPTIONAL here and required above —
+ * the one difference between the two schemas, and the reason they are two
+ * schemas rather than one.
+ *
+ * Omitted (a new slot, or a client that has not been taught to round-trip
+ * the id yet): the server mints one. Supplied: honoured only if it already
+ * names a slot on THIS template (the use case checks this, the same way
+ * `FieldInput.fieldId` in preparation is honoured only if it already
+ * belongs to the caller's own preparation) — an unrecognised id is treated
+ * as a new slot rather than rejected, so a client is never forced to know
+ * which ids are "real" before it can save.
+ */
+export const WorkflowRoleSlotWriteSchema = Type.Object(
+  {
+    slotId: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
+    label: Type.String({ minLength: 1, maxLength: 120 }),
+    role: RecipientTypeSchema,
+    required: Type.Boolean(),
+    routingStep: Type.Integer({ minimum: 1, maximum: 100 }),
+    defaultAuthMethod: WorkflowSlotAuthMethodSchema,
+  },
+  {
+    title: "WorkflowRoleSlotWrite",
+    additionalProperties: false,
+    description: "A named role placeholder, not a person. slotId is optional here only.",
+  },
+);
+export type WorkflowRoleSlotWriteInput = Static<typeof WorkflowRoleSlotWriteSchema>;
 
 // ── Completion notification settings ────────────────────────────────────────
 
@@ -220,7 +262,7 @@ export const WorkflowTemplateWriteSchema = Type.Object(
   {
     name: Type.String({ minLength: 1, maxLength: 200 }),
     routingMode: WorkflowRoutingModeSchema,
-    roleSlots: Type.Array(WorkflowRoleSlotSchema, { minItems: 1, maxItems: 50 }),
+    roleSlots: Type.Array(WorkflowRoleSlotWriteSchema, { minItems: 1, maxItems: 50 }),
     completionSettings: WorkflowCompletionSettingsSchema,
   },
   { title: "WorkflowTemplateWrite", additionalProperties: false },
@@ -231,3 +273,75 @@ export const WorkflowTemplateListSchema = Type.Object(
   { items: Type.Array(WorkflowTemplateSchema) },
   { title: "WorkflowTemplateList", additionalProperties: false },
 );
+
+// ── Field placements (060) ──────────────────────────────────────────────────
+//
+// A template's geometry, PER ROLE SLOT rather than per person — the same
+// relationship `roleSlots` has to a real template's recipients. Reuses
+// preparation's field-type vocabulary and rectangle shape verbatim
+// (`PreparationFieldTypeSchema`, `PreparationRectSchema`): a template field
+// and a real preparation field describe the same nine renderable things in
+// the same normalized 0–1 space, and a second vocabulary here would be a
+// second place for the two to drift.
+//
+// Stored and read through their OWN endpoint
+// (`/workflow-templates/:id/fields`), not embedded in `WorkflowTemplateSchema`
+// — the same choice `document_preparations`/`preparation_fields` already
+// made for a real document, for the same reason: most callers that want a
+// template (the list page, the routing tab) have no use for its geometry,
+// and embedding it would make every template read pay for a field fetch it
+// does not need.
+
+export const WorkflowTemplateFieldSchema = Type.Object(
+  {
+    fieldId: Type.String({ minLength: 1, maxLength: 64 }),
+    /** Which role this field belongs to — one of the template's OWN
+     *  `roleSlots[].slotId` values, checked at write time. */
+    slotId: Type.String({ minLength: 1, maxLength: 64 }),
+    type: PreparationFieldTypeSchema,
+    /** 1-based, against the template's attached document. */
+    pageNumber: Type.Integer({ minimum: 1 }),
+    rect: PreparationRectSchema,
+    required: Type.Boolean(),
+    label: Type.String({ maxLength: PREPARATION_FIELD_LABEL_MAX_LENGTH }),
+    layer: Type.Integer({ minimum: 0 }),
+  },
+  { title: "WorkflowTemplateField", additionalProperties: false },
+);
+export type WorkflowTemplateField = Static<typeof WorkflowTemplateFieldSchema>;
+
+/** `fieldId` optional, the same reason `slotId` is optional on a slot write
+ *  and `FieldInput.fieldId` is optional in preparation: omitted for a new
+ *  field, honoured only if it already names a field on this template. */
+export const WorkflowTemplateFieldInputSchema = Type.Object(
+  {
+    fieldId: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
+    slotId: Type.String({ minLength: 1, maxLength: 64 }),
+    type: PreparationFieldTypeSchema,
+    pageNumber: Type.Integer({ minimum: 1 }),
+    rect: PreparationRectSchema,
+    required: Type.Boolean(),
+    label: Type.String({ maxLength: PREPARATION_FIELD_LABEL_MAX_LENGTH }),
+    layer: Type.Integer({ minimum: 0 }),
+  },
+  { title: "WorkflowTemplateFieldInput", additionalProperties: false },
+);
+export type WorkflowTemplateFieldInput = Static<typeof WorkflowTemplateFieldInputSchema>;
+
+/** Whole-layout replace, exactly like `SaveLayoutInput` in preparation —
+ *  one atomic write rather than per-field endpoints, for the same
+ *  drag-and-drop-autosave reason preparation's header states. No
+ *  `expectedRevision` here: a template's field layout is authored by one
+ *  admin at a time in practice, and this is authoring metadata with no
+ *  concurrent-signer audience the way a live preparation has. */
+export const WorkflowTemplateFieldsWriteSchema = Type.Object(
+  { fields: Type.Array(WorkflowTemplateFieldInputSchema, { maxItems: PREPARATION_MAX_FIELDS }) },
+  { title: "WorkflowTemplateFieldsWrite", additionalProperties: false },
+);
+export type WorkflowTemplateFieldsWrite = Static<typeof WorkflowTemplateFieldsWriteSchema>;
+
+export const WorkflowTemplateFieldListSchema = Type.Object(
+  { items: Type.Array(WorkflowTemplateFieldSchema) },
+  { title: "WorkflowTemplateFieldList", additionalProperties: false },
+);
+export type WorkflowTemplateFieldList = Static<typeof WorkflowTemplateFieldListSchema>;

@@ -291,8 +291,8 @@ describe("a malformed template is refused, not half-applied", () => {
 
   it("accepts parallel slots — equal steps are the point, not a mistake", () => {
     const slots = validateRoleSlots([
-      { label: "A", role: "signer", required: true, routingStep: 1, defaultAuthMethod: "none" },
-      { label: "B", role: "signer", required: true, routingStep: 1, defaultAuthMethod: "none" },
+      { slotId: "wfs_a", label: "A", role: "signer", required: true, routingStep: 1, defaultAuthMethod: "none" },
+      { slotId: "wfs_b", label: "B", role: "signer", required: true, routingStep: 1, defaultAuthMethod: "none" },
     ]);
     expect(slots).toHaveLength(2);
   });

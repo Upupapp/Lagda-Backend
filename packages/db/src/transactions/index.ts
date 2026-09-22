@@ -44,6 +44,7 @@ import {
   createUserSigningRecordsRepository, createSigningResumeIntentRepository,
 } from "../repositories/user-signing-records.js";
 import { createScopedWorkflowTemplateRepository } from "../repositories/workflow-templates.js";
+import { createScopedWorkflowTemplateFieldRepository } from "../repositories/workflow-template-fields.js";
 import { createIdempotencyRepository } from "../repositories/idempotency.js";
 import {
   createScopedInvitationRepository, createInvitationCredentialLookup,
@@ -156,6 +157,7 @@ function buildUnitOfWork(
     accountLinks: createSigningAccountLinkRepository(trx),
     // Migration 058. Scoped here and by row-level security in the database.
     workflowTemplates: createScopedWorkflowTemplateRepository(trx, workspaceId),
+    workflowTemplateFields: createScopedWorkflowTemplateFieldRepository(trx, workspaceId),
   };
 }
 

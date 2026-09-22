@@ -106,6 +106,9 @@ import type {
   WorkflowTemplateIdGenerator,
 } from "../common/ports/workflow-templates.js";
 import type {
+  ScopedWorkflowTemplateFieldRepository, WorkflowTemplateFieldRecord,
+} from "../common/ports/workflow-template-fields.js";
+import type {
   UserSigningRecordsRepository, UserSignedDocumentRecord, UserSigningInboxRecord,
   SigningResumeIntentRepository, SigningResumeIntentRecord,
 } from "../common/ports/user-signing-records.js";
@@ -151,9 +154,18 @@ export class SequentialContactIds implements ContactIdGenerator {
 
 export class SequentialWorkflowTemplateIds implements WorkflowTemplateIdGenerator {
   private next = 1;
-  nextWorkflowTemplateId(): string {
-    return `wft_${String(this.next++)}`;
-  }
+  private slot = 1;
+  private field = 1;
+  // Arrow-function properties, not methods: `validateRoleSlotsForWrite` and
+  // `validateTemplateFields` take `deps.ids.nextWorkflowRoleSlotId` as a bare
+  // callback, detached from `deps.ids` — the same way the real generator in
+  // identifiers.ts already is (an object literal of arrow functions). A
+  // method here would silently lose its `this` the moment it was passed
+  // that way, exactly what broke `nextWorkflowTemplateId` never being called
+  // detached until this migration added the first callback that does.
+  nextWorkflowTemplateId = (): string => `wft_${String(this.next++)}`;
+  nextWorkflowRoleSlotId = (): string => `wfs_${String(this.slot++)}`;
+  nextWorkflowTemplateFieldId = (): string => `wff_${String(this.field++)}`;
 }
 
 export class SequentialDocumentIds implements DocumentIdGenerator {
@@ -406,6 +418,7 @@ interface StoreSnapshot {
   readonly invitationDigests: Map<string, string>;
   readonly contacts: ContactRecord[];
   readonly workflowTemplates: WorkflowTemplateRecord[];
+  readonly workflowTemplateFields: WorkflowTemplateFieldRecord[];
   readonly documents: DocumentRecord[];
   readonly folders: FolderRecord[];
   readonly preparations: PreparationRecord[];
@@ -452,6 +465,7 @@ export class InMemoryStore {
   readonly notificationDeliveries = new Map<string, NotificationDeliveryRecord>();
   contacts: ContactRecord[] = [];
   workflowTemplates: WorkflowTemplateRecord[] = [];
+  workflowTemplateFields: WorkflowTemplateFieldRecord[] = [];
   documents: DocumentRecord[] = [];
   folders: FolderRecord[] = [];
   preparations: PreparationRecord[] = [];
@@ -488,6 +502,10 @@ export class InMemoryStore {
   readonly snapshotOwners = new Map<string, SigningRequestId>();
   /** Field id to preparation id. The real table has a column. */
   readonly fieldOwners = new Map<string, PreparationId>();
+  /** Template-field id to its workspace and template id. The real table has
+   *  both as columns; `WorkflowTemplateFieldRecord` itself does not, the
+   *  same scoped-repository convention `PreparationFieldRecord` follows. */
+  readonly templateFieldOwners = new Map<string, { workspaceId: WorkspaceId; workflowTemplateId: string }>();
   readonly evidence: EvidenceEventRecord[] = [];
   readonly artifacts: ArtifactRecord[] = [];
   readonly seals: SealRecord[] = [];
@@ -497,6 +515,7 @@ export class InMemoryStore {
   snapshot(): StoreSnapshot {
     return {
       workflowTemplates: [...this.workflowTemplates],
+      workflowTemplateFields: [...this.workflowTemplateFields],
       workspaces: new Map(this.workspaces),
       uploads: new Map(this.uploads),
       memberships: [...this.memberships],
@@ -553,6 +572,12 @@ export class InMemoryStore {
     for (const [key, value] of snapshot.workspaces) this.workspaces.set(key, value);
     this.memberships.length = 0;
     this.memberships.push(...snapshot.memberships);
+    // Was missing here entirely — a rolled-back transaction that had created
+    // or edited a template left it in place, the exact inconsistency this
+    // restore exists to prevent. Found while adding the sibling
+    // `workflowTemplateFields` restore just below.
+    this.workflowTemplates = [...snapshot.workflowTemplates];
+    this.workflowTemplateFields = [...snapshot.workflowTemplateFields];
     this.invitations = [...snapshot.invitations];
     this.contacts = [...snapshot.contacts];
     this.documents = [...snapshot.documents];
@@ -1029,6 +1054,15 @@ function scopedWorkflowTemplates(
         t => t.workspaceId === scope && t.workflowTemplateId === id);
       if (index < 0) return Promise.resolve(false);
       store.workflowTemplates.splice(index, 1);
+      // Mirrors migration 060's `on delete cascade` — a field has no meaning
+      // without its template.
+      const orphaned = store.workflowTemplateFields.filter(f => {
+        const owner = store.templateFieldOwners.get(f.fieldId);
+        return owner?.workspaceId === scope && owner.workflowTemplateId === id;
+      });
+      for (const field of orphaned) store.templateFieldOwners.delete(field.fieldId);
+      store.workflowTemplateFields = store.workflowTemplateFields.filter(
+        f => !orphaned.includes(f));
       return Promise.resolve(true);
     },
     nameExists: (name, exceptId) => Promise.resolve(inScope().some(
@@ -1054,6 +1088,46 @@ function scopedWorkflowTemplates(
         documentId: null, sourceArtifactId: null, updatedAt,
       };
       return Promise.resolve(true);
+    },
+  };
+}
+
+/** Migration 060's field placements, in memory. Mirrors `scopedPreparation`'s
+ *  `listFields`/`replaceLayout` pair, minus the revision — see
+ *  `ScopedWorkflowTemplateFieldRepository`'s header for why there is none. */
+function scopedWorkflowTemplateFields(
+  store: InMemoryStore, scope: WorkspaceId,
+): ScopedWorkflowTemplateFieldRepository {
+  const templateFieldOf = (fieldId: string) => store.templateFieldOwners.get(fieldId);
+
+  return {
+    list: (workflowTemplateId) => Promise.resolve(
+      store.workflowTemplateFields
+        .filter(f => {
+          const owner = templateFieldOf(f.fieldId);
+          return owner?.workspaceId === scope && owner.workflowTemplateId === workflowTemplateId;
+        })
+        // The adapter's order: page, then layer, then id.
+        .sort((a, b) =>
+          a.pageNumber - b.pageNumber
+          || a.layer - b.layer
+          || a.fieldId.localeCompare(b.fieldId))),
+
+    replaceAll: (workflowTemplateId, fields, _now) => {
+      // Delete then insert, matching the adapter (and `replaceLayout` above).
+      const stale = store.workflowTemplateFields.filter(f => {
+        const owner = templateFieldOf(f.fieldId);
+        return owner?.workspaceId === scope && owner.workflowTemplateId === workflowTemplateId;
+      });
+      for (const field of stale) store.templateFieldOwners.delete(field.fieldId);
+      store.workflowTemplateFields = store.workflowTemplateFields.filter(
+        f => !stale.includes(f));
+
+      for (const field of fields) {
+        store.workflowTemplateFields.push(field);
+        store.templateFieldOwners.set(field.fieldId, { workspaceId: scope, workflowTemplateId });
+      }
+      return Promise.resolve();
     },
   };
 }
@@ -2816,6 +2890,7 @@ export class FakeTransactionManager implements TransactionManager {
         userSigningRecords: userSigningRecords(),
         accountLinks: signingAccountLinks(),
         workflowTemplates: scopedWorkflowTemplates(this.store, workspaceId),
+        workflowTemplateFields: scopedWorkflowTemplateFields(this.store, workspaceId),
         organizationUnits: scopedOrganizationUnits(this.store, workspaceId),
         workspaces: scopedWorkspaces(this.store, workspaceId),
         memberships: scopedMemberships(this.store, workspaceId),
@@ -2899,6 +2974,7 @@ export class FakeTransactionManager implements TransactionManager {
           return inner({
             workspaceId,
             workflowTemplates: scopedWorkflowTemplates(store, workspaceId),
+            workflowTemplateFields: scopedWorkflowTemplateFields(store, workspaceId),
             actorProfiles: { displayNameOf: () => Promise.resolve(null) },
             userSigningRecords: userSigningRecords(),
             accountLinks: signingAccountLinks(),

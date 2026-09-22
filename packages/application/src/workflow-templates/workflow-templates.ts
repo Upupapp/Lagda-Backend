@@ -27,13 +27,16 @@
 //    a different document to the template afterwards cannot reach a draft
 //    already built from it, for the same reason editing a slot cannot.
 
-import type { WorkspaceId, DocumentId } from "@lagda/contracts";
+import type { WorkspaceId, DocumentId, PreparationFieldType, PreparationRect } from "@lagda/contracts";
 import {
   WORKFLOW_ROUTING_MODES, WORKFLOW_SLOT_AUTH_METHODS, RECIPIENT_TYPES,
   type WorkflowRoutingMode, type WorkflowRoleSlot,
   type WorkflowCompletionSettings,
 } from "@lagda/contracts";
-import type { WorkspaceCapability } from "@lagda/core";
+import {
+  validateRect, roundRect, isValidPageNumber, canPlaceFields, validateFieldLabel,
+  effectiveRequired, type WorkspaceCapability,
+} from "@lagda/core";
 import {
   assertCapability, type WorkspaceAccessContext,
 } from "../workspaces/workspace-access.js";
@@ -41,9 +44,12 @@ import type { Clock, TransactionManager, WorkspaceUnitOfWork } from "../common/p
 import type {
   WorkflowTemplateIdGenerator, WorkflowTemplateRecord, RawWorkflowTemplateRow,
 } from "../common/ports/workflow-templates.js";
+import type { WorkflowTemplateFieldRecord } from "../common/ports/workflow-template-fields.js";
 import type { ArtifactId } from "../common/ports/evidence.js";
 import type { AuthenticatedActor } from "../common/ports/session.js";
-import { ApplicationError, ResourceNotFoundError } from "../common/errors/index.js";
+import {
+  ApplicationError, ApplicationValidationError, ResourceNotFoundError,
+} from "../common/errors/index.js";
 
 // ── Errors ───────────────────────────────────────────────────────────────────
 
@@ -150,18 +156,67 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Validates one slot, naming what is wrong rather than returning a boolean.
+ * Resolves a slot's id: kept if it already belongs to THIS template, minted
+ * otherwise.
+ *
+ * `existingSlotIds === null` means "no template exists yet" (create) — every
+ * slot is new, so any client-supplied id is ignored rather than adopted, the
+ * same "server decides identity" rule `WorkflowTemplateWriteSchema`'s header
+ * states for the template's own id. On update, a client id is honoured only
+ * if it names a slot THIS template already has — an id from another
+ * template, or one that was never real, is silently treated as a new slot
+ * rather than rejected, mirroring `FieldInput.fieldId`'s exact rule in
+ * preparation.ts.
+ *
+ * `seen` guards against the same id appearing twice in one write — kept only
+ * once, and every later occurrence is minted fresh instead of being refused
+ * outright, since a duplicated id is far more likely a copy-paste in the
+ * client's local state than a deliberate attempt to collide two slots.
+ */
+function resolveSlotId(
+  candidate: string | undefined,
+  existingSlotIds: ReadonlySet<string>,
+  seen: Set<string>,
+  mint: () => string,
+): string {
+  if (candidate !== undefined && !seen.has(candidate) && existingSlotIds.has(candidate)) {
+    seen.add(candidate);
+    return candidate;
+  }
+  const minted = mint();
+  seen.add(minted);
+  return minted;
+}
+
+/** The fields every slot shares, checked once and reused by both the read
+ *  path (which requires a stored `slotId`) and the write path (which
+ *  resolves one — see `resolveSlotId`). */
+interface ValidatedSlotShape {
+  readonly rawSlotId: string | undefined;
+  readonly label: string;
+  readonly role: WorkflowRoleSlot["role"];
+  readonly required: boolean;
+  readonly routingStep: number;
+  readonly defaultAuthMethod: WorkflowRoleSlot["defaultAuthMethod"];
+}
+
+/**
+ * Validates everything about one slot EXCEPT its id, naming what is wrong
+ * rather than returning a boolean.
  *
  * The reason reaches the caller, so an admin editing a template is told which
  * slot and what about it — and an apply that refuses says why it refused.
  * Indexes are 1-based in the message because the admin counts from one.
  */
-function validateSlot(value: unknown, index: number): WorkflowRoleSlot {
+function validateSlotShape(value: unknown, index: number): ValidatedSlotShape {
   const at = `slot ${String(index + 1)}`;
   if (!isRecord(value)) throw new WorkflowTemplateMalformedError(`${at} is not an object`);
 
-  const { label, role, required, routingStep, defaultAuthMethod } = value;
+  const { slotId, label, role, required, routingStep, defaultAuthMethod } = value;
 
+  if (slotId !== undefined && typeof slotId !== "string") {
+    throw new WorkflowTemplateMalformedError(`${at} has an invalid id`);
+  }
   if (typeof label !== "string" || label.trim().length === 0) {
     throw new WorkflowTemplateMalformedError(`${at} has no label`);
   }
@@ -184,6 +239,7 @@ function validateSlot(value: unknown, index: number): WorkflowRoleSlot {
   }
 
   return {
+    rawSlotId: slotId,
     label: label.trim(),
     role: role as WorkflowRoleSlot["role"],
     required,
@@ -193,7 +249,7 @@ function validateSlot(value: unknown, index: number): WorkflowRoleSlot {
 }
 
 /**
- * Validates the whole slot list, including the rules BETWEEN slots.
+ * The rules BETWEEN slots, shared by the read and write paths.
  *
  * The cross-slot rule is that steps must be CONTIGUOUS from 1. A template with
  * steps 1 and 3 and nothing at 2 would, applied, produce recipients at routing
@@ -201,19 +257,7 @@ function validateSlot(value: unknown, index: number): WorkflowRoleSlot {
  * participants", and whether it then stalls or skips is not a question a
  * template should be able to ask.
  */
-export function validateRoleSlots(value: unknown): readonly WorkflowRoleSlot[] {
-  if (!Array.isArray(value)) {
-    throw new WorkflowTemplateMalformedError("its role slots are missing");
-  }
-  if (value.length === 0) {
-    throw new WorkflowTemplateMalformedError("it has no role slots");
-  }
-  if (value.length > MAX_SLOTS) {
-    throw new WorkflowTemplateMalformedError("it has too many role slots");
-  }
-
-  const slots = value.map((slot, index) => validateSlot(slot, index));
-
+function validateCrossSlotRules(slots: readonly WorkflowRoleSlot[]): void {
   const steps = [...new Set(slots.map(slot => slot.routingStep))].sort((a, b) => a - b);
   for (const [index, step] of steps.entries()) {
     if (step !== index + 1) {
@@ -232,7 +276,74 @@ export function validateRoleSlots(value: unknown): readonly WorkflowRoleSlot[] {
     throw new WorkflowTemplateMalformedError(
       "it has nobody who can act — every slot is a viewer or a copy recipient");
   }
+}
 
+function validateSlotCount(value: unknown): unknown[] {
+  if (!Array.isArray(value)) {
+    throw new WorkflowTemplateMalformedError("its role slots are missing");
+  }
+  if (value.length === 0) {
+    throw new WorkflowTemplateMalformedError("it has no role slots");
+  }
+  if (value.length > MAX_SLOTS) {
+    throw new WorkflowTemplateMalformedError("it has too many role slots");
+  }
+  return value;
+}
+
+/**
+ * The READ path: every slot's `slotId` must already be there.
+ *
+ * By the time application code runs, migration 060 has backfilled every
+ * stored row — a slot with no id here is not "a slot that predates ids", it
+ * is a malformed row, and this fails loudly rather than minting a fresh id
+ * that would be different on every read (§ this module's own header, point 2).
+ */
+export function validateRoleSlots(value: unknown): readonly WorkflowRoleSlot[] {
+  const slots = validateSlotCount(value).map((slot, index) => {
+    const at = `slot ${String(index + 1)}`;
+    const shape = validateSlotShape(slot, index);
+    if (shape.rawSlotId === undefined) {
+      throw new WorkflowTemplateMalformedError(`${at} has no id`);
+    }
+    return {
+      slotId: shape.rawSlotId,
+      label: shape.label,
+      role: shape.role,
+      required: shape.required,
+      routingStep: shape.routingStep,
+      defaultAuthMethod: shape.defaultAuthMethod,
+    };
+  });
+  validateCrossSlotRules(slots);
+  return slots;
+}
+
+/**
+ * The WRITE path: a slot's id is RESOLVED (kept-if-known, minted otherwise)
+ * rather than required — see `resolveSlotId`.
+ *
+ * `existingSlotIds` is the template's CURRENT slots, read inside the same
+ * transaction as the write (empty on create — nothing exists yet).
+ */
+function validateRoleSlotsForWrite(
+  value: unknown,
+  existingSlotIds: ReadonlySet<string>,
+  mintSlotId: () => string,
+): readonly WorkflowRoleSlot[] {
+  const seen = new Set<string>();
+  const slots = validateSlotCount(value).map((slot, index) => {
+    const shape = validateSlotShape(slot, index);
+    return {
+      slotId: resolveSlotId(shape.rawSlotId, existingSlotIds, seen, mintSlotId),
+      label: shape.label,
+      role: shape.role,
+      required: shape.required,
+      routingStep: shape.routingStep,
+      defaultAuthMethod: shape.defaultAuthMethod,
+    };
+  });
+  validateCrossSlotRules(slots);
   return slots;
 }
 
@@ -292,18 +403,26 @@ export interface WorkflowTemplateInput {
   readonly completionSettings: unknown;
 }
 
-interface ValidatedInput {
+/**
+ * Name, routing mode and completion settings — everything that does NOT
+ * depend on knowing the template's CURRENT slots, and so can be checked
+ * before a transaction is even open.
+ *
+ * Role slots are deliberately absent here: resolving a slot's id needs
+ * `existingSlotIds` (empty on create, the template's own on update — see
+ * `validateRoleSlotsForWrite`), which only exists once the transaction has
+ * either decided this is a create or loaded the row being updated.
+ */
+interface ValidatedInputBase {
   readonly name: string;
   readonly routingMode: WorkflowRoutingMode;
-  readonly roleSlots: readonly WorkflowRoleSlot[];
   readonly completionSettings: WorkflowCompletionSettings;
 }
 
-function validateInput(input: WorkflowTemplateInput): ValidatedInput {
+function validateInputBase(input: WorkflowTemplateInput): ValidatedInputBase {
   return {
     name: validateName(input.name),
     routingMode: validateRoutingMode(input.routingMode),
-    roleSlots: validateRoleSlots(input.roleSlots),
     completionSettings: validateCompletionSettings(input.completionSettings),
   };
 }
@@ -316,7 +435,7 @@ export async function createWorkflowTemplate(
   input: WorkflowTemplateInput,
   deps: WorkflowTemplateDependencies,
 ): Promise<WorkflowTemplateRecord> {
-  const validated = validateInput(input);
+  const validated = validateInputBase(input);
 
   return deps.transactions.runForWorkspace(workspaceId, async uow => {
     const access = await authorize(uow, actor, "template.create");
@@ -325,13 +444,17 @@ export async function createWorkflowTemplate(
       throw new WorkflowTemplateNameTakenError();
     }
 
+    // Nothing exists yet — every slot is new (§ `validateRoleSlotsForWrite`).
+    const roleSlots = validateRoleSlotsForWrite(
+      input.roleSlots, new Set(), deps.ids.nextWorkflowRoleSlotId);
+
     const now = deps.clock.now();
     const record: WorkflowTemplateRecord = {
       workflowTemplateId: deps.ids.nextWorkflowTemplateId(),
       workspaceId: access.workspaceId,
       name: validated.name,
       routingMode: validated.routingMode,
-      roleSlots: validated.roleSlots,
+      roleSlots,
       completionSettings: validated.completionSettings,
       createdBy: access.userId,
       createdAt: now,
@@ -384,7 +507,7 @@ export async function updateWorkflowTemplate(
   input: WorkflowTemplateInput,
   deps: WorkflowTemplateDependencies,
 ): Promise<WorkflowTemplateRecord> {
-  const validated = validateInput(input);
+  const validated = validateInputBase(input);
 
   return deps.transactions.runForWorkspace(workspaceId, async uow => {
     await authorize(uow, actor, "template.update");
@@ -396,22 +519,44 @@ export async function updateWorkflowTemplate(
       throw new WorkflowTemplateNameTakenError();
     }
 
+    // The template's CURRENT slots, so a client-supplied slotId can be told
+    // apart from one that merely looks plausible — see `resolveSlotId`.
+    const existingSlotIds = new Set(
+      parseStoredTemplate(existing).roleSlots.map(slot => slot.slotId));
+    const roleSlots = validateRoleSlotsForWrite(
+      input.roleSlots, existingSlotIds, deps.ids.nextWorkflowRoleSlotId);
+
     const now = deps.clock.now();
     const changed = await uow.workflowTemplates.update(workflowTemplateId, {
       name: validated.name,
       routingMode: validated.routingMode,
-      roleSlots: validated.roleSlots,
+      roleSlots,
       completionSettings: validated.completionSettings,
       updatedAt: now,
     });
     if (!changed) throw new ResourceNotFoundError("WorkflowTemplate");
+
+    // A slot this edit REMOVED can no longer own a field — an orphaned
+    // field would point at a role that no longer exists on this template,
+    // which `saveWorkflowTemplateFields` refuses on write but nothing would
+    // catch on an edit that removes the slot a field already used. Dropped
+    // here rather than left to be a corrupt-looking read.
+    const survivingSlotIds = new Set(roleSlots.map(slot => slot.slotId));
+    const currentFields = await uow.workflowTemplateFields.list(workflowTemplateId);
+    const orphaned = currentFields.some(field => !survivingSlotIds.has(field.slotId));
+    if (orphaned) {
+      await uow.workflowTemplateFields.replaceAll(
+        workflowTemplateId,
+        currentFields.filter(field => survivingSlotIds.has(field.slotId)),
+        now);
+    }
 
     return {
       workflowTemplateId,
       workspaceId: existing.workspaceId,
       name: validated.name,
       routingMode: validated.routingMode,
-      roleSlots: validated.roleSlots,
+      roleSlots,
       completionSettings: validated.completionSettings,
       createdBy: existing.createdBy,
       createdAt: existing.createdAt,
@@ -530,6 +675,14 @@ export async function detachWorkflowTemplateDocument(
     const changed = await uow.workflowTemplates.detachDocument(workflowTemplateId, updatedAt);
     if (!changed) throw new ResourceNotFoundError("WorkflowTemplate");
 
+    // A field's page bounds were validated against THIS document (060) —
+    // detaching it (or a later re-attach of a DIFFERENT one, with its own
+    // page count and layout) makes every placed field's page number and
+    // rectangle unverifiable at best and meaningless at worst. Cleared
+    // rather than left to silently misplace a signature on whatever gets
+    // attached next.
+    await uow.workflowTemplateFields.replaceAll(workflowTemplateId, [], updatedAt);
+
     return {
       ...parseStoredTemplate(existing),
       documentId: null,
@@ -565,6 +718,10 @@ export interface WorkflowTemplateApplication {
    */
   readonly documentId: DocumentId | null;
   readonly sourceArtifactId: ArtifactId | null;
+  /** 060. Per-role-slot geometry, snapshotted the same way the document
+   *  pair is — see this field's own assignment below. Empty when the
+   *  template has no fields. */
+  readonly fields: readonly WorkflowTemplateFieldRecord[];
 }
 
 export async function resolveTemplateForApply(
@@ -573,12 +730,218 @@ export async function resolveTemplateForApply(
   workflowTemplateId: string,
   deps: WorkflowTemplateDependencies,
 ): Promise<WorkflowTemplateApplication> {
-  const template = await getWorkflowTemplate(actor, workspaceId, workflowTemplateId, deps);
-  return {
-    routingMode: template.routingMode,
-    roleSlots: template.roleSlots,
-    completionSettings: template.completionSettings,
-    documentId: template.documentId,
-    sourceArtifactId: template.sourceArtifactId,
-  };
+  return deps.transactions.runForWorkspace(workspaceId, async uow => {
+    await authorize(uow, actor, "template.view");
+    const row = await uow.workflowTemplates.find(workflowTemplateId);
+    if (row === null) throw new ResourceNotFoundError("WorkflowTemplate");
+    const template = parseStoredTemplate(row);
+
+    return {
+      routingMode: template.routingMode,
+      roleSlots: template.roleSlots,
+      completionSettings: template.completionSettings,
+      documentId: template.documentId,
+      sourceArtifactId: template.sourceArtifactId,
+      // A snapshot copy, the same rule as everything else this interface
+      // returns — the caller gets THIS moment's field layout, and a later
+      // edit to the template's fields cannot reach a draft already built
+      // from it. Empty when the template has no fields (the ordinary case
+      // today) or no document (fields cannot exist without one). Read in
+      // the SAME transaction as the template itself, so the two cannot
+      // observe two different moments.
+      fields: await uow.workflowTemplateFields.list(workflowTemplateId),
+    };
+  });
+}
+
+// ── The template's field placements (060) ───────────────────────────────────
+//
+// See this file's header and 060's migration comment for the design: a field
+// belongs to a ROLE SLOT, resolved to geometry checked against the
+// template's OWN attached document, the same `@lagda/core` rules
+// `preparation.ts` applies to a real document.
+
+/** A field's page number and rectangle are validated against a real page
+ *  count — nothing to validate them against when no document is attached. */
+export class WorkflowTemplateFieldsNeedDocumentError extends ApplicationError {
+  readonly category = "validation" as const;
+  readonly code = "workflow_template_fields_need_document";
+
+  constructor() {
+    super("Attach a document to this template before placing fields on it.");
+    this.name = "WorkflowTemplateFieldsNeedDocumentError";
+  }
+}
+
+export interface WorkflowTemplateFieldWriteInput {
+  /** Omitted for a new field; the server generates one. Supplied only to
+   *  preserve identity across a save — honoured only if it already belongs
+   *  to THIS template, mirroring `FieldInput.fieldId` in preparation. */
+  readonly fieldId?: string;
+  /** One of the template's own `role_slots[].slotId` values. */
+  readonly slotId: string;
+  readonly type: PreparationFieldType;
+  readonly pageNumber: number;
+  readonly rect: PreparationRect;
+  readonly required: boolean;
+  readonly label: string;
+  readonly layer: number;
+}
+
+/** The document's page count and rotation-placeability, resolved the same
+ *  way `preparation.ts`'s `resolveSource` does for a real document. */
+async function resolvePageCount(
+  uow: WorkspaceUnitOfWork,
+  sourceArtifactId: ArtifactId,
+): Promise<number> {
+  const artifact = await uow.artifacts.find(sourceArtifactId);
+  // The template's own attach path already verified this artifact exists
+  // and belongs to the attached document; absent here would mean it was
+  // deleted since, which nothing in this schema currently does (059's
+  // header traces the same fact for the FK's RESTRICT posture).
+  if (artifact === null || artifact.pageCount === undefined) {
+    throw new WorkflowTemplateFieldsNeedDocumentError();
+  }
+  if (!canPlaceFields(artifact.rotatedPageCount ?? null)) {
+    throw new WorkflowTemplateFieldsNeedDocumentError();
+  }
+  return artifact.pageCount;
+}
+
+/** Validates every field and returns the records to persist. Reports ALL
+ *  problems at once — see `WorkflowTemplateFieldValidationError`. */
+function validateTemplateFields(
+  inputs: readonly WorkflowTemplateFieldWriteInput[],
+  roleSlotIds: ReadonlySet<string>,
+  pageCount: number,
+  existingFieldIds: ReadonlySet<string>,
+  mintFieldId: () => string,
+): readonly WorkflowTemplateFieldRecord[] {
+  const issues: string[] = [];
+  const records: WorkflowTemplateFieldRecord[] = [];
+  const seenFieldIds = new Set<string>();
+
+  inputs.forEach((input, index) => {
+    const at = `fields[${String(index)}]`;
+
+    if (!roleSlotIds.has(input.slotId)) {
+      issues.push(`${at}.slotId: does not name a role on this template`);
+    }
+    if (!isValidPageNumber(input.pageNumber, pageCount)) {
+      issues.push(`${at}.pageNumber: must be between 1 and ${String(pageCount)}`);
+    }
+
+    const geometry = validateRect(input.rect);
+    if (!geometry.ok) issues.push(`${at}.rect: ${geometry.reason}`);
+
+    const label = validateFieldLabel(input.label);
+    if (!label.ok) issues.push(`${at}.label: ${label.reason}`);
+
+    // A client id is honoured only if it already belongs to THIS template —
+    // exactly `FieldInput.fieldId`'s rule in preparation.ts.
+    let fieldId = input.fieldId;
+    if (fieldId !== undefined && !existingFieldIds.has(fieldId)) {
+      issues.push(`${at}.fieldId: unknown`);
+      fieldId = undefined;
+    }
+    if (fieldId !== undefined && seenFieldIds.has(fieldId)) {
+      issues.push(`${at}.fieldId: duplicated in this layout`);
+    }
+    if (fieldId !== undefined) seenFieldIds.add(fieldId);
+
+    if (!roleSlotIds.has(input.slotId) || !geometry.ok || !label.ok) return;
+
+    records.push({
+      fieldId: (fieldId ?? mintFieldId()) as WorkflowTemplateFieldRecord["fieldId"],
+      slotId: input.slotId,
+      type: input.type,
+      pageNumber: input.pageNumber,
+      // Rounded once, here — the same reason preparation.ts rounds once,
+      // so the frontend and backend cannot round differently.
+      ...roundRect(input.rect),
+      // A signature is required whatever the request said — the domain
+      // resolves the contradiction rather than persisting it.
+      required: effectiveRequired(input.type, input.required),
+      label: label.value,
+      layer: input.layer,
+    });
+  });
+
+  // Reuses `ApplicationValidationError` rather than a template-specific
+  // class — the same "report every problem at once, by field index" shape
+  // `preparation.ts`'s own `validateFields` already established, and the
+  // shared error mapper already knows how to turn it into a 422.
+  if (issues.length > 0) {
+    throw new ApplicationValidationError("This field layout could not be saved.", issues);
+  }
+  return records;
+}
+
+/**
+ * The template's field layout, in deterministic order. `template.view` —
+ * the same capability `getWorkflowTemplate` needs, since seeing where a
+ * role's fields land is part of reading the template.
+ */
+export async function listWorkflowTemplateFields(
+  actor: AuthenticatedActor,
+  workspaceId: WorkspaceId,
+  workflowTemplateId: string,
+  deps: WorkflowTemplateDependencies,
+): Promise<readonly WorkflowTemplateFieldRecord[]> {
+  return deps.transactions.runForWorkspace(workspaceId, async uow => {
+    await authorize(uow, actor, "template.view");
+    const existing = await uow.workflowTemplates.find(workflowTemplateId);
+    if (existing === null) throw new ResourceNotFoundError("WorkflowTemplate");
+    return uow.workflowTemplateFields.list(workflowTemplateId);
+  });
+}
+
+/**
+ * Replaces the WHOLE field layout — the same one-atomic-write model
+ * `preparation.ts`'s `saveDocumentPreparation` uses, and for the same
+ * reason (§ `ScopedWorkflowTemplateFieldRepository`'s header).
+ *
+ * Requires a document: a field's page number and rectangle are checked
+ * against a real page count, and a template with none attached has no page
+ * count to check against (`WorkflowTemplateFieldsNeedDocumentError`) — with
+ * one exception, clearing the layout (`fields: []`), which needs no
+ * document to be a well-formed request.
+ */
+export async function saveWorkflowTemplateFields(
+  actor: AuthenticatedActor,
+  workspaceId: WorkspaceId,
+  workflowTemplateId: string,
+  inputs: readonly WorkflowTemplateFieldWriteInput[],
+  deps: WorkflowTemplateDependencies,
+): Promise<readonly WorkflowTemplateFieldRecord[]> {
+  return deps.transactions.runForWorkspace(workspaceId, async uow => {
+    await authorize(uow, actor, "template.update");
+
+    const existing = await uow.workflowTemplates.find(workflowTemplateId);
+    if (existing === null) throw new ResourceNotFoundError("WorkflowTemplate");
+    const template = parseStoredTemplate(existing);
+
+    const now = deps.clock.now();
+
+    if (inputs.length === 0) {
+      await uow.workflowTemplateFields.replaceAll(workflowTemplateId, [], now);
+      return [];
+    }
+
+    if (template.sourceArtifactId === null) {
+      throw new WorkflowTemplateFieldsNeedDocumentError();
+    }
+    const pageCount = await resolvePageCount(uow, template.sourceArtifactId);
+
+    const roleSlotIds = new Set(template.roleSlots.map(slot => slot.slotId));
+    const existingFieldIds = new Set(
+      (await uow.workflowTemplateFields.list(workflowTemplateId)).map(f => f.fieldId));
+
+    const fields = validateTemplateFields(
+      inputs, roleSlotIds, pageCount, existingFieldIds,
+      deps.ids.nextWorkflowTemplateFieldId);
+
+    await uow.workflowTemplateFields.replaceAll(workflowTemplateId, fields, now);
+    return fields;
+  });
 }
