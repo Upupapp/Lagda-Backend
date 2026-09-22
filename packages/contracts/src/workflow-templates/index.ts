@@ -169,6 +169,14 @@ export const WorkflowTemplateSchema = Type.Object(
     /** Ordered. At least one — a template that routes nobody is not one. */
     roleSlots: Type.Array(WorkflowRoleSlotSchema, { minItems: 1, maxItems: 50 }),
     completionSettings: WorkflowCompletionSettingsSchema,
+    /**
+     * 059. `null` until a document is attached via the dedicated
+     * document endpoint — never through this object's own write path, so a
+     * PUT to name/routing/slots cannot silently detach it as a side effect.
+     * Both present or both null, matching the storage CHECK constraint.
+     */
+    documentId: Type.Union([Type.Null(), Type.String({ minLength: 1, maxLength: 64 })]),
+    sourceArtifactId: Type.Union([Type.Null(), Type.String({ minLength: 1, maxLength: 64 })]),
     createdAt: Type.String({ format: "date-time" }),
     updatedAt: Type.String({ format: "date-time" }),
   },
@@ -176,11 +184,29 @@ export const WorkflowTemplateSchema = Type.Object(
     title: "WorkflowTemplate",
     additionalProperties: false,
     description:
-      "A reusable workflow shape: named role slots and a routing mode. "
-      + "Holds no people, no document and no file.",
+      "A reusable workflow shape: named role slots and a routing mode, "
+      + "optionally attached to one document. Holds no people and no bytes "
+      + "of its own — the document, when attached, is an ordinary document "
+      + "uploaded through the ordinary path, only referenced here.",
   },
 );
 export type WorkflowTemplateView = Static<typeof WorkflowTemplateSchema>;
+
+/**
+ * The body of `PUT .../workflow-templates/:id/document`.
+ *
+ * Names an ALREADY-uploaded document and artifact — obtained through the
+ * ordinary document-create-then-upload path — rather than carrying a file.
+ * This endpoint attaches a reference; it does not upload anything.
+ */
+export const WorkflowTemplateDocumentInputSchema = Type.Object(
+  {
+    documentId: Type.String({ minLength: 1, maxLength: 64 }),
+    artifactId: Type.String({ minLength: 1, maxLength: 64 }),
+  },
+  { title: "WorkflowTemplateDocumentInput", additionalProperties: false },
+);
+export type WorkflowTemplateDocumentInput = Static<typeof WorkflowTemplateDocumentInputSchema>;
 
 /**
  * The write body. Closed, and carrying no identity or timestamp.

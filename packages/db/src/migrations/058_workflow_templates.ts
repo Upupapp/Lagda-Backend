@@ -8,9 +8,14 @@
 // reusable, and it is why this table carries no email address, no contact
 // reference and no recipient reference.
 //
-// It is NOT a document, and it holds no file. It is NOT a signing request. A
-// request created from a template is an ordinary signing request; nothing
-// about it points back here (see "Snapshot, not reference" below).
+// It is NOT a signing request. A request created from a template is an
+// ordinary signing request; nothing about it points back here (see "Snapshot,
+// not reference" below).
+//
+// UPDATE (059): a template MAY now reference a document — see 059's header
+// for why "holds no file" was revised and what changed. This table still
+// stores no bytes and no new copy of anything; 059 adds a reference to an
+// ordinary document uploaded through the ordinary path.
 //
 // ── Snapshot, not reference ───────────────────────────────────────────────
 //

@@ -427,6 +427,10 @@ export interface WorkspaceWorkflowTemplatesTable {
   created_by: string;
   created_at: Timestamptz;
   updated_at: Timestamptz;
+  /** 059. Both null, or both set — CHECK-constrained. Never one without the
+   *  other. */
+  document_id: ColumnType<string | null, string | null, string | null>;
+  source_artifact_id: ColumnType<string | null, string | null, string | null>;
 }
 
 export interface UserSignedDocumentsTable {

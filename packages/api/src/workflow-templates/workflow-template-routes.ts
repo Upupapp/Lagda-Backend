@@ -1,10 +1,12 @@
-// The workflow-template surface (migration 058).
+// The workflow-template surface (migration 058, extended by 059).
 //
 //   GET    /workspaces/:id/workflow-templates
 //   POST   /workspaces/:id/workflow-templates
 //   GET    /workspaces/:id/workflow-templates/:templateId
 //   PUT    /workspaces/:id/workflow-templates/:templateId
 //   DELETE /workspaces/:id/workflow-templates/:templateId
+//   PUT    /workspaces/:id/workflow-templates/:templateId/document
+//   DELETE /workspaces/:id/workflow-templates/:templateId/document
 //
 // Registered inside the authenticated workspace scope, so `requireSession`
 // has already run its CSRF hook — the same position the contact routes take,
@@ -15,19 +17,31 @@
 // No route here compares a role or reads a membership. Each use case resolves
 // the actor's current authority inside its own transaction and asserts a
 // capability; an architecture test forbids role comparisons in route files.
+//
+// ── The document routes upload nothing ──────────────────────────────────
+//
+// `PUT .../document` takes a documentId + artifactId already produced by the
+// ordinary POST /documents + POST /documents/:id/upload path. It attaches a
+// reference; the use case verifies the pair rather than trusting it (see
+// `attachWorkflowTemplateDocument`). No multipart parsing, no storage write
+// and no virus scan happen here — all of that already happened to produce the
+// artifact being named.
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { Type, type Static } from "@sinclair/typebox";
 import {
   createWorkflowTemplate, listWorkflowTemplates, getWorkflowTemplate,
   updateWorkflowTemplate, deleteWorkflowTemplate,
+  attachWorkflowTemplateDocument, detachWorkflowTemplateDocument,
   WorkflowTemplateNameTakenError,
   type WorkflowTemplateDependencies, type WorkflowTemplateRecord,
-  type SessionId, type UserId,
+  type SessionId, type UserId, type ArtifactId,
 } from "@lagda/application";
 import {
   WorkflowTemplateSchema, WorkflowTemplateWriteSchema, WorkflowTemplateListSchema,
-  type WorkflowTemplateWrite, type WorkspaceId,
+  WorkflowTemplateDocumentInputSchema,
+  type WorkflowTemplateWrite, type WorkflowTemplateDocumentInput,
+  type WorkspaceId, type DocumentId,
 } from "@lagda/contracts";
 import type { MetricsRecorder } from "../observability/metrics.js";
 
@@ -92,6 +106,8 @@ const present = (template: WorkflowTemplateRecord) => ({
   completionSettings: {
     notifySenderOnComplete: template.completionSettings.notifySenderOnComplete,
   },
+  documentId: template.documentId,
+  sourceArtifactId: template.sourceArtifactId,
   createdAt: iso(template.createdAt),
   updatedAt: iso(template.updatedAt),
 });
@@ -278,5 +294,61 @@ export function registerWorkflowTemplateRoutes(
     });
 
     return reply.status(204).send();
+  });
+
+  // ── Attach document (059) ──────────────────────────────────────────────
+  app.put("/workspaces/:workspaceId/workflow-templates/:workflowTemplateId/document", {
+    schema: {
+      params: TemplateParamsSchema,
+      body: WorkflowTemplateDocumentInputSchema,
+      response: { 200: WorkflowTemplateSchema },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await actorOf(request);
+    if (actor === null) return unauthenticated(reply);
+
+    const { workspaceId, workflowTemplateId } =
+      request.params as Static<typeof TemplateParamsSchema>;
+    const body = request.body as WorkflowTemplateDocumentInput;
+
+    const template = await attachWorkflowTemplateDocument(
+      actor, workspaceId as WorkspaceId, workflowTemplateId,
+      { documentId: body.documentId as DocumentId, artifactId: body.artifactId as ArtifactId },
+      options.workflowTemplateDependencies());
+
+    record(request, "workflow_template.document_attached", {
+      workspaceId, workflowTemplateId, actorUserId: actor.userId,
+    });
+
+    return reply.status(200).send(present(template));
+  });
+
+  // ── Detach document (059) ──────────────────────────────────────────────
+  //
+  // Removes the reference only. The document and its artifact are untouched
+  // and outlive it — exactly as they outlive a deleted signing request.
+  app.delete("/workspaces/:workspaceId/workflow-templates/:workflowTemplateId/document", {
+    schema: {
+      params: TemplateParamsSchema,
+      response: { 200: WorkflowTemplateSchema },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await actorOf(request);
+    if (actor === null) return unauthenticated(reply);
+
+    const { workspaceId, workflowTemplateId } =
+      request.params as Static<typeof TemplateParamsSchema>;
+
+    const template = await detachWorkflowTemplateDocument(
+      actor, workspaceId as WorkspaceId, workflowTemplateId,
+      options.workflowTemplateDependencies());
+
+    record(request, "workflow_template.document_detached", {
+      workspaceId, workflowTemplateId, actorUserId: actor.userId,
+    });
+
+    return reply.status(200).send(present(template));
   });
 }

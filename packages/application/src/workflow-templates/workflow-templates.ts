@@ -14,12 +14,20 @@
 //    somehow holds one fails loudly instead of producing a half-built routing
 //    configuration for a document somebody is about to send.
 //
-// 3. NO LIVE REFERENCE. Nothing in this module hands a caller a template id to
-//    keep. `resolveTemplateForApply` returns the SLOTS, already validated, for
-//    the caller to copy. Migration 058 keeps the same rule in the schema:
-//    nothing references this table.
+// 3. NO LIVE REFERENCE INTO this table. Nothing in this module hands a caller
+//    a template id to keep. `resolveTemplateForApply` returns the SLOTS,
+//    already validated, for the caller to copy. Migration 058 keeps the same
+//    rule in the schema: nothing references this table.
+//
+//    059 adds a reference the OTHER way — this table may point AT a document
+//    — which does not weaken the rule above. `resolveTemplateForApply` copies
+//    the (documentId, artifactId) pair the same way it copies slots: what a
+//    draft receives is a snapshot of where the document stood at apply time,
+//    not a live pointer to "this template's current document". Re-attaching
+//    a different document to the template afterwards cannot reach a draft
+//    already built from it, for the same reason editing a slot cannot.
 
-import type { WorkspaceId } from "@lagda/contracts";
+import type { WorkspaceId, DocumentId } from "@lagda/contracts";
 import {
   WORKFLOW_ROUTING_MODES, WORKFLOW_SLOT_AUTH_METHODS, RECIPIENT_TYPES,
   type WorkflowRoutingMode, type WorkflowRoleSlot,
@@ -33,6 +41,7 @@ import type { Clock, TransactionManager, WorkspaceUnitOfWork } from "../common/p
 import type {
   WorkflowTemplateIdGenerator, WorkflowTemplateRecord, RawWorkflowTemplateRow,
 } from "../common/ports/workflow-templates.js";
+import type { ArtifactId } from "../common/ports/evidence.js";
 import type { AuthenticatedActor } from "../common/ports/session.js";
 import { ApplicationError, ResourceNotFoundError } from "../common/errors/index.js";
 
@@ -70,6 +79,26 @@ export class WorkflowTemplateNameTakenError extends ApplicationError {
   constructor() {
     super("A workflow template with this name already exists in this workspace.");
     this.name = "WorkflowTemplateNameTakenError";
+  }
+}
+
+/**
+ * The (documentId, artifactId) pair given to `attachWorkflowTemplateDocument`
+ * does not describe one real thing.
+ *
+ * Two distinct ways this fires, both refused the same way rather than
+ * trusting the caller: the artifact does not belong to the document named
+ * (a stale or mismatched pair), or it is not the ORIGINAL upload — attaching
+ * a sealed output or a completion certificate would give a template a
+ * document nobody can place fields on.
+ */
+export class WorkflowTemplateDocumentMismatchError extends ApplicationError {
+  readonly category = "validation" as const;
+  readonly code = "workflow_template_document_mismatch";
+
+  constructor(readonly reason: string) {
+    super(`This document cannot be attached: ${reason}.`);
+    this.name = "WorkflowTemplateDocumentMismatchError";
   }
 }
 
@@ -249,6 +278,8 @@ export function parseStoredTemplate(row: RawWorkflowTemplateRow): WorkflowTempla
     createdBy: row.createdBy,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    documentId: row.documentId,
+    sourceArtifactId: row.sourceArtifactId,
   };
 }
 
@@ -305,6 +336,12 @@ export async function createWorkflowTemplate(
       createdBy: access.userId,
       createdAt: now,
       updatedAt: now,
+      // No document on creation. Attaching one is a separate act
+      // (`attachWorkflowTemplateDocument`) with its own capability check and
+      // its own verification that the artifact actually belongs to the
+      // document named — creation never receives either value to begin with.
+      documentId: null,
+      sourceArtifactId: null,
     };
 
     await uow.workflowTemplates.insert(record);
@@ -379,6 +416,11 @@ export async function updateWorkflowTemplate(
       createdBy: existing.createdBy,
       createdAt: existing.createdAt,
       updatedAt: now,
+      // Carried over, not touched. `update` (name/routing/slots) never writes
+      // these columns — a PUT to the template's shape must not silently
+      // detach its document as a side effect.
+      documentId: existing.documentId,
+      sourceArtifactId: existing.sourceArtifactId,
     };
   });
 }
@@ -393,6 +435,107 @@ export async function deleteWorkflowTemplate(
     await authorize(uow, actor, "template.delete");
     const removed = await uow.workflowTemplates.remove(workflowTemplateId);
     if (!removed) throw new ResourceNotFoundError("WorkflowTemplate");
+  });
+}
+
+// ── The template's document (059) ───────────────────────────────────────────
+
+export interface AttachWorkflowTemplateDocumentInput {
+  readonly documentId: DocumentId;
+  readonly artifactId: ArtifactId;
+}
+
+/**
+ * Points a template at an already-uploaded document.
+ *
+ * Takes an existing document and artifact — an id pair the caller obtained
+ * through the ordinary document-create-then-upload path — rather than a file.
+ * This use case does no uploading, no storage write and no virus scan; all of
+ * that already happened to produce the artifact being named here. Reusing
+ * that path rather than inventing a second one is the point: a template's
+ * document is stored exactly like any other document, and everything that
+ * already keeps an upload honest (validation, quarantine, the immutable
+ * artifact row) applies to it unchanged.
+ *
+ * `template.update` gates this, the same capability that gates the
+ * name/slots/routing write — attaching a document is editing the template,
+ * not a separate authority.
+ */
+export async function attachWorkflowTemplateDocument(
+  actor: AuthenticatedActor,
+  workspaceId: WorkspaceId,
+  workflowTemplateId: string,
+  input: AttachWorkflowTemplateDocumentInput,
+  deps: WorkflowTemplateDependencies,
+): Promise<WorkflowTemplateRecord> {
+  return deps.transactions.runForWorkspace(workspaceId, async uow => {
+    await authorize(uow, actor, "template.update");
+
+    const existing = await uow.workflowTemplates.find(workflowTemplateId);
+    if (existing === null) throw new ResourceNotFoundError("WorkflowTemplate");
+
+    // Both looked up in THIS workspace's transaction, so a cross-workspace id
+    // is indistinguishable from one that does not exist — RLS refuses the
+    // read before this function ever sees a row to compare.
+    const document = await uow.documents.findById(input.documentId);
+    if (document === null) throw new ResourceNotFoundError("Document");
+
+    const artifact = await uow.artifacts.find(input.artifactId);
+    if (artifact === null) throw new ResourceNotFoundError("Artifact");
+
+    // The pair must actually describe one real thing, and it must be the
+    // pristine upload — never trust a client-supplied pair by construction.
+    if (artifact.documentId !== input.documentId) {
+      throw new WorkflowTemplateDocumentMismatchError(
+        "the artifact does not belong to the document named");
+    }
+    if (artifact.artifactType !== "original") {
+      throw new WorkflowTemplateDocumentMismatchError(
+        "only the original upload can be attached to a template");
+    }
+
+    const updatedAt = deps.clock.now();
+    const changed = await uow.workflowTemplates.attachDocument(workflowTemplateId, {
+      documentId: input.documentId, artifactId: input.artifactId, updatedAt,
+    });
+    if (!changed) throw new ResourceNotFoundError("WorkflowTemplate");
+
+    return {
+      ...parseStoredTemplate(existing),
+      documentId: input.documentId,
+      sourceArtifactId: input.artifactId,
+      updatedAt,
+    };
+  });
+}
+
+/**
+ * Removes a template's document reference. The document and its artifact are
+ * untouched and continue to exist — this only stops the template pointing at
+ * them, exactly as deleting the template does (see 059's header).
+ */
+export async function detachWorkflowTemplateDocument(
+  actor: AuthenticatedActor,
+  workspaceId: WorkspaceId,
+  workflowTemplateId: string,
+  deps: WorkflowTemplateDependencies,
+): Promise<WorkflowTemplateRecord> {
+  return deps.transactions.runForWorkspace(workspaceId, async uow => {
+    await authorize(uow, actor, "template.update");
+
+    const existing = await uow.workflowTemplates.find(workflowTemplateId);
+    if (existing === null) throw new ResourceNotFoundError("WorkflowTemplate");
+
+    const updatedAt = deps.clock.now();
+    const changed = await uow.workflowTemplates.detachDocument(workflowTemplateId, updatedAt);
+    if (!changed) throw new ResourceNotFoundError("WorkflowTemplate");
+
+    return {
+      ...parseStoredTemplate(existing),
+      documentId: null,
+      sourceArtifactId: null,
+      updatedAt,
+    };
   });
 }
 
@@ -411,6 +554,17 @@ export interface WorkflowTemplateApplication {
   readonly routingMode: WorkflowRoutingMode;
   readonly roleSlots: readonly WorkflowRoleSlot[];
   readonly completionSettings: WorkflowCompletionSettings;
+  /**
+   * 059. `null` when the template has no document attached — the caller
+   * falls back to an empty Upload step, exactly as before this migration.
+   *
+   * This is a COPY of where the document stood at apply time, not a live
+   * pointer to the template (see the module header's note on 059). A draft
+   * built from it keeps this pair even if the template is later re-attached
+   * to a different document or deleted outright.
+   */
+  readonly documentId: DocumentId | null;
+  readonly sourceArtifactId: ArtifactId | null;
 }
 
 export async function resolveTemplateForApply(
@@ -424,5 +578,7 @@ export async function resolveTemplateForApply(
     routingMode: template.routingMode,
     roleSlots: template.roleSlots,
     completionSettings: template.completionSettings,
+    documentId: template.documentId,
+    sourceArtifactId: template.sourceArtifactId,
   };
 }

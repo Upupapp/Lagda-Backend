@@ -6,10 +6,11 @@
 // a repository bug cannot reach another tenant's row even if a query forgot
 // its filter.
 
-import type { WorkspaceId, UserId } from "@lagda/contracts";
+import type { WorkspaceId, UserId, DocumentId } from "@lagda/contracts";
 import type {
   WorkflowRoutingMode, WorkflowRoleSlot, WorkflowCompletionSettings,
 } from "@lagda/contracts";
+import type { ArtifactId } from "./evidence.js";
 
 /** The stored template, as the application reads it. */
 export interface WorkflowTemplateRecord {
@@ -30,6 +31,14 @@ export interface WorkflowTemplateRecord {
   readonly createdBy: UserId;
   readonly createdAt: number;
   readonly updatedAt: number;
+  /**
+   * 059. `null` until a document is attached — the routing shape alone is
+   * still a complete, useful template. Both fields are set together or not
+   * at all; `attachWorkflowTemplateDocument` is the only path that sets them,
+   * and it verifies the pair before writing (see that use case).
+   */
+  readonly documentId: DocumentId | null;
+  readonly sourceArtifactId: ArtifactId | null;
 }
 
 export interface NewWorkflowTemplate {
@@ -68,6 +77,8 @@ export interface RawWorkflowTemplateRow {
   readonly createdBy: UserId;
   readonly createdAt: number;
   readonly updatedAt: number;
+  readonly documentId: DocumentId | null;
+  readonly sourceArtifactId: ArtifactId | null;
 }
 
 export interface ScopedWorkflowTemplateRepository {
@@ -88,6 +99,21 @@ export interface ScopedWorkflowTemplateRepository {
    * constraint violation as a 500 — the index remains the actual guarantee.
    */
   nameExists(name: string, exceptId: string | null): Promise<boolean>;
+  /**
+   * Attaches a document and its exact artifact. `false` when no row matched.
+   *
+   * Both columns are written together — this is the only method that ever
+   * sets either one, which is what lets `WorkflowTemplateUpdate` (the
+   * name/routing/slots write path) stay silent about documents entirely: a
+   * PUT to the template never touches its attached document as a side
+   * effect.
+   */
+  attachDocument(
+    workflowTemplateId: string,
+    document: { documentId: DocumentId; artifactId: ArtifactId; updatedAt: number },
+  ): Promise<boolean>;
+  /** Clears both columns. `false` when no row matched. */
+  detachDocument(workflowTemplateId: string, updatedAt: number): Promise<boolean>;
 }
 
 export interface WorkflowTemplateIdGenerator {
