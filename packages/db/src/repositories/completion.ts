@@ -441,7 +441,7 @@ export function createCompletionInputRepository(
         .orderBy("v.request_field_id", "asc")
         .execute();
 
-      return rows.map(row => ({
+      const submitted = rows.map(row => ({
         fieldId: row.request_field_id,
         recipientId: row.request_recipient_id,
         fieldType: row.field_type,
@@ -449,6 +449,40 @@ export function createCompletionInputRepository(
         x: row.x, y: row.y, width: row.width, height: row.height,
         value: toRenderableValue(row),
       }));
+
+      // A static-value field (migration 062) has no row in
+      // `signing_field_values` — nobody submitted it, the sender already knew
+      // it — so it is invisible to the query above and must be read
+      // separately, straight off the immutable field snapshot.
+      const staticRows = await trx.selectFrom("signing_request_fields")
+        .select([
+          "request_field_id", "field_type", "page_number", "x", "y", "width", "height",
+          "static_value",
+        ])
+        .where("workspace_id", "=", scope)
+        .where("signing_request_id", "=", signingRequestId)
+        .where("static_value", "is not", null)
+        .orderBy("page_number", "asc")
+        .orderBy("request_field_id", "asc")
+        .execute();
+
+      const fromStatic = staticRows.map(row => {
+        if (row.static_value === null) {
+          // Excluded by the WHERE clause; narrows the type for the object below.
+          throw new Error("A static-value field query returned a null value.");
+        }
+        return {
+          fieldId: row.request_field_id,
+          recipientId: null,
+          fieldType: row.field_type,
+          pageNumber: row.page_number,
+          x: row.x, y: row.y, width: row.width, height: row.height,
+          value: { kind: "text" as const, text: row.static_value },
+        };
+      });
+
+      return [...submitted, ...fromStatic]
+        .sort((a, b) => a.pageNumber - b.pageNumber || (a.fieldId < b.fieldId ? -1 : 1));
     },
 
     async listCertifiedParticipants(signingRequestId) {

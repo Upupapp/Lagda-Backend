@@ -242,6 +242,14 @@ export interface PreparationFieldsTable {
    * NULL while a layout is being authored; readiness is what requires it.
    */
   recipient_id: ColumnType<string | null, string | null, string | null>;
+  /**
+   * A known value, set by the sender, requiring no recipient (migration 062).
+   *
+   * Mutually exclusive with `recipient_id` in the sense the application
+   * enforces, but NOT here: authoring permits any combination, the same as
+   * `recipient_id` itself is unconstrained at this layer.
+   */
+  static_value: ColumnType<string | null, string | null, string | null>;
 }
 
 /**
@@ -989,8 +997,14 @@ export interface SigningRequestFieldsTable {
   required: boolean;
   label: string;
   layer: number;
-  /** A recipient of THIS request. Enforced by a three-column foreign key. */
-  request_recipient_id: string;
+  /**
+   * A recipient of THIS request, enforced by a three-column foreign key — OR
+   * null when `static_value` is set instead (migration 062). Exactly one of
+   * the two is non-null, enforced by `signing_request_fields_completeness_check`.
+   */
+  request_recipient_id: ColumnType<string | null, string | null, string | null>;
+  /** A known value the sender supplied; needs no recipient (migration 062). */
+  static_value: ColumnType<string | null, string | null, string | null>;
   created_at: Timestamptz;
 }
 

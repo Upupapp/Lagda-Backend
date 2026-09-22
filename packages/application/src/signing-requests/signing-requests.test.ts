@@ -539,6 +539,64 @@ describe("an incoherent authoring state cannot become a workflow", () => {
   });
 });
 
+// ── Static-value fields (migration 062, BACKEND-30 Phase 4) ────────────────────
+
+describe("a field with a static value needs no recipient", () => {
+  const create = (h: Harness) => createSigningRequest(
+    { actor: actor(OWNER), workspaceId: h.workspaceId, documentId: DOC }, h.deps);
+
+  it("becomes ready and snapshots with no assignee", async () => {
+    const h = await harness();
+    const recipient = await ready(h);
+    const revision = h.store.preparations[0]?.revision ?? 1;
+    await saveDocumentPreparation(
+      actor(OWNER), h.workspaceId, DOC, {
+        expectedRevision: revision,
+        fields: [
+          signatureField(recipient.recipientId),
+          {
+            type: "text", pageNumber: 1,
+            rect: { x: 0.1, y: 0.4, width: 0.3, height: 0.05 },
+            required: true, label: "Client name", layer: 1,
+            recipientId: null, staticValue: "Acme Legal",
+          },
+        ],
+      }, h.prepDeps);
+
+    const created = await create(h);
+    expect(created.state).toBe("draft");
+    expect(created.fieldCount).toBe(2);
+
+    const staticField = h.store.signingRequestFields.find(
+      field => field.staticValue !== null);
+    expect(staticField?.staticValue).toBe("Acme Legal");
+    expect(staticField?.recipientId).toBeNull();
+  });
+
+  it("still refuses a field with neither a recipient nor a static value", async () => {
+    // Mutation coverage for the exact branch this feature touches: a
+    // static-value flag must not accidentally swallow the ordinary
+    // unassigned-field blocker.
+    const h = await harness();
+    const recipient = await ready(h);
+    const revision = h.store.preparations[0]?.revision ?? 1;
+    await saveDocumentPreparation(
+      actor(OWNER), h.workspaceId, DOC, {
+        expectedRevision: revision,
+        fields: [
+          signatureField(recipient.recipientId),
+          { ...signatureField(recipient.recipientId), type: "text", label: "Blank",
+            layer: 1, recipientId: null },
+        ],
+      }, h.prepDeps);
+
+    const failure = await create(h).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(PreparationNotReadyError);
+    expect((failure as PreparationNotReadyError).issues.join(" "))
+      .toContain("has no assigned recipient");
+  });
+});
+
 // ── Idempotency ──────────────────────────────────────────────────────────────
 
 describe("idempotency", () => {

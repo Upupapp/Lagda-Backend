@@ -112,6 +112,7 @@ suite("signing workflow concurrency (real PostgreSQL, runtime role)", () => {
         type: "text" as const, pageNumber: 1, x: 0.1, y: 0.1 * index,
         width: 0.2, height: 0.04, required: true,
         label: `F${String(index)}`, layer: 0, recipientId,
+        staticValue: null,
       });
 
       const snapshot: NewSigningRequestSnapshot = {

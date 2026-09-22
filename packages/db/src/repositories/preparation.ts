@@ -63,6 +63,7 @@ function toField(row: FieldRow): PreparationFieldRecord {
     label: row.label,
     layer: row.layer,
     recipientId: row.recipient_id as never,
+    staticValue: row.static_value,
   };
 }
 
@@ -165,6 +166,7 @@ export function createScopedPreparationRepository(
               label: field.label,
               layer: field.layer,
               recipient_id: field.recipientId,
+              static_value: field.staticValue,
             })),
           ).execute();
         }

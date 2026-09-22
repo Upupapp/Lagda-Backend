@@ -98,6 +98,7 @@ suite("document preparation (RLS, runtime role)", () => {
     label: "Landlord signature",
     layer: 0,
     recipientId: null,
+    staticValue: null,
     ...over,
   });
 

@@ -96,6 +96,13 @@ export const PREPARATION_MAX_FIELDS = 500;
  */
 export const PREPARATION_RECIPIENT_ID_MAX_LENGTH = 64;
 
+/**
+ * A static value's length bound, matching `SIGNING_TEXT_MAX_LENGTH` — the same
+ * ceiling a signer's own typed text is held to, since a static value ends up
+ * rendered exactly the same way (BACKEND-30's Phase 4).
+ */
+export const PREPARATION_STATIC_VALUE_MAX_LENGTH = 2_000;
+
 // ── Geometry ─────────────────────────────────────────────────────────────────
 
 /**
@@ -167,6 +174,16 @@ export const PreparationFieldSchema = Type.Object(
      */
     recipientId: Type.Union([
       Type.String({ minLength: 1, maxLength: PREPARATION_RECIPIENT_ID_MAX_LENGTH }),
+      Type.Null(),
+    ]),
+    /**
+     * A value the sender already knows, requiring no recipient (migration
+     * 062). Mutually exclusive with `recipientId` — the use case that writes
+     * this record enforces it. `null` when the field will be filled by a
+     * recipient instead.
+     */
+    staticValue: Type.Union([
+      Type.String({ maxLength: PREPARATION_STATIC_VALUE_MAX_LENGTH }),
       Type.Null(),
     ]),
   },

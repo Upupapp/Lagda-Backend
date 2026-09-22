@@ -426,7 +426,11 @@ export type RenderableValue =
 /** One accepted value, joined to the geometry the request froze. */
 export interface RenderableFieldRecord {
   readonly fieldId: string;
-  readonly recipientId: string;
+  /**
+   * Null for a static-value field (migration 062, BACKEND-30's Phase 4) —
+   * nobody submitted it, the sender already knew it.
+   */
+  readonly recipientId: string | null;
   /** The preparation field type, for provenance. The VALUE decides rendering. */
   readonly fieldType: string;
   /** 1-based, matching the product. */

@@ -116,6 +116,7 @@ suite("signing request send (RLS, runtime role)", () => {
             sourcePreparationFieldId: null, type: "signature", pageNumber: 1,
             x: 0.1, y: 0.2, width: 0.3, height: 0.05, required: true,
             label: "Signature", layer: 0, recipientId: recipientOf(ws),
+            staticValue: null,
           }],
         };
         await uow.signingRequests.createSnapshot(snapshot);

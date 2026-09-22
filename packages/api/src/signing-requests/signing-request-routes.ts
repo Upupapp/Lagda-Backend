@@ -178,6 +178,7 @@ const present = (request: SigningRequestView) => ({
     label: field.label,
     layer: field.layer,
     recipientId: field.recipientId,
+    staticValue: field.staticValue,
   })),
   createdAt: iso(request.createdAt),
 });

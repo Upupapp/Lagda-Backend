@@ -205,6 +205,7 @@ suite("completion pipeline (real Postgres + pg-boss + MinIO)", () => {
           type: "text" as const, pageNumber: 1, x: 0.1, y: 0.1,
           width: 0.2, height: 0.04, required: true, label: "F1", layer: 0,
           recipientId: R1,
+          staticValue: null,
         }],
       };
       await uow.signingRequests.createSnapshot(snapshot);

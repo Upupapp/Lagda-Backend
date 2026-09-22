@@ -91,12 +91,16 @@ export interface SigningRequestFieldRecord {
   readonly label: string;
   readonly layer: number;
   /**
-   * A recipient of THIS request. Never null.
+   * A recipient of THIS request, or null when `staticValue` answers the field
+   * instead (migration 062, BACKEND-30's Phase 4).
    *
-   * Preparation permits an unassigned field while authoring. A workflow cannot:
-   * nobody could complete it. Readiness refuses to snapshot one.
+   * Preparation permits an unassigned field while authoring. A workflow cannot,
+   * UNLESS the field already carries its value: nobody needs to complete it.
+   * Readiness refuses to snapshot the third state — no recipient AND no value.
    */
-  readonly recipientId: SigningRequestRecipientId;
+  readonly recipientId: SigningRequestRecipientId | null;
+  /** A value the sender already knew; mutually exclusive with `recipientId`. */
+  readonly staticValue: string | null;
 }
 
 export interface SigningRequestRecord {

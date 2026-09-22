@@ -23,7 +23,9 @@
 
 import { Type, type Static } from "@sinclair/typebox";
 import { RecipientTypeSchema } from "../recipients/index.js";
-import { PreparationFieldTypeSchema, PreparationRectSchema } from "../preparation/index.js";
+import {
+  PreparationFieldTypeSchema, PreparationRectSchema, PREPARATION_STATIC_VALUE_MAX_LENGTH,
+} from "../preparation/index.js";
 
 // ── State ────────────────────────────────────────────────────────────────────
 
@@ -267,10 +269,13 @@ export type SigningRequestRecipient = Static<typeof SigningRequestRecipientSchem
 /**
  * A field, as snapshotted onto a request.
  *
- * `recipientId` is NOT nullable here, unlike the preparation field it came
- * from. An unassigned field is a legitimate authoring state and an impossible
- * workflow state — nobody could complete it — so readiness refuses to snapshot
- * one and the column is `NOT NULL`.
+ * `recipientId` was NOT nullable here, unlike the preparation field it came
+ * from — an unassigned field was a legitimate authoring state and an
+ * impossible workflow state, so readiness refused to snapshot one. Migration
+ * 062 added a second way a field can be complete without a recipient: it
+ * already carries its value. `recipientId` is null exactly when `staticValue`
+ * is not, never both, never neither — readiness still refuses the case where
+ * neither is set.
  */
 export const SigningRequestFieldSchema = Type.Object(
   {
@@ -284,8 +289,16 @@ export const SigningRequestFieldSchema = Type.Object(
     required: Type.Boolean(),
     label: Type.String(),
     layer: Type.Integer({ minimum: 0 }),
-    /** A recipient of THIS request. Always present. */
-    recipientId: Type.String({ minLength: 1, maxLength: 64 }),
+    /** A recipient of THIS request, or null when `staticValue` is set. */
+    recipientId: Type.Union([
+      Type.String({ minLength: 1, maxLength: 64 }),
+      Type.Null(),
+    ]),
+    /** A value the sender already knew; mutually exclusive with `recipientId`. */
+    staticValue: Type.Union([
+      Type.String({ maxLength: PREPARATION_STATIC_VALUE_MAX_LENGTH }),
+      Type.Null(),
+    ]),
   },
   { title: "SigningRequestField", additionalProperties: false },
 );

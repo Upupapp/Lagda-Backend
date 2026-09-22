@@ -32,7 +32,7 @@ import {
 import {
   DocumentPreparationSchema, PreparationFieldTypeSchema, PreparationRectSchema,
   PREPARATION_FIELD_LABEL_MAX_LENGTH, PREPARATION_MAX_FIELDS,
-  PREPARATION_RECIPIENT_ID_MAX_LENGTH,
+  PREPARATION_RECIPIENT_ID_MAX_LENGTH, PREPARATION_STATIC_VALUE_MAX_LENGTH,
   type DocumentId, type WorkspaceId,
 } from "@lagda/contracts";
 import type { MetricsRecorder } from "../observability/metrics.js";
@@ -84,6 +84,14 @@ const FieldInputSchema = Type.Object({
    */
   recipientId: Type.Optional(Type.Union([
     Type.String({ minLength: 1, maxLength: PREPARATION_RECIPIENT_ID_MAX_LENGTH }),
+    Type.Null(),
+  ])),
+  /**
+   * A value the sender already knows, requiring no recipient. Optional on the
+   * wire, same as `recipientId` — the use case rejects setting both.
+   */
+  staticValue: Type.Optional(Type.Union([
+    Type.String({ maxLength: PREPARATION_STATIC_VALUE_MAX_LENGTH }),
     Type.Null(),
   ])),
 }, { additionalProperties: false });
@@ -148,6 +156,7 @@ const present = (preparation: PreparationView) => ({
     label: field.label,
     layer: field.layer,
     recipientId: field.recipientId,
+    staticValue: field.staticValue,
   })),
   createdAt: iso(preparation.createdAt),
   updatedAt: iso(preparation.updatedAt),
