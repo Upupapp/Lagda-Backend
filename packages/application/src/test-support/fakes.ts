@@ -102,6 +102,10 @@ import type {
   SigningRequestIdGenerator, SigningRequestListFilter,
 } from "../common/ports/signing-requests.js";
 import type {
+  ScopedWorkflowTemplateRepository, WorkflowTemplateRecord, RawWorkflowTemplateRow,
+  WorkflowTemplateIdGenerator,
+} from "../common/ports/workflow-templates.js";
+import type {
   UserSigningRecordsRepository, UserSignedDocumentRecord, UserSigningInboxRecord,
   SigningResumeIntentRepository, SigningResumeIntentRecord,
 } from "../common/ports/user-signing-records.js";
@@ -142,6 +146,13 @@ export class SequentialContactIds implements ContactIdGenerator {
   private next = 1;
   nextContactId(): ContactId {
     return `con_${String(this.next++)}` as ContactId;
+  }
+}
+
+export class SequentialWorkflowTemplateIds implements WorkflowTemplateIdGenerator {
+  private next = 1;
+  nextWorkflowTemplateId(): string {
+    return `wft_${String(this.next++)}`;
   }
 }
 
@@ -394,6 +405,7 @@ interface StoreSnapshot {
   readonly invitations: WorkspaceInvitationRecord[];
   readonly invitationDigests: Map<string, string>;
   readonly contacts: ContactRecord[];
+  readonly workflowTemplates: WorkflowTemplateRecord[];
   readonly documents: DocumentRecord[];
   readonly folders: FolderRecord[];
   readonly preparations: PreparationRecord[];
@@ -439,6 +451,7 @@ export class InMemoryStore {
   readonly notificationIntents = new Map<string, NotificationIntentRecord>();
   readonly notificationDeliveries = new Map<string, NotificationDeliveryRecord>();
   contacts: ContactRecord[] = [];
+  workflowTemplates: WorkflowTemplateRecord[] = [];
   documents: DocumentRecord[] = [];
   folders: FolderRecord[] = [];
   preparations: PreparationRecord[] = [];
@@ -483,6 +496,7 @@ export class InMemoryStore {
 
   snapshot(): StoreSnapshot {
     return {
+      workflowTemplates: [...this.workflowTemplates],
       workspaces: new Map(this.workspaces),
       uploads: new Map(this.uploads),
       memberships: [...this.memberships],
@@ -953,6 +967,67 @@ function scopedInvitations(
  * A fake stricter than the schema would hide the duplicate-warning behaviour
  * the product asked for.
  */
+/**
+ * Migration 058's templates, in memory.
+ *
+ * Stores the RECORD shape and hands back the RAW shape, because that is what
+ * the real repository does: the JSONB columns are returned unparsed and the
+ * use case validates them. A fake that returned pre-validated slots would
+ * make `parseStoredTemplate` untested on the path that matters most — a row
+ * whose slots are malformed.
+ */
+function scopedWorkflowTemplates(
+  store: InMemoryStore, scope: WorkspaceId,
+): ScopedWorkflowTemplateRepository {
+  const inScope = () => store.workflowTemplates.filter(t => t.workspaceId === scope);
+  const raw = (t: WorkflowTemplateRecord): RawWorkflowTemplateRow => ({
+    workflowTemplateId: t.workflowTemplateId,
+    workspaceId: t.workspaceId,
+    name: t.name,
+    routingMode: t.routingMode,
+    roleSlots: t.roleSlots,
+    completionSettings: t.completionSettings,
+    createdBy: t.createdBy,
+    createdAt: t.createdAt,
+    updatedAt: t.updatedAt,
+  });
+  const key = (name: string) => name.trim().toLowerCase();
+
+  return {
+    insert: template => {
+      store.workflowTemplates.push({ ...template, updatedAt: template.createdAt });
+      return Promise.resolve();
+    },
+    find: id => Promise.resolve(
+      inScope().map(raw).find(t => t.workflowTemplateId === id) ?? null),
+    list: () => Promise.resolve(
+      [...inScope()].sort((a, b) => b.updatedAt - a.updatedAt).map(raw)),
+    update: (id, update) => {
+      const index = store.workflowTemplates.findIndex(
+        t => t.workspaceId === scope && t.workflowTemplateId === id);
+      if (index < 0) return Promise.resolve(false);
+      store.workflowTemplates[index] = {
+        ...store.workflowTemplates[index]!,
+        name: update.name,
+        routingMode: update.routingMode,
+        roleSlots: update.roleSlots,
+        completionSettings: update.completionSettings,
+        updatedAt: update.updatedAt,
+      };
+      return Promise.resolve(true);
+    },
+    remove: id => {
+      const index = store.workflowTemplates.findIndex(
+        t => t.workspaceId === scope && t.workflowTemplateId === id);
+      if (index < 0) return Promise.resolve(false);
+      store.workflowTemplates.splice(index, 1);
+      return Promise.resolve(true);
+    },
+    nameExists: (name, exceptId) => Promise.resolve(inScope().some(
+      t => key(t.name) === key(name) && t.workflowTemplateId !== exceptId)),
+  };
+}
+
 function scopedContacts(store: InMemoryStore, scope: WorkspaceId): ScopedContactRepository {
   const inScope = () => store.contacts.filter(c => c.workspaceId === scope);
 
@@ -2710,6 +2785,7 @@ export class FakeTransactionManager implements TransactionManager {
         actorProfiles: { displayNameOf: () => Promise.resolve(null) },
         userSigningRecords: userSigningRecords(),
         accountLinks: signingAccountLinks(),
+        workflowTemplates: scopedWorkflowTemplates(this.store, workspaceId),
         organizationUnits: scopedOrganizationUnits(this.store, workspaceId),
         workspaces: scopedWorkspaces(this.store, workspaceId),
         memberships: scopedMemberships(this.store, workspaceId),
@@ -2792,6 +2868,7 @@ export class FakeTransactionManager implements TransactionManager {
           this.scopes.push(workspaceId);
           return inner({
             workspaceId,
+            workflowTemplates: scopedWorkflowTemplates(store, workspaceId),
             actorProfiles: { displayNameOf: () => Promise.resolve(null) },
             userSigningRecords: userSigningRecords(),
             accountLinks: signingAccountLinks(),

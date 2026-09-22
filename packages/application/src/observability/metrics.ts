@@ -41,6 +41,8 @@ export const METRIC_NAMES = [
   "workspace_member_operations_total",
   // BACKEND-28. Address-book writes — created, updated, archived, restored.
   "contact_operations_total",
+  // Migration 058. Workflow-template writes — created, updated, deleted.
+  "workflow_template_operations_total",
   // BACKEND-29. Document writes — created, renamed.
   "document_operations_total",
   // BACKEND-30. Preparation layout saves.
@@ -130,6 +132,11 @@ export const METRIC_LABELS = {
   // longer and read more widely than a log, and the address belongs to a
   // counterparty who is not a LAGDA user and consented to nothing.
   contact_operations_total: ["operation", "result", "processRole"],
+  // `operation` is a three-value union in code. Deliberately NOT the template
+  // NAME or any slot label: a label names the role a counterparty plays
+  // ("Acme's Legal Approver"), which is business data, and a metrics store is
+  // retained longer and read more widely than a log.
+  workflow_template_operations_total: ["operation", "result", "processRole"],
   // `operation` is a two-value union in code and `result` is an outcome.
   // Deliberately NOT `documentId`, `workspaceId`, `artifactId`, the TITLE or the
   // original filename. The first three are unbounded; the last two are a legal

@@ -1,0 +1,282 @@
+// The workflow-template surface (migration 058).
+//
+//   GET    /workspaces/:id/workflow-templates
+//   POST   /workspaces/:id/workflow-templates
+//   GET    /workspaces/:id/workflow-templates/:templateId
+//   PUT    /workspaces/:id/workflow-templates/:templateId
+//   DELETE /workspaces/:id/workflow-templates/:templateId
+//
+// Registered inside the authenticated workspace scope, so `requireSession`
+// has already run its CSRF hook — the same position the contact routes take,
+// and the reason neither file validates CSRF itself.
+//
+// ── Authorization is the use case's, not this file's ──────────────────────
+//
+// No route here compares a role or reads a membership. Each use case resolves
+// the actor's current authority inside its own transaction and asserts a
+// capability; an architecture test forbids role comparisons in route files.
+
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { Type, type Static } from "@sinclair/typebox";
+import {
+  createWorkflowTemplate, listWorkflowTemplates, getWorkflowTemplate,
+  updateWorkflowTemplate, deleteWorkflowTemplate,
+  WorkflowTemplateNameTakenError,
+  type WorkflowTemplateDependencies, type WorkflowTemplateRecord,
+  type SessionId, type UserId,
+} from "@lagda/application";
+import {
+  WorkflowTemplateSchema, WorkflowTemplateWriteSchema, WorkflowTemplateListSchema,
+  type WorkflowTemplateWrite, type WorkspaceId,
+} from "@lagda/contracts";
+import type { MetricsRecorder } from "../observability/metrics.js";
+
+// ── Schemas ─────────────────────────────────────────────────────────────────
+
+const WorkspaceParamsSchema = Type.Object({
+  workspaceId: Type.String({ minLength: 1, maxLength: 64 }),
+});
+
+const TemplateParamsSchema = Type.Object({
+  workspaceId: Type.String({ minLength: 1, maxLength: 64 }),
+  workflowTemplateId: Type.String({ minLength: 1, maxLength: 64 }),
+});
+
+// ── Options ─────────────────────────────────────────────────────────────────
+
+export interface WorkflowTemplateRouteOptions {
+  readonly authenticatedUser: (request: FastifyRequest) => Promise<{
+    readonly userId: UserId;
+    readonly sessionId: SessionId;
+  } | null>;
+  readonly workflowTemplateDependencies: () => WorkflowTemplateDependencies;
+  readonly metrics?: MetricsRecorder;
+}
+
+/**
+ * A template names the roles a workspace routes its documents through. It is
+ * workspace configuration, and belongs in no shared cache.
+ */
+function noStore(reply: FastifyReply): void {
+  void reply.header("Cache-Control", "no-store");
+  void reply.header("Pragma", "no-cache");
+}
+
+function unauthenticated(reply: FastifyReply): FastifyReply {
+  return reply.status(401).send({
+    error: { code: "AUTHENTICATION_REQUIRED", message: "Sign in to continue." },
+  });
+}
+
+const iso = (ms: number): string => new Date(ms).toISOString();
+
+/**
+ * What leaves the backend.
+ *
+ * `createdBy` and `workspaceId` are deliberately absent. The workspace is in
+ * the path the caller already used, and the author's user id is an internal
+ * identifier a template UI has no use for — a display name would be a
+ * different feature with its own lookup.
+ */
+const present = (template: WorkflowTemplateRecord) => ({
+  workflowTemplateId: template.workflowTemplateId,
+  name: template.name,
+  routingMode: template.routingMode,
+  roleSlots: template.roleSlots.map(slot => ({
+    label: slot.label,
+    role: slot.role,
+    required: slot.required,
+    routingStep: slot.routingStep,
+    defaultAuthMethod: slot.defaultAuthMethod,
+  })),
+  completionSettings: {
+    notifySenderOnComplete: template.completionSettings.notifySenderOnComplete,
+  },
+  createdAt: iso(template.createdAt),
+  updatedAt: iso(template.updatedAt),
+});
+
+export function registerWorkflowTemplateRoutes(
+  app: FastifyInstance,
+  options: WorkflowTemplateRouteOptions,
+): void {
+  const metrics = options.metrics;
+  // The same adapter the contact routes use: the application's actor carries
+  // an `actorType`, and a route must not invent one per call site.
+  const actorOf = async (request: FastifyRequest) => {
+    const actor = await options.authenticatedUser(request);
+    return actor === null
+      ? null
+      : { actorType: "user" as const, userId: actor.userId, sessionId: actor.sessionId };
+  };
+
+  const record = (request: FastifyRequest, event: string, fields: Record<string, unknown>) => {
+    // Ids and counts only. A template's NAME is business data and its slot
+    // labels can name a counterparty's role — neither belongs in a log line.
+    request.log.info({ event, ...fields }, event);
+    metrics?.increment("workflow_template_operations_total", {
+      operation: event.slice("workflow_template.".length),
+      result: "success",
+      processRole: "api",
+    });
+  };
+
+  /**
+   * A name already in use is a 409, not a 422.
+   *
+   * The body was well-formed and the caller may retry with a different name —
+   * which is exactly what `conflict` means in the API conventions. Everything
+   * else (a malformed slot, an unknown routing mode) is the application's
+   * `validation` category and reaches the shared error mapper as a 422.
+   */
+  const withNameConflict = async (
+    reply: FastifyReply, run: () => Promise<FastifyReply>,
+  ): Promise<FastifyReply> => {
+    try {
+      return await run();
+    } catch (error) {
+      if (error instanceof WorkflowTemplateNameTakenError) {
+        return reply.status(409).send({
+          error: { code: "WORKFLOW_TEMPLATE_NAME_TAKEN", message: error.message },
+        });
+      }
+      throw error;
+    }
+  };
+
+  // ── List ────────────────────────────────────────────────────────────────
+  app.get("/workspaces/:workspaceId/workflow-templates", {
+    schema: {
+      params: WorkspaceParamsSchema,
+      response: { 200: WorkflowTemplateListSchema },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await actorOf(request);
+    if (actor === null) return unauthenticated(reply);
+
+    const { workspaceId } = request.params as Static<typeof WorkspaceParamsSchema>;
+    const templates = await listWorkflowTemplates(
+      actor, workspaceId as WorkspaceId, options.workflowTemplateDependencies());
+
+    return reply.status(200).send({ items: templates.map(present) });
+  });
+
+  // ── Create ──────────────────────────────────────────────────────────────
+  app.post("/workspaces/:workspaceId/workflow-templates", {
+    schema: {
+      params: WorkspaceParamsSchema,
+      body: WorkflowTemplateWriteSchema,
+      response: { 201: WorkflowTemplateSchema },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await actorOf(request);
+    if (actor === null) return unauthenticated(reply);
+
+    const { workspaceId } = request.params as Static<typeof WorkspaceParamsSchema>;
+    const body = request.body as WorkflowTemplateWrite;
+
+    return withNameConflict(reply, async () => {
+      const template = await createWorkflowTemplate(
+        actor, workspaceId as WorkspaceId, body,
+        options.workflowTemplateDependencies());
+
+      record(request, "workflow_template.created", {
+        workspaceId,
+        workflowTemplateId: template.workflowTemplateId,
+        actorUserId: actor.userId,
+        slotCount: template.roleSlots.length,
+      });
+
+      void reply.header("Location",
+        `/workspaces/${workspaceId}/workflow-templates/${template.workflowTemplateId}`);
+      return reply.status(201).send(present(template));
+    });
+  });
+
+  // ── Get one ─────────────────────────────────────────────────────────────
+  app.get("/workspaces/:workspaceId/workflow-templates/:workflowTemplateId", {
+    schema: {
+      params: TemplateParamsSchema,
+      response: { 200: WorkflowTemplateSchema },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await actorOf(request);
+    if (actor === null) return unauthenticated(reply);
+
+    const { workspaceId, workflowTemplateId } =
+      request.params as Static<typeof TemplateParamsSchema>;
+
+    const template = await getWorkflowTemplate(
+      actor, workspaceId as WorkspaceId, workflowTemplateId,
+      options.workflowTemplateDependencies());
+
+    return reply.status(200).send(present(template));
+  });
+
+  // ── Update ──────────────────────────────────────────────────────────────
+  //
+  // PUT, not PATCH: a template is replaced wholesale. A partial update of an
+  // ordered slot list has no obvious meaning — "change slot 2" and "insert a
+  // slot before 2" are the same request shape — and the editor holds the whole
+  // template anyway.
+  app.put("/workspaces/:workspaceId/workflow-templates/:workflowTemplateId", {
+    schema: {
+      params: TemplateParamsSchema,
+      body: WorkflowTemplateWriteSchema,
+      response: { 200: WorkflowTemplateSchema },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await actorOf(request);
+    if (actor === null) return unauthenticated(reply);
+
+    const { workspaceId, workflowTemplateId } =
+      request.params as Static<typeof TemplateParamsSchema>;
+    const body = request.body as WorkflowTemplateWrite;
+
+    return withNameConflict(reply, async () => {
+      const template = await updateWorkflowTemplate(
+        actor, workspaceId as WorkspaceId, workflowTemplateId, body,
+        options.workflowTemplateDependencies());
+
+      record(request, "workflow_template.updated", {
+        workspaceId,
+        workflowTemplateId,
+        actorUserId: actor.userId,
+        slotCount: template.roleSlots.length,
+      });
+
+      return reply.status(200).send(present(template));
+    });
+  });
+
+  // ── Delete ──────────────────────────────────────────────────────────────
+  //
+  // A real delete, unlike a contact's archive. Nothing references a template
+  // (migration 058 keeps it that way), so removing one orphans no record of
+  // anything that happened — and a draft already built from it holds its own
+  // copy of the slots, so nothing it produced changes either.
+  app.delete("/workspaces/:workspaceId/workflow-templates/:workflowTemplateId", {
+    schema: { params: TemplateParamsSchema, response: { 204: Type.Null() } },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await actorOf(request);
+    if (actor === null) return unauthenticated(reply);
+
+    const { workspaceId, workflowTemplateId } =
+      request.params as Static<typeof TemplateParamsSchema>;
+
+    await deleteWorkflowTemplate(
+      actor, workspaceId as WorkspaceId, workflowTemplateId,
+      options.workflowTemplateDependencies());
+
+    record(request, "workflow_template.deleted", {
+      workspaceId, workflowTemplateId, actorUserId: actor.userId,
+    });
+
+    return reply.status(204).send();
+  });
+}

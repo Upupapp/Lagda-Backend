@@ -297,6 +297,10 @@ export async function truncateAll(database: LagdaDatabase): Promise<void> {
   await database.db.deleteFrom("workspace_invitations").execute();
   // Contacts reference `workspaces` ON DELETE RESTRICT, so they go before it.
   await database.db.deleteFrom("contacts").execute();
+  // Workflow templates (migration 058) reference `workspaces` and `users`, both
+  // ON DELETE RESTRICT. Nothing references THEM — that is the snapshot rule —
+  // so they need no ordering among themselves.
+  await database.db.deleteFrom("workspace_workflow_templates").execute();
   await database.db.deleteFrom("workspace_memberships").execute();
   await database.db.deleteFrom("workspaces").execute();
 

@@ -409,6 +409,26 @@ export interface PreparedSignaturesTable {
 }
 
 /** Migration 055. Written once at submission, read only by its owner. */
+/**
+ * Migration 058. A reusable workflow shape: named role slots, not people.
+ *
+ * `role_slots` and `completion_notification_settings` are JSONB the
+ * application validates on write AND on apply — PostgreSQL checks only that
+ * they are a non-empty array and an object respectively.
+ */
+export interface WorkspaceWorkflowTemplatesTable {
+  workflow_template_id: string;
+  workspace_id: string;
+  name: string;
+  /** `parallel` | `sequential` | `mixed` | `approval-based`. CHECK-constrained. */
+  routing_mode: string;
+  role_slots: ColumnType<unknown, string, string>;
+  completion_notification_settings: ColumnType<unknown, string, string>;
+  created_by: string;
+  created_at: Timestamptz;
+  updated_at: Timestamptz;
+}
+
 export interface UserSignedDocumentsTable {
   user_id: string;
   signing_request_id: string;
@@ -1460,6 +1480,7 @@ export interface Database {
   signing_representations: SigningRepresentationsTable;
   user_signatures: UserSignaturesTable;
   prepared_signatures: PreparedSignaturesTable;
+  workspace_workflow_templates: WorkspaceWorkflowTemplatesTable;
   user_signed_documents: UserSignedDocumentsTable;
   user_signing_inbox: UserSigningInboxTable;
   signing_resume_intents: SigningResumeIntentsTable;

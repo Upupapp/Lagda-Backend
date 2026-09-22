@@ -46,6 +46,7 @@ import {
 } from "../workspaces/invitation-routes.js";
 import { registerMemberRoutes } from "../workspaces/member-routes.js";
 import { registerContactRoutes } from "../contacts/contact-routes.js";
+import { registerWorkflowTemplateRoutes } from "../workflow-templates/workflow-template-routes.js";
 import { registerDocumentRoutes } from "../documents/document-routes.js";
 import { registerFolderRoutes } from "../folders/folder-routes.js";
 import { registerPreparationRoutes } from "../preparation/preparation-routes.js";
@@ -473,6 +474,25 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
               : null,
           ),
           contactDependencies: contacts,
+          metrics,
+        });
+      }
+
+      // Inside the same scope, for the same reason: a template names the
+      // roles a workspace routes its documents through, and its slot labels
+      // can name a counterparty's role. Nothing here is safe anonymously.
+      if (workspaces.workflowTemplates !== undefined) {
+        const workflowTemplates = workspaces.workflowTemplates;
+        registerWorkflowTemplateRoutes(scope, {
+          authenticatedUser: (request: FastifyRequest) => Promise.resolve(
+            request.auth.status === "authenticated"
+              ? {
+                  userId: request.auth.actor.userId,
+                  sessionId: request.auth.actor.sessionId,
+                }
+              : null,
+          ),
+          workflowTemplateDependencies: workflowTemplates,
           metrics,
         });
       }

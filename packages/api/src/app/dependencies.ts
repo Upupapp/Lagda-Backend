@@ -24,6 +24,7 @@ import type {
   CompletedArtifactDependencies,
   SigningCeremonyDependencies, SigningSubmissionDependencies,
   SigningDeclineDependencies, SigningWorkflowDependencies,
+  WorkflowTemplateDependencies,
   AuditTrailDependencies, OrganizationDependencies,
 } from "@lagda/application";
 
@@ -185,6 +186,11 @@ export interface WorkspaceDependencies {
    * `restore` without `archive`, which reads as harmless and is not.
    */
   readonly contacts?: () => ContactDependencies;
+  /**
+   * Reusable workflow templates (migration 058). Absent means the routes do
+   * not exist, the same convention every other optional surface here uses.
+   */
+  readonly workflowTemplates?: () => WorkflowTemplateDependencies;
   /**
    * Documents (BACKEND-29).
    *

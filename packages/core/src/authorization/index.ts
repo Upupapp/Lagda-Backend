@@ -229,6 +229,52 @@ export const WORKSPACE_CAPABILITIES = [
   "unit.update",
   "unit.archive",
   "unit.member.manage",
+
+  /**
+   * ── Reusable workflow templates (migration 058) ──────────────────────────
+   *
+   * A template is workspace CONFIGURATION: named role slots and the routing
+   * shape a workspace reuses instead of rebuilding it per document.
+   *
+   * ── Why these are new capabilities rather than `manage_templates` ────────
+   *
+   * `manage_templates` is a FRONTEND `PlatformPermission`; it has never
+   * existed server-side. What did exist here was the `template_administrator`
+   * ROLE, whose own comment below said its template powers were "still
+   * absent" — a role named for a resource that had no capability to govern.
+   * These four close that gap in this file's own idiom (`resource.verb`,
+   * mirroring `contact.*`) rather than importing the frontend's permission
+   * vocabulary into the authorization core, where nothing else speaks it.
+   *
+   * ── Read is separated from write, deliberately ──────────────────────────
+   *
+   * Applying a template is a SENDER's act — it pre-fills the participants and
+   * routing of a document they are preparing. Authoring one is administration.
+   * `contact.*` already draws exactly this line and for the same reason: the
+   * role a feature exists FOR at use-time is not the role that maintains it.
+   *
+   * The frontend's `manage_templates` is held by owner, administrator and
+   * template_administrator, and today its nav gate means a `sender` cannot
+   * reach the Templates pages at all. `template.view` is granted to `sender`
+   * anyway, because the apply path is server-authorized independently of
+   * which pages the current frontend happens to show — and a capability that
+   * matched a nav gate rather than the operation would be wrong the moment
+   * that gate moved.
+   */
+  /** Read the workspace's workflow templates. */
+  "template.view",
+  /** Author a new template. */
+  "template.create",
+  /** Edit an existing template. */
+  "template.update",
+  /**
+   * Remove a template.
+   *
+   * A real delete, unlike `contact.archive`: nothing references a template
+   * (migration 058 keeps it that way on purpose), so removing one orphans no
+   * record of anything that happened.
+   */
+  "template.delete",
 ] as const;
 
 export type WorkspaceCapability = (typeof WORKSPACE_CAPABILITIES)[number];
@@ -294,6 +340,10 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "unit.update",
       "unit.archive",
       "unit.member.manage",
+      "template.view",
+      "template.create",
+      "template.update",
+      "template.delete",
     ] as const),
 
     /**
@@ -332,6 +382,10 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "unit.update",
       "unit.archive",
       "unit.member.manage",
+      "template.view",
+      "template.create",
+      "template.update",
+      "template.delete",
     ] as const),
 
     /**
@@ -368,12 +422,18 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
     /**
      * Template administration, plus the address book.
      *
-     * Its main powers are over templates (BACKEND-47) and are still absent. The
-     * product's `role_template_administrator` set includes `manage_contacts`,
-     * so the four contact capabilities are real today — this role administers
-     * no members and no invitations and can still maintain the address book.
+     * Its main powers are over templates, and they are real as of migration
+     * 058: this role holds all four `template.*` capabilities. The product's
+     * `role_template_administrator` set also includes `manage_contacts`, so
+     * the four contact capabilities are real too — this role administers no
+     * members and no invitations, and still maintains both the address book
+     * and the workspace's reusable workflows.
      */
     template_administrator: Object.freeze([
+      "template.view",
+      "template.create",
+      "template.update",
+      "template.delete",
       "workspace.view",
       "contact.view",
       "contact.create",
@@ -397,6 +457,9 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
      * that contacts are not an administrative feature.
      */
     sender: Object.freeze([
+      // Read only. A sender APPLIES a template when preparing a document;
+      // authoring one is administration (see the capability's own comment).
+      "template.view",
       "workspace.view",
       "contact.view",
       "contact.create",

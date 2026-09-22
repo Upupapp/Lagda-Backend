@@ -1609,6 +1609,30 @@
                             "enum": [
                               "unit.member.manage"
                             ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "template.view"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "template.create"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "template.update"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "template.delete"
+                            ]
                           }
                         ]
                       }
