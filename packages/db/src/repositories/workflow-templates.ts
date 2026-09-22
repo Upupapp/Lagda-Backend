@@ -10,10 +10,10 @@
 // case, which owns the error a caller sees.
 
 import { sql, type Transaction } from "kysely";
-import type { WorkspaceId, UserId } from "@lagda/contracts";
+import type { WorkspaceId, UserId, DocumentId } from "@lagda/contracts";
 import type {
   ScopedWorkflowTemplateRepository, NewWorkflowTemplate,
-  WorkflowTemplateUpdate, RawWorkflowTemplateRow,
+  WorkflowTemplateUpdate, RawWorkflowTemplateRow, ArtifactId,
 } from "@lagda/application";
 import type { Database } from "../schema/index.js";
 import { WorkspaceScopeMismatchError, translatePersistenceError } from "../errors.js";
@@ -28,6 +28,8 @@ interface Row {
   created_by: string;
   created_at: Date;
   updated_at: Date;
+  document_id: string | null;
+  source_artifact_id: string | null;
 }
 
 /**
@@ -55,6 +57,8 @@ const toRaw = (row: Row): RawWorkflowTemplateRow => ({
   createdBy: row.created_by as UserId,
   createdAt: row.created_at.getTime(),
   updatedAt: row.updated_at.getTime(),
+  documentId: row.document_id as DocumentId | null,
+  sourceArtifactId: row.source_artifact_id as ArtifactId | null,
 });
 
 export function createScopedWorkflowTemplateRepository(
@@ -149,6 +153,35 @@ export function createScopedWorkflowTemplateRepository(
       }
       const row = await query.executeTakeFirst();
       return row !== undefined;
+    },
+
+    async attachDocument(workflowTemplateId, document) {
+      try {
+        const result = await trx.updateTable("workspace_workflow_templates")
+          .set({
+            document_id: document.documentId,
+            source_artifact_id: document.artifactId,
+            updated_at: new Date(document.updatedAt),
+          })
+          .where("workspace_id", "=", scope)
+          .where("workflow_template_id", "=", workflowTemplateId)
+          .executeTakeFirst();
+        return Number(result.numUpdatedRows) > 0;
+      } catch (error) {
+        throw translatePersistenceError(error);
+      }
+    },
+
+    async detachDocument(workflowTemplateId, updatedAt) {
+      const result = await trx.updateTable("workspace_workflow_templates")
+        .set({
+          document_id: null, source_artifact_id: null,
+          updated_at: new Date(updatedAt),
+        })
+        .where("workspace_id", "=", scope)
+        .where("workflow_template_id", "=", workflowTemplateId)
+        .executeTakeFirst();
+      return Number(result.numUpdatedRows) > 0;
     },
   };
 }

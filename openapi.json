@@ -3122,6 +3122,1908 @@
         }
       }
     },
+    "/workspaces/{workspaceId}/workflow-templates": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "WorkflowTemplateList",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "title": "WorkflowTemplate",
+                        "additionalProperties": false,
+                        "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document uploaded through the ordinary path, only referenced here.",
+                        "type": "object",
+                        "required": [
+                          "workflowTemplateId",
+                          "name",
+                          "routingMode",
+                          "roleSlots",
+                          "completionSettings",
+                          "documentId",
+                          "sourceArtifactId",
+                          "createdAt",
+                          "updatedAt"
+                        ],
+                        "properties": {
+                          "workflowTemplateId": {
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "type": "string"
+                          },
+                          "name": {
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "type": "string"
+                          },
+                          "routingMode": {
+                            "title": "WorkflowRoutingMode",
+                            "description": "The named routing shape a template applies to a draft.",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "parallel"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "sequential"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "mixed"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "approval-based"
+                                ]
+                              }
+                            ]
+                          },
+                          "roleSlots": {
+                            "minItems": 1,
+                            "maxItems": 50,
+                            "type": "array",
+                            "items": {
+                              "title": "WorkflowRoleSlot",
+                              "additionalProperties": false,
+                              "description": "A named role placeholder, not a person.",
+                              "type": "object",
+                              "required": [
+                                "label",
+                                "role",
+                                "required",
+                                "routingStep",
+                                "defaultAuthMethod"
+                              ],
+                              "properties": {
+                                "label": {
+                                  "minLength": 1,
+                                  "maxLength": 120,
+                                  "type": "string"
+                                },
+                                "role": {
+                                  "title": "RecipientType",
+                                  "description": "What this participant is expected to do. Not a workspace role.",
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "signer"
+                                      ]
+                                    },
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "approver"
+                                      ]
+                                    },
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "reviewer"
+                                      ]
+                                    },
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "acknowledgment-recipient"
+                                      ]
+                                    },
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "viewer"
+                                      ]
+                                    },
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "carbon-copy"
+                                      ]
+                                    }
+                                  ]
+                                },
+                                "required": {
+                                  "type": "boolean"
+                                },
+                                "routingStep": {
+                                  "minimum": 1,
+                                  "maximum": 100,
+                                  "type": "integer"
+                                },
+                                "defaultAuthMethod": {
+                                  "title": "WorkflowSlotAuthMethod",
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "none"
+                                      ]
+                                    },
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "email-otp"
+                                      ]
+                                    },
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "sms-otp"
+                                      ]
+                                    },
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "knowledge-based"
+                                      ]
+                                    },
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "id-verification"
+                                      ]
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          "completionSettings": {
+                            "title": "WorkflowCompletionSettings",
+                            "additionalProperties": false,
+                            "description": "Completion behaviour the backend actually performs.",
+                            "type": "object",
+                            "required": [
+                              "notifySenderOnComplete"
+                            ],
+                            "properties": {
+                              "notifySenderOnComplete": {
+                                "type": "boolean"
+                              }
+                            }
+                          },
+                          "documentId": {
+                            "anyOf": [
+                              {
+                                "type": "null"
+                              },
+                              {
+                                "minLength": 1,
+                                "maxLength": 64,
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "sourceArtifactId": {
+                            "anyOf": [
+                              {
+                                "type": "null"
+                              },
+                              {
+                                "minLength": 1,
+                                "maxLength": 64,
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "createdAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "WorkflowTemplateWrite",
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "name",
+                  "routingMode",
+                  "roleSlots",
+                  "completionSettings"
+                ],
+                "properties": {
+                  "name": {
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "type": "string"
+                  },
+                  "routingMode": {
+                    "title": "WorkflowRoutingMode",
+                    "description": "The named routing shape a template applies to a draft.",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "parallel"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "sequential"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "mixed"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "approval-based"
+                        ]
+                      }
+                    ]
+                  },
+                  "roleSlots": {
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "title": "WorkflowRoleSlot",
+                      "additionalProperties": false,
+                      "description": "A named role placeholder, not a person.",
+                      "type": "object",
+                      "required": [
+                        "label",
+                        "role",
+                        "required",
+                        "routingStep",
+                        "defaultAuthMethod"
+                      ],
+                      "properties": {
+                        "label": {
+                          "minLength": 1,
+                          "maxLength": 120,
+                          "type": "string"
+                        },
+                        "role": {
+                          "title": "RecipientType",
+                          "description": "What this participant is expected to do. Not a workspace role.",
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "signer"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "approver"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "reviewer"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "acknowledgment-recipient"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "viewer"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "carbon-copy"
+                              ]
+                            }
+                          ]
+                        },
+                        "required": {
+                          "type": "boolean"
+                        },
+                        "routingStep": {
+                          "minimum": 1,
+                          "maximum": 100,
+                          "type": "integer"
+                        },
+                        "defaultAuthMethod": {
+                          "title": "WorkflowSlotAuthMethod",
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "none"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "email-otp"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "sms-otp"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "knowledge-based"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "id-verification"
+                              ]
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "completionSettings": {
+                    "title": "WorkflowCompletionSettings",
+                    "additionalProperties": false,
+                    "description": "Completion behaviour the backend actually performs.",
+                    "type": "object",
+                    "required": [
+                      "notifySenderOnComplete"
+                    ],
+                    "properties": {
+                      "notifySenderOnComplete": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document uploaded through the ordinary path, only referenced here.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "WorkflowTemplate",
+                  "additionalProperties": false,
+                  "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document uploaded through the ordinary path, only referenced here.",
+                  "type": "object",
+                  "required": [
+                    "workflowTemplateId",
+                    "name",
+                    "routingMode",
+                    "roleSlots",
+                    "completionSettings",
+                    "documentId",
+                    "sourceArtifactId",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "properties": {
+                    "workflowTemplateId": {
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "type": "string"
+                    },
+                    "name": {
+                      "minLength": 1,
+                      "maxLength": 200,
+                      "type": "string"
+                    },
+                    "routingMode": {
+                      "title": "WorkflowRoutingMode",
+                      "description": "The named routing shape a template applies to a draft.",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "parallel"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "sequential"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "mixed"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "approval-based"
+                          ]
+                        }
+                      ]
+                    },
+                    "roleSlots": {
+                      "minItems": 1,
+                      "maxItems": 50,
+                      "type": "array",
+                      "items": {
+                        "title": "WorkflowRoleSlot",
+                        "additionalProperties": false,
+                        "description": "A named role placeholder, not a person.",
+                        "type": "object",
+                        "required": [
+                          "label",
+                          "role",
+                          "required",
+                          "routingStep",
+                          "defaultAuthMethod"
+                        ],
+                        "properties": {
+                          "label": {
+                            "minLength": 1,
+                            "maxLength": 120,
+                            "type": "string"
+                          },
+                          "role": {
+                            "title": "RecipientType",
+                            "description": "What this participant is expected to do. Not a workspace role.",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "signer"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "approver"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "reviewer"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "acknowledgment-recipient"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "viewer"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "carbon-copy"
+                                ]
+                              }
+                            ]
+                          },
+                          "required": {
+                            "type": "boolean"
+                          },
+                          "routingStep": {
+                            "minimum": 1,
+                            "maximum": 100,
+                            "type": "integer"
+                          },
+                          "defaultAuthMethod": {
+                            "title": "WorkflowSlotAuthMethod",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "none"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "email-otp"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "sms-otp"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "knowledge-based"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "id-verification"
+                                ]
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "completionSettings": {
+                      "title": "WorkflowCompletionSettings",
+                      "additionalProperties": false,
+                      "description": "Completion behaviour the backend actually performs.",
+                      "type": "object",
+                      "required": [
+                        "notifySenderOnComplete"
+                      ],
+                      "properties": {
+                        "notifySenderOnComplete": {
+                          "type": "boolean"
+                        }
+                      }
+                    },
+                    "documentId": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "sourceArtifactId": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/workflow-templates/{workflowTemplateId}": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workflowTemplateId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document uploaded through the ordinary path, only referenced here.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "WorkflowTemplate",
+                  "additionalProperties": false,
+                  "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document uploaded through the ordinary path, only referenced here.",
+                  "type": "object",
+                  "required": [
+                    "workflowTemplateId",
+                    "name",
+                    "routingMode",
+                    "roleSlots",
+                    "completionSettings",
+                    "documentId",
+                    "sourceArtifactId",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "properties": {
+                    "workflowTemplateId": {
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "type": "string"
+                    },
+                    "name": {
+                      "minLength": 1,
+                      "maxLength": 200,
+                      "type": "string"
+                    },
+                    "routingMode": {
+                      "title": "WorkflowRoutingMode",
+                      "description": "The named routing shape a template applies to a draft.",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "parallel"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "sequential"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "mixed"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "approval-based"
+                          ]
+                        }
+                      ]
+                    },
+                    "roleSlots": {
+                      "minItems": 1,
+                      "maxItems": 50,
+                      "type": "array",
+                      "items": {
+                        "title": "WorkflowRoleSlot",
+                        "additionalProperties": false,
+                        "description": "A named role placeholder, not a person.",
+                        "type": "object",
+                        "required": [
+                          "label",
+                          "role",
+                          "required",
+                          "routingStep",
+                          "defaultAuthMethod"
+                        ],
+                        "properties": {
+                          "label": {
+                            "minLength": 1,
+                            "maxLength": 120,
+                            "type": "string"
+                          },
+                          "role": {
+                            "title": "RecipientType",
+                            "description": "What this participant is expected to do. Not a workspace role.",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "signer"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "approver"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "reviewer"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "acknowledgment-recipient"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "viewer"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "carbon-copy"
+                                ]
+                              }
+                            ]
+                          },
+                          "required": {
+                            "type": "boolean"
+                          },
+                          "routingStep": {
+                            "minimum": 1,
+                            "maximum": 100,
+                            "type": "integer"
+                          },
+                          "defaultAuthMethod": {
+                            "title": "WorkflowSlotAuthMethod",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "none"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "email-otp"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "sms-otp"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "knowledge-based"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "id-verification"
+                                ]
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "completionSettings": {
+                      "title": "WorkflowCompletionSettings",
+                      "additionalProperties": false,
+                      "description": "Completion behaviour the backend actually performs.",
+                      "type": "object",
+                      "required": [
+                        "notifySenderOnComplete"
+                      ],
+                      "properties": {
+                        "notifySenderOnComplete": {
+                          "type": "boolean"
+                        }
+                      }
+                    },
+                    "documentId": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "sourceArtifactId": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "WorkflowTemplateWrite",
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "name",
+                  "routingMode",
+                  "roleSlots",
+                  "completionSettings"
+                ],
+                "properties": {
+                  "name": {
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "type": "string"
+                  },
+                  "routingMode": {
+                    "title": "WorkflowRoutingMode",
+                    "description": "The named routing shape a template applies to a draft.",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "parallel"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "sequential"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "mixed"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "approval-based"
+                        ]
+                      }
+                    ]
+                  },
+                  "roleSlots": {
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "title": "WorkflowRoleSlot",
+                      "additionalProperties": false,
+                      "description": "A named role placeholder, not a person.",
+                      "type": "object",
+                      "required": [
+                        "label",
+                        "role",
+                        "required",
+                        "routingStep",
+                        "defaultAuthMethod"
+                      ],
+                      "properties": {
+                        "label": {
+                          "minLength": 1,
+                          "maxLength": 120,
+                          "type": "string"
+                        },
+                        "role": {
+                          "title": "RecipientType",
+                          "description": "What this participant is expected to do. Not a workspace role.",
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "signer"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "approver"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "reviewer"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "acknowledgment-recipient"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "viewer"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "carbon-copy"
+                              ]
+                            }
+                          ]
+                        },
+                        "required": {
+                          "type": "boolean"
+                        },
+                        "routingStep": {
+                          "minimum": 1,
+                          "maximum": 100,
+                          "type": "integer"
+                        },
+                        "defaultAuthMethod": {
+                          "title": "WorkflowSlotAuthMethod",
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "none"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "email-otp"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "sms-otp"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "knowledge-based"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "id-verification"
+                              ]
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "completionSettings": {
+                    "title": "WorkflowCompletionSettings",
+                    "additionalProperties": false,
+                    "description": "Completion behaviour the backend actually performs.",
+                    "type": "object",
+                    "required": [
+                      "notifySenderOnComplete"
+                    ],
+                    "properties": {
+                      "notifySenderOnComplete": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workflowTemplateId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document uploaded through the ordinary path, only referenced here.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "WorkflowTemplate",
+                  "additionalProperties": false,
+                  "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document uploaded through the ordinary path, only referenced here.",
+                  "type": "object",
+                  "required": [
+                    "workflowTemplateId",
+                    "name",
+                    "routingMode",
+                    "roleSlots",
+                    "completionSettings",
+                    "documentId",
+                    "sourceArtifactId",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "properties": {
+                    "workflowTemplateId": {
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "type": "string"
+                    },
+                    "name": {
+                      "minLength": 1,
+                      "maxLength": 200,
+                      "type": "string"
+                    },
+                    "routingMode": {
+                      "title": "WorkflowRoutingMode",
+                      "description": "The named routing shape a template applies to a draft.",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "parallel"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "sequential"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "mixed"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "approval-based"
+                          ]
+                        }
+                      ]
+                    },
+                    "roleSlots": {
+                      "minItems": 1,
+                      "maxItems": 50,
+                      "type": "array",
+                      "items": {
+                        "title": "WorkflowRoleSlot",
+                        "additionalProperties": false,
+                        "description": "A named role placeholder, not a person.",
+                        "type": "object",
+                        "required": [
+                          "label",
+                          "role",
+                          "required",
+                          "routingStep",
+                          "defaultAuthMethod"
+                        ],
+                        "properties": {
+                          "label": {
+                            "minLength": 1,
+                            "maxLength": 120,
+                            "type": "string"
+                          },
+                          "role": {
+                            "title": "RecipientType",
+                            "description": "What this participant is expected to do. Not a workspace role.",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "signer"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "approver"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "reviewer"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "acknowledgment-recipient"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "viewer"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "carbon-copy"
+                                ]
+                              }
+                            ]
+                          },
+                          "required": {
+                            "type": "boolean"
+                          },
+                          "routingStep": {
+                            "minimum": 1,
+                            "maximum": 100,
+                            "type": "integer"
+                          },
+                          "defaultAuthMethod": {
+                            "title": "WorkflowSlotAuthMethod",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "none"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "email-otp"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "sms-otp"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "knowledge-based"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "id-verification"
+                                ]
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "completionSettings": {
+                      "title": "WorkflowCompletionSettings",
+                      "additionalProperties": false,
+                      "description": "Completion behaviour the backend actually performs.",
+                      "type": "object",
+                      "required": [
+                        "notifySenderOnComplete"
+                      ],
+                      "properties": {
+                        "notifySenderOnComplete": {
+                          "type": "boolean"
+                        }
+                      }
+                    },
+                    "documentId": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "sourceArtifactId": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workflowTemplateId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/workflow-templates/{workflowTemplateId}/document": {
+      "put": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "WorkflowTemplateDocumentInput",
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "documentId",
+                  "artifactId"
+                ],
+                "properties": {
+                  "documentId": {
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "type": "string"
+                  },
+                  "artifactId": {
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workflowTemplateId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document uploaded through the ordinary path, only referenced here.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "WorkflowTemplate",
+                  "additionalProperties": false,
+                  "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document uploaded through the ordinary path, only referenced here.",
+                  "type": "object",
+                  "required": [
+                    "workflowTemplateId",
+                    "name",
+                    "routingMode",
+                    "roleSlots",
+                    "completionSettings",
+                    "documentId",
+                    "sourceArtifactId",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "properties": {
+                    "workflowTemplateId": {
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "type": "string"
+                    },
+                    "name": {
+                      "minLength": 1,
+                      "maxLength": 200,
+                      "type": "string"
+                    },
+                    "routingMode": {
+                      "title": "WorkflowRoutingMode",
+                      "description": "The named routing shape a template applies to a draft.",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "parallel"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "sequential"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "mixed"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "approval-based"
+                          ]
+                        }
+                      ]
+                    },
+                    "roleSlots": {
+                      "minItems": 1,
+                      "maxItems": 50,
+                      "type": "array",
+                      "items": {
+                        "title": "WorkflowRoleSlot",
+                        "additionalProperties": false,
+                        "description": "A named role placeholder, not a person.",
+                        "type": "object",
+                        "required": [
+                          "label",
+                          "role",
+                          "required",
+                          "routingStep",
+                          "defaultAuthMethod"
+                        ],
+                        "properties": {
+                          "label": {
+                            "minLength": 1,
+                            "maxLength": 120,
+                            "type": "string"
+                          },
+                          "role": {
+                            "title": "RecipientType",
+                            "description": "What this participant is expected to do. Not a workspace role.",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "signer"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "approver"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "reviewer"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "acknowledgment-recipient"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "viewer"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "carbon-copy"
+                                ]
+                              }
+                            ]
+                          },
+                          "required": {
+                            "type": "boolean"
+                          },
+                          "routingStep": {
+                            "minimum": 1,
+                            "maximum": 100,
+                            "type": "integer"
+                          },
+                          "defaultAuthMethod": {
+                            "title": "WorkflowSlotAuthMethod",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "none"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "email-otp"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "sms-otp"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "knowledge-based"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "id-verification"
+                                ]
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "completionSettings": {
+                      "title": "WorkflowCompletionSettings",
+                      "additionalProperties": false,
+                      "description": "Completion behaviour the backend actually performs.",
+                      "type": "object",
+                      "required": [
+                        "notifySenderOnComplete"
+                      ],
+                      "properties": {
+                        "notifySenderOnComplete": {
+                          "type": "boolean"
+                        }
+                      }
+                    },
+                    "documentId": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "sourceArtifactId": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workflowTemplateId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document uploaded through the ordinary path, only referenced here.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "WorkflowTemplate",
+                  "additionalProperties": false,
+                  "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document uploaded through the ordinary path, only referenced here.",
+                  "type": "object",
+                  "required": [
+                    "workflowTemplateId",
+                    "name",
+                    "routingMode",
+                    "roleSlots",
+                    "completionSettings",
+                    "documentId",
+                    "sourceArtifactId",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "properties": {
+                    "workflowTemplateId": {
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "type": "string"
+                    },
+                    "name": {
+                      "minLength": 1,
+                      "maxLength": 200,
+                      "type": "string"
+                    },
+                    "routingMode": {
+                      "title": "WorkflowRoutingMode",
+                      "description": "The named routing shape a template applies to a draft.",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "parallel"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "sequential"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "mixed"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "approval-based"
+                          ]
+                        }
+                      ]
+                    },
+                    "roleSlots": {
+                      "minItems": 1,
+                      "maxItems": 50,
+                      "type": "array",
+                      "items": {
+                        "title": "WorkflowRoleSlot",
+                        "additionalProperties": false,
+                        "description": "A named role placeholder, not a person.",
+                        "type": "object",
+                        "required": [
+                          "label",
+                          "role",
+                          "required",
+                          "routingStep",
+                          "defaultAuthMethod"
+                        ],
+                        "properties": {
+                          "label": {
+                            "minLength": 1,
+                            "maxLength": 120,
+                            "type": "string"
+                          },
+                          "role": {
+                            "title": "RecipientType",
+                            "description": "What this participant is expected to do. Not a workspace role.",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "signer"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "approver"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "reviewer"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "acknowledgment-recipient"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "viewer"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "carbon-copy"
+                                ]
+                              }
+                            ]
+                          },
+                          "required": {
+                            "type": "boolean"
+                          },
+                          "routingStep": {
+                            "minimum": 1,
+                            "maximum": 100,
+                            "type": "integer"
+                          },
+                          "defaultAuthMethod": {
+                            "title": "WorkflowSlotAuthMethod",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "none"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "email-otp"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "sms-otp"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "knowledge-based"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "id-verification"
+                                ]
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "completionSettings": {
+                      "title": "WorkflowCompletionSettings",
+                      "additionalProperties": false,
+                      "description": "Completion behaviour the backend actually performs.",
+                      "type": "object",
+                      "required": [
+                        "notifySenderOnComplete"
+                      ],
+                      "properties": {
+                        "notifySenderOnComplete": {
+                          "type": "boolean"
+                        }
+                      }
+                    },
+                    "documentId": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "sourceArtifactId": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/workspaces/{workspaceId}/documents": {
       "post": {
         "requestBody": {

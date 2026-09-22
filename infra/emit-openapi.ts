@@ -98,15 +98,23 @@ const app = await createApp({
       preparation: () => stub("workspaces.preparation"),
       recipients: () => stub("workspaces.recipients"),
       signingRequests: () => stub("workspaces.signingRequests"),
-      // Two more conditional groups. Each gates one route, and each was
-      // missing here, so the emitted contract omitted a surface that a
-      // configured deployment genuinely serves.
+      // Conditional groups. Each gates one route, and each of these was
+      // missing here at one point, so the emitted contract omitted a surface
+      // that a configured deployment genuinely serves.
       documentContent: () => stub("workspaces.documentContent"),
       completedArtifact: () => stub("workspaces.completedArtifact"),
       sendSigningRequest: () => stub("workspaces.sendSigningRequest"),
       audit: () => stub("workspaces.audit"),
       organization: () => stub("workspaces.organization"),
       cancelSigningRequest: () => stub("workspaces.cancelSigningRequest"),
+      // Missing since migration 058 first added this group: the emitted
+      // document has never described the five workflow-template routes, or
+      // now the two document-attach routes 059 adds — `create-app.ts`'s
+      // `if (workspaces.workflowTemplates !== undefined)` guard silently
+      // skipped registering them here, the exact failure this file's own
+      // comments already warn about for the groups above. Found while adding
+      // 059's routes and confirming they would actually reach this document.
+      workflowTemplates: () => stub("workspaces.workflowTemplates"),
     },
   },
 });

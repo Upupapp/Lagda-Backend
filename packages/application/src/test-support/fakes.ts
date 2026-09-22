@@ -990,12 +990,20 @@ function scopedWorkflowTemplates(
     createdBy: t.createdBy,
     createdAt: t.createdAt,
     updatedAt: t.updatedAt,
+    documentId: t.documentId,
+    sourceArtifactId: t.sourceArtifactId,
   });
   const key = (name: string) => name.trim().toLowerCase();
 
   return {
     insert: template => {
-      store.workflowTemplates.push({ ...template, updatedAt: template.createdAt });
+      // No document on creation — 059's `attachWorkflowTemplateDocument` is
+      // the only path that ever sets either field, mirroring the real
+      // repository's `insert` (which never receives them either).
+      store.workflowTemplates.push({
+        ...template, updatedAt: template.createdAt,
+        documentId: null, sourceArtifactId: null,
+      });
       return Promise.resolve();
     },
     find: id => Promise.resolve(
@@ -1025,6 +1033,28 @@ function scopedWorkflowTemplates(
     },
     nameExists: (name, exceptId) => Promise.resolve(inScope().some(
       t => key(t.name) === key(name) && t.workflowTemplateId !== exceptId)),
+    attachDocument: (id, document) => {
+      const index = store.workflowTemplates.findIndex(
+        t => t.workspaceId === scope && t.workflowTemplateId === id);
+      if (index < 0) return Promise.resolve(false);
+      store.workflowTemplates[index] = {
+        ...store.workflowTemplates[index]!,
+        documentId: document.documentId,
+        sourceArtifactId: document.artifactId,
+        updatedAt: document.updatedAt,
+      };
+      return Promise.resolve(true);
+    },
+    detachDocument: (id, updatedAt) => {
+      const index = store.workflowTemplates.findIndex(
+        t => t.workspaceId === scope && t.workflowTemplateId === id);
+      if (index < 0) return Promise.resolve(false);
+      store.workflowTemplates[index] = {
+        ...store.workflowTemplates[index]!,
+        documentId: null, sourceArtifactId: null, updatedAt,
+      };
+      return Promise.resolve(true);
+    },
   };
 }
 

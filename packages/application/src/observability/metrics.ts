@@ -132,10 +132,13 @@ export const METRIC_LABELS = {
   // longer and read more widely than a log, and the address belongs to a
   // counterparty who is not a LAGDA user and consented to nothing.
   contact_operations_total: ["operation", "result", "processRole"],
-  // `operation` is a three-value union in code. Deliberately NOT the template
-  // NAME or any slot label: a label names the role a counterparty plays
-  // ("Acme's Legal Approver"), which is business data, and a metrics store is
-  // retained longer and read more widely than a log.
+  // `operation` is a five-value union in code (created, updated, deleted,
+  // document_attached, document_detached — 059 added the last two).
+  // Deliberately NOT the template NAME or any slot label: a label names the
+  // role a counterparty plays ("Acme's Legal Approver"), which is business
+  // data, and a metrics store is retained longer and read more widely than a
+  // log. Also NOT the documentId or artifactId 059 introduced — both are
+  // unbounded, the same reason `document_operations_total` excludes them.
   workflow_template_operations_total: ["operation", "result", "processRole"],
   // `operation` is a two-value union in code and `result` is an outcome.
   // Deliberately NOT `documentId`, `workspaceId`, `artifactId`, the TITLE or the
