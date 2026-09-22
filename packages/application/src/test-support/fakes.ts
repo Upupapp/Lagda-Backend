@@ -1726,7 +1726,7 @@ export function signingResumeIntents(): SigningResumeIntentRepository {
   };
 }
 
-function signingAccountLinks(): SigningAccountLinkRepository {
+export function signingAccountLinks(): SigningAccountLinkRepository {
   return {
     createIntent: (input) => {
       fakeIntents.set(input.intentDigest, {
@@ -2709,6 +2709,7 @@ export class FakeTransactionManager implements TransactionManager {
         // path a deleted inviter takes.
         actorProfiles: { displayNameOf: () => Promise.resolve(null) },
         userSigningRecords: userSigningRecords(),
+        accountLinks: signingAccountLinks(),
         organizationUnits: scopedOrganizationUnits(this.store, workspaceId),
         workspaces: scopedWorkspaces(this.store, workspaceId),
         memberships: scopedMemberships(this.store, workspaceId),
@@ -2793,6 +2794,7 @@ export class FakeTransactionManager implements TransactionManager {
             workspaceId,
             actorProfiles: { displayNameOf: () => Promise.resolve(null) },
             userSigningRecords: userSigningRecords(),
+            accountLinks: signingAccountLinks(),
             organizationUnits: scopedOrganizationUnits(store, workspaceId),
             folders: scopedFolders(store, workspaceId),
             workspaces: scopedWorkspaces(store, workspaceId),

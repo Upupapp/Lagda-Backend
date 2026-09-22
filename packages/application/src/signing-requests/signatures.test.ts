@@ -25,6 +25,7 @@ import {
   FixedClock, SequentialWorkspaceIds, SequentialMemberIds,
   SequentialPreparationIds, SequentialRecipientIds, SequentialSigningRequestIds,
   FakeTransactionManager, InMemoryStore,
+  signingAccountLinks, fakeVerifiedAccounts,
 } from "../test-support/fakes.js";
 import {
   createIdempotencyKeyDigester, createIdempotencyRecordIds,
@@ -166,7 +167,7 @@ describe("getSigningRequestSignatures", () => {
     ).rejects.toBeInstanceOf(ResourceNotFoundError);
   });
 
-  it("exposes no account identity and no credential", async () => {
+  it("exposes no raw account id or credential, linked or not", async () => {
     const { h, signingRequestId } = await oneSigner();
 
     const view = await getSigningRequestSignatures(
@@ -174,7 +175,9 @@ describe("getSigningRequestSignatures", () => {
     const serialized = JSON.stringify(view);
 
     for (const absent of [
-      // A recipient is a party to a document, never resolved to an account.
+      // A DISPLAY name and address are the deliberate exception this view
+      // now carries (see `linkedAccountName`/`linkedAccountEmail` below) --
+      // but never the account id, or its own normalized comparison value.
       "userId", "isRegisteredUser", "normalizedEmail", "emailKey",
       // Nothing that could be used to enter the ceremony.
       "accessToken", "signingUrl", "otp", "tokenDigest", "sessionId",
@@ -184,5 +187,49 @@ describe("getSigningRequestSignatures", () => {
     ]) {
       expect(serialized, `exposes ${absent}`).not.toContain(absent);
     }
+  });
+
+  it("has no linked account, by default", async () => {
+    const { h, signingRequestId } = await oneSigner();
+
+    const view = await getSigningRequestSignatures(
+      actor(OWNER), h.workspaceId, signingRequestId, h.deps);
+
+    expect(view.signatories[0]?.linkedAccountName).toBeNull();
+    expect(view.signatories[0]?.linkedAccountEmail).toBeNull();
+  });
+
+  it("shows the bound account's OWN name and address, distinct from the sender's snapshot", async () => {
+    const { h, signingRequestId } = await oneSigner();
+    const recipientId = (await getSigningRequestSignatures(
+      actor(OWNER), h.workspaceId, signingRequestId, h.deps))
+      .signatories[0]?.recipientId;
+
+    // The sender typed "Maria Santos"; the account she actually signed in
+    // with is a different display name and a different verified address --
+    // exactly the case this view exists to surface for the record.
+    fakeVerifiedAccounts.set("maria.signer@example.com", {
+      userId: "usr_maria_account",
+      name: "Ma. Teresa Santos",
+      email: "maria.signer@example.com",
+    });
+    await signingAccountLinks().createLink({
+      signingAccountLinkId: "sal_test",
+      userId: "usr_maria_account",
+      workspaceId: h.workspaceId,
+      signingRequestId,
+      recipientId: recipientId as never,
+      matchedNormalizedEmail: "maria.signer@example.com",
+      linkedAt: new Date(AT),
+    });
+
+    const view = await getSigningRequestSignatures(
+      actor(OWNER), h.workspaceId, signingRequestId, h.deps);
+
+    expect(view.signatories[0]?.name).toBe("Maria Santos");
+    expect(view.signatories[0]?.linkedAccountName).toBe("Ma. Teresa Santos");
+    expect(view.signatories[0]?.linkedAccountEmail).toBe("maria.signer@example.com");
+    // The account id itself never appears.
+    expect(JSON.stringify(view)).not.toContain("usr_maria_account");
   });
 });

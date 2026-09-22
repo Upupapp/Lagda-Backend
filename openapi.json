@@ -7076,7 +7076,9 @@
                           "state",
                           "signedAt",
                           "declinedAt",
-                          "declineReason"
+                          "declineReason",
+                          "linkedAccountName",
+                          "linkedAccountEmail"
                         ],
                         "properties": {
                           "recipientId": {
@@ -7240,6 +7242,26 @@
                                     ]
                                   }
                                 ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "linkedAccountName": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "linkedAccountEmail": {
+                            "anyOf": [
+                              {
+                                "type": "string"
                               },
                               {
                                 "type": "null"

@@ -447,6 +447,14 @@ export interface WorkspaceUnitOfWork {
    * can read. Never read back from here -- see the migration's rule.
    */
   readonly userSigningRecords: UserSigningRecordsRepository;
+  /**
+   * Whether a recipient of THIS workspace's request bound an account (051).
+   *
+   * The one read migration 051 calls out as permitted: per-request audit,
+   * never a join key across a list. `getSigningRequestSignatures` is its
+   * only caller.
+   */
+  readonly accountLinks: Pick<SigningAccountLinkRepository, "findLinkForRecipient">;
 }
 
 /**

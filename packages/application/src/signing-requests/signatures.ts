@@ -37,11 +37,13 @@ export interface SigningRequestSignaturesDependencies {
 /**
  * One participant's standing.
  *
- * Carries the identity fields a human needs to read the list (a name and an
- * address, both already visible to anyone holding `signing-request.view`)
- * and nothing that identifies them as an ACCOUNT: no `userId`, no
- * `normalizedEmail`, no session or credential of any kind. A recipient is a
- * party to a document, not a user of the product.
+ * Carries the identity fields a human needs to read the list: a name and an
+ * address as the SENDER wrote them, both already visible to anyone holding
+ * `signing-request.view`, plus -- separately -- the display name and address
+ * of the LAGDA account this recipient bound (migration 051), if any. Never a
+ * `userId`, a normalized form, a session or a credential: this is what the
+ * sender's own audit view of THIS request may show, not a route into anyone's
+ * account.
  */
 export interface SignatoryView {
   readonly recipientId: string;
@@ -57,6 +59,10 @@ export interface SignatoryView {
   readonly signedAt: number | null;
   readonly declinedAt: number | null;
   readonly declineReason: SigningDeclineReason | null;
+  /** The bound account's display name, or null if none is bound. */
+  readonly linkedAccountName: string | null;
+  /** The bound account's current address, or null if none is bound. */
+  readonly linkedAccountEmail: string | null;
 }
 
 export interface SigningRequestSignaturesView {
@@ -101,8 +107,19 @@ export async function getSigningRequestSignatures(
     // Driven by the SNAPSHOT, not by the workflow rows: a recipient later in
     // the routing order has no activation row yet, and iterating the workflow
     // instead would silently drop them from the list of parties.
-    const signatories = recipients.map((recipient): SignatoryView => {
+    const signatories = await Promise.all(recipients.map(async (recipient): Promise<SignatoryView> => {
       const row = progress.get(recipient.recipientId) ?? null;
+
+      // The bound account, if any (051). A per-recipient lookup on a table
+      // with no `user_id` index -- deliberately, per that migration's rule --
+      // so the ids here come only from THIS already-authorized request's own
+      // snapshot, never from anything a caller supplied.
+      const link = await uow.accountLinks.findLinkForRecipient(
+        signingRequestId, recipient.recipientId);
+      const account = link === null
+        ? null
+        : await uow.userSigningRecords.findUserContact(link.userId);
+
       return {
         recipientId: recipient.recipientId,
         name: recipient.name,
@@ -118,8 +135,10 @@ export async function getSigningRequestSignatures(
         signedAt: row?.signedAt ?? null,
         declinedAt: row?.declinedAt ?? null,
         declineReason: row?.declineReason ?? null,
+        linkedAccountName: account?.name ?? null,
+        linkedAccountEmail: account?.email ?? null,
       };
-    });
+    }));
 
     const required = signatories.filter(signatory => signatory.isRequired);
 
