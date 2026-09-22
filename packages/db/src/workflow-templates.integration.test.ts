@@ -35,8 +35,8 @@ const WS_A = "ws_wft_a" as WorkspaceId;
 const WS_B = "ws_wft_b" as WorkspaceId;
 
 const SLOTS = [
-  { label: "HR Approver", role: "approver", required: true, routingStep: 1, defaultAuthMethod: "none" },
-  { label: "Employee", role: "signer", required: true, routingStep: 2, defaultAuthMethod: "none" },
+  { slotId: "wfs_a", label: "HR Approver", role: "approver", required: true, routingStep: 1, defaultAuthMethod: "none" },
+  { slotId: "wfs_b", label: "Employee", role: "signer", required: true, routingStep: 2, defaultAuthMethod: "none" },
 ] as const;
 
 const SETTINGS = { notifySenderOnComplete: true } as const;
@@ -367,13 +367,17 @@ suite("workflow templates (RLS, runtime role)", () => {
     });
   });
 
-  // ── The table is referenced by nothing ────────────────────────────────────
+  // ── The table is referenced by nothing outside its own child ─────────────
 
-  it("is the target of no foreign key, so a draft can never point back at it", async () => {
+  it("is the target of no foreign key EXCEPT its own field placements (060), so a draft can never point back at it", async () => {
     // Migration 058's "snapshot, not reference" rule, asserted against the
-    // live catalogue rather than trusted from a comment. A future FK into this
-    // table would let editing a template change a document already prepared
-    // from it.
+    // live catalogue rather than trusted from a comment. The one allowed
+    // exception is `workflow_template_fields`, 060's OWN child — its fields
+    // are the template's own authoring content, cascade-deleted with it
+    // (§060's header), not a draft or document holding a live pointer back.
+    // A future FK from anything ELSE — a signing request, a preparation —
+    // would let editing a template change a document already prepared from
+    // it, exactly what this test still refuses.
     const referencing = await sql<{ table_name: string }>`
       select distinct tc.table_name
       from information_schema.table_constraints tc
@@ -381,6 +385,7 @@ suite("workflow templates (RLS, runtime role)", () => {
         on ccu.constraint_name = tc.constraint_name
       where tc.constraint_type = 'FOREIGN KEY'
         and ccu.table_name = 'workspace_workflow_templates'
+        and tc.table_name != 'workflow_template_fields'
     `.execute(owner.db);
 
     expect(referencing.rows).toEqual([]);

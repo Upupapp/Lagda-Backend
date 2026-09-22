@@ -118,4 +118,8 @@ export interface ScopedWorkflowTemplateRepository {
 
 export interface WorkflowTemplateIdGenerator {
   nextWorkflowTemplateId: () => string;
+  /** 060. A role slot's stable id — see `WorkflowRoleSlotSchema`'s header. */
+  nextWorkflowRoleSlotId: () => string;
+  /** 060. A field placement's id. */
+  nextWorkflowTemplateFieldId: () => string;
 }

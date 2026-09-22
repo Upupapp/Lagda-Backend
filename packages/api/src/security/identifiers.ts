@@ -113,7 +113,11 @@ export function createWorkspaceMemberIdGenerator(): WorkspaceMemberIdGenerator {
 }
 
 export function createWorkflowTemplateIdGenerator(): WorkflowTemplateIdGenerator {
-  return { nextWorkflowTemplateId: () => mint("wft") };
+  return {
+    nextWorkflowTemplateId: () => mint("wft"),
+    nextWorkflowRoleSlotId: () => mint("wfs"),
+    nextWorkflowTemplateFieldId: () => mint("wff"),
+  };
 }
 
 export function createContactIdGenerator(): ContactIdGenerator {

@@ -433,6 +433,32 @@ export interface WorkspaceWorkflowTemplatesTable {
   source_artifact_id: ColumnType<string | null, string | null, string | null>;
 }
 
+/**
+ * Migration 060. A template's field geometry, per ROLE SLOT rather than per
+ * person — mirrors `PreparationFieldsTable` exactly (same field-type
+ * vocabulary, same normalized-rectangle geometry) with `slot_id` where that
+ * table has `recipient_id`.
+ */
+export interface WorkflowTemplateFieldsTable {
+  field_id: string;
+  workspace_id: string;
+  workflow_template_id: string;
+  /** One of the template's own `role_slots[].slotId` values. No FK — slots
+   *  live in JSONB, not a row; validated by the application on every write. */
+  slot_id: string;
+  field_type: string;
+  page_number: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  required: boolean;
+  label: string;
+  layer: number;
+  created_at: Timestamptz;
+  updated_at: Timestamptz;
+}
+
 export interface UserSignedDocumentsTable {
   user_id: string;
   signing_request_id: string;
@@ -1485,6 +1511,7 @@ export interface Database {
   user_signatures: UserSignaturesTable;
   prepared_signatures: PreparedSignaturesTable;
   workspace_workflow_templates: WorkspaceWorkflowTemplatesTable;
+  workflow_template_fields: WorkflowTemplateFieldsTable;
   user_signed_documents: UserSignedDocumentsTable;
   user_signing_inbox: UserSigningInboxTable;
   signing_resume_intents: SigningResumeIntentsTable;
