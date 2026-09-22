@@ -85,11 +85,23 @@ const UNIT_WRITE = [
   "unit.create", "unit.update", "unit.archive", "unit.member.manage",
 ] as const;
 
+/**
+ * Workflow-template AUTHORING. Migration 058.
+ *
+ * Held by the three roles the frontend gives `manage_templates` — owner,
+ * administrator and template_administrator — and by nobody else. `sender`
+ * deliberately holds only the read half below.
+ */
+const TEMPLATE_WRITE: readonly WorkspaceCapability[] = [
+  "template.create", "template.update", "template.delete",
+];
+
 const EXPECTED: Readonly<Record<WorkspaceRole, readonly WorkspaceCapability[]>> = {
   owner: [
     ...ADMIN_CAPABILITIES, ...CONTACT_CAPABILITIES,
     ...DOCUMENT_READ, ...DOCUMENT_WRITE, "workspace.ownership.transfer",
     "unit.view", ...UNIT_WRITE,
+    "template.view", ...TEMPLATE_WRITE,
   ],
   administrator: [
     ...ADMIN_CAPABILITIES, ...CONTACT_CAPABILITIES,
@@ -97,6 +109,7 @@ const EXPECTED: Readonly<Record<WorkspaceRole, readonly WorkspaceCapability[]>> 
     // Editing the org chart is workspace administration. The only thing an
     // administrator is withheld remains ownership transfer.
     "unit.view", ...UNIT_WRITE,
+    "template.view", ...TEMPLATE_WRITE,
   ],
   // Beyond `workspace.view`, a member holds exactly one capability: reading
   // the org chart. Still not a PlatformRole, so it holds neither
@@ -107,11 +120,18 @@ const EXPECTED: Readonly<Record<WorkspaceRole, readonly WorkspaceCapability[]>> 
   // administrator` check could have produced, and the product's own answer:
   // `manage_contacts` is in four roles' permission sets, and `sender` is the
   // role the address book exists for.
+  // These two rows used to be identical. Migration 058 separates them, and
+  // the split is the role model earning its keep again: the role NAMED for
+  // templates authors them, while `sender` — the role that applies one while
+  // preparing a document — reads and cannot edit. Same shape as contacts,
+  // opposite direction: there, `sender` holds everything.
   template_administrator: [
     "workspace.view", ...CONTACT_CAPABILITIES, ...DOCUMENT_READ, ...DOCUMENT_WRITE,
+    "template.view", ...TEMPLATE_WRITE,
   ],
   sender: [
     "workspace.view", ...CONTACT_CAPABILITIES, ...DOCUMENT_READ, ...DOCUMENT_WRITE,
+    "template.view",
   ],
   // No contact capability at all, INCLUDING view. `manage_contacts` is also the
   // navigation gate on /app/contacts, so these roles cannot reach the address
@@ -158,7 +178,7 @@ describe("role to capability matrix", () => {
     // EXPECTED table not updated, this fails rather than the matrix silently
     // testing fewer combinations.
     expect(Object.keys(EXPECTED).sort()).toEqual([...WORKSPACE_ROLES].sort());
-    expect(WORKSPACE_CAPABILITIES.length).toBe(27);
+    expect(WORKSPACE_CAPABILITIES.length).toBe(31);
   });
 });
 

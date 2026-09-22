@@ -1,0 +1,516 @@
+// The workflow-template surface's HTTP contract, through the REAL `createApp`.
+//
+// Same construction as the contact suite: a fake session STORE, but the real
+// session service, the real cookies, the real CSRF hook, the real error handler
+// and the real encapsulation — so the 401s, 403s and 404s below are the app
+// that runs in production, not a hook a test attached to a bare Fastify.
+//
+// ── What this file is really for ──────────────────────────────────────────
+//
+// The brief asked for proof that the template permission actually BLOCKS an
+// unauthorized call rather than merely existing. The use-case suite proves the
+// capability check; only this file proves that no route reaches a write
+// without passing through it, over the wire, with a real session attached.
+//
+// So every denial assertion below is paired with a check that the store is
+// still empty or unchanged. A 404 with a written row would be the worst
+// outcome of the three and the one a status-code-only test would miss.
+
+import { describe, it, expect, afterEach } from "vitest";
+import type { FastifyInstance } from "fastify";
+import type { Response as LightMyRequestResponse } from "light-my-request";
+import { CSRF_TOKEN_HEADER, type UserId } from "@lagda/contracts";
+import {
+  createSessionService,
+  type SessionRepository, type SessionRecord, type NewSession,
+  type CreateWorkspaceDependencies, type GetWorkspaceDependencies,
+  type ListMyWorkspacesDependencies, type WorkflowTemplateDependencies,
+} from "@lagda/application";
+import {
+  FakeTransactionManager, FixedClock, SequentialWorkspaceIds, SequentialMemberIds,
+  SequentialWorkflowTemplateIds,
+  createIdempotencyKeyDigester, createIdempotencyRecordIds,
+} from "@lagda/application/test-support";
+import type { WorkspaceId, WorkspaceMemberId } from "@lagda/contracts";
+import { createApp } from "../app/create-app.js";
+import { loadApiConfig, type ApiConfig } from "../config/index.js";
+import { SESSION_COOKIE_NAME } from "../security/cookies.js";
+import { createSecurityTokenGenerator, createSecurityTokenDigester } from "../security/crypto.js";
+
+const AT = Date.parse("2026-09-22T09:00:00.000Z");
+
+const OWNER = "usr_owner" as UserId;
+const TEMPLATE_ADMIN = "usr_template_admin" as UserId;
+const SENDER = "usr_sender" as UserId;
+const MEMBER = "usr_member" as UserId;
+const OUTSIDER = "usr_outsider" as UserId;
+
+const WORKSPACE = "ws_templates" as WorkspaceId;
+const OTHER_WORKSPACE = "ws_other" as WorkspaceId;
+
+const config = (): ApiConfig =>
+  loadApiConfig({ NODE_ENV: "test", API_PORT: "8080", LOG_LEVEL: "silent" });
+
+function fakeSessionRepository(): SessionRepository {
+  const rows = new Map<string, SessionRecord>();
+  return {
+    findByTokenHash: hash =>
+      Promise.resolve([...rows.values()].find(r => r.tokenHash === hash) ?? null),
+    create: (s: NewSession) => {
+      rows.set(s.sessionId, { ...s, lastSeenAt: s.createdAt });
+      return Promise.resolve();
+    },
+    touch: (id, at) => {
+      const row = rows.get(id);
+      if (row) rows.set(id, { ...row, lastSeenAt: at });
+      return Promise.resolve();
+    },
+    revoke: (id, at, reason) => {
+      const row = rows.get(id);
+      if (row && row.revokedAt === undefined) {
+        rows.set(id, { ...row, revokedAt: at, revocationReason: reason });
+      }
+      return Promise.resolve();
+    },
+    revokeAllForUser: () => Promise.resolve(0),
+  };
+}
+
+interface Harness {
+  readonly app: FastifyInstance;
+  readonly transactions: FakeTransactionManager;
+  readonly signIn: (userId: UserId) => Promise<{ cookie: string; csrf: string }>;
+}
+
+async function build(): Promise<Harness> {
+  const sessions = createSessionService({
+    sessions: fakeSessionRepository(),
+    tokens: createSecurityTokenGenerator(),
+    digester: createSecurityTokenDigester(),
+    clock: { now: () => Date.now() },
+    policy: {
+      absoluteLifetimeMs: 7 * 24 * 3_600_000,
+      idleTimeoutMs: 8 * 3_600_000,
+      touchIntervalMs: 300_000,
+    },
+  });
+
+  const transactions = new FakeTransactionManager();
+
+  for (const id of [WORKSPACE, OTHER_WORKSPACE]) {
+    transactions.store.workspaces.set(id, {
+      workspaceId: id, name: `WS ${id}`, createdAt: AT,
+    });
+  }
+
+  // One role per verb-boundary the capability matrix draws:
+  //   owner, template_administrator  — full write
+  //   sender                         — read and apply only
+  //   member                         — nothing, not even read
+  //   outsider                       — not a member at all
+  const seats: ReadonlyArray<readonly [string, UserId, string]> = [
+    ["mem_owner", OWNER, "owner"],
+    ["mem_tpl", TEMPLATE_ADMIN, "template_administrator"],
+    ["mem_sender", SENDER, "sender"],
+    ["mem_member", MEMBER, "member"],
+  ];
+  for (const [memberId, userId, role] of seats) {
+    transactions.store.memberships.push({
+      memberId: memberId as WorkspaceMemberId, workspaceId: WORKSPACE,
+      userId, role: role as never, createdAt: AT,
+    });
+  }
+  // The outsider owns a DIFFERENT workspace. Being an owner somewhere must not
+  // carry any authority here — the distinction a membership-free fixture
+  // cannot test, because it cannot tell "denied" from "has no workspaces".
+  transactions.store.memberships.push({
+    memberId: "mem_outsider" as WorkspaceMemberId, workspaceId: OTHER_WORKSPACE,
+    userId: OUTSIDER, role: "owner", createdAt: AT,
+  });
+
+  // ONE generator for the whole app: a fresh one per request would hand every
+  // template the id `wft_1` and the suite would test a single overwritten row.
+  const ids = new SequentialWorkflowTemplateIds();
+
+  const app = await createApp({
+    config: config(),
+    dependencies: {
+      databaseHealth: { isReachable: () => Promise.resolve(true) },
+      sessions,
+      workspaces: {
+        create: (): CreateWorkspaceDependencies => ({
+          transactions,
+          clock: new FixedClock(AT),
+          workspaceIds: new SequentialWorkspaceIds(),
+          memberIds: new SequentialMemberIds(),
+          idempotency: {
+            digester: createIdempotencyKeyDigester(),
+            ids: createIdempotencyRecordIds(),
+            clock: new FixedClock(AT),
+            policy: { retentionMs: 24 * 3_600_000 },
+          },
+        }),
+        list: (): ListMyWorkspacesDependencies => ({ transactions }),
+        workspace: (): GetWorkspaceDependencies => ({ transactions }),
+        workflowTemplates: (): WorkflowTemplateDependencies => ({
+          transactions, clock: new FixedClock(AT), ids,
+        }),
+      },
+    },
+  });
+
+  return {
+    app, transactions,
+    signIn: async (userId: UserId) => {
+      const issued = await sessions.issue(userId);
+      return {
+        cookie: `${SESSION_COOKIE_NAME}=${issued.sessionToken}`,
+        csrf: issued.csrfToken,
+      };
+    },
+  };
+}
+
+let open: FastifyInstance | undefined;
+afterEach(async () => {
+  await open?.close();
+  open = undefined;
+});
+
+async function harness(): Promise<Harness> {
+  const built = await build();
+  open = built.app;
+  return built;
+}
+
+const URL = `/workspaces/${WORKSPACE}/workflow-templates`;
+
+const BODY = {
+  name: "New Hire Onboarding",
+  routingMode: "sequential",
+  roleSlots: [
+    {
+      label: "Hiring Manager", role: "approver",
+      required: true, routingStep: 1, defaultAuthMethod: "none",
+    },
+    {
+      label: "New Employee", role: "signer",
+      required: true, routingStep: 2, defaultAuthMethod: "email-otp",
+    },
+  ],
+  completionSettings: { notifySenderOnComplete: true },
+};
+
+const templates = (h: Harness) => h.transactions.store.workflowTemplates;
+
+async function createAs(
+  h: Harness, user: UserId, body: Record<string, unknown> = BODY,
+): Promise<LightMyRequestResponse> {
+  const { cookie, csrf } = await h.signIn(user);
+  return await h.app.inject({
+    method: "POST", url: URL,
+    headers: { cookie, [CSRF_TOKEN_HEADER]: csrf },
+    payload: body,
+  });
+}
+
+// ── The scope's protections ─────────────────────────────────────────────────
+
+describe("workflow-template routes — the scope's protections", () => {
+  it("refuses every route anonymously", async () => {
+    const h = await harness();
+    const routes = [
+      ["GET", URL],
+      ["POST", URL],
+      ["GET", `${URL}/wft_1`],
+      ["PUT", `${URL}/wft_1`],
+      ["DELETE", `${URL}/wft_1`],
+    ] as const;
+
+    for (const [method, url] of routes) {
+      const response = await h.app.inject({
+        method, url,
+        ...(method === "POST" || method === "PUT" ? { payload: BODY } : {}),
+      });
+      expect(response.statusCode, `${method} ${url}`).toBe(401);
+    }
+    expect(templates(h)).toHaveLength(0);
+  });
+
+  it("refuses a mutation with a session but no CSRF token", async () => {
+    const h = await harness();
+    const { cookie } = await h.signIn(OWNER);
+
+    for (const [method, url] of [
+      ["POST", URL],
+      ["PUT", `${URL}/wft_1`],
+      ["DELETE", `${URL}/wft_1`],
+    ] as const) {
+      const response = await h.app.inject({
+        method, url, headers: { cookie }, payload: BODY,
+      });
+      expect(response.statusCode, `${method} ${url}`).toBe(403);
+    }
+    expect(templates(h)).toHaveLength(0);
+  });
+
+  it("marks every response no-store", async () => {
+    const h = await harness();
+    const { cookie } = await h.signIn(OWNER);
+    const response = await h.app.inject({ method: "GET", url: URL, headers: { cookie } });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["cache-control"]).toBe("no-store");
+  });
+});
+
+// ── Permission gating, over the wire ────────────────────────────────────────
+
+describe("the template permission actually blocks", () => {
+  it("lets an owner create", async () => {
+    const h = await harness();
+    const response = await createAs(h, OWNER);
+    expect(response.statusCode).toBe(201);
+    expect(templates(h)).toHaveLength(1);
+  });
+
+  it("lets a template administrator create", async () => {
+    const h = await harness();
+    const response = await createAs(h, TEMPLATE_ADMIN);
+    expect(response.statusCode).toBe(201);
+  });
+
+  it("refuses a create by a SENDER, who may read but not write", async () => {
+    const h = await harness();
+    const response = await createAs(h, SENDER);
+
+    expect(response.statusCode).toBe(404);
+    // The part a status assertion alone would not catch.
+    expect(templates(h)).toHaveLength(0);
+  });
+
+  it("still lets that same sender LIST — read and write are separate", async () => {
+    const h = await harness();
+    expect((await createAs(h, OWNER)).statusCode).toBe(201);
+
+    const { cookie } = await h.signIn(SENDER);
+    const response = await h.app.inject({ method: "GET", url: URL, headers: { cookie } });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json<{ items: unknown[] }>().items).toHaveLength(1);
+  });
+
+  it("refuses a plain member even a READ", async () => {
+    const h = await harness();
+    await createAs(h, OWNER);
+
+    const { cookie } = await h.signIn(MEMBER);
+    const response = await h.app.inject({ method: "GET", url: URL, headers: { cookie } });
+    expect(response.statusCode).toBe(404);
+  });
+
+  it("refuses an update by anyone without the write capability", async () => {
+    const h = await harness();
+    expect((await createAs(h, OWNER)).statusCode).toBe(201);
+
+    for (const user of [SENDER, MEMBER]) {
+      const { cookie, csrf } = await h.signIn(user);
+      const response = await h.app.inject({
+        method: "PUT", url: `${URL}/wft_1`,
+        headers: { cookie, [CSRF_TOKEN_HEADER]: csrf },
+        payload: { ...BODY, name: "Hijacked" },
+      });
+      expect(response.statusCode, user).toBe(404);
+    }
+
+    expect(templates(h)[0]?.name).toBe(BODY.name);
+  });
+
+  it("refuses a delete by anyone without the write capability", async () => {
+    const h = await harness();
+    expect((await createAs(h, OWNER)).statusCode).toBe(201);
+
+    for (const user of [SENDER, MEMBER]) {
+      const { cookie, csrf } = await h.signIn(user);
+      const response = await h.app.inject({
+        method: "DELETE", url: `${URL}/wft_1`,
+        headers: { cookie, [CSRF_TOKEN_HEADER]: csrf },
+      });
+      expect(response.statusCode, user).toBe(404);
+    }
+
+    expect(templates(h)).toHaveLength(1);
+  });
+
+  it("gives a NON-MEMBER the same 404 a denied member gets", async () => {
+    // Deliberate: denial and non-membership must be indistinguishable, or the
+    // status code itself reports which workspaces exist.
+    const h = await harness();
+    await createAs(h, OWNER);
+
+    const { cookie } = await h.signIn(OUTSIDER);
+    const response = await h.app.inject({ method: "GET", url: URL, headers: { cookie } });
+
+    expect(response.statusCode).toBe(404);
+  });
+});
+
+// ── Workspace isolation, over the wire ──────────────────────────────────────
+
+describe("workspace isolation", () => {
+  it("does not return another workspace's template, even to its owner", async () => {
+    const h = await harness();
+    expect((await createAs(h, OWNER)).statusCode).toBe(201);
+
+    // The outsider owns OTHER_WORKSPACE, so this is a fully authorized request
+    // in a workspace that simply holds no templates.
+    const { cookie } = await h.signIn(OUTSIDER);
+    const response = await h.app.inject({
+      method: "GET", url: `/workspaces/${OTHER_WORKSPACE}/workflow-templates`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json<{ items: unknown[] }>().items).toEqual([]);
+  });
+
+  it("will not fetch a known id across the workspace boundary", async () => {
+    const h = await harness();
+    expect((await createAs(h, OWNER)).statusCode).toBe(201);
+
+    const { cookie } = await h.signIn(OUTSIDER);
+    const response = await h.app.inject({
+      method: "GET", url: `/workspaces/${OTHER_WORKSPACE}/workflow-templates/wft_1`,
+      headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(404);
+  });
+
+  it("will not delete one across the workspace boundary", async () => {
+    const h = await harness();
+    expect((await createAs(h, OWNER)).statusCode).toBe(201);
+
+    const { cookie, csrf } = await h.signIn(OUTSIDER);
+    const response = await h.app.inject({
+      method: "DELETE", url: `/workspaces/${OTHER_WORKSPACE}/workflow-templates/wft_1`,
+      headers: { cookie, [CSRF_TOKEN_HEADER]: csrf },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(templates(h)).toHaveLength(1);
+  });
+});
+
+// ── The contract ────────────────────────────────────────────────────────────
+
+describe("POST /workflow-templates", () => {
+  it("returns 201 with a Location header and ISO timestamps", async () => {
+    const h = await harness();
+    const response = await createAs(h, OWNER);
+
+    expect(response.statusCode).toBe(201);
+    expect(response.headers["location"]).toBe(`${URL}/wft_1`);
+
+    const body = response.json<Record<string, string>>();
+    expect(body["workflowTemplateId"]).toBe("wft_1");
+    expect(body["createdAt"]).toBe(new Date(AT).toISOString());
+    expect(body["updatedAt"]).toBe(body["createdAt"]);
+  });
+
+  it("does not leak the author's user id or the workspace id", async () => {
+    const h = await harness();
+    const body = (await createAs(h, OWNER)).json<Record<string, unknown>>();
+
+    expect(body).not.toHaveProperty("createdBy");
+    expect(body).not.toHaveProperty("workspaceId");
+  });
+
+  it("rejects a duplicate name with 409, ignoring case and surrounding space", async () => {
+    const h = await harness();
+    expect((await createAs(h, OWNER)).statusCode).toBe(201);
+
+    const response = await createAs(h, OWNER, { ...BODY, name: "  new hire onboarding " });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json<{ error: { code: string } }>().error.code)
+      .toBe("WORKFLOW_TEMPLATE_NAME_TAKEN");
+    expect(templates(h)).toHaveLength(1);
+  });
+
+  it("refuses malformed role slots rather than storing partial routing", async () => {
+    const h = await harness();
+
+    const malformed: ReadonlyArray<readonly [string, Record<string, unknown>]> = [
+      ["no slots at all", { ...BODY, roleSlots: [] }],
+      ["a slot with a blank label",
+        { ...BODY, roleSlots: [{ ...BODY.roleSlots[0], label: "  " }] }],
+      ["an unknown role",
+        { ...BODY, roleSlots: [{ ...BODY.roleSlots[0], role: "notary" }] }],
+      ["a routing step of zero",
+        { ...BODY, roleSlots: [{ ...BODY.roleSlots[0], routingStep: 0 }] }],
+      ["a skipped routing step", {
+        ...BODY,
+        roleSlots: [BODY.roleSlots[0], { ...BODY.roleSlots[1], routingStep: 3 }],
+      }],
+      ["an unknown routing mode", { ...BODY, routingMode: "round-robin" }],
+      ["a blank name", { ...BODY, name: "   " }],
+    ];
+
+    for (const [what, body] of malformed) {
+      const response = await createAs(h, OWNER, body);
+      expect(response.statusCode, what).toBeGreaterThanOrEqual(400);
+      expect(response.statusCode, what).toBeLessThan(500);
+    }
+
+    // Not one of them left anything behind. A partially-routed template is
+    // worse than a rejected one: it would send a document to some of the
+    // people it named and silently to none of the rest.
+    expect(templates(h)).toHaveLength(0);
+  });
+});
+
+describe("PUT and DELETE", () => {
+  it("replaces the template wholesale and advances updatedAt", async () => {
+    const h = await harness();
+    expect((await createAs(h, OWNER)).statusCode).toBe(201);
+
+    const { cookie, csrf } = await h.signIn(OWNER);
+    const response = await h.app.inject({
+      method: "PUT", url: `${URL}/wft_1`,
+      headers: { cookie, [CSRF_TOKEN_HEADER]: csrf },
+      payload: {
+        ...BODY,
+        name: "New Hire Onboarding (2026)",
+        routingMode: "parallel",
+        roleSlots: [{
+          label: "Everyone", role: "signer",
+          required: true, routingStep: 1, defaultAuthMethod: "none",
+        }],
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json<Record<string, unknown>>();
+    expect(body["name"]).toBe("New Hire Onboarding (2026)");
+    expect(body["routingMode"]).toBe("parallel");
+    expect(body["roleSlots"]).toHaveLength(1);
+  });
+
+  it("deletes with 204 and then 404s the same id", async () => {
+    const h = await harness();
+    expect((await createAs(h, OWNER)).statusCode).toBe(201);
+
+    const { cookie, csrf } = await h.signIn(OWNER);
+    const deleted = await h.app.inject({
+      method: "DELETE", url: `${URL}/wft_1`,
+      headers: { cookie, [CSRF_TOKEN_HEADER]: csrf },
+    });
+    expect(deleted.statusCode).toBe(204);
+    expect(templates(h)).toHaveLength(0);
+
+    const again = await h.app.inject({
+      method: "GET", url: `${URL}/wft_1`, headers: { cookie },
+    });
+    expect(again.statusCode).toBe(404);
+  });
+});

@@ -169,6 +169,13 @@ export const WORKSPACE_CAPABILITY_NAMES = [
   "unit.update",
   "unit.archive",
   "unit.member.manage",
+  // Migration 058. Reusable workflow templates: read is separated from
+  // authoring, because applying a template is a sender's act and authoring
+  // one is administration. See @lagda/core's policy for the full reasoning.
+  "template.view",
+  "template.create",
+  "template.update",
+  "template.delete",
 ] as const;
 
 export type WorkspaceCapabilityName = (typeof WORKSPACE_CAPABILITY_NAMES)[number];

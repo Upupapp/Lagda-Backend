@@ -44,7 +44,8 @@ import { createArgon2PasswordHasher } from "../security/password-hasher.js";
 import { buildIdentity } from "./identity-composition.js";
 import {
   createWorkspaceIdGenerator, createWorkspaceMemberIdGenerator,
-  createContactIdGenerator, createDocumentIdGenerator, createFolderIdGenerator,
+  createContactIdGenerator, createWorkflowTemplateIdGenerator,
+  createDocumentIdGenerator, createFolderIdGenerator,
   createPreparationIdGenerator, createRecipientIdGenerator,
   createSigningRequestIdGenerator, createEvidenceEventIdGenerator,
   createOrganizationUnitIdGenerator, createWorkspaceInvitationIdGenerator,
@@ -168,6 +169,7 @@ export async function createProductionDependencies(
   const workspaceIds = createWorkspaceIdGenerator();
   const memberIds = createWorkspaceMemberIdGenerator();
   const contactIds = createContactIdGenerator();
+  const workflowTemplateIds = createWorkflowTemplateIdGenerator();
   // ONE object store for every surface that touches bytes: upload writes the
   // artifact, and the ceremony serves the same one back to the recipient.
   const objectStorage = buildObjectStorage();
@@ -211,6 +213,7 @@ export async function createProductionDependencies(
       list: () => ({ transactions }),
       workspace: () => ({ transactions }),
       contacts: () => ({ transactions, clock, ids: contactIds }),
+      workflowTemplates: () => ({ transactions, clock, ids: workflowTemplateIds }),
       documents: () => ({ transactions, clock, ids: documentIds }),
       // Same "absent means no route" convention as upload, the ceremony, and
       // the completed-artifact download below: no object storage, no view

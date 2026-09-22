@@ -28,7 +28,7 @@
 import { randomUUID } from "node:crypto";
 import type {
   WorkspaceIdGenerator, WorkspaceMemberIdGenerator,
-  ContactIdGenerator,
+  ContactIdGenerator, WorkflowTemplateIdGenerator,
   DocumentIdGenerator, FolderIdGenerator, FolderId,
   PreparationIdGenerator,
   RecipientIdGenerator,
@@ -110,6 +110,10 @@ export function createWorkspaceIdGenerator(): WorkspaceIdGenerator {
 
 export function createWorkspaceMemberIdGenerator(): WorkspaceMemberIdGenerator {
   return { nextWorkspaceMemberId: () => mint("mem") as WorkspaceMemberId };
+}
+
+export function createWorkflowTemplateIdGenerator(): WorkflowTemplateIdGenerator {
+  return { nextWorkflowTemplateId: () => mint("wft") };
 }
 
 export function createContactIdGenerator(): ContactIdGenerator {

@@ -69,6 +69,7 @@ export {
 export {
   createUserSigningRecordsRepository, createSigningResumeIntentRepository,
 } from "./repositories/user-signing-records.js";
+export { createScopedWorkflowTemplateRepository } from "./repositories/workflow-templates.js";
 export {
   createPreparedSignatureRepository,
   type PreparedSignatureRepository, type PreparedSignature,

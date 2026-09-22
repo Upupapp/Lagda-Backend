@@ -10,6 +10,7 @@
 import type {
   UserSigningRecordsRepository, SigningResumeIntentRepository,
 } from "./user-signing-records.js";
+import type { ScopedWorkflowTemplateRepository } from "./workflow-templates.js";
 import type { ScopedUploadRepository } from "./upload.js";
 import type { IdempotencyRepository } from "./idempotency.js";
 import type {
@@ -455,6 +456,11 @@ export interface WorkspaceUnitOfWork {
    * only caller.
    */
   readonly accountLinks: Pick<SigningAccountLinkRepository, "findLinkForRecipient">;
+  /**
+   * Migration 058's reusable workflow templates. Workspace configuration,
+   * scoped by this unit of work and again by row-level security.
+   */
+  readonly workflowTemplates: ScopedWorkflowTemplateRepository;
 }
 
 /**
@@ -754,6 +760,7 @@ export * from "./recipients.js";
 
 export * from "./signing-requests.js";
 export * from "./user-signing-records.js";
+export * from "./workflow-templates.js";
 
 export * from "./signing-access.js";
 
