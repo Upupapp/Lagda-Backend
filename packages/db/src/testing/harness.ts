@@ -299,8 +299,17 @@ export async function truncateAll(database: LagdaDatabase): Promise<void> {
   await database.db.deleteFrom("contacts").execute();
   // Workflow templates (migration 058) reference `workspaces` and `users`, both
   // ON DELETE RESTRICT. Nothing references THEM — that is the snapshot rule —
-  // so they need no ordering among themselves.
+  // so they need no ordering among themselves. Its own field placements
+  // (060) CASCADE from it, so no separate delete is needed for those.
+  await database.db.deleteFrom("workflow_template_fields").execute();
   await database.db.deleteFrom("workspace_workflow_templates").execute();
+  // Organization units (039, titles added in 061). Members before units:
+  // `organization_unit_members` CASCADEs from both `organization_units` and
+  // `workspace_memberships`, so either delete below would take it with them
+  // — deleted explicitly anyway, matching every other table in this
+  // function, rather than leaning on a cascade nothing here states.
+  await database.db.deleteFrom("organization_unit_members").execute();
+  await database.db.deleteFrom("organization_units").execute();
   await database.db.deleteFrom("workspace_memberships").execute();
   await database.db.deleteFrom("workspaces").execute();
 

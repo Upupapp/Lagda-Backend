@@ -800,6 +800,10 @@ export interface OrganizationUnitMembersTable {
   workspace_id: string;
   user_id: string;
   created_at: Timestamptz;
+  /** 061. The role this member holds INSIDE the unit — "Department Head" —
+   *  not an authorization level. At most one holder per (workspace, unit,
+   *  title), enforced by a partial unique index. */
+  title: ColumnType<string | null, string | null, string | null>;
 }
 
 /**

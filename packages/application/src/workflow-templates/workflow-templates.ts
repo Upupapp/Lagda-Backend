@@ -27,10 +27,12 @@
 //    a different document to the template afterwards cannot reach a draft
 //    already built from it, for the same reason editing a slot cannot.
 
-import type { WorkspaceId, DocumentId, PreparationFieldType, PreparationRect } from "@lagda/contracts";
+import type {
+  WorkspaceId, DocumentId, UserId, PreparationFieldType, PreparationRect,
+} from "@lagda/contracts";
 import {
   WORKFLOW_ROUTING_MODES, WORKFLOW_SLOT_AUTH_METHODS, RECIPIENT_TYPES,
-  type WorkflowRoutingMode, type WorkflowRoleSlot,
+  type WorkflowRoutingMode, type WorkflowRoleSlot, type WorkflowRoleResolution,
   type WorkflowCompletionSettings,
 } from "@lagda/contracts";
 import {
@@ -198,6 +200,35 @@ interface ValidatedSlotShape {
   readonly required: boolean;
   readonly routingStep: number;
   readonly defaultAuthMethod: WorkflowRoleSlot["defaultAuthMethod"];
+  readonly resolution: WorkflowRoleResolution | undefined;
+}
+
+/**
+ * Validates a slot's `resolution` SHAPE only (061) — the object has the
+ * right keys and they are the right types. Whether `unitId` actually names
+ * a real, live unit in this workspace is a DIFFERENT question, answered by
+ * `validateSlotResolutions` below, which needs the transaction this
+ * function deliberately does not have.
+ */
+function validateResolutionShape(value: unknown, at: string): WorkflowRoleResolution | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) {
+    throw new WorkflowTemplateMalformedError(`${at}'s resolution is not an object`);
+  }
+  const { mode, unitId, title } = value;
+  if (mode !== "unit-title") {
+    throw new WorkflowTemplateMalformedError(`${at}'s resolution has an unknown mode`);
+  }
+  if (typeof unitId !== "string" || unitId.trim().length === 0) {
+    throw new WorkflowTemplateMalformedError(`${at}'s resolution names no unit`);
+  }
+  if (typeof title !== "string" || title.trim().length === 0) {
+    throw new WorkflowTemplateMalformedError(`${at}'s resolution names no title`);
+  }
+  if (title.length > MAX_LABEL) {
+    throw new WorkflowTemplateMalformedError(`${at}'s resolution title is too long`);
+  }
+  return { mode: "unit-title", unitId, title: title.trim() };
 }
 
 /**
@@ -212,7 +243,7 @@ function validateSlotShape(value: unknown, index: number): ValidatedSlotShape {
   const at = `slot ${String(index + 1)}`;
   if (!isRecord(value)) throw new WorkflowTemplateMalformedError(`${at} is not an object`);
 
-  const { slotId, label, role, required, routingStep, defaultAuthMethod } = value;
+  const { slotId, label, role, required, routingStep, defaultAuthMethod, resolution } = value;
 
   if (slotId !== undefined && typeof slotId !== "string") {
     throw new WorkflowTemplateMalformedError(`${at} has an invalid id`);
@@ -245,6 +276,7 @@ function validateSlotShape(value: unknown, index: number): ValidatedSlotShape {
     required,
     routingStep,
     defaultAuthMethod: defaultAuthMethod as WorkflowRoleSlot["defaultAuthMethod"],
+    resolution: validateResolutionShape(resolution, at),
   };
 }
 
@@ -313,6 +345,10 @@ export function validateRoleSlots(value: unknown): readonly WorkflowRoleSlot[] {
       required: shape.required,
       routingStep: shape.routingStep,
       defaultAuthMethod: shape.defaultAuthMethod,
+      // Spread, so an absent resolution stays absent under
+      // `exactOptionalPropertyTypes` rather than a present key holding
+      // `undefined`.
+      ...(shape.resolution === undefined ? {} : { resolution: shape.resolution }),
     };
   });
   validateCrossSlotRules(slots);
@@ -341,10 +377,46 @@ function validateRoleSlotsForWrite(
       required: shape.required,
       routingStep: shape.routingStep,
       defaultAuthMethod: shape.defaultAuthMethod,
+      ...(shape.resolution === undefined ? {} : { resolution: shape.resolution }),
     };
   });
   validateCrossSlotRules(slots);
   return slots;
+}
+
+/**
+ * The one check `validateRoleSlotsForWrite` cannot do: whether each slot's
+ * `resolution.unitId`, if any, names a real, LIVE unit in THIS workspace.
+ *
+ * Needs the transaction — a synchronous shape check has no database to ask —
+ * so it runs as its own pass after slots are otherwise validated, the same
+ * two-pass shape `attachWorkflowTemplateDocument` uses for its own
+ * cross-reference (verify the document, verify the artifact, only then
+ * write). The TITLE is not checked for an existing holder here: an admin
+ * may legitimately wire a slot to "Department Head" before anyone holds
+ * that title yet, the same way a template may name a role nobody has
+ * mapped a person to.
+ */
+async function validateSlotResolutions(
+  uow: WorkspaceUnitOfWork,
+  slots: readonly WorkflowRoleSlot[],
+): Promise<void> {
+  const checked = new Map<string, boolean>();
+  for (const [index, slot] of slots.entries()) {
+    if (slot.resolution === undefined) continue;
+    const at = `slot ${String(index + 1)}`;
+    const unitId = slot.resolution.unitId;
+    let live = checked.get(unitId);
+    if (live === undefined) {
+      const unit = await uow.organizationUnits.findById(unitId as never);
+      live = unit !== null && unit.archivedAt === null;
+      checked.set(unitId, live);
+    }
+    if (!live) {
+      throw new WorkflowTemplateMalformedError(
+        `${at}'s resolution names a unit that does not exist here`);
+    }
+  }
 }
 
 function validateCompletionSettings(value: unknown): WorkflowCompletionSettings {
@@ -447,6 +519,7 @@ export async function createWorkflowTemplate(
     // Nothing exists yet — every slot is new (§ `validateRoleSlotsForWrite`).
     const roleSlots = validateRoleSlotsForWrite(
       input.roleSlots, new Set(), deps.ids.nextWorkflowRoleSlotId);
+    await validateSlotResolutions(uow, roleSlots);
 
     const now = deps.clock.now();
     const record: WorkflowTemplateRecord = {
@@ -525,6 +598,7 @@ export async function updateWorkflowTemplate(
       parseStoredTemplate(existing).roleSlots.map(slot => slot.slotId));
     const roleSlots = validateRoleSlotsForWrite(
       input.roleSlots, existingSlotIds, deps.ids.nextWorkflowRoleSlotId);
+    await validateSlotResolutions(uow, roleSlots);
 
     const now = deps.clock.now();
     const changed = await uow.workflowTemplates.update(workflowTemplateId, {
@@ -943,5 +1017,76 @@ export async function saveWorkflowTemplateFields(
 
     await uow.workflowTemplateFields.replaceAll(workflowTemplateId, fields, now);
     return fields;
+  });
+}
+
+// ── Role resolution (061) ───────────────────────────────────────────────────
+//
+// A slot with a `resolution` names a TITLE inside an organization unit
+// ("Department Head" of "Records") instead of asking a sender to type a
+// name and email by hand every time the template is used. This is the
+// APPLY-time read: for each slot, whoever currently holds that title, or an
+// honest report that nobody does — never a stale value cached from when the
+// template was authored, and never a silent fallback to manual entry that
+// would leave a sender unaware their template asks for something nobody can
+// currently supply.
+
+/** One slot's resolved assignment, or the reason it has none — see the
+ *  contract's `WorkflowRoleAssignmentSchema` for why this is three states
+ *  rather than a nullable person. */
+export type WorkflowRoleAssignment =
+  | { readonly slotId: string; readonly status: "manual" }
+  | { readonly slotId: string; readonly status: "unresolved" }
+  | {
+      readonly slotId: string; readonly status: "resolved";
+      readonly userId: UserId; readonly displayName: string; readonly email: string;
+    };
+
+/**
+ * Resolves every slot's CURRENT assignment. `template.view` — the same
+ * capability `resolveTemplateForApply` needs, since this is part of the
+ * same apply-time read, split into its own use case (and its own route)
+ * because it needs a directory join `resolveTemplateForApply` has no
+ * reason to pay for on a template with no resolved slots at all.
+ */
+export async function resolveWorkflowRoleAssignments(
+  actor: AuthenticatedActor,
+  workspaceId: WorkspaceId,
+  workflowTemplateId: string,
+  deps: WorkflowTemplateDependencies,
+): Promise<readonly WorkflowRoleAssignment[]> {
+  return deps.transactions.runForWorkspace(workspaceId, async uow => {
+    await authorize(uow, actor, "template.view");
+    const row = await uow.workflowTemplates.find(workflowTemplateId);
+    if (row === null) throw new ResourceNotFoundError("WorkflowTemplate");
+    const template = parseStoredTemplate(row);
+
+    const resolvedSlots = template.roleSlots.filter(slot => slot.resolution !== undefined);
+    // The directory join is read ONCE for the whole template, not once per
+    // slot — a template with several resolved slots (an approver AND a
+    // signer, both by title) must not pay for the join twice.
+    const directory = resolvedSlots.length > 0
+      ? await uow.memberships.listWithAccounts() : [];
+    const directoryByUser = new Map(directory.map(entry => [entry.userId, entry]));
+
+    return Promise.all(template.roleSlots.map(async (slot): Promise<WorkflowRoleAssignment> => {
+      if (slot.resolution === undefined) {
+        return { slotId: slot.slotId, status: "manual" };
+      }
+      const userId = await uow.organizationUnits.findByTitle(
+        slot.resolution.unitId as never, slot.resolution.title);
+      if (userId === null) return { slotId: slot.slotId, status: "unresolved" };
+
+      const entry = directoryByUser.get(userId);
+      // The title-holder left the workspace between the two reads above —
+      // a genuine but narrow race, the same one `listUnitMembers` notes.
+      // Reported as unresolved rather than a person with a blank name.
+      if (entry === undefined) return { slotId: slot.slotId, status: "unresolved" };
+
+      return {
+        slotId: slot.slotId, status: "resolved",
+        userId, displayName: entry.displayName, email: entry.email,
+      };
+    }));
   });
 }

@@ -4,6 +4,7 @@ import { describe, it, expect } from "vitest";
 import {
   createOrganizationUnit, updateOrganizationUnit, archiveOrganizationUnit,
   addUnitMember, removeUnitMember, listOrganizationUnits,
+  setUnitMemberTitle, listUnitMembers,
   type OrganizationDependencies, type OrganizationUnitId,
 } from "./index.js";
 import {
@@ -15,6 +16,7 @@ const AT = 1_760_000_000_000;
 const WS = "ws_1" as WorkspaceId;
 const OWNER = "usr_owner" as UserId;
 const MEMBER = "usr_member" as UserId;
+const MEMBER_2 = "usr_member_2" as UserId;
 const OUTSIDER = "usr_outsider" as UserId;
 
 function harness() {
@@ -28,6 +30,7 @@ function harness() {
   store.memberships.push(
     { memberId: "mem_1", workspaceId: WS, userId: OWNER, role: "owner", createdAt: AT } as never,
     { memberId: "mem_2", workspaceId: WS, userId: MEMBER, role: "member", createdAt: AT } as never,
+    { memberId: "mem_3", workspaceId: WS, userId: MEMBER_2, role: "member", createdAt: AT + 1 } as never,
   );
 
   const deps: OrganizationDependencies = {
@@ -273,5 +276,168 @@ describe("membership", () => {
       actor: { userId: OWNER }, workspaceId: WS,
       unitId: unit.unitId, userId: MEMBER,
     }, h.deps)).rejects.toThrow();
+  });
+});
+
+describe("titles (061)", () => {
+  it("adds a member WITH a title in one call", async () => {
+    const h = harness();
+    const unit = await create(h.deps, { name: "Records" });
+
+    await addUnitMember({
+      actor: { userId: OWNER }, workspaceId: WS,
+      unitId: unit.unitId, userId: MEMBER, title: "Department Head",
+    }, h.deps);
+
+    const members = await listUnitMembers(
+      { actor: { userId: OWNER }, workspaceId: WS, unitId: unit.unitId }, h.deps);
+    expect(members).toEqual([
+      { userId: MEMBER, title: "Department Head", displayName: MEMBER, email: `${MEMBER}@fixture.invalid` },
+    ]);
+  });
+
+  it("adds a member with NO title when none is given — the ordinary case", async () => {
+    const h = harness();
+    const unit = await create(h.deps, { name: "Records" });
+
+    await addUnitMember({
+      actor: { userId: OWNER }, workspaceId: WS,
+      unitId: unit.unitId, userId: MEMBER,
+    }, h.deps);
+
+    const members = await listUnitMembers(
+      { actor: { userId: OWNER }, workspaceId: WS, unitId: unit.unitId }, h.deps);
+    expect(members[0]?.title).toBeNull();
+  });
+
+  it("changes an EXISTING member's title without removing them", async () => {
+    const h = harness();
+    const unit = await create(h.deps, { name: "Records" });
+    await addUnitMember({
+      actor: { userId: OWNER }, workspaceId: WS,
+      unitId: unit.unitId, userId: MEMBER, title: "Records Officer",
+    }, h.deps);
+
+    await setUnitMemberTitle({
+      actor: { userId: OWNER }, workspaceId: WS,
+      unitId: unit.unitId, userId: MEMBER, title: "Department Head",
+    }, h.deps);
+
+    const members = await listUnitMembers(
+      { actor: { userId: OWNER }, workspaceId: WS, unitId: unit.unitId }, h.deps);
+    expect(members).toHaveLength(1);
+    expect(members[0]?.title).toBe("Department Head");
+  });
+
+  it("CLEARS a title with null, leaving the membership itself intact", async () => {
+    const h = harness();
+    const unit = await create(h.deps, { name: "Records" });
+    await addUnitMember({
+      actor: { userId: OWNER }, workspaceId: WS,
+      unitId: unit.unitId, userId: MEMBER, title: "Department Head",
+    }, h.deps);
+
+    await setUnitMemberTitle({
+      actor: { userId: OWNER }, workspaceId: WS,
+      unitId: unit.unitId, userId: MEMBER, title: null,
+    }, h.deps);
+
+    const members = await listUnitMembers(
+      { actor: { userId: OWNER }, workspaceId: WS, unitId: unit.unitId }, h.deps);
+    expect(members).toHaveLength(1);
+    expect(members[0]?.title).toBeNull();
+  });
+
+  it("refuses setting a title on somebody who is not a member of the unit", async () => {
+    const h = harness();
+    const unit = await create(h.deps, { name: "Records" });
+
+    await expect(setUnitMemberTitle({
+      actor: { userId: OWNER }, workspaceId: WS,
+      unitId: unit.unitId, userId: MEMBER, title: "Department Head",
+    }, h.deps)).rejects.toThrow();
+  });
+
+  it("refuses TWO people holding the same title in one unit", async () => {
+    // The rule `resolveWorkflowRoleAssignments` depends on: a title names
+    // exactly one person, or nobody, never two.
+    const h = harness();
+    const unit = await create(h.deps, { name: "Records" });
+    await addUnitMember({
+      actor: { userId: OWNER }, workspaceId: WS,
+      unitId: unit.unitId, userId: MEMBER, title: "Department Head",
+    }, h.deps);
+
+    await expect(addUnitMember({
+      actor: { userId: OWNER }, workspaceId: WS,
+      unitId: unit.unitId, userId: MEMBER_2, title: "Department Head",
+    }, h.deps)).rejects.toThrow();
+  });
+
+  it("allows the SAME title in TWO different units", async () => {
+    // Every department can have its own Head — the constraint is per unit.
+    const h = harness();
+    const legal = await create(h.deps, { name: "Legal" });
+    const finance = await create(h.deps, { name: "Finance" });
+
+    await addUnitMember({
+      actor: { userId: OWNER }, workspaceId: WS,
+      unitId: legal.unitId, userId: MEMBER, title: "Department Head",
+    }, h.deps);
+    await expect(addUnitMember({
+      actor: { userId: OWNER }, workspaceId: WS,
+      unitId: finance.unitId, userId: MEMBER_2, title: "Department Head",
+    }, h.deps)).resolves.toBeUndefined();
+  });
+
+  it("treats a title as the same regardless of case or surrounding space", async () => {
+    const h = harness();
+    const unit = await create(h.deps, { name: "Records" });
+    await addUnitMember({
+      actor: { userId: OWNER }, workspaceId: WS,
+      unitId: unit.unitId, userId: MEMBER, title: "Department Head",
+    }, h.deps);
+
+    await expect(addUnitMember({
+      actor: { userId: OWNER }, workspaceId: WS,
+      unitId: unit.unitId, userId: MEMBER_2, title: "  department head  ",
+    }, h.deps)).rejects.toThrow();
+  });
+
+  it("refuses a blank title", async () => {
+    const h = harness();
+    const unit = await create(h.deps, { name: "Records" });
+
+    await expect(addUnitMember({
+      actor: { userId: OWNER }, workspaceId: WS,
+      unitId: unit.unitId, userId: MEMBER, title: "   ",
+    }, h.deps)).rejects.toThrow();
+  });
+
+  it("refuses a MEMBER setting a title — this is unit.member.manage, not unit.view", async () => {
+    const h = harness();
+    const unit = await create(h.deps, { name: "Records" });
+    await addUnitMember({
+      actor: { userId: OWNER }, workspaceId: WS,
+      unitId: unit.unitId, userId: MEMBER,
+    }, h.deps);
+
+    await expect(setUnitMemberTitle({
+      actor: { userId: MEMBER }, workspaceId: WS,
+      unitId: unit.unitId, userId: MEMBER, title: "Department Head",
+    }, h.deps)).rejects.toThrow();
+  });
+
+  it("lets a MEMBER read the roster — unit.view, the same gate as the unit list", async () => {
+    const h = harness();
+    const unit = await create(h.deps, { name: "Records" });
+    await addUnitMember({
+      actor: { userId: OWNER }, workspaceId: WS,
+      unitId: unit.unitId, userId: MEMBER, title: "Department Head",
+    }, h.deps);
+
+    await expect(listUnitMembers(
+      { actor: { userId: MEMBER }, workspaceId: WS, unitId: unit.unitId }, h.deps))
+      .resolves.toHaveLength(1);
   });
 });

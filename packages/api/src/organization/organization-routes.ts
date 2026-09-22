@@ -4,7 +4,9 @@
 //   POST   /workspaces/:workspaceId/units
 //   PATCH  /workspaces/:workspaceId/units/:unitId
 //   POST   /workspaces/:workspaceId/units/:unitId/archive
+//   GET    /workspaces/:workspaceId/units/:unitId/members
 //   POST   /workspaces/:workspaceId/units/:unitId/members
+//   PATCH  /workspaces/:workspaceId/units/:unitId/members/:userId
 //   DELETE /workspaces/:workspaceId/units/:unitId/members/:userId
 //
 // Registered INSIDE the authenticated scope, so session validation and CSRF
@@ -22,6 +24,7 @@ import { Type } from "@sinclair/typebox";
 import {
   createOrganizationUnit, updateOrganizationUnit, archiveOrganizationUnit,
   addUnitMember, removeUnitMember, listOrganizationUnits,
+  setUnitMemberTitle, listUnitMembers,
   type OrganizationDependencies,
 } from "@lagda/application";
 import { ORGANIZATION_UNIT_KINDS, UNIT_NAME_MAX_LENGTH } from "@lagda/core";
@@ -69,8 +72,33 @@ const UpdateUnitBody = Type.Object({
   ),
 }, { additionalProperties: false });
 
+/** 061. `null` and absent both mean "no title" on add — there is no
+ *  meaningful difference at CREATE time the way there is on update. */
+const TitleValue = Type.Union(
+  [Type.String({ minLength: 1, maxLength: UNIT_NAME_MAX_LENGTH }), Type.Null()],
+);
+
 const AddMemberBody = Type.Object({
   userId: Type.String({ minLength: 1, maxLength: 64 }),
+  title: Type.Optional(TitleValue),
+}, { additionalProperties: false });
+
+/** `null` CLEARS the title; the field is required (not optional) — a PATCH
+ *  to this endpoint has no other purpose, so there is no "leave it" case to
+ *  distinguish absent from. */
+const SetMemberTitleBody = Type.Object({
+  title: TitleValue,
+}, { additionalProperties: false });
+
+const UnitMemberSchema = Type.Object({
+  userId: Type.String(),
+  title: Type.Union([Type.String(), Type.Null()]),
+  displayName: Type.String(),
+  email: Type.String(),
+}, { additionalProperties: false });
+
+const UnitMemberListSchema = Type.Object({
+  members: Type.Array(UnitMemberSchema),
 }, { additionalProperties: false });
 
 const UnitSchema = Type.Object({
@@ -212,6 +240,27 @@ export function registerOrganizationRoutes(
     return reply.code(204).send();
   });
 
+  app.get("/workspaces/:workspaceId/units/:unitId/members", {
+    schema: {
+      params: UnitParams,
+      response: { 200: UnitMemberListSchema },
+    },
+  }, async request => {
+    const { workspaceId, unitId } = request.params as {
+      workspaceId: string; unitId: string;
+    };
+    const actor = await requireActor(request);
+
+    const members = await listUnitMembers({
+      actor, workspaceId: workspaceId as WorkspaceId, unitId,
+    }, options.organizationDependencies);
+
+    return { members: members.map(m => ({
+      userId: m.userId, title: m.title,
+      displayName: m.displayName, email: m.email,
+    })) };
+  });
+
   app.post("/workspaces/:workspaceId/units/:unitId/members", {
     schema: {
       params: UnitParams, body: AddMemberBody,
@@ -221,11 +270,35 @@ export function registerOrganizationRoutes(
     const { workspaceId, unitId } = request.params as {
       workspaceId: string; unitId: string;
     };
-    const { userId } = request.body as { userId: string };
+    const { userId, title } = request.body as { userId: string; title?: string | null };
     const actor = await requireActor(request);
 
     await addUnitMember({
       actor, workspaceId: workspaceId as WorkspaceId, unitId, userId,
+      // Spread, so an omitted `title` in the request body stays absent
+      // through to the use case rather than becoming an explicit
+      // `undefined` — see `addUnitMember`'s own header on why that
+      // distinction matters under `exactOptionalPropertyTypes`.
+      ...(title === undefined ? {} : { title }),
+    }, options.organizationDependencies);
+
+    return reply.code(204).send();
+  });
+
+  app.patch("/workspaces/:workspaceId/units/:unitId/members/:userId", {
+    schema: {
+      params: MemberParams, body: SetMemberTitleBody,
+      response: { 204: Type.Null() },
+    },
+  }, async (request, reply) => {
+    const { workspaceId, unitId, userId } = request.params as {
+      workspaceId: string; unitId: string; userId: string;
+    };
+    const { title } = request.body as { title: string | null };
+    const actor = await requireActor(request);
+
+    await setUnitMemberTitle({
+      actor, workspaceId: workspaceId as WorkspaceId, unitId, userId, title,
     }, options.organizationDependencies);
 
     return reply.code(204).send();
