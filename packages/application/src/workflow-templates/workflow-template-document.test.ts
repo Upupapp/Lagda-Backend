@@ -160,11 +160,15 @@ describe("attachWorkflowTemplateDocument", () => {
   it("bumps updatedAt", async () => {
     const h = await harness();
     const template = await createWorkflowTemplate(actor(OWNER), h.workspaceId, VALID, h.deps);
-    h.deps.clock = new FixedClock(AT + 5000);
 
+    // A fresh deps object with a later clock, rather than mutating `h.deps`
+    // — `WorkflowTemplateDependencies.clock` is readonly, deliberately: a
+    // use case that could swap its own clock mid-transaction is a use case
+    // that could read two different "now"s for one write.
     const attached = await attachWorkflowTemplateDocument(
       actor(OWNER), h.workspaceId, template.workflowTemplateId,
-      { documentId: DOC, artifactId: ART }, h.deps);
+      { documentId: DOC, artifactId: ART },
+      { ...h.deps, clock: new FixedClock(AT + 5000) });
 
     expect(attached.updatedAt).toBe(AT + 5000);
     expect(attached.updatedAt).toBeGreaterThan(template.updatedAt);
