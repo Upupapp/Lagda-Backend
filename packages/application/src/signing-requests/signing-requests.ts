@@ -137,7 +137,9 @@ export interface SigningRequestFieldView {
   readonly required: boolean;
   readonly label: string;
   readonly layer: number;
-  readonly recipientId: string;
+  /** Null when `staticValue` answers the field instead (migration 062). */
+  readonly recipientId: string | null;
+  readonly staticValue: string | null;
 }
 
 /**
@@ -199,6 +201,7 @@ const toFieldView = (record: SigningRequestFieldRecord): SigningRequestFieldView
   label: record.label,
   layer: record.layer,
   recipientId: record.recipientId,
+  staticValue: record.staticValue,
 });
 
 export interface SigningRequestDependencies {
@@ -422,7 +425,11 @@ async function buildSnapshot(
       type: recipient.type,
       isRequired: recipient.isRequired,
     })),
-    fields.map(field => ({ type: field.type, recipientId: field.recipientId })),
+    fields.map(field => ({
+      type: field.type,
+      recipientId: field.recipientId,
+      hasStaticValue: field.staticValue !== null,
+    })),
   );
   if (!readiness.ready) {
     throw new PreparationNotReadyError(readiness.blockers.map(describeBlocker));
@@ -455,10 +462,31 @@ async function buildSnapshot(
   });
 
   const requestFields: SigningRequestFieldRecord[] = fields.map(field => {
-    // Readiness already proved every field has an assignee that exists here.
-    // This is the belt: if the map misses, the data changed under an open
-    // transaction or the readiness rule and this loop disagree, and either way
-    // an immutable record must not be built on it.
+    // A static-value field needs no assignee at all — readiness already
+    // proved that combination is coherent, so this branch never resolves a
+    // recipient and never throws.
+    if (field.staticValue !== null) {
+      return {
+        fieldId: deps.ids.nextSigningRequestFieldId(),
+        sourcePreparationFieldId: field.fieldId,
+        type: field.type,
+        pageNumber: field.pageNumber,
+        x: field.x,
+        y: field.y,
+        width: field.width,
+        height: field.height,
+        required: field.required,
+        label: field.label,
+        layer: field.layer,
+        recipientId: null,
+        staticValue: field.staticValue,
+      };
+    }
+
+    // Readiness already proved every non-static field has an assignee that
+    // exists here. This is the belt: if the map misses, the data changed
+    // under an open transaction or the readiness rule and this loop disagree,
+    // and either way an immutable record must not be built on it.
     const assignee = field.recipientId === null
       ? undefined
       : remap.get(String(field.recipientId));
@@ -482,6 +510,7 @@ async function buildSnapshot(
       label: field.label,
       layer: field.layer,
       recipientId: assignee,
+      staticValue: null,
     };
   });
 

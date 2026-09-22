@@ -111,6 +111,7 @@ suite("signing requests (RLS, runtime role)", () => {
             x: 0.1, y: 0.2, width: 0.3, height: 0.05,
             required: true, label: "Landlord signature", layer: 0,
             recipientId: rcp as RecipientId,
+            staticValue: null,
           } satisfies PreparationFieldRecord],
         });
       });
@@ -168,6 +169,7 @@ suite("signing requests (RLS, runtime role)", () => {
         x: 0.1, y: 0.2, width: 0.3, height: 0.05,
         required: true, label: "Landlord signature", layer: 0,
         recipientId: (over.fieldRecipientId ?? recipientId) as SigningRequestRecipientId,
+        staticValue: null,
       }],
     };
   };

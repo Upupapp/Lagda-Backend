@@ -124,11 +124,13 @@ suite("signature submission (RLS, constraints, runtime role)", () => {
             fieldId: F1, sourcePreparationFieldId: null, type: "text",
             pageNumber: 1, x: 0.1, y: 0.2, width: 0.3, height: 0.05,
             required: true, label: "Notes", layer: 0, recipientId: R1,
+            staticValue: null,
           },
           {
             fieldId: F2, sourcePreparationFieldId: null, type: "text",
             pageNumber: 1, x: 0.5, y: 0.2, width: 0.3, height: 0.05,
             required: true, label: "Notes", layer: 0, recipientId: R2,
+            staticValue: null,
           },
         ],
       };

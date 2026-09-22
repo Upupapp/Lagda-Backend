@@ -160,6 +160,7 @@ suite("signing ceremony (RLS, runtime role)", () => {
               sourcePreparationFieldId: null, type: "signature", pageNumber: 1,
               x: 0.1, y: 0.2, width: 0.3, height: 0.05, required: true,
               label: "Signature", layer: 0, recipientId: recipientOf(ws),
+              staticValue: null,
             },
             ...(second ? [{
               fieldId: "srf_sc_a2" as SigningRequestFieldId,
@@ -167,6 +168,7 @@ suite("signing ceremony (RLS, runtime role)", () => {
               pageNumber: 1, x: 0.5, y: 0.2, width: 0.3, height: 0.05,
               required: true, label: "Maria Santos — Signature", layer: 0,
               recipientId: R2,
+              staticValue: null,
             }] : []),
           ],
         };

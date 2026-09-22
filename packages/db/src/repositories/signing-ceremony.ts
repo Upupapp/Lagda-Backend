@@ -142,6 +142,10 @@ export function createRecipientCeremonyRepository(
         label: row.label,
         layer: row.layer,
         recipientId: row.request_recipient_id as SigningRequestRecipientId,
+        // This query filters on `request_recipient_id = recipientId`, and a
+        // static-value field's recipient is always null (migration 062) — so
+        // it can never appear here. Always null, correctly.
+        staticValue: null,
       }));
     },
 

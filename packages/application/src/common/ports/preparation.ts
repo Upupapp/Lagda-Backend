@@ -57,9 +57,18 @@ export interface PreparationFieldRecord {
    * to a recipient of THIS preparation, so cross-preparation assignment is a
    * constraint violation rather than an application check.
    *
-   * NULL while authoring; readiness requires it.
+   * NULL while authoring; readiness requires it — UNLESS `staticValue` is set,
+   * in which case the field needs no recipient at all (BACKEND-30's Phase 4).
    */
   readonly recipientId: RecipientId | null;
+  /**
+   * A value the sender already knows, requiring no recipient to supply it.
+   *
+   * Mutually exclusive with `recipientId` — the use case that builds this
+   * record enforces it; this port makes no promise on its own that both could
+   * not be set, the same as every other field on this record.
+   */
+  readonly staticValue: string | null;
 }
 
 export interface PreparationRecord {

@@ -35,6 +35,8 @@ const F_TEXT = "srf_rv_text" as SigningRequestFieldId;
 const F_CHECK = "srf_rv_check" as SigningRequestFieldId;
 const F_TYPED = "srf_rv_typed" as SigningRequestFieldId;
 const F_DRAWN = "srf_rv_drawn" as SigningRequestFieldId;
+/** No recipient at all (migration 062) — nobody ever submits this one. */
+const F_STATIC = "srf_rv_static" as SigningRequestFieldId;
 
 const PNG = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3]);
 
@@ -113,21 +115,34 @@ suite("listRenderableFieldValues (real PostgreSQL)", () => {
             fieldId: F_DRAWN, sourcePreparationFieldId: null, type: "signature",
             pageNumber: 3, x: 0.4, y: 0.5, width: 0.2, height: 0.06,
             required: true, label: "Sign", layer: 0, recipientId: R1,
+            staticValue: null,
           },
           {
             fieldId: F_TEXT, sourcePreparationFieldId: null, type: "text",
             pageNumber: 1, x: 0.1, y: 0.2, width: 0.3, height: 0.05,
             required: true, label: "Notes", layer: 0, recipientId: R1,
+            staticValue: null,
           },
           {
             fieldId: F_CHECK, sourcePreparationFieldId: null, type: "checkbox",
             pageNumber: 1, x: 0.6, y: 0.2, width: 0.03, height: 0.03,
             required: true, label: "Agree", layer: 0, recipientId: R1,
+            staticValue: null,
           },
           {
             fieldId: F_TYPED, sourcePreparationFieldId: null, type: "signature",
             pageNumber: 2, x: 0.2, y: 0.7, width: 0.25, height: 0.06,
             required: true, label: "Initial", layer: 0, recipientId: R1,
+            staticValue: null,
+          },
+          {
+            // No recipient, no submission ever — the sender already knew this
+            // value (BACKEND-30's Phase 4). Page 1, alongside F_TEXT and
+            // F_CHECK, so ordering coverage still means something.
+            fieldId: F_STATIC, sourcePreparationFieldId: null, type: "text",
+            pageNumber: 1, x: 0.5, y: 0.8, width: 0.2, height: 0.04,
+            required: true, label: "Client name", layer: 0, recipientId: null,
+            staticValue: "Acme Legal",
           },
         ] : [{
           // Another request's field, at DIFFERENT coordinates. If the geometry
@@ -137,6 +152,7 @@ suite("listRenderableFieldValues (real PostgreSQL)", () => {
           pageNumber: 9, x: 0.99, y: 0.99, width: 0.005, height: 0.005,
           required: true, label: "Other", layer: 0,
           recipientId: "srr_rv_o" as SigningRequestRecipientId,
+          staticValue: null,
         }],
       });
 
@@ -200,11 +216,13 @@ suite("listRenderableFieldValues (real PostgreSQL)", () => {
 
   it("returns EVERY accepted value, including the ones with no representation", async () => {
     // The LEFT-join assertion. An inner join returns 2 instead of 4, and the
-    // document would come out missing its text and its checkbox.
+    // document would come out missing its text and its checkbox. F_STATIC is
+    // a fifth field from an entirely different source (migration 062) — see
+    // the dedicated static-value tests below.
     const rows = await read();
-    expect(rows).toHaveLength(4);
+    expect(rows).toHaveLength(5);
     expect(rows.map(row => row.fieldId).sort()).toEqual(
-      [F_CHECK, F_DRAWN, F_TEXT, F_TYPED].map(String).sort());
+      [F_CHECK, F_DRAWN, F_STATIC, F_TEXT, F_TYPED].map(String).sort());
   });
 
   it("carries the request's own frozen geometry", async () => {
@@ -262,12 +280,33 @@ suite("listRenderableFieldValues (real PostgreSQL)", () => {
 
   it("orders by page then field, so the caller sees a stable sequence", async () => {
     const rows = await read();
-    expect(rows.map(row => row.pageNumber)).toEqual([1, 1, 2, 3]);
+    expect(rows.map(row => row.pageNumber)).toEqual([1, 1, 1, 2, 3]);
   });
 
   it("returns nothing for a request with no accepted values", async () => {
     const rows = await createTransactionManager(owner.db).runForWorkspace(WS, uow =>
       uow.completionInputs.listRenderableFieldValues(OTHER_REQUEST));
     expect(rows).toEqual([]);
+  });
+
+  // ── Static values (migration 062, BACKEND-30's Phase 4) ────────────────────
+
+  it("surfaces a static-value field even though nobody ever submitted it", async () => {
+    // The second source this query reads from. No row in
+    // `recipient_submissions`, `signing_field_values` or
+    // `signing_representations` exists for F_STATIC at all — proving this
+    // does not depend on the submission tables in any way.
+    const rows = await read();
+    const value = rows.find(row => row.fieldId === String(F_STATIC));
+    expect(value).toMatchObject({
+      pageNumber: 1, x: 0.5, y: 0.8, width: 0.2, height: 0.04,
+      value: { kind: "text", text: "Acme Legal" },
+    });
+  });
+
+  it("gives a static-value field no recipient", async () => {
+    const rows = await read();
+    const value = rows.find(row => row.fieldId === String(F_STATIC));
+    expect(value?.recipientId).toBeNull();
   });
 });

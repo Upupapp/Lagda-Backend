@@ -286,6 +286,7 @@ function seed(h: Harness, fields: readonly FieldSpec[], over: {
       type: f.type, pageNumber: 1, x: 0.1, y: 0.2, width: 0.3, height: 0.05,
       required: f.required ?? true, label: "Field", layer: 1,
       recipientId: f.recipientId ?? RECIPIENT,
+      staticValue: null,
     });
     h.store.snapshotOwners.set(f.id, REQUEST);
   }

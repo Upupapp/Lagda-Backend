@@ -7042,7 +7042,8 @@
                           "required",
                           "label",
                           "layer",
-                          "recipientId"
+                          "recipientId",
+                          "staticValue"
                         ],
                         "properties": {
                           "fieldId": {
@@ -7163,6 +7164,17 @@
                               {
                                 "minLength": 1,
                                 "maxLength": 64,
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "staticValue": {
+                            "anyOf": [
+                              {
+                                "maxLength": 2000,
                                 "type": "string"
                               },
                               {
@@ -7344,6 +7356,17 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "staticValue": {
+                          "anyOf": [
+                            {
+                              "maxLength": 2000,
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       }
                     }
@@ -7446,7 +7469,8 @@
                           "required",
                           "label",
                           "layer",
-                          "recipientId"
+                          "recipientId",
+                          "staticValue"
                         ],
                         "properties": {
                           "fieldId": {
@@ -7567,6 +7591,17 @@
                               {
                                 "minLength": 1,
                                 "maxLength": 64,
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "staticValue": {
+                            "anyOf": [
+                              {
+                                "maxLength": 2000,
                                 "type": "string"
                               },
                               {
@@ -9628,7 +9663,8 @@
                           "required",
                           "label",
                           "layer",
-                          "recipientId"
+                          "recipientId",
+                          "staticValue"
                         ],
                         "properties": {
                           "fieldId": {
@@ -9744,9 +9780,27 @@
                             "type": "integer"
                           },
                           "recipientId": {
-                            "minLength": 1,
-                            "maxLength": 64,
-                            "type": "string"
+                            "anyOf": [
+                              {
+                                "minLength": 1,
+                                "maxLength": 64,
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "staticValue": {
+                            "anyOf": [
+                              {
+                                "maxLength": 2000,
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         }
                       }

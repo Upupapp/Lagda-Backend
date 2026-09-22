@@ -2260,33 +2260,51 @@ function completionInputs(
     // geometry, mirroring the real query. A fake that invented coordinates
     // would let a test pass against geometry the database could never produce.
     listRenderableFieldValues: signingRequestId => Promise.resolve(
-      store.submissions
-        .filter(row => row.workspaceId === scope
-          && row.signingRequestId === signingRequestId)
-        .flatMap(row => row.values.flatMap(value => {
-          const field = store.signingRequestFields.find(
-            candidate => String(candidate.fieldId) === String(value.fieldId));
-          // No snapshot row means the value references a field this request
-          // does not have. The real query drops it by inner join; dropping it
-          // here keeps the two consistent.
-          if (field === undefined) return [];
+      (() => {
+        const submitted = store.submissions
+          .filter(row => row.workspaceId === scope
+            && row.signingRequestId === signingRequestId)
+          .flatMap(row => row.values.flatMap(value => {
+            const field = store.signingRequestFields.find(
+              candidate => String(candidate.fieldId) === String(value.fieldId));
+            // No snapshot row means the value references a field this request
+            // does not have. The real query drops it by inner join; dropping
+            // it here keeps the two consistent.
+            if (field === undefined) return [];
 
-          const representation = value.representationId === null
-            ? undefined
-            : row.representations.find(candidate =>
-              String(candidate.representationId) === String(value.representationId));
+            const representation = value.representationId === null
+              ? undefined
+              : row.representations.find(candidate =>
+                String(candidate.representationId) === String(value.representationId));
 
-          return [{
-            fieldId: String(value.fieldId),
-            recipientId: row.recipientId,
+            return [{
+              fieldId: String(value.fieldId),
+              recipientId: row.recipientId,
+              fieldType: String(field.type),
+              pageNumber: field.pageNumber,
+              x: field.x, y: field.y, width: field.width, height: field.height,
+              value: fakeRenderableValue(value, representation),
+            }];
+          }));
+
+        // A static-value field (migration 062) never has a submission —
+        // nobody submitted it — so it must be read straight off the request's
+        // field snapshot, mirroring the real query's second source.
+        const fromStatic = store.signingRequestFields
+          .filter(field => field.staticValue !== null
+            && store.snapshotOwners.get(String(field.fieldId)) === signingRequestId)
+          .map(field => ({
+            fieldId: String(field.fieldId),
+            recipientId: null as string | null,
             fieldType: String(field.type),
             pageNumber: field.pageNumber,
             x: field.x, y: field.y, width: field.width, height: field.height,
-            value: fakeRenderableValue(value, representation),
-          }];
-        }))
-        .sort((a, b) =>
-          a.pageNumber - b.pageNumber || a.fieldId.localeCompare(b.fieldId))),
+            value: { kind: "text" as const, text: field.staticValue as string },
+          }));
+
+        return [...submitted, ...fromStatic]
+          .sort((a, b) => a.pageNumber - b.pageNumber || a.fieldId.localeCompare(b.fieldId));
+      })()),
 
     // Mirrors the real query: only recipients WITH an accepted submission, and
     // authentication read off the SUBMISSION rather than a session lookup.
@@ -2499,6 +2517,9 @@ function scopedSigningRequests(
       // against would pass here and fail only in PostgreSQL.
       const own = new Set(recipients.map(recipient => String(recipient.recipientId)));
       for (const field of fields) {
+        // A static-value field (migration 062) has no recipient at all — it
+        // names nobody's request, so there is nothing to check.
+        if (field.recipientId === null) continue;
         if (!own.has(String(field.recipientId))) {
           throw new Error("field assigned to a recipient of another request");
         }

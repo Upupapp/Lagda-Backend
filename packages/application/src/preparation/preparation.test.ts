@@ -344,6 +344,62 @@ describe("saveDocumentPreparation", () => {
   });
 });
 
+// ── Static values (migration 062, BACKEND-30's Phase 4) ────────────────────────
+
+describe("a field may carry a static value instead of a recipient", () => {
+  it("stores a static value on a text field, with no recipient", async () => {
+    const h = await harness();
+    const view = await saveDocumentPreparation(
+      actor(OWNER), h.workspaceId, DOC, {
+        expectedRevision: 0,
+        fields: [field({ type: "text", staticValue: "Acme Legal" })],
+      }, h.deps);
+    expect(view.fields[0]?.staticValue).toBe("Acme Legal");
+    expect(view.fields[0]?.recipientId).toBeNull();
+  });
+
+  it("REFUSES a static value on anything but a text field", async () => {
+    // A static value always renders as drawn text; every other type either
+    // has its own submission shape (checkbox) or names a SIGNER's own
+    // statement (signature, full-name, email, ...) that a sender filling it
+    // in would misrepresent.
+    const h = await harness();
+    const failure = await saveDocumentPreparation(
+      actor(OWNER), h.workspaceId, DOC, {
+        expectedRevision: 0,
+        fields: [field({ type: "signature", staticValue: "Acme Legal" })],
+      }, h.deps).catch((error: unknown) => error) as ApplicationValidationError;
+    expect(failure).toBeInstanceOf(ApplicationValidationError);
+    expect(failure.issues.join(" ")).toContain("only a \"text\" field may carry one");
+  });
+
+  it("REFUSES a static value together with a recipientId", async () => {
+    // Mutual exclusivity is the whole point: a field cannot simultaneously be
+    // "a signer will type this" and "the sender already filled it in" — that
+    // would be ambiguous about who supplies the value.
+    const h = await harness();
+    const failure = await saveDocumentPreparation(
+      actor(OWNER), h.workspaceId, DOC, {
+        expectedRevision: 0,
+        fields: [field({
+          type: "text", staticValue: "Acme Legal", recipientId: "rcp_whoever",
+        })],
+      }, h.deps).catch((error: unknown) => error) as ApplicationValidationError;
+    expect(failure).toBeInstanceOf(ApplicationValidationError);
+    expect(failure.issues.join(" ")).toContain("cannot be set together with a recipientId");
+  });
+
+  it("treats `staticValue: null` the same as omitting it", async () => {
+    const h = await harness();
+    const view = await saveDocumentPreparation(
+      actor(OWNER), h.workspaceId, DOC, {
+        expectedRevision: 0,
+        fields: [field({ type: "text", staticValue: null })],
+      }, h.deps);
+    expect(view.fields[0]?.staticValue).toBeNull();
+  });
+});
+
 // ── Validation ───────────────────────────────────────────────────────────────
 
 describe("layout validation", () => {

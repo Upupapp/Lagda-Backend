@@ -38,11 +38,13 @@ export type SnapshotBlocker =
   /** No fields at all. */
   | { readonly kind: "no-fields" }
   /**
-   * A field nobody was asked to fill.
+   * A field nobody was asked to fill, and that carries no value of its own.
    *
    * Legitimate while authoring — the editor places a box before deciding who
    * fills it — and impossible as a workflow. OD-127 deferred this rule to the
-   * send flow; this is the send flow's gate.
+   * send flow; this is the send flow's gate. A field with a static value
+   * (BACKEND-30's Phase 4) is NOT this blocker: it needs no recipient because
+   * it is already answered.
    */
   | { readonly kind: "unassigned-field"; readonly fieldIndex: number }
   /**
@@ -80,6 +82,15 @@ export interface ReadinessRecipient {
 export interface ReadinessField {
   readonly type: PreparationFieldType;
   readonly recipientId: string | null;
+  /**
+   * Whether the sender already supplied this field's value (BACKEND-30's
+   * Phase 4). When true, `recipientId === null` is not a blocker — the field
+   * needs nobody to complete it. Defaults are the caller's concern; this type
+   * makes the flag explicit rather than inferring it from an absent property,
+   * so a caller that forgets to pass it fails to compile rather than silently
+   * treating every field as unassigned-or-static.
+   */
+  readonly hasStaticValue: boolean;
 }
 
 export type SnapshotReadiness =
@@ -132,7 +143,10 @@ export function assessSnapshotReadiness(
   const assigned = new Set<string>();
   fields.forEach((field, fieldIndex) => {
     if (field.recipientId === null) {
-      blockers.push({ kind: "unassigned-field", fieldIndex });
+      // A static value answers the field itself; no recipient is needed and
+      // none can be "assigned" toward the participant-without-field rule
+      // below, because no participant did anything for it.
+      if (!field.hasStaticValue) blockers.push({ kind: "unassigned-field", fieldIndex });
       return;
     }
     const recipient = byId.get(field.recipientId);

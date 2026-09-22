@@ -94,6 +94,7 @@ export interface PreparationFieldView {
   readonly label: string;
   readonly layer: number;
   readonly recipientId: string | null;
+  readonly staticValue: string | null;
 }
 
 export interface PreparationView {
@@ -125,6 +126,7 @@ const toFieldView = (field: PreparationFieldRecord): PreparationFieldView => ({
   label: field.label,
   layer: field.layer,
   recipientId: field.recipientId,
+  staticValue: field.staticValue,
 });
 
 const toView = (
@@ -275,9 +277,18 @@ export interface FieldInput {
    * recipients, so a well-formed id from another preparation is refused — and
    * a three-column foreign key refuses it independently.
    *
-   * `null` while a layout is being built. Readiness is what requires it.
+   * `null` while a layout is being built. Readiness is what requires it —
+   * UNLESS `staticValue` is set, in which case no recipient is ever required.
    */
   readonly recipientId?: string | null;
+  /**
+   * A value the sender already knows, requiring no recipient (BACKEND-30's
+   * Phase 4). Restricted to `type: "text"` fields — see `validateFields`.
+   *
+   * Mutually exclusive with `recipientId`: a field cannot simultaneously be
+   * "a signer will type this" and "the sender already filled it in".
+   */
+  readonly staticValue?: string | null;
 }
 
 export interface SaveLayoutInput {
@@ -516,7 +527,28 @@ function validateFields(
       }
     }
 
-    if (!geometry.ok || !label.ok || assignmentInvalid) return;
+    // ── Static value ──────────────────────────────────────────────────────
+    //
+    // A sender-known value, requiring no recipient (BACKEND-30's Phase 4).
+    // Restricted to `text` fields: a static value always renders as drawn
+    // text, and every other type either has its own submission shape
+    // (checkbox) or names something a SIGNER attests to (signature, initials,
+    // date-signed, full-name, email, title, company) — sender-filled content
+    // there would misrepresent whose statement the field records.
+    let staticValueInvalid = false;
+    const staticValue = input.staticValue;
+    if (staticValue !== undefined && staticValue !== null) {
+      if (input.type !== "text") {
+        issues.push(`${at}.staticValue: only a "text" field may carry one`);
+        staticValueInvalid = true;
+      }
+      if (assignedTo !== undefined && assignedTo !== null) {
+        issues.push(`${at}.staticValue: cannot be set together with a recipientId`);
+        staticValueInvalid = true;
+      }
+    }
+
+    if (!geometry.ok || !label.ok || assignmentInvalid || staticValueInvalid) return;
 
     records.push({
       fieldId: (fieldId ?? deps.ids.nextPreparationFieldId()) as PreparationFieldRecord["fieldId"],
@@ -531,6 +563,7 @@ function validateFields(
       label: label.value,
       layer: input.layer,
       recipientId: (input.recipientId ?? null) as PreparationFieldRecord["recipientId"],
+      staticValue: staticValue ?? null,
     });
   });
 

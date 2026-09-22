@@ -116,7 +116,10 @@ function toField(row: FieldRow): SigningRequestFieldRecord {
     required: row.required,
     label: row.label,
     layer: row.layer,
-    recipientId: row.request_recipient_id as SigningRequestRecipientId,
+    recipientId: row.request_recipient_id === null
+      ? null
+      : row.request_recipient_id as SigningRequestRecipientId,
+    staticValue: row.static_value,
   };
 }
 
@@ -334,6 +337,7 @@ export function createScopedSigningRequestRepository(
               label: field.label,
               layer: field.layer,
               request_recipient_id: field.recipientId,
+              static_value: field.staticValue,
               created_at: new Date(request.createdAt),
             })),
           ).execute();

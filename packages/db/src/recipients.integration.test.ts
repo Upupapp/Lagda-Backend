@@ -141,6 +141,7 @@ suite("preparation recipients (RLS, runtime role)", () => {
     label: "Landlord signature",
     layer: 0,
     recipientId: null,
+    staticValue: null,
     ...over,
   });
 

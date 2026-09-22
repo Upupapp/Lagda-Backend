@@ -228,6 +228,7 @@ function seed(
       x: f.x, y: f.y, width: 0.3, height: 0.06,
       required: true, label: "Signature", layer: 1,
       recipientId,
+      staticValue: null,
     });
     h.store.snapshotOwners.set(f.id, signingRequestId);
   }
@@ -453,6 +454,7 @@ describe("fields", () => {
       pageNumber: 1, x: 0.5, y: 0.9, width: 0.3, height: 0.06,
       required: true, label: "Juan Dela Cruz — Signature", layer: 1,
       recipientId: OTHER_RECIPIENT,
+      staticValue: null,
     });
     h.store.snapshotOwners.set("srf_other", REQUEST);
 
@@ -493,6 +495,7 @@ describe("fields", () => {
       sourcePreparationFieldId: null, type: "date-signed",
       pageNumber: 1, x: 0.6, y: 0.8, width: 0.2, height: 0.04,
       required: true, label: "Date", layer: 1, recipientId: RECIPIENT,
+      staticValue: null,
     });
     h.store.snapshotOwners.set("srf_date", REQUEST);
 
