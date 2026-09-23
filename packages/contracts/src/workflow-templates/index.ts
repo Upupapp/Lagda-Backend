@@ -380,6 +380,36 @@ export const WorkflowTemplateFieldListSchema = Type.Object(
 );
 export type WorkflowTemplateFieldList = Static<typeof WorkflowTemplateFieldListSchema>;
 
+// ── The apply-time read ─────────────────────────────────────────────────────
+//
+// What a caller needs to COPY when a sender applies a template: the routing
+// shape, the slots, the completion settings, the document pair (059), and the
+// field geometry (060) — all in one read, from one transaction, so a caller
+// cannot observe the slots and the fields at two different moments. No
+// `workflowTemplateId`: a caller that received this has everything it needs
+// to build a draft and nothing that would let it store a live pointer back to
+// the template (see `resolveTemplateForApply`'s own header).
+
+export const WorkflowTemplateApplicationSchema = Type.Object(
+  {
+    routingMode: WorkflowRoutingModeSchema,
+    roleSlots: Type.Array(WorkflowRoleSlotSchema, { minItems: 1, maxItems: 50 }),
+    completionSettings: WorkflowCompletionSettingsSchema,
+    documentId: Type.Union([Type.Null(), Type.String({ minLength: 1, maxLength: 64 })]),
+    sourceArtifactId: Type.Union([Type.Null(), Type.String({ minLength: 1, maxLength: 64 })]),
+    fields: Type.Array(WorkflowTemplateFieldSchema),
+  },
+  {
+    title: "WorkflowTemplateApplication",
+    additionalProperties: false,
+    description:
+      "A snapshot of a template's shape, taken at the moment a sender applies "
+      + "it. Not a live reference — later edits to the template cannot reach "
+      + "anything built from this read.",
+  },
+);
+export type WorkflowTemplateApplicationView = Static<typeof WorkflowTemplateApplicationSchema>;
+
 // ── Resolved role assignments (061) ─────────────────────────────────────────
 //
 // The APPLY-time read: for every slot, what `resolution` produces right now.

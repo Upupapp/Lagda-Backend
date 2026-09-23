@@ -10,6 +10,7 @@
 //   GET    /workspaces/:id/workflow-templates/:templateId/fields
 //   PUT    /workspaces/:id/workflow-templates/:templateId/fields
 //   GET    /workspaces/:id/workflow-templates/:templateId/role-assignments
+//   GET    /workspaces/:id/workflow-templates/:templateId/apply
 //
 // Registered inside the authenticated workspace scope, so `requireSession`
 // has already run its CSRF hook — the same position the contact routes take,
@@ -37,17 +38,18 @@ import {
   updateWorkflowTemplate, deleteWorkflowTemplate,
   attachWorkflowTemplateDocument, detachWorkflowTemplateDocument,
   listWorkflowTemplateFields, saveWorkflowTemplateFields,
-  resolveWorkflowRoleAssignments,
+  resolveWorkflowRoleAssignments, resolveTemplateForApply,
   WorkflowTemplateNameTakenError,
   type WorkflowTemplateDependencies, type WorkflowTemplateRecord,
   type WorkflowTemplateFieldRecord, type WorkflowRoleAssignment,
+  type WorkflowTemplateApplication,
   type SessionId, type UserId, type ArtifactId,
 } from "@lagda/application";
 import {
   WorkflowTemplateSchema, WorkflowTemplateWriteSchema, WorkflowTemplateListSchema,
   WorkflowTemplateDocumentInputSchema,
   WorkflowTemplateFieldListSchema, WorkflowTemplateFieldsWriteSchema,
-  WorkflowRoleAssignmentListSchema,
+  WorkflowRoleAssignmentListSchema, WorkflowTemplateApplicationSchema,
   type WorkflowTemplateWrite, type WorkflowTemplateDocumentInput,
   type WorkflowTemplateFieldsWrite,
   type WorkspaceId, type DocumentId,
@@ -150,6 +152,27 @@ const presentAssignment = (assignment: WorkflowRoleAssignment) =>
         email: assignment.email,
       }
     : { slotId: assignment.slotId, status: assignment.status };
+
+/** The apply-time snapshot on the wire. No `workflowTemplateId` — see
+ *  `WorkflowTemplateApplicationSchema`'s own header. */
+const presentApplication = (application: WorkflowTemplateApplication) => ({
+  routingMode: application.routingMode,
+  roleSlots: application.roleSlots.map(slot => ({
+    slotId: slot.slotId,
+    label: slot.label,
+    role: slot.role,
+    required: slot.required,
+    routingStep: slot.routingStep,
+    defaultAuthMethod: slot.defaultAuthMethod,
+    ...(slot.resolution === undefined ? {} : { resolution: slot.resolution }),
+  })),
+  completionSettings: {
+    notifySenderOnComplete: application.completionSettings.notifySenderOnComplete,
+  },
+  documentId: application.documentId,
+  sourceArtifactId: application.sourceArtifactId,
+  fields: application.fields.map(presentField),
+});
 
 export function registerWorkflowTemplateRoutes(
   app: FastifyInstance,
@@ -473,5 +496,31 @@ export function registerWorkflowTemplateRoutes(
       options.workflowTemplateDependencies());
 
     return reply.status(200).send({ items: assignments.map(presentAssignment) });
+  });
+
+  // ── Apply ───────────────────────────────────────────────────────────────
+  //
+  // The one read a sender needs to start from a template: slots, settings,
+  // document pair and field geometry, in one transaction. See
+  // `resolveTemplateForApply`'s own header for why it needs `template.view`
+  // rather than a write capability, and why it never returns the template id.
+  app.get("/workspaces/:workspaceId/workflow-templates/:workflowTemplateId/apply", {
+    schema: {
+      params: TemplateParamsSchema,
+      response: { 200: WorkflowTemplateApplicationSchema },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await actorOf(request);
+    if (actor === null) return unauthenticated(reply);
+
+    const { workspaceId, workflowTemplateId } =
+      request.params as Static<typeof TemplateParamsSchema>;
+
+    const application = await resolveTemplateForApply(
+      actor, workspaceId as WorkspaceId, workflowTemplateId,
+      options.workflowTemplateDependencies());
+
+    return reply.status(200).send(presentApplication(application));
   });
 }
