@@ -31,7 +31,7 @@ const SLOTS = [
 
 const FIELD: WorkflowTemplateFieldRecord = {
   fieldId: "wff_1" as WorkflowTemplateFieldRecord["fieldId"],
-  slotId: "wfs_a",
+  slotId: "wfs_a", variableKey: null,
   type: "signature",
   pageNumber: 1,
   x: 0.1, y: 0.1, width: 0.2, height: 0.05,

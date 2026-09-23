@@ -136,6 +136,7 @@ const present = (template: WorkflowTemplateRecord) => ({
 const presentField = (field: WorkflowTemplateFieldRecord) => ({
   fieldId: field.fieldId,
   slotId: field.slotId,
+  variableKey: field.variableKey,
   type: field.type,
   pageNumber: field.pageNumber,
   rect: { x: field.x, y: field.y, width: field.width, height: field.height },

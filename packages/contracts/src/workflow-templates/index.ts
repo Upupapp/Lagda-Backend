@@ -384,9 +384,20 @@ export const WorkflowTemplateListSchema = Type.Object(
 export const WorkflowTemplateFieldSchema = Type.Object(
   {
     fieldId: Type.String({ minLength: 1, maxLength: 64 }),
-    /** Which role this field belongs to — one of the template's OWN
-     *  `roleSlots[].slotId` values, checked at write time. */
-    slotId: Type.String({ minLength: 1, maxLength: 64 }),
+    /**
+     * Which role signs this field — one of the template's OWN
+     * `roleSlots[].slotId` values, checked at write time.
+     *
+     * NULL when the field is filled from a VARIABLE instead. Exactly one of
+     * `slotId` and `variableKey` is set on any field (064).
+     */
+    slotId: Type.Union([Type.String({ minLength: 1, maxLength: 64 }), Type.Null()]),
+    /** 064. Which VARIABLE fills this field — one of the template's own
+     *  `variables[].key` values. Null when a role signs it instead. */
+    variableKey: Type.Union([
+      Type.String({ minLength: 1, maxLength: WORKFLOW_TEMPLATE_VARIABLE_KEY_MAX_LENGTH }),
+      Type.Null(),
+    ]),
     type: PreparationFieldTypeSchema,
     /** 1-based, against the template's attached document. */
     pageNumber: Type.Integer({ minimum: 1 }),
@@ -405,7 +416,16 @@ export type WorkflowTemplateField = Static<typeof WorkflowTemplateFieldSchema>;
 export const WorkflowTemplateFieldInputSchema = Type.Object(
   {
     fieldId: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
-    slotId: Type.String({ minLength: 1, maxLength: 64 }),
+    /** EXACTLY ONE of `slotId` / `variableKey`. Both optional in the schema
+     *  because a union of two object shapes reads worse in the generated
+     *  OpenAPI than one object with a documented rule; the use case rejects
+     *  both-set and neither-set with a named error, and a CHECK constraint
+     *  refuses anything that slips past it. */
+    slotId: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
+    /** 064. One of the template's own `variables[].key` values. */
+    variableKey: Type.Optional(
+      Type.String({ minLength: 1, maxLength: WORKFLOW_TEMPLATE_VARIABLE_KEY_MAX_LENGTH }),
+    ),
     type: PreparationFieldTypeSchema,
     pageNumber: Type.Integer({ minimum: 1 }),
     rect: PreparationRectSchema,

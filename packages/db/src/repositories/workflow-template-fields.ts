@@ -33,6 +33,7 @@ function toField(row: FieldRow): WorkflowTemplateFieldRecord {
   return {
     fieldId: row.field_id as WorkflowTemplateFieldId,
     slotId: row.slot_id,
+    variableKey: row.variable_key,
     type: toFieldType(row.field_type),
     pageNumber: row.page_number,
     x: row.x,
@@ -84,6 +85,7 @@ export function createScopedWorkflowTemplateFieldRepository(
               workspace_id: scope,
               workflow_template_id: workflowTemplateId,
               slot_id: field.slotId,
+              variable_key: field.variableKey,
               field_type: field.type,
               page_number: field.pageNumber,
               x: field.x,

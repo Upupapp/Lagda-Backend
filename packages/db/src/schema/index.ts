@@ -455,8 +455,13 @@ export interface WorkflowTemplateFieldsTable {
   workspace_id: string;
   workflow_template_id: string;
   /** One of the template's own `role_slots[].slotId` values. No FK — slots
-   *  live in JSONB, not a row; validated by the application on every write. */
-  slot_id: string;
+   *  live in JSONB, not a row; validated by the application on every write.
+   *  NULL when the field is bound to a variable instead (064). */
+  slot_id: ColumnType<string | null, string | null, string | null>;
+  /** 064. One of the template's own `variables[].key` values, or null when the
+   *  field targets a role slot. Exactly one of the two is set — CHECK-enforced.
+   *  No FK, for the same reason `slot_id` has none. */
+  variable_key: ColumnType<string | null, string | null, string | null>;
   field_type: string;
   page_number: number;
   x: number;
