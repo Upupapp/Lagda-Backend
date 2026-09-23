@@ -514,3 +514,48 @@ describe("PUT and DELETE", () => {
     expect(again.statusCode).toBe(404);
   });
 });
+
+// ── Apply ────────────────────────────────────────────────────────────────────
+
+describe("GET .../apply", () => {
+  it("returns the slots, settings and an empty field list for a plain template", async () => {
+    const h = await harness();
+    expect((await createAs(h, OWNER)).statusCode).toBe(201);
+
+    const { cookie } = await h.signIn(OWNER);
+    const response = await h.app.inject({
+      method: "GET", url: `${URL}/wft_1/apply`, headers: { cookie },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json<Record<string, unknown>>();
+    expect(body["routingMode"]).toBe("sequential");
+    expect(body["roleSlots"]).toHaveLength(2);
+    expect(body["documentId"]).toBeNull();
+    expect(body["fields"]).toEqual([]);
+    // Never the template id — see the schema's own header.
+    expect(body).not.toHaveProperty("workflowTemplateId");
+  });
+
+  it("lets a SENDER read it — applying is a sender's act", async () => {
+    const h = await harness();
+    expect((await createAs(h, OWNER)).statusCode).toBe(201);
+
+    const { cookie } = await h.signIn(SENDER);
+    const response = await h.app.inject({
+      method: "GET", url: `${URL}/wft_1/apply`, headers: { cookie },
+    });
+    expect(response.statusCode).toBe(200);
+  });
+
+  it("404s an unknown id and a cross-workspace one, indistinguishably", async () => {
+    const h = await harness();
+    expect((await createAs(h, OWNER)).statusCode).toBe(201);
+    const { cookie } = await h.signIn(OWNER);
+
+    const unknown = await h.app.inject({
+      method: "GET", url: `${URL}/wft_nope/apply`, headers: { cookie },
+    });
+    expect(unknown.statusCode).toBe(404);
+  });
+});
