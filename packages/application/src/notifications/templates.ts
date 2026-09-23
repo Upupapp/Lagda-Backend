@@ -43,6 +43,8 @@ import {
   SigningInvitationModelV1, SigningCompletedModelV1,
 } from "./template-registry.js";
 import { escapeHtml } from "./rendering.js";
+import { LAGDA_LOGO_PNG_BASE64 } from "./assets/lagda-logo.js";
+import { qrCodeDataUri } from "./qr-code.js";
 
 /**
  * The product name, as it appears in copy.
@@ -53,23 +55,78 @@ import { escapeHtml } from "./rendering.js";
  */
 const PRODUCT = "LAGDA";
 
-/** Wraps a body in the one shared HTML shell, so every template shares one look. */
+// ── Brand shell ──────────────────────────────────────────────────────────────
+//
+// Table-based layout, not flexbox/grid: Outlook desktop renders HTML mail
+// with Word's engine, which only reliably supports `<table>` for layout — a
+// flexbox shell would silently collapse there. Every color/size below is an
+// inline style for the same reason; mail clients strip or ignore `<style>`
+// blocks inconsistently, so nothing here depends on one.
+
+const NAVY   = "#07111F";
+const AZURE  = "#0078D4";
+const SILVER = "#64748B";
+const BORDER = "#E2E8F0";
+const CANVAS = "#F1F5F9";
+
+const LOGO_DATA_URI = `data:image/png;base64,${LAGDA_LOGO_PNG_BASE64}`;
+
+/**
+ * Wraps a body in the one shared branded HTML shell, so every template
+ * shares one look: logo header, white card, footer.
+ */
 const htmlDocument = (heading: string, bodyHtml: string): string =>
   [
     `<!doctype html>`,
-    `<html lang="en"><body style="font-family:system-ui,-apple-system,`,
-    `'Segoe UI',sans-serif;line-height:1.5;color:#1a1a1a">`,
-    `<h1 style="font-size:20px">${heading}</h1>`,
+    `<html lang="en"><body style="margin:0;padding:0;background:${CANVAS};`,
+    `font-family:system-ui,-apple-system,'Segoe UI',sans-serif;">`,
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${CANVAS};padding:32px 16px;">`,
+    `<tr><td align="center">`,
+    `<table role="presentation" width="100%" style="max-width:520px;background:#ffffff;border-radius:12px;` +
+      `overflow:hidden;border:1px solid ${BORDER};" cellpadding="0" cellspacing="0">`,
+    `<tr><td style="padding:28px 32px 20px;text-align:center;border-bottom:1px solid ${BORDER};">`,
+    `<img src="${LOGO_DATA_URI}" width="140" height="105" alt="${PRODUCT}" style="display:inline-block;border:0;max-width:140px;height:auto;" />`,
+    `</td></tr>`,
+    `<tr><td style="padding:28px 32px 8px;">`,
+    `<h1 style="margin:0 0 16px;font-size:19px;color:${NAVY};">${heading}</h1>`,
     bodyHtml,
-    `<p style="font-size:12px;color:#666">`,
+    `</td></tr>`,
+    `<tr><td style="padding:20px 32px 28px;border-top:1px solid ${BORDER};">`,
+    `<p style="font-size:11px;color:${SILVER};margin:0;line-height:1.5;">`,
     `This is an automated message from ${PRODUCT}. Please do not reply.`,
     `</p>`,
+    `</td></tr>`,
+    `</table>`,
+    `</td></tr>`,
+    `</table>`,
     `</body></html>`,
   ].join("");
 
-/** A call-to-action link. The URL is built from configured base, never echoed. */
+/** Body copy paragraph — the one text style every template's HTML body uses. */
+const p = (html: string): string =>
+  `<p style="margin:0 0 14px;font-size:14px;color:#334155;line-height:1.6;">${html}</p>`;
+
+/** A call-to-action button. The URL is built from configured base, never echoed. */
 const linkHtml = (url: string, label: string): string =>
-  `<p><a href="${escapeHtml(url)}">${escapeHtml(label)}</a></p>`;
+  `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:6px 0 18px;">` +
+  `<tr><td style="border-radius:8px;background:${AZURE};">` +
+  `<a href="${escapeHtml(url)}" style="display:inline-block;padding:12px 26px;font-size:14px;` +
+  `font-weight:700;color:#ffffff;text-decoration:none;border-radius:8px;">${escapeHtml(label)}</a>` +
+  `</td></tr></table>`;
+
+/**
+ * A scannable alternative to the button above, for a reader opening the mail
+ * on a computer who will actually sign on their phone. Renders from the SAME
+ * url the button and the text part use — never a second, independently-built
+ * link — so there is exactly one URL this message can send someone to.
+ */
+const qrBlockHtml = (url: string): string =>
+  `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin:4px 0 4px;">` +
+  `<tr><td align="center" style="padding:16px;background:${CANVAS};border:1px solid ${BORDER};border-radius:10px;">` +
+  `<img src="${qrCodeDataUri(url)}" width="132" height="132" alt="QR code — scan to open on your phone" ` +
+  `style="display:block;border:0;margin:0 auto 8px;" />` +
+  `<p style="margin:0;font-size:11px;color:${SILVER};">Or scan with your phone's camera to open the document</p>` +
+  `</td></tr></table>`;
 
 export const accountEmailVerificationV1 = defineTemplate({
   key: "account-email-verification",
@@ -94,10 +151,10 @@ export const accountEmailVerificationV1 = defineTemplate({
       ].join("\n"),
       htmlBody: htmlDocument(
         `Confirm your email address`,
-        `<p>Hello ${escapeHtml(name)},</p>` +
-          `<p>Confirm your email address to finish setting up your ${PRODUCT} account.</p>` +
+        p(`Hello ${escapeHtml(name)},`) +
+          p(`Confirm your email address to finish setting up your ${PRODUCT} account.`) +
           linkHtml(url, "Confirm email address") +
-          `<p>If you did not create this account, you can ignore this message.</p>`,
+          p(`If you did not create this account, you can ignore this message.`),
       ),
     };
   },
@@ -128,11 +185,11 @@ export const passwordResetV1 = defineTemplate({
       ].join("\n"),
       htmlBody: htmlDocument(
         `Reset your password`,
-        `<p>Hello ${escapeHtml(name)},</p>` +
-          `<p>Use the link below to choose a new password.</p>` +
+        p(`Hello ${escapeHtml(name)},`) +
+          p(`Use the link below to choose a new password.`) +
           linkHtml(url, "Reset password") +
-          `<p>If you did not request a password reset, your account is unchanged ` +
-          `and no action is needed.</p>`,
+          p(`If you did not request a password reset, your account is unchanged ` +
+            `and no action is needed.`),
       ),
     };
   },
@@ -158,8 +215,8 @@ export const workspaceInvitationV1 = defineTemplate({
       ].join("\n"),
       htmlBody: htmlDocument(
         `You have been invited to ${escapeHtml(workspace)}`,
-        `<p>${escapeHtml(inviter)} has invited you to join the ${PRODUCT} ` +
-          `workspace "${escapeHtml(workspace)}".</p>` +
+        p(`${escapeHtml(inviter)} has invited you to join the ${PRODUCT} ` +
+          `workspace "${escapeHtml(workspace)}".`) +
           linkHtml(url, "Accept invitation"),
       ),
     };
@@ -196,11 +253,12 @@ export const signingInvitationV1 = defineTemplate({
       ].join("\n"),
       htmlBody: htmlDocument(
         `A document is waiting for your signature`,
-        `<p>Hello ${escapeHtml(name)},</p>` +
-          `<p>${escapeHtml(sender)} (${escapeHtml(workspace)}) has sent you a ` +
-          `document to sign: "${escapeHtml(title)}".</p>` +
+        p(`Hello ${escapeHtml(name)},`) +
+          p(`${escapeHtml(sender)} (${escapeHtml(workspace)}) has sent you a ` +
+            `document to sign: "${escapeHtml(title)}".`) +
           linkHtml(url, "Open document") +
-          `<p>This link is personal to you. Do not forward this message.</p>`,
+          qrBlockHtml(url) +
+          p(`This link is personal to you. Do not forward this message.`),
       ),
     };
   },
@@ -256,12 +314,11 @@ export const signingCompletedV1 = defineTemplate({
       ].join("\n"),
       htmlBody: htmlDocument(
         `Your document is fully signed`,
-        `<p>Hello ${escapeHtml(name)},</p>` +
-          `<p>All signatures are in. "${escapeHtml(title)}" has been completed ` +
-          `by ${escapeHtml(people)} and the sealed document is now final.</p>` +
+        p(`Hello ${escapeHtml(name)},`) +
+          p(`All signatures are in. "${escapeHtml(title)}" has been completed ` +
+            `by ${escapeHtml(people)} and the sealed document is now final.`) +
           linkHtml(url, `View in ${workspace}`) +
-          `<p>You are receiving this because you sent this document for ` +
-          `signature.</p>`,
+          p(`You are receiving this because you sent this document for signature.`),
       ),
     };
   },
