@@ -122,6 +122,9 @@ const present = (template: WorkflowTemplateRecord) => ({
   completionSettings: {
     notifySenderOnComplete: template.completionSettings.notifySenderOnComplete,
   },
+  variables: template.variables.map(v => ({
+    key: v.key, label: v.label, type: v.type, required: v.required,
+  })),
   documentId: template.documentId,
   sourceArtifactId: template.sourceArtifactId,
   createdAt: iso(template.createdAt),
@@ -172,6 +175,9 @@ const presentApplication = (application: WorkflowTemplateApplication) => ({
   documentId: application.documentId,
   sourceArtifactId: application.sourceArtifactId,
   fields: application.fields.map(presentField),
+  variables: application.variables.map(v => ({
+    key: v.key, label: v.label, type: v.type, required: v.required,
+  })),
 });
 
 export function registerWorkflowTemplateRoutes(

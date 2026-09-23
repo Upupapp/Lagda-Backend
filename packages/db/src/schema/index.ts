@@ -439,6 +439,9 @@ export interface WorkspaceWorkflowTemplatesTable {
    *  other. */
   document_id: ColumnType<string | null, string | null, string | null>;
   source_artifact_id: ColumnType<string | null, string | null, string | null>;
+  /** 063. A JSON array, always present — empty for a template with no
+   *  variables declared, the ordinary case today. */
+  variables: ColumnType<unknown, string, string>;
 }
 
 /**

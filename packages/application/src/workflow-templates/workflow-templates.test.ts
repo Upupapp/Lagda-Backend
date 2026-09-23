@@ -138,6 +138,7 @@ const VALID: WorkflowTemplateInput = {
     { label: "Manager", role: "signer", required: true, routingStep: 2, defaultAuthMethod: "none" },
   ],
   completionSettings: { notifySenderOnComplete: true },
+  variables: [],
 };
 
 // ── Authorization ────────────────────────────────────────────────────────────
@@ -379,6 +380,7 @@ describe("applying a template takes a COPY", () => {
         { label: "Only Signer", role: "signer", required: true, routingStep: 1, defaultAuthMethod: "none" },
       ],
       completionSettings: { notifySenderOnComplete: false },
+      variables: [],
     }, h.deps);
 
     // What was already resolved is untouched.
@@ -408,5 +410,109 @@ describe("applying a template takes a COPY", () => {
     await expect(getWorkflowTemplate(
       actor(OWNER), h.workspaceId, template.workflowTemplateId, h.deps))
       .rejects.toBeInstanceOf(ResourceNotFoundError);
+  });
+});
+
+// ── Variables (063) ─────────────────────────────────────────────────────────
+
+describe("template variables", () => {
+  const withVariables = (variables: WorkflowTemplateInput["variables"]): WorkflowTemplateInput =>
+    ({ ...VALID, variables });
+
+  it("round-trips through create, read and update", async () => {
+    const h = await harness();
+    const vars = [
+      { key: "client_name", label: "Client Name", type: "short-text" as const, required: true },
+      { key: "effective_date", label: "Effective Date", type: "date" as const, required: false },
+    ];
+    const created = await createWorkflowTemplate(
+      actor(OWNER), h.workspaceId, withVariables(vars), h.deps);
+    expect(created.variables).toEqual(vars);
+
+    const read = await getWorkflowTemplate(
+      actor(OWNER), h.workspaceId, created.workflowTemplateId, h.deps);
+    expect(read.variables).toEqual(vars);
+
+    const updated = await updateWorkflowTemplate(
+      actor(OWNER), h.workspaceId, created.workflowTemplateId,
+      withVariables([{ key: "renamed", label: "Renamed", type: "number", required: true }]),
+      h.deps);
+    expect(updated.variables).toEqual(
+      [{ key: "renamed", label: "Renamed", type: "number", required: true }]);
+  });
+
+  it("defaults to empty and never blocks a template with none", async () => {
+    const h = await harness();
+    const created = await createWorkflowTemplate(actor(OWNER), h.workspaceId, VALID, h.deps);
+    expect(created.variables).toEqual([]);
+  });
+
+  it("refuses two variables with the same key, case- and whitespace-insensitively", async () => {
+    const h = await harness();
+    await expect(createWorkflowTemplate(actor(OWNER), h.workspaceId, withVariables([
+      { key: "client_name", label: "Client Name", type: "short-text", required: true },
+      { key: "client_name", label: "Duplicate", type: "short-text", required: false },
+    ]), h.deps)).rejects.toBeInstanceOf(WorkflowTemplateMalformedError);
+  });
+
+  it("refuses a key with an uppercase letter, a space, or a leading digit", async () => {
+    const h = await harness();
+    for (const badKey of ["Client_Name", "client name", "1client", "", "_client"]) {
+      await expect(createWorkflowTemplate(actor(OWNER), h.workspaceId, withVariables([
+        { key: badKey, label: "Bad", type: "short-text", required: true },
+      ]), h.deps), `key "${badKey}"`).rejects.toBeInstanceOf(WorkflowTemplateMalformedError);
+    }
+  });
+
+  it("refuses a blank label", async () => {
+    const h = await harness();
+    await expect(createWorkflowTemplate(actor(OWNER), h.workspaceId, withVariables([
+      { key: "client_name", label: "   ", type: "short-text", required: true },
+    ]), h.deps)).rejects.toBeInstanceOf(WorkflowTemplateMalformedError);
+  });
+
+  it("refuses a type outside the closed set", async () => {
+    const h = await harness();
+    await expect(createWorkflowTemplate(actor(OWNER), h.workspaceId, withVariables([
+      { key: "client_name", label: "Client Name", type: "paragraph" as never, required: true },
+    ]), h.deps)).rejects.toBeInstanceOf(WorkflowTemplateMalformedError);
+  });
+
+  it("refuses more than 50 variables", async () => {
+    const h = await harness();
+    const many = Array.from({ length: 51 }, (_, i) => ({
+      key: `v${String(i)}`, label: `V${String(i)}`, type: "short-text" as const, required: false,
+    }));
+    await expect(createWorkflowTemplate(actor(OWNER), h.workspaceId, withVariables(many), h.deps))
+      .rejects.toBeInstanceOf(WorkflowTemplateMalformedError);
+  });
+
+  it("refuses variables that are not an array", async () => {
+    const h = await harness();
+    await expect(createWorkflowTemplate(
+      actor(OWNER), h.workspaceId, { ...VALID, variables: {} }, h.deps))
+      .rejects.toBeInstanceOf(WorkflowTemplateMalformedError);
+  });
+
+  it("writes nothing when a variable is malformed", async () => {
+    const h = await harness();
+    await createWorkflowTemplate(actor(OWNER), h.workspaceId, withVariables([
+      { key: "client_name", label: "Client Name", type: "short-text", required: true },
+      { key: "client_name", label: "Duplicate", type: "short-text", required: false },
+    ]), h.deps).catch(() => undefined);
+    const list = await listWorkflowTemplates(actor(OWNER), h.workspaceId, h.deps);
+    expect(list).toHaveLength(0);
+  });
+
+  it("is included, unchanged, in the apply-time snapshot", async () => {
+    const h = await harness();
+    const vars = [
+      { key: "client_name", label: "Client Name", type: "short-text" as const, required: true },
+    ];
+    const template = await createWorkflowTemplate(
+      actor(OWNER), h.workspaceId, withVariables(vars), h.deps);
+    const applied = await resolveTemplateForApply(
+      actor(SENDER), h.workspaceId, template.workflowTemplateId, h.deps);
+    expect(applied.variables).toEqual(vars);
   });
 });

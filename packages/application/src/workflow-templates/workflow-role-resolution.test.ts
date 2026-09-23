@@ -127,6 +127,7 @@ function templateWithResolution(
       },
     ],
     completionSettings: { notifySenderOnComplete: true },
+    variables: [],
   };
 }
 
@@ -194,6 +195,7 @@ describe("a slot's resolution, validated on write", () => {
         name: "Onboarding", routingMode: "sequential",
         roleSlots: [{ label: "Signer", role: "signer", required: true, routingStep: 1, defaultAuthMethod: "none" }],
         completionSettings: { notifySenderOnComplete: true },
+        variables: [],
       }, h.deps);
 
     await expect(updateWorkflowTemplate(
@@ -214,6 +216,7 @@ describe("resolveWorkflowRoleAssignments", () => {
         name: "Onboarding", routingMode: "sequential",
         roleSlots: [{ label: "Signer", role: "signer", required: true, routingStep: 1, defaultAuthMethod: "none" }],
         completionSettings: { notifySenderOnComplete: true },
+        variables: [],
       }, h.deps);
 
     const assignments = await resolveWorkflowRoleAssignments(
@@ -290,6 +293,7 @@ describe("resolveWorkflowRoleAssignments", () => {
           { label: "New Hire", role: "signer", required: true, routingStep: 2, defaultAuthMethod: "none" },
         ],
         completionSettings: { notifySenderOnComplete: true },
+        variables: [],
       }, h.deps);
     makeHeadOf(h, RECORDS_UNIT, "Department Head");
 

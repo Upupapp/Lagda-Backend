@@ -3162,6 +3162,7 @@
                           "routingMode",
                           "roleSlots",
                           "completionSettings",
+                          "variables",
                           "documentId",
                           "sourceArtifactId",
                           "createdAt",
@@ -3367,6 +3368,71 @@
                               }
                             }
                           },
+                          "variables": {
+                            "maxItems": 50,
+                            "type": "array",
+                            "items": {
+                              "title": "WorkflowTemplateVariable",
+                              "additionalProperties": false,
+                              "type": "object",
+                              "required": [
+                                "key",
+                                "label",
+                                "type",
+                                "required"
+                              ],
+                              "properties": {
+                                "key": {
+                                  "minLength": 1,
+                                  "maxLength": 64,
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "minLength": 1,
+                                  "maxLength": 200,
+                                  "type": "string"
+                                },
+                                "type": {
+                                  "title": "WorkflowTemplateVariableType",
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "short-text"
+                                      ]
+                                    },
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "multiline-text"
+                                      ]
+                                    },
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "date"
+                                      ]
+                                    },
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "number"
+                                      ]
+                                    },
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "yes-no"
+                                      ]
+                                    }
+                                  ]
+                                },
+                                "required": {
+                                  "type": "boolean"
+                                }
+                              }
+                            }
+                          },
                           "documentId": {
                             "anyOf": [
                               {
@@ -3422,7 +3488,8 @@
                   "name",
                   "routingMode",
                   "roleSlots",
-                  "completionSettings"
+                  "completionSettings",
+                  "variables"
                 ],
                 "properties": {
                   "name": {
@@ -3617,6 +3684,71 @@
                         "type": "boolean"
                       }
                     }
+                  },
+                  "variables": {
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "title": "WorkflowTemplateVariable",
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "key",
+                        "label",
+                        "type",
+                        "required"
+                      ],
+                      "properties": {
+                        "key": {
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "type": "string"
+                        },
+                        "label": {
+                          "minLength": 1,
+                          "maxLength": 200,
+                          "type": "string"
+                        },
+                        "type": {
+                          "title": "WorkflowTemplateVariableType",
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "short-text"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "multiline-text"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "date"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "number"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "yes-no"
+                              ]
+                            }
+                          ]
+                        },
+                        "required": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
                   }
                 }
               }
@@ -3651,6 +3783,7 @@
                     "routingMode",
                     "roleSlots",
                     "completionSettings",
+                    "variables",
                     "documentId",
                     "sourceArtifactId",
                     "createdAt",
@@ -3853,6 +3986,71 @@
                       "properties": {
                         "notifySenderOnComplete": {
                           "type": "boolean"
+                        }
+                      }
+                    },
+                    "variables": {
+                      "maxItems": 50,
+                      "type": "array",
+                      "items": {
+                        "title": "WorkflowTemplateVariable",
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "key",
+                          "label",
+                          "type",
+                          "required"
+                        ],
+                        "properties": {
+                          "key": {
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "type": "string"
+                          },
+                          "label": {
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "type": "string"
+                          },
+                          "type": {
+                            "title": "WorkflowTemplateVariableType",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "short-text"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "multiline-text"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "date"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "number"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "yes-no"
+                                ]
+                              }
+                            ]
+                          },
+                          "required": {
+                            "type": "boolean"
+                          }
                         }
                       }
                     },
@@ -3936,6 +4134,7 @@
                     "routingMode",
                     "roleSlots",
                     "completionSettings",
+                    "variables",
                     "documentId",
                     "sourceArtifactId",
                     "createdAt",
@@ -4141,6 +4340,71 @@
                         }
                       }
                     },
+                    "variables": {
+                      "maxItems": 50,
+                      "type": "array",
+                      "items": {
+                        "title": "WorkflowTemplateVariable",
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "key",
+                          "label",
+                          "type",
+                          "required"
+                        ],
+                        "properties": {
+                          "key": {
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "type": "string"
+                          },
+                          "label": {
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "type": "string"
+                          },
+                          "type": {
+                            "title": "WorkflowTemplateVariableType",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "short-text"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "multiline-text"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "date"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "number"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "yes-no"
+                                ]
+                              }
+                            ]
+                          },
+                          "required": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    },
                     "documentId": {
                       "anyOf": [
                         {
@@ -4193,7 +4457,8 @@
                   "name",
                   "routingMode",
                   "roleSlots",
-                  "completionSettings"
+                  "completionSettings",
+                  "variables"
                 ],
                 "properties": {
                   "name": {
@@ -4388,6 +4653,71 @@
                         "type": "boolean"
                       }
                     }
+                  },
+                  "variables": {
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "title": "WorkflowTemplateVariable",
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "key",
+                        "label",
+                        "type",
+                        "required"
+                      ],
+                      "properties": {
+                        "key": {
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "type": "string"
+                        },
+                        "label": {
+                          "minLength": 1,
+                          "maxLength": 200,
+                          "type": "string"
+                        },
+                        "type": {
+                          "title": "WorkflowTemplateVariableType",
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "short-text"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "multiline-text"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "date"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "number"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "yes-no"
+                              ]
+                            }
+                          ]
+                        },
+                        "required": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
                   }
                 }
               }
@@ -4432,6 +4762,7 @@
                     "routingMode",
                     "roleSlots",
                     "completionSettings",
+                    "variables",
                     "documentId",
                     "sourceArtifactId",
                     "createdAt",
@@ -4634,6 +4965,71 @@
                       "properties": {
                         "notifySenderOnComplete": {
                           "type": "boolean"
+                        }
+                      }
+                    },
+                    "variables": {
+                      "maxItems": 50,
+                      "type": "array",
+                      "items": {
+                        "title": "WorkflowTemplateVariable",
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "key",
+                          "label",
+                          "type",
+                          "required"
+                        ],
+                        "properties": {
+                          "key": {
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "type": "string"
+                          },
+                          "label": {
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "type": "string"
+                          },
+                          "type": {
+                            "title": "WorkflowTemplateVariableType",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "short-text"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "multiline-text"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "date"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "number"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "yes-no"
+                                ]
+                              }
+                            ]
+                          },
+                          "required": {
+                            "type": "boolean"
+                          }
                         }
                       }
                     },
@@ -4774,6 +5170,7 @@
                     "routingMode",
                     "roleSlots",
                     "completionSettings",
+                    "variables",
                     "documentId",
                     "sourceArtifactId",
                     "createdAt",
@@ -4976,6 +5373,71 @@
                       "properties": {
                         "notifySenderOnComplete": {
                           "type": "boolean"
+                        }
+                      }
+                    },
+                    "variables": {
+                      "maxItems": 50,
+                      "type": "array",
+                      "items": {
+                        "title": "WorkflowTemplateVariable",
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "key",
+                          "label",
+                          "type",
+                          "required"
+                        ],
+                        "properties": {
+                          "key": {
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "type": "string"
+                          },
+                          "label": {
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "type": "string"
+                          },
+                          "type": {
+                            "title": "WorkflowTemplateVariableType",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "short-text"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "multiline-text"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "date"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "number"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "yes-no"
+                                ]
+                              }
+                            ]
+                          },
+                          "required": {
+                            "type": "boolean"
+                          }
                         }
                       }
                     },
@@ -5057,6 +5519,7 @@
                     "routingMode",
                     "roleSlots",
                     "completionSettings",
+                    "variables",
                     "documentId",
                     "sourceArtifactId",
                     "createdAt",
@@ -5259,6 +5722,71 @@
                       "properties": {
                         "notifySenderOnComplete": {
                           "type": "boolean"
+                        }
+                      }
+                    },
+                    "variables": {
+                      "maxItems": 50,
+                      "type": "array",
+                      "items": {
+                        "title": "WorkflowTemplateVariable",
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "key",
+                          "label",
+                          "type",
+                          "required"
+                        ],
+                        "properties": {
+                          "key": {
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "type": "string"
+                          },
+                          "label": {
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "type": "string"
+                          },
+                          "type": {
+                            "title": "WorkflowTemplateVariableType",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "short-text"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "multiline-text"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "date"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "number"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "yes-no"
+                                ]
+                              }
+                            ]
+                          },
+                          "required": {
+                            "type": "boolean"
+                          }
                         }
                       }
                     },
@@ -5958,7 +6486,8 @@
                     "completionSettings",
                     "documentId",
                     "sourceArtifactId",
-                    "fields"
+                    "fields",
+                    "variables"
                   ],
                   "properties": {
                     "routingMode": {
@@ -6308,6 +6837,71 @@
                           "layer": {
                             "minimum": 0,
                             "type": "integer"
+                          }
+                        }
+                      }
+                    },
+                    "variables": {
+                      "maxItems": 50,
+                      "type": "array",
+                      "items": {
+                        "title": "WorkflowTemplateVariable",
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "key",
+                          "label",
+                          "type",
+                          "required"
+                        ],
+                        "properties": {
+                          "key": {
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "type": "string"
+                          },
+                          "label": {
+                            "minLength": 1,
+                            "maxLength": 200,
+                            "type": "string"
+                          },
+                          "type": {
+                            "title": "WorkflowTemplateVariableType",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "short-text"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "multiline-text"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "date"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "number"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "yes-no"
+                                ]
+                              }
+                            ]
+                          },
+                          "required": {
+                            "type": "boolean"
                           }
                         }
                       }

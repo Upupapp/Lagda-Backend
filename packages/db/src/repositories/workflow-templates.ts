@@ -25,6 +25,7 @@ interface Row {
   routing_mode: string;
   role_slots: unknown;
   completion_notification_settings: unknown;
+  variables: unknown;
   created_by: string;
   created_at: Date;
   updated_at: Date;
@@ -54,6 +55,7 @@ const toRaw = (row: Row): RawWorkflowTemplateRow => ({
   routingMode: row.routing_mode,
   roleSlots: jsonValue(row.role_slots),
   completionSettings: jsonValue(row.completion_notification_settings),
+  variables: jsonValue(row.variables),
   createdBy: row.created_by as UserId,
   createdAt: row.created_at.getTime(),
   updatedAt: row.updated_at.getTime(),
@@ -83,6 +85,7 @@ export function createScopedWorkflowTemplateRepository(
           routing_mode: template.routingMode,
           role_slots: JSON.stringify(template.roleSlots),
           completion_notification_settings: JSON.stringify(template.completionSettings),
+          variables: JSON.stringify(template.variables),
           created_by: template.createdBy,
           created_at: new Date(template.createdAt),
           // Equal to `created_at` on insert, never null — the same position
@@ -122,6 +125,7 @@ export function createScopedWorkflowTemplateRepository(
             routing_mode: update.routingMode,
             role_slots: JSON.stringify(update.roleSlots),
             completion_notification_settings: JSON.stringify(update.completionSettings),
+            variables: JSON.stringify(update.variables),
             updated_at: new Date(update.updatedAt),
           })
           .where("workspace_id", "=", scope)
