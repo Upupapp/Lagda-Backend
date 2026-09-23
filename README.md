@@ -40,8 +40,10 @@ npm install   # when adding or changing dependencies
 | `npm run test:watch` | Vitest in watch mode. |
 | `npm run build` | Compiles all packages to `dist/`. Fails on type errors. |
 | `npm run clean` | Removes build output. Touches nothing else. |
-| `npm run check` | `typecheck` → `lint` → `test`. The local gate. |
-| `npm run ci` | `check` plus `build`. What CI runs. |
+| `npm run check` | `typecheck` → `lint` → `test`. The quick local gate. |
+| `npm run verify` | **Run this before every push.** Mirrors the CI job step for step: `typecheck` → `verify:openapi` → `lint` → `test` → `build`. |
+| `npm run verify:openapi` | Regenerates `openapi.json` and fails if the committed copy differs. Part of `verify`. |
+| `npm run ci` | `check` plus `build`. NOTE: narrower than CI — it omits the OpenAPI currency gate. Prefer `verify`. |
 | `npm run test:integration` | The suites that need real PostgreSQL. Not in `check` — see below. |
 | `npm run test:tenancy` | Just the cross-workspace isolation suite. |
 | `npm run check:full` | `check` plus `test:integration`. |
