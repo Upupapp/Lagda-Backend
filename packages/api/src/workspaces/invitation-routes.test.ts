@@ -139,7 +139,10 @@ async function harness(): Promise<Harness> {
   const app = await createApp({
     config: config(),
     dependencies: {
-      databaseHealth: { isReachable: () => Promise.resolve(true) },
+      databaseHealth: {
+    isReachable: () => Promise.resolve(true),
+    hasCurrentSchema: () => Promise.resolve(true),
+  },
       sessions,
       workspaces: {
         create: (): CreateWorkspaceDependencies => ({

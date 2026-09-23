@@ -128,7 +128,10 @@ async function build(over: { withLimiter?: boolean } = {}): Promise<Harness> {
   const app = await createApp({
     config: config(),
     dependencies: {
-      databaseHealth: { isReachable: () => Promise.resolve(true) },
+      databaseHealth: {
+    isReachable: () => Promise.resolve(true),
+    hasCurrentSchema: () => Promise.resolve(true),
+  },
       sessions,
       ...(over.withLimiter === true
         ? {

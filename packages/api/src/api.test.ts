@@ -23,7 +23,10 @@ const config = (over: Partial<NodeJS.ProcessEnv> = {}): ApiConfig =>
   loadApiConfig({ ...BASE_ENV, ...over });
 
 const deps = (reachable = true): AppDependencies => ({
-  databaseHealth: { isReachable: () => Promise.resolve(reachable) },
+  databaseHealth: {
+    isReachable: () => Promise.resolve(reachable),
+    hasCurrentSchema: () => Promise.resolve(true),
+  },
 });
 
 describe("configuration", () => {
@@ -152,6 +155,46 @@ describe("the API", () => {
     await down.close();
   });
 
+  it("is NOT ready when the database is reachable but the schema is stale", async () => {
+    // The false green that cost an outage. A deploy shipped code requiring a
+    // column its migration had not created; every template read failed with
+    // `workflow_template_malformed`, and this endpoint reported ready
+    // throughout — because the database WAS reachable. Monitoring saw nothing
+    // and a user found it.
+    const stale = await createApp({
+      config: config(),
+      dependencies: {
+        databaseHealth: {
+          isReachable: () => Promise.resolve(true),
+          hasCurrentSchema: () => Promise.resolve(false),
+        },
+      },
+    });
+    const response = await stale.inject({ method: "GET", url: "/ready" });
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toEqual({ status: "not-ready" });
+    await stale.close();
+  });
+
+  it("says nothing about WHICH readiness signal failed", async () => {
+    // Same body either way. Naming the failing dependency on an
+    // unauthenticated probe is an internal-topology disclosure.
+    const stale = await createApp({
+      config: config(),
+      dependencies: {
+        databaseHealth: {
+          isReachable: () => Promise.resolve(true),
+          hasCurrentSchema: () => Promise.resolve(false),
+        },
+      },
+    });
+    const response = await stale.inject({ method: "GET", url: "/ready" });
+    for (const word of ["migration", "schema", "stale", "pending"]) {
+      expect(response.body.toLowerCase()).not.toContain(word);
+    }
+    await stale.close();
+  });
+
   it("leaks no database detail when readiness fails", async () => {
     const down = await createApp({
       config: config(),
@@ -159,6 +202,7 @@ describe("the API", () => {
         databaseHealth: {
           isReachable: () =>
             Promise.reject(new Error("connect ECONNREFUSED 10.0.0.5:5432 password authentication failed")),
+          hasCurrentSchema: () => Promise.resolve(true),
         },
       },
     });

@@ -321,7 +321,10 @@ describe("HTTP behaviour", () => {
     const { limiter, counters } = limiterAt(now);
     app = await createApp({
       config: config(over),
-      dependencies: { databaseHealth: { isReachable: () => Promise.resolve(true) } },
+      dependencies: { databaseHealth: {
+    isReachable: () => Promise.resolve(true),
+    hasCurrentSchema: () => Promise.resolve(true),
+  } },
       metrics,
     });
 
@@ -463,7 +466,10 @@ describe("ordering with idempotency", () => {
     const { limiter } = limiterAt(() => AT);
     app = await createApp({
       config: config(),
-      dependencies: { databaseHealth: { isReachable: () => Promise.resolve(true) } },
+      dependencies: { databaseHealth: {
+    isReachable: () => Promise.resolve(true),
+    hasCurrentSchema: () => Promise.resolve(true),
+  } },
     });
 
     await app.register((scope, _opts, done) => {
@@ -502,7 +508,10 @@ describe("ordering with idempotency", () => {
     const { limiter, counters } = limiterAt(() => AT);
     app = await createApp({
       config: config(),
-      dependencies: { databaseHealth: { isReachable: () => Promise.resolve(true) } },
+      dependencies: { databaseHealth: {
+    isReachable: () => Promise.resolve(true),
+    hasCurrentSchema: () => Promise.resolve(true),
+  } },
     });
     await app.register((scope, _opts, done) => {
       applyIpRateLimit(scope, ["auth.signin.ip"], { limiter, metrics: noopMetrics });

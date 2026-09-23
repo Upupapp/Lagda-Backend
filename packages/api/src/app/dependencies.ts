@@ -39,6 +39,20 @@ import type {
 export interface DatabaseHealth {
   /** Resolves false rather than throwing. A readiness check must not 500. */
   isReachable(): Promise<boolean>;
+  /**
+   * Whether every migration this BUILD knows about has been applied.
+   *
+   * Reachability alone was a false green, and it cost a production outage:
+   * the code from a deploy required a column its migration had not created,
+   * so every template read failed with `workflow_template_malformed` while
+   * `/ready` cheerfully returned `{"status":"ready"}` — because the database
+   * was, indeed, reachable.
+   *
+   * A process that cannot read its own tables must not be in the
+   * load-balancer rotation. Resolves false rather than throwing, same
+   * contract as `isReachable`.
+   */
+  hasCurrentSchema(): Promise<boolean>;
 }
 
 export interface AppDependencies {

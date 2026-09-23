@@ -28,7 +28,10 @@ const config = (over: Partial<NodeJS.ProcessEnv> = {}): ApiConfig =>
   loadApiConfig({ NODE_ENV: "test", API_PORT: "8080", LOG_LEVEL: "debug", ...over });
 
 const deps = (reachable = true): AppDependencies => ({
-  databaseHealth: { isReachable: () => Promise.resolve(reachable) },
+  databaseHealth: {
+    isReachable: () => Promise.resolve(reachable),
+    hasCurrentSchema: () => Promise.resolve(true),
+  },
 });
 
 // Synthetic markers. Long and unmistakable so a partial match still fails.
