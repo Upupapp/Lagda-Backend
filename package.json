@@ -21,6 +21,7 @@
     "test:coverage": "vitest run --coverage",
     "verify:openapi": "npm run openapi:emit && git diff --exit-code -- openapi.json",
   "verify": "npm run typecheck && npm run verify:openapi && npm run lint && npm test && npm run build",
+  "verify:db": "npm run build && npm run db:migrate && npm run db:migrate:status && npm run db:migrate && npm run test:integration",
   "check": "npm run typecheck && npm run lint && npm test",
     "ci": "npm run typecheck && npm run lint && npm test && npm run build",
     "openapi:emit": "node --experimental-strip-types infra/emit-openapi.ts openapi.json",
