@@ -79,6 +79,7 @@ suite("workflow template fields (RLS, runtime role)", () => {
       routingMode: "sequential",
       roleSlots: [...SLOTS] as NewWorkflowTemplate["roleSlots"],
       completionSettings: { notifySenderOnComplete: true },
+      variables: [],
       createdBy: USER, createdAt: AT,
     }));
 

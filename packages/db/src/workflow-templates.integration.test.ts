@@ -84,6 +84,7 @@ suite("workflow templates (RLS, runtime role)", () => {
       routingMode: over.routingMode ?? "approval-based",
       roleSlots: [...SLOTS],
       completionSettings: SETTINGS,
+      variables: [],
       createdBy: USER,
       createdAt: AT,
     }));
@@ -174,6 +175,7 @@ suite("workflow templates (RLS, runtime role)", () => {
           routing_mode: "sequential",
           role_slots: JSON.stringify(SLOTS),
           completion_notification_settings: JSON.stringify(SETTINGS),
+          variables: JSON.stringify([]),
           created_by: USER,
           created_at: new Date(AT),
           updated_at: new Date(AT),
@@ -231,6 +233,7 @@ suite("workflow templates (RLS, runtime role)", () => {
           routingMode: "sequential",
           roleSlots: [...SLOTS],
           completionSettings: SETTINGS,
+          variables: [],
           createdBy: USER,
           createdAt: AT,
         }),
@@ -257,6 +260,7 @@ suite("workflow templates (RLS, runtime role)", () => {
           routingMode: "parallel",
           roleSlots: [...SLOTS],
           completionSettings: SETTINGS,
+          variables: [],
           updatedAt: AT + 1000,
         }));
       expect(changed).toBe(false);
@@ -322,6 +326,7 @@ suite("workflow templates (RLS, runtime role)", () => {
           routingMode: "sequential",
           roleSlots: [],
           completionSettings: SETTINGS,
+          variables: [],
           createdBy: USER,
           createdAt: AT,
         }),
