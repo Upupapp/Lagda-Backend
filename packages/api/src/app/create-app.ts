@@ -483,6 +483,7 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
       // can name a counterparty's role. Nothing here is safe anonymously.
       if (workspaces.workflowTemplates !== undefined) {
         const workflowTemplates = workspaces.workflowTemplates;
+        const generateDocument = workspaces.workflowTemplateGenerateDocument;
         registerWorkflowTemplateRoutes(scope, {
           authenticatedUser: (request: FastifyRequest) => Promise.resolve(
             request.auth.status === "authenticated"
@@ -493,6 +494,7 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
               : null,
           ),
           workflowTemplateDependencies: workflowTemplates,
+          ...(generateDocument === undefined ? {} : { generateDocumentDependencies: generateDocument }),
           metrics,
         });
       }

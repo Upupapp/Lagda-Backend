@@ -442,6 +442,11 @@ export interface WorkspaceWorkflowTemplatesTable {
   /** 063. A JSON array, always present — empty for a template with no
    *  variables declared, the ordinary case today. */
   variables: ColumnType<unknown, string, string>;
+  /** 066. A JSON array, always present — empty for an uploaded document, or
+   *  no document at all. */
+  content_blocks: ColumnType<unknown, string, string>;
+  /** 066. Blank pages the last generate produced. 0 before the first one. */
+  content_page_count: number;
 }
 
 /**

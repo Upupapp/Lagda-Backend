@@ -18,6 +18,7 @@ export { NodeDocumentSealer } from "./node-document-sealer.js";
 // exporting them would give callers a way to hash a document without merging
 // it, or merge one without hashing it.
 export { NodeFieldMerger } from "./node-field-merger.js";
+export { NodeTemplateDocumentGenerator } from "./node-template-document-generator.js";
 
 // The THIRD operation, added by BACKEND-40 for the `certificate` step.
 //

@@ -217,8 +217,10 @@ describe("production composition", () => {
       workspaceSubgroups().length - Object.keys(WORKSPACE_SUBGROUPS_NOT_WIRED).length;
     // 11 -> 12 with `completedArtifact` (Phase 1-C), 12 -> 13 with
     // `documentContent` (viewing a document's own bytes), 13 -> 14 with
-    // `workflowTemplates` (migration 058).
-    expect(subWired).toBe(14);
+    // `workflowTemplates` (migration 058), 14 -> 15 with
+    // `workflowTemplateGenerateDocument` (066) — authoring a template's own
+    // document rather than uploading one.
+    expect(subWired).toBe(15);
   });
 });
 
