@@ -51,43 +51,23 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Typecheck
-        run: npm run typecheck
-
-      # Architecture gate. See the note at the top of this file.
-      # Placed BEFORE Lint deliberately. Lint has a standing 45-error debt and
-      # fails every run, and a guard that only executes after it would never
-      # execute at all — which is how this file went four commits stale in the
-      # first place. A check downstream of a known-red step is decoration.
-      # openapi.json is a COMMITTED artefact, so it can fall out of date
-      # silently — and it did: the copy in the tree was four route-changing
-      # commits behind, missing /signatures, /audit, the completed-document
-      # download, the document content stream and /upload-capacity, while
-      # nothing failed. A generated file nobody regenerates is worse than no
-      # file, because it is read as current.
+      # ONE definition of the gate, not two.
       #
-      # Regenerating and diffing is the whole check. The emitter already
-      # refuses to write a partial document (a floor plus a required set), so
-      # this adds the other half: the committed copy must MATCH what the
-      # routes currently produce.
-      - name: OpenAPI document is current
-        run: |
-          npm run openapi:emit
-          if ! git diff --quiet -- openapi.json; then
-            echo "::error::openapi.json is out of date. Run 'npm run openapi:emit' and commit the result."
-            git --no-pager diff --stat -- openapi.json
-            exit 1
-          fi
-          echo "openapi.json matches the current routes."
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Test
-        run: npm test
-
-      - name: Build
-        run: npm run build
+      # This used to list Typecheck / OpenAPI / Lint / Test / Build as separate
+      # steps, and `npm run verify` did not exist — so "clean locally" and
+      # "clean in CI" were different claims. A directory-scoped lint passed
+      # while `eslint .` failed here, and the OpenAPI currency check had no
+      # local equivalent at ALL, which is how the committed document once went
+      # four route-changing commits stale with nothing failing.
+      #
+      # Every CHECK now lives in `npm run verify`, so adding one to the gate is
+      # a package.json change that developers get automatically. Only CI-ONLY
+      # concerns — caching, artifact upload, the notes below — stay here.
+      #
+      # npm prints each sub-script as it starts (`> @lagda/backend@0.0.0 lint`),
+      # so a failure is still attributable to a step in the log.
+      - name: Verify (typecheck, openapi, lint, test, build)
+        run: npm run verify
 
       # NOT CHECKED HERE, deliberately stated rather than implied: the LAGDA
       # frontend does not compile against @lagda/contracts. The strongest reason
@@ -138,26 +118,17 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Build
-        run: npm run build
-
-      # Proves an EMPTY database can reach the current schema. Incremental
-      # migration against an accumulated developer database proves nothing about
-      # a fresh environment.
-      - name: Migrate from zero
-        run: npm run db:migrate
-
-      - name: Migration status
-        run: npm run db:migrate:status
-
-      # Re-running the deployment step must be a no-op.
-      - name: Migrate again (idempotency)
-        run: npm run db:migrate
-
-      # Transactions, rollback, constraints, mapping AND the workspace tenancy
-      # security suite — against real PostgreSQL. These cannot be faked, and the
-      # tenancy tests run as the RUNTIME role: an owner bypasses RLS unless
-      # forced, so a suite connecting as the superuser would pass while
-      # production leaked.
-      - name: PostgreSQL integration and tenancy security tests
-        run: npm run test:integration
+      # Same rule as the quality job: ONE definition. `verify:db` is the
+      # database gate, and it is reproducible locally against any PostgreSQL
+      # by exporting DATABASE_URL and DATABASE_TEST_URL.
+      #
+      # It proves an EMPTY database reaches the current schema (incremental
+      # migration against an accumulated developer database proves nothing
+      # about a fresh environment), that re-running the deployment step is a
+      # no-op, and then runs the transaction, constraint, mapping AND workspace
+      # tenancy suites against real PostgreSQL. The tenancy suites connect as
+      # the RUNTIME role, not the owner: an owner bypasses RLS unless forced,
+      # so a suite connecting as the superuser would pass while production
+      # leaked. Migration 048 is what happens when that distinction is missed.
+      - name: Verify database (migrate from zero, idempotency, integration)
+        run: npm run verify:db

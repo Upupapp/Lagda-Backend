@@ -199,6 +199,55 @@ describe("retry convergence", () => {
     expect(result.artifactId).toBe("art_previous");
     expect(h.merge).not.toHaveBeenCalled();
   });
+
+  it("ROLLS BACK when a concurrent attempt accepts the step mid-flight", async () => {
+    // The race `abandonStaleRuns` makes reachable: it is purely time-based, so
+    // a merely SLOW attempt can be reclaimed while it is still alive and two
+    // workers then drive the same run.
+    //
+    // The plan read finds no accepted step, so this attempt merges and uploads
+    // — and only THEN does the winner's row appear. `acceptStep` returns false,
+    // and everything this attempt wrote in that transaction must vanish: the
+    // step ledger points at the winner's artifact, and a stray `merged-candidate`
+    // row would be referenced by nothing.
+    const realMerge = h.merge.getMockImplementation();
+    h.merge.mockImplementationOnce(async (request: MergeFieldsRequest) => {
+      // The winner commits while this attempt is still rendering.
+      h.store.completionSteps.push({
+        completionStepId: "cst_winner" as never, completionRunId: RUN, workspaceId: WS,
+        step: "field-merge", state: "succeeded",
+        outputArtifactId: "art_winner" as ArtifactId,
+        attemptCount: 1, succeededAt: AT, failureCode: null,
+      } as never);
+      return realMerge!(request) as Promise<MergeFieldsResult>;
+    });
+
+    const artifactsBefore = h.store.artifacts.length;
+    const eventsBefore = h.store.evidence.length;
+
+    const result = await run(h);
+
+    // Converges on the WINNER, and says plainly that it was superseded.
+    expect(result.outcome).toBe("already-merged");
+    expect(result.artifactId).toBe("art_winner");
+    expect(result.supersededAttempt).toBe(true);
+
+    // Not a failure: the run is shared with the attempt that won, and marking
+    // it failed would drive a healthy run toward `failed-terminal`.
+    expect(result.failureCode).toBeUndefined();
+
+    // Nothing of this attempt's survived the rollback.
+    expect(h.store.artifacts).toHaveLength(artifactsBefore);
+    expect(h.store.evidence).toHaveLength(eventsBefore);
+    expect(h.store.artifacts.find(a => a.artifactId === "art_merged")).toBeUndefined();
+
+    // Exactly one accepted `field-merge` row, the winner's.
+    const accepted = h.store.completionSteps.filter(
+      (r: { completionRunId: string; step: string }) =>
+        r.completionRunId === RUN && r.step === "field-merge");
+    expect(accepted).toHaveLength(1);
+    expect(accepted[0]?.outputArtifactId).toBe("art_winner");
+  });
 });
 
 describe("the integrity check", () => {

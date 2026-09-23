@@ -78,6 +78,19 @@ export type CompletionStepRunner = (input: {
    */
   readonly outcome: string;
   readonly failureCode?: CompletionFailureCode;
+  /**
+   * This attempt lost a race to a concurrent one and rolled itself back.
+   *
+   * Propagated so it reaches `worker.job_completed`, which spreads the result
+   * shape into its log line. A non-zero rate means `abandonStaleRuns` is
+   * reclaiming attempts that are slow rather than dead.
+   */
+  readonly supersededAttempt?: boolean;
+  /**
+   * The completion committed while the run was no longer `processing`. The
+   * document is correct; the run ledger is not. See `FinalSealResult`.
+   */
+  readonly staleAttemptLedger?: boolean;
 }>;
 
 /**
@@ -214,6 +227,17 @@ export interface ProcessCompletionRunResult {
   readonly failureCode?: CompletionFailureCode;
   /** How many steps this attempt carried out. Absent before a claim. */
   readonly stepsCompleted?: number;
+  /**
+   * At least one step of this attempt was superseded by a concurrent one and
+   * rolled itself back. Identifiers only — the worker logs the result shape.
+   */
+  readonly supersededAttempt?: boolean;
+  /**
+   * The completion committed on a run that had already been reclaimed. The
+   * sealed document is correct; the run ledger says otherwise. This is the
+   * signal for the `failed-terminal`-on-a-completed-request condition.
+   */
+  readonly staleAttemptLedger?: boolean;
 }
 
 /**
@@ -323,6 +347,13 @@ async function advanceSteps(
   deps: CompletionDependencies,
 ): Promise<ProcessCompletionRunResult> {
   let stepsCompleted = 0;
+  // Sticky across passes: a race in step 1 still matters after step 3 succeeds.
+  let supersededAttempt = false;
+  let staleAttemptLedger = false;
+  const flags = () => ({
+    ...(supersededAttempt ? { supersededAttempt: true } : {}),
+    ...(staleAttemptLedger ? { staleAttemptLedger: true } : {}),
+  });
 
   // BOUNDED, one iteration per declared step plus one.
   //
@@ -340,7 +371,7 @@ async function advanceSteps(
     if (next === null && isCompletionSatisfied(succeeded)) {
       // Every step accepted. The finalization guard is BACKEND-41's, because it
       // needs a `VerifiedCompletionResult` and nothing can produce one yet.
-      return { runId, outcome: "claimed-and-blocked", stepsCompleted };
+      return { runId, outcome: "claimed-and-blocked", stepsCompleted, ...flags() };
     }
 
     const runner = runnerFor(next, deps);
@@ -350,16 +381,18 @@ async function advanceSteps(
       // this is a build that cannot do the work, not data that cannot be
       // completed.
       await parkNotImplemented(runId, next ?? "field-merge", workspaceId, deps);
-      return { runId, outcome: "claimed-and-blocked", stepsCompleted };
+      return { runId, outcome: "claimed-and-blocked", stepsCompleted, ...flags() };
     }
 
     const outcome = await runner({ workspaceId, runId, signingRequestId });
+    if (outcome.supersededAttempt === true) supersededAttempt = true;
+    if (outcome.staleAttemptLedger === true) staleAttemptLedger = true;
     if (outcome.outcome === "failed") {
       // The step recorded its own failure with a bounded code, inside its own
       // transaction. Re-recording here would overwrite a specific cause with a
       // general one.
       return {
-        runId, outcome: "failed", stepsCompleted,
+        runId, outcome: "failed", stepsCompleted, ...flags(),
         ...(outcome.failureCode === undefined ? {} : { failureCode: outcome.failureCode }),
       };
     }
@@ -373,7 +406,9 @@ async function advanceSteps(
     uow.completion.recordRunFailure({
       runId, state: "failed-terminal", step: "field-merge", code: "output-missing",
     }));
-  return { runId, outcome: "failed", failureCode: "output-missing", stepsCompleted };
+  return {
+    runId, outcome: "failed", failureCode: "output-missing", stepsCompleted, ...flags(),
+  };
 }
 
 /**

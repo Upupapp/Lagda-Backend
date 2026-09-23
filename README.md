@@ -40,8 +40,27 @@ npm install   # when adding or changing dependencies
 | `npm run test:watch` | Vitest in watch mode. |
 | `npm run build` | Compiles all packages to `dist/`. Fails on type errors. |
 | `npm run clean` | Removes build output. Touches nothing else. |
-| `npm run check` | `typecheck` → `lint` → `test`. The local gate. |
-| `npm run ci` | `check` plus `build`. What CI runs. |
+| `npm run check` | `typecheck` → `lint` → `test`. The quick local gate. |
+| `npm run verify` | **Run this before every push.** Mirrors the CI job step for step: `typecheck` → `verify:openapi` → `lint` → `test` → `build`. Run it WITHOUT sourcing `.env` — see below. |
+| `npm run verify:openapi` | Regenerates `openapi.json` and fails if the committed copy differs. Part of `verify`. |
+| `npm run verify:db` | The database gate, exactly as CI runs it: `build` → migrate from zero → status → migrate again (idempotency) → `test:integration`. Needs `DATABASE_URL` and `DATABASE_TEST_URL`. |
+
+`verify` and `verify:db` are the ONLY definitions of the gate. The workflow
+calls them rather than repeating the step list, so a check added to
+`package.json` is a check CI runs.
+
+**Do not source `.env` before `npm run verify`.** CI has no `.env`, and some
+suites assert what a deployment serves GIVEN its environment —
+`production-composition.test.ts` checks that no upload route is mounted
+without object storage, so exporting storage credentials makes it fail
+correctly. A local run with `.env` loaded is testing a different deployment
+from the one CI tests.
+
+`verify:db` is the opposite: it NEEDS `DATABASE_URL` and `DATABASE_TEST_URL`,
+and both should point at a test database. Point `DATABASE_URL` at the test
+database too, the way the workflow does — it migrates from zero, and you do
+not want that aimed at your development data.
+| `npm run ci` | `check` plus `build`. NOTE: narrower than CI — it omits the OpenAPI currency gate. Prefer `verify`. |
 | `npm run test:integration` | The suites that need real PostgreSQL. Not in `check` — see below. |
 | `npm run test:tenancy` | Just the cross-workspace isolation suite. |
 | `npm run check:full` | `check` plus `test:integration`. |
