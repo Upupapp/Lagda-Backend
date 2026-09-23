@@ -235,6 +235,58 @@ export const WorkflowCompletionSettingsSchema = Type.Object(
 );
 export type WorkflowCompletionSettings = Static<typeof WorkflowCompletionSettingsSchema>;
 
+// ── Variables (063) ──────────────────────────────────────────────────────────
+//
+// A named value a SENDER supplies once, at apply time, rather than typing the
+// same text into an invitation or a field on every use — "Client Name",
+// "Effective Date". Declared here as DEFINITIONS only: what a variable is
+// called and what kind of value it expects. Nothing here connects a variable
+// to a field, a preparation, or a rendered document — that is deliberately a
+// later piece of work, tracked as a known gap rather than half-built. A
+// defined-but-unconnected variable is the same honest state the frontend's
+// wizard already discloses to a sender today.
+//
+// `key` is the stable identifier a future field-binding or `{{token}}` would
+// reference — normalized (lowercase, ASCII, underscores) so it can appear in
+// a token without escaping, and unique per template the same way `name` is
+// unique per workspace (checked by the application, not a database
+// constraint, matching `role_slots`' own id story).
+
+export const WORKFLOW_TEMPLATE_VARIABLE_TYPES = [
+  "short-text",
+  "multiline-text",
+  "date",
+  "number",
+  "yes-no",
+] as const;
+
+export type WorkflowTemplateVariableType = (typeof WORKFLOW_TEMPLATE_VARIABLE_TYPES)[number];
+
+export const WorkflowTemplateVariableTypeSchema = Type.Union(
+  WORKFLOW_TEMPLATE_VARIABLE_TYPES.map(type => Type.Literal(type)),
+  { title: "WorkflowTemplateVariableType" },
+);
+
+/** The key's length bound. Short — it names a slot in a token, not a
+ *  sentence. */
+export const WORKFLOW_TEMPLATE_VARIABLE_KEY_MAX_LENGTH = 64;
+export const WORKFLOW_TEMPLATE_VARIABLE_LABEL_MAX_LENGTH = 200;
+
+export const WorkflowTemplateVariableSchema = Type.Object(
+  {
+    /** Lowercase ASCII letters, digits and underscores; must start with a
+     *  letter. Checked by the application (§ validateVariables), not by this
+     *  pattern alone — a regex error message is a poor substitute for one
+     *  that names what a key may contain. */
+    key: Type.String({ minLength: 1, maxLength: WORKFLOW_TEMPLATE_VARIABLE_KEY_MAX_LENGTH }),
+    label: Type.String({ minLength: 1, maxLength: WORKFLOW_TEMPLATE_VARIABLE_LABEL_MAX_LENGTH }),
+    type: WorkflowTemplateVariableTypeSchema,
+    required: Type.Boolean(),
+  },
+  { title: "WorkflowTemplateVariable", additionalProperties: false },
+);
+export type WorkflowTemplateVariable = Static<typeof WorkflowTemplateVariableSchema>;
+
 // ── The template ─────────────────────────────────────────────────────────────
 
 export const WorkflowTemplateSchema = Type.Object(
@@ -245,6 +297,8 @@ export const WorkflowTemplateSchema = Type.Object(
     /** Ordered. At least one — a template that routes nobody is not one. */
     roleSlots: Type.Array(WorkflowRoleSlotSchema, { minItems: 1, maxItems: 50 }),
     completionSettings: WorkflowCompletionSettingsSchema,
+    /** 063. Empty for a template that declares none — the ordinary case. */
+    variables: Type.Array(WorkflowTemplateVariableSchema, { maxItems: 50 }),
     /**
      * 059. `null` until a document is attached via the dedicated
      * document endpoint — never through this object's own write path, so a
@@ -298,6 +352,7 @@ export const WorkflowTemplateWriteSchema = Type.Object(
     routingMode: WorkflowRoutingModeSchema,
     roleSlots: Type.Array(WorkflowRoleSlotWriteSchema, { minItems: 1, maxItems: 50 }),
     completionSettings: WorkflowCompletionSettingsSchema,
+    variables: Type.Array(WorkflowTemplateVariableSchema, { maxItems: 50 }),
   },
   { title: "WorkflowTemplateWrite", additionalProperties: false },
 );
@@ -398,6 +453,9 @@ export const WorkflowTemplateApplicationSchema = Type.Object(
     documentId: Type.Union([Type.Null(), Type.String({ minLength: 1, maxLength: 64 })]),
     sourceArtifactId: Type.Union([Type.Null(), Type.String({ minLength: 1, maxLength: 64 })]),
     fields: Type.Array(WorkflowTemplateFieldSchema),
+    /** 063. Definitions only — nothing here yet resolves a value for any of
+     *  these; see WorkflowTemplateVariableSchema's own header. */
+    variables: Type.Array(WorkflowTemplateVariableSchema, { maxItems: 50 }),
   },
   {
     title: "WorkflowTemplateApplication",

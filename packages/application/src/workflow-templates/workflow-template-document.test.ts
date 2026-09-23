@@ -140,6 +140,7 @@ const VALID: WorkflowTemplateInput = {
     { label: "Client", role: "signer", required: true, routingStep: 1, defaultAuthMethod: "none" },
   ],
   completionSettings: { notifySenderOnComplete: true },
+  variables: [],
 };
 
 // ── Attaching ────────────────────────────────────────────────────────────────

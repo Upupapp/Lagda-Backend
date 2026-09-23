@@ -135,6 +135,7 @@ const VALID: WorkflowTemplateInput = {
     { label: "Witness", role: "signer", required: false, routingStep: 2, defaultAuthMethod: "none" },
   ],
   completionSettings: { notifySenderOnComplete: true },
+  variables: [],
 };
 
 /** A field aimed at the first slot of a freshly created `VALID` template.

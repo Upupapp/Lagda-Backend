@@ -32,8 +32,10 @@ import type {
 } from "@lagda/contracts";
 import {
   WORKFLOW_ROUTING_MODES, WORKFLOW_SLOT_AUTH_METHODS, RECIPIENT_TYPES,
+  WORKFLOW_TEMPLATE_VARIABLE_TYPES,
+  WORKFLOW_TEMPLATE_VARIABLE_KEY_MAX_LENGTH, WORKFLOW_TEMPLATE_VARIABLE_LABEL_MAX_LENGTH,
   type WorkflowRoutingMode, type WorkflowRoleSlot, type WorkflowRoleResolution,
-  type WorkflowCompletionSettings,
+  type WorkflowCompletionSettings, type WorkflowTemplateVariable,
 } from "@lagda/contracts";
 import {
   validateRect, roundRect, isValidPageNumber, canPlaceFields, validateFieldLabel,
@@ -152,6 +154,10 @@ async function authorize(
 const MAX_SLOTS = 50;
 const MAX_LABEL = 120;
 const MAX_STEP = 100;
+const MAX_VARIABLES = 50;
+/** Lowercase ASCII, digits and underscores, starting with a letter — safe to
+ *  appear inside a future `{{token}}` with no escaping. */
+const VARIABLE_KEY_PATTERN = /^[a-z][a-z0-9_]*$/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -436,6 +442,75 @@ function validateRoutingMode(value: unknown): WorkflowRoutingMode {
   return value as WorkflowRoutingMode;
 }
 
+/**
+ * Variable DEFINITIONS only (063) — see `WorkflowTemplateVariable`'s own
+ * header in contracts for what this is, and is not, connected to.
+ *
+ * Runs on both read and write, the same reason every other JSONB column here
+ * does: the column is a plain JSON array, so PostgreSQL guarantees only that
+ * it is one, and a malformed variable stored by hand (or by a future bug)
+ * must fail loudly rather than reach the apply path silently broken.
+ *
+ * Keys are checked for uniqueness case-insensitively — the same normalization
+ * `nameExists` applies to a template's own name — because a future field
+ * binding or `{{token}}` will resolve a value BY key, and two variables
+ * differing only in case would be indistinguishable to it.
+ */
+function validateVariables(value: unknown): readonly WorkflowTemplateVariable[] {
+  if (!Array.isArray(value)) {
+    throw new WorkflowTemplateMalformedError("its variables are missing");
+  }
+  if (value.length > MAX_VARIABLES) {
+    throw new WorkflowTemplateMalformedError("it has too many variables");
+  }
+
+  const seenKeys = new Set<string>();
+  return value.map((raw, index) => {
+    const at = `variable ${String(index + 1)}`;
+    if (!isRecord(raw)) throw new WorkflowTemplateMalformedError(`${at} is not an object`);
+
+    const key = raw["key"];
+    if (
+      typeof key !== "string"
+      || key.length === 0
+      || key.length > WORKFLOW_TEMPLATE_VARIABLE_KEY_MAX_LENGTH
+      || !VARIABLE_KEY_PATTERN.test(key)
+    ) {
+      throw new WorkflowTemplateMalformedError(
+        `${at}'s key must start with a letter and hold only lowercase letters, digits and underscores`);
+    }
+    const normalizedKey = key.toLowerCase();
+    if (seenKeys.has(normalizedKey)) {
+      throw new WorkflowTemplateMalformedError(`${at}'s key is used by another variable`);
+    }
+    seenKeys.add(normalizedKey);
+
+    const label = raw["label"];
+    if (typeof label !== "string" || label.trim().length === 0) {
+      throw new WorkflowTemplateMalformedError(`${at} has no label`);
+    }
+    if (label.length > WORKFLOW_TEMPLATE_VARIABLE_LABEL_MAX_LENGTH) {
+      throw new WorkflowTemplateMalformedError(`${at}'s label is too long`);
+    }
+
+    const type = raw["type"];
+    if (typeof type !== "string" || !WORKFLOW_TEMPLATE_VARIABLE_TYPES.includes(type as never)) {
+      throw new WorkflowTemplateMalformedError(`${at}'s type is not one this product has`);
+    }
+
+    if (typeof raw["required"] !== "boolean") {
+      throw new WorkflowTemplateMalformedError(`${at}'s required flag is missing`);
+    }
+
+    return {
+      key,
+      label: label.trim(),
+      type: type as WorkflowTemplateVariable["type"],
+      required: raw["required"],
+    };
+  });
+}
+
 function validateName(value: string): string {
   const name = value.trim();
   if (name.length === 0) throw new WorkflowTemplateMalformedError("it has no name");
@@ -458,6 +533,7 @@ export function parseStoredTemplate(row: RawWorkflowTemplateRow): WorkflowTempla
     routingMode: validateRoutingMode(row.routingMode),
     roleSlots: validateRoleSlots(row.roleSlots),
     completionSettings: validateCompletionSettings(row.completionSettings),
+    variables: validateVariables(row.variables),
     createdBy: row.createdBy,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -473,6 +549,7 @@ export interface WorkflowTemplateInput {
   readonly routingMode: unknown;
   readonly roleSlots: unknown;
   readonly completionSettings: unknown;
+  readonly variables: unknown;
 }
 
 /**
@@ -489,6 +566,7 @@ interface ValidatedInputBase {
   readonly name: string;
   readonly routingMode: WorkflowRoutingMode;
   readonly completionSettings: WorkflowCompletionSettings;
+  readonly variables: readonly WorkflowTemplateVariable[];
 }
 
 function validateInputBase(input: WorkflowTemplateInput): ValidatedInputBase {
@@ -496,6 +574,7 @@ function validateInputBase(input: WorkflowTemplateInput): ValidatedInputBase {
     name: validateName(input.name),
     routingMode: validateRoutingMode(input.routingMode),
     completionSettings: validateCompletionSettings(input.completionSettings),
+    variables: validateVariables(input.variables),
   };
 }
 
@@ -529,6 +608,7 @@ export async function createWorkflowTemplate(
       routingMode: validated.routingMode,
       roleSlots,
       completionSettings: validated.completionSettings,
+      variables: validated.variables,
       createdBy: access.userId,
       createdAt: now,
       updatedAt: now,
@@ -606,6 +686,7 @@ export async function updateWorkflowTemplate(
       routingMode: validated.routingMode,
       roleSlots,
       completionSettings: validated.completionSettings,
+      variables: validated.variables,
       updatedAt: now,
     });
     if (!changed) throw new ResourceNotFoundError("WorkflowTemplate");
@@ -632,6 +713,7 @@ export async function updateWorkflowTemplate(
       routingMode: validated.routingMode,
       roleSlots,
       completionSettings: validated.completionSettings,
+      variables: validated.variables,
       createdBy: existing.createdBy,
       createdAt: existing.createdAt,
       updatedAt: now,
@@ -796,6 +878,8 @@ export interface WorkflowTemplateApplication {
    *  pair is — see this field's own assignment below. Empty when the
    *  template has no fields. */
   readonly fields: readonly WorkflowTemplateFieldRecord[];
+  /** 063. Definitions only — see `WorkflowTemplateVariable`'s own header. */
+  readonly variables: readonly WorkflowTemplateVariable[];
 }
 
 export async function resolveTemplateForApply(
@@ -824,6 +908,7 @@ export async function resolveTemplateForApply(
       // the SAME transaction as the template itself, so the two cannot
       // observe two different moments.
       fields: await uow.workflowTemplateFields.list(workflowTemplateId),
+      variables: template.variables,
     };
   });
 }

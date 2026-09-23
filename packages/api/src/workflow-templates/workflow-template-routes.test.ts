@@ -199,6 +199,7 @@ const BODY = {
     },
   ],
   completionSettings: { notifySenderOnComplete: true },
+  variables: [],
 };
 
 const templates = (h: Harness) => h.transactions.store.workflowTemplates;
@@ -466,6 +467,79 @@ describe("POST /workflow-templates", () => {
     // worse than a rejected one: it would send a document to some of the
     // people it named and silently to none of the rest.
     expect(templates(h)).toHaveLength(0);
+  });
+});
+
+// ── Variables (063) ─────────────────────────────────────────────────────────
+
+describe("template variables", () => {
+  const withVariables = {
+    ...BODY,
+    variables: [
+      { key: "client_name", label: "Client Name", type: "short-text", required: true },
+    ],
+  };
+
+  it("round-trips through create, read and update", async () => {
+    const h = await harness();
+    const created = await createAs(h, OWNER, withVariables);
+    expect(created.statusCode).toBe(201);
+    expect(created.json<{ variables: unknown }>().variables).toEqual(withVariables.variables);
+
+    const { cookie } = await h.signIn(OWNER);
+    const read = await h.app.inject({ method: "GET", url: `${URL}/wft_1`, headers: { cookie } });
+    expect(read.json<{ variables: unknown }>().variables).toEqual(withVariables.variables);
+  });
+
+  it("refuses two variables with the same key, case-insensitively", async () => {
+    const h = await harness();
+    const response = await createAs(h, OWNER, {
+      ...BODY,
+      variables: [
+        { key: "client_name", label: "Client Name", type: "short-text", required: true },
+        { key: "CLIENT_NAME", label: "Client Name (dup)", type: "short-text", required: false },
+      ],
+    });
+    expect(response.statusCode).toBeGreaterThanOrEqual(400);
+    expect(response.statusCode).toBeLessThan(500);
+    expect(templates(h)).toHaveLength(0);
+  });
+
+  it("refuses a key that is not lowercase-letters-digits-underscore", async () => {
+    const h = await harness();
+    const response = await createAs(h, OWNER, {
+      ...BODY,
+      variables: [{ key: "Client Name!", label: "Client Name", type: "short-text", required: true }],
+    });
+    expect(response.statusCode).toBeGreaterThanOrEqual(400);
+    expect(response.statusCode).toBeLessThan(500);
+  });
+
+  it("refuses a request with no variables property at all", async () => {
+    // The write schema requires it — a whole-object PUT/POST, same as every
+    // other field on this body.
+    const h = await harness();
+    const { cookie, csrf } = await h.signIn(OWNER);
+    const { variables: _omit, ...withoutVariables } = withVariables;
+    const response = await h.app.inject({
+      method: "POST", url: URL,
+      headers: { cookie, [CSRF_TOKEN_HEADER]: csrf },
+      payload: withoutVariables,
+    });
+    expect(response.statusCode).toBe(422);
+  });
+
+  it("defaults to an empty array and stays that way through an update with none", async () => {
+    const h = await harness();
+    expect((await createAs(h, OWNER)).statusCode).toBe(201);
+
+    const { cookie, csrf } = await h.signIn(OWNER);
+    const response = await h.app.inject({
+      method: "PUT", url: `${URL}/wft_1`,
+      headers: { cookie, [CSRF_TOKEN_HEADER]: csrf },
+      payload: BODY,
+    });
+    expect(response.json<{ variables: unknown }>().variables).toEqual([]);
   });
 });
 

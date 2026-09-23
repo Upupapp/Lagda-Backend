@@ -1052,6 +1052,7 @@ function scopedWorkflowTemplates(
     routingMode: t.routingMode,
     roleSlots: t.roleSlots,
     completionSettings: t.completionSettings,
+    variables: t.variables,
     createdBy: t.createdBy,
     createdAt: t.createdAt,
     updatedAt: t.updatedAt,
@@ -1085,6 +1086,7 @@ function scopedWorkflowTemplates(
         routingMode: update.routingMode,
         roleSlots: update.roleSlots,
         completionSettings: update.completionSettings,
+        variables: update.variables,
         updatedAt: update.updatedAt,
       };
       return Promise.resolve(true);

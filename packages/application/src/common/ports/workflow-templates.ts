@@ -9,6 +9,7 @@
 import type { WorkspaceId, UserId, DocumentId } from "@lagda/contracts";
 import type {
   WorkflowRoutingMode, WorkflowRoleSlot, WorkflowCompletionSettings,
+  WorkflowTemplateVariable,
 } from "@lagda/contracts";
 import type { ArtifactId } from "./evidence.js";
 
@@ -28,6 +29,9 @@ export interface WorkflowTemplateRecord {
    */
   readonly roleSlots: readonly WorkflowRoleSlot[];
   readonly completionSettings: WorkflowCompletionSettings;
+  /** 063. Definitions only — see `WorkflowTemplateVariable`'s own header for
+   *  what is, and is not, connected to them yet. */
+  readonly variables: readonly WorkflowTemplateVariable[];
   readonly createdBy: UserId;
   readonly createdAt: number;
   readonly updatedAt: number;
@@ -48,6 +52,7 @@ export interface NewWorkflowTemplate {
   readonly routingMode: WorkflowRoutingMode;
   readonly roleSlots: readonly WorkflowRoleSlot[];
   readonly completionSettings: WorkflowCompletionSettings;
+  readonly variables: readonly WorkflowTemplateVariable[];
   readonly createdBy: UserId;
   readonly createdAt: number;
 }
@@ -57,6 +62,7 @@ export interface WorkflowTemplateUpdate {
   readonly routingMode: WorkflowRoutingMode;
   readonly roleSlots: readonly WorkflowRoleSlot[];
   readonly completionSettings: WorkflowCompletionSettings;
+  readonly variables: readonly WorkflowTemplateVariable[];
   readonly updatedAt: number;
 }
 
@@ -74,6 +80,7 @@ export interface RawWorkflowTemplateRow {
   readonly routingMode: string;
   readonly roleSlots: unknown;
   readonly completionSettings: unknown;
+  readonly variables: unknown;
   readonly createdBy: UserId;
   readonly createdAt: number;
   readonly updatedAt: number;
