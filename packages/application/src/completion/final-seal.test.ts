@@ -460,7 +460,8 @@ describe("retry and duplicate workers", () => {
     let artifactsAfterWinner = 0;
     let evidenceAfterWinner = 0;
 
-    const realSeal = h.seal.getMockImplementation();
+    const realSeal = h.seal.getMockImplementation() as
+      (request: SealRequest) => Promise<unknown>;
     h.seal.mockImplementationOnce(async (request: SealRequest) => {
       // The winning attempt runs to completion while this one is still sealing.
       // `mockImplementationOnce` is spent, so the nested call uses the real fake.
@@ -470,7 +471,7 @@ describe("retry and duplicate workers", () => {
         .find(a => a.artifactType === "sealed")?.digest;
       artifactsAfterWinner = h.store.artifacts.length;
       evidenceAfterWinner = h.store.evidence.length;
-      return realSeal!(request);
+      return realSeal(request);
     });
 
     const second = await run(h);

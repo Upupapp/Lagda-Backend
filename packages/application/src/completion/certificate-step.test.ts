@@ -360,15 +360,16 @@ describe("the certificate step", () => {
     // Reachable because `abandonStaleRuns` is purely time-based and can reclaim
     // an attempt that is merely slow rather than dead.
     seed(h);
-    const realGenerate = h.generate.getMockImplementation();
-    h.generate.mockImplementationOnce(async (...args: unknown[]) => {
+    const realGenerate = h.generate.getMockImplementation() as
+      (...args: unknown[]) => Promise<unknown>;
+    h.generate.mockImplementationOnce((...args: unknown[]) => {
       h.store.completionSteps.push({
         completionStepId: "cst_winner" as never, completionRunId: RUN, workspaceId: WS,
         step: "certificate", state: "succeeded",
         outputArtifactId: "art_winner" as ArtifactId,
         attemptCount: 1, succeededAt: AT, failureCode: null,
       } as never);
-      return realGenerate!(...args);
+      return realGenerate(...args);
     });
 
     const artifactsBefore = h.store.artifacts.length;
