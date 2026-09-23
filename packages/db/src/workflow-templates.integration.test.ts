@@ -224,6 +224,8 @@ suite("workflow templates (RLS, runtime role)", () => {
           role_slots: JSON.stringify(SLOTS),
           completion_notification_settings: JSON.stringify(SETTINGS),
           variables: JSON.stringify([]),
+          content_blocks: JSON.stringify([]),
+          content_page_count: 0,
           created_by: USER,
           created_at: new Date(AT),
           updated_at: new Date(AT),

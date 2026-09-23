@@ -3154,7 +3154,7 @@
                       "items": {
                         "title": "WorkflowTemplate",
                         "additionalProperties": false,
-                        "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document uploaded through the ordinary path, only referenced here.",
+                        "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document, either uploaded through the ordinary path or GENERATED from this template's own authored content, only referenced here.",
                         "type": "object",
                         "required": [
                           "workflowTemplateId",
@@ -3165,6 +3165,8 @@
                           "variables",
                           "documentId",
                           "sourceArtifactId",
+                          "contentBlocks",
+                          "contentPageCount",
                           "createdAt",
                           "updatedAt"
                         ],
@@ -3456,6 +3458,99 @@
                                 "type": "string"
                               }
                             ]
+                          },
+                          "contentBlocks": {
+                            "maxItems": 500,
+                            "type": "array",
+                            "items": {
+                              "title": "TemplateContentBlock",
+                              "additionalProperties": false,
+                              "type": "object",
+                              "required": [
+                                "pageNumber",
+                                "rect",
+                                "text"
+                              ],
+                              "properties": {
+                                "pageNumber": {
+                                  "minimum": 1,
+                                  "type": "integer"
+                                },
+                                "rect": {
+                                  "title": "PreparationRect",
+                                  "additionalProperties": false,
+                                  "type": "object",
+                                  "required": [
+                                    "x",
+                                    "y",
+                                    "width",
+                                    "height"
+                                  ],
+                                  "properties": {
+                                    "x": {
+                                      "minimum": 0,
+                                      "maximum": 1,
+                                      "type": "number"
+                                    },
+                                    "y": {
+                                      "minimum": 0,
+                                      "maximum": 1,
+                                      "type": "number"
+                                    },
+                                    "width": {
+                                      "exclusiveMinimum": 0,
+                                      "maximum": 1,
+                                      "type": "number"
+                                    },
+                                    "height": {
+                                      "exclusiveMinimum": 0,
+                                      "maximum": 1,
+                                      "type": "number"
+                                    }
+                                  }
+                                },
+                                "text": {
+                                  "minLength": 1,
+                                  "maxLength": 4000,
+                                  "type": "string"
+                                },
+                                "fontSize": {
+                                  "minimum": 6,
+                                  "maximum": 72,
+                                  "type": "integer"
+                                },
+                                "bold": {
+                                  "type": "boolean"
+                                },
+                                "align": {
+                                  "title": "TemplateContentBlockAlign",
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "left"
+                                      ]
+                                    },
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "center"
+                                      ]
+                                    },
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "right"
+                                      ]
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          },
+                          "contentPageCount": {
+                            "minimum": 0,
+                            "type": "integer"
                           },
                           "createdAt": {
                             "format": "date-time",
@@ -3769,13 +3864,13 @@
         ],
         "responses": {
           "201": {
-            "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document uploaded through the ordinary path, only referenced here.",
+            "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document, either uploaded through the ordinary path or GENERATED from this template's own authored content, only referenced here.",
             "content": {
               "application/json": {
                 "schema": {
                   "title": "WorkflowTemplate",
                   "additionalProperties": false,
-                  "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document uploaded through the ordinary path, only referenced here.",
+                  "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document, either uploaded through the ordinary path or GENERATED from this template's own authored content, only referenced here.",
                   "type": "object",
                   "required": [
                     "workflowTemplateId",
@@ -3786,6 +3881,8 @@
                     "variables",
                     "documentId",
                     "sourceArtifactId",
+                    "contentBlocks",
+                    "contentPageCount",
                     "createdAt",
                     "updatedAt"
                   ],
@@ -4077,6 +4174,99 @@
                           "type": "string"
                         }
                       ]
+                    },
+                    "contentBlocks": {
+                      "maxItems": 500,
+                      "type": "array",
+                      "items": {
+                        "title": "TemplateContentBlock",
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "pageNumber",
+                          "rect",
+                          "text"
+                        ],
+                        "properties": {
+                          "pageNumber": {
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "rect": {
+                            "title": "PreparationRect",
+                            "additionalProperties": false,
+                            "type": "object",
+                            "required": [
+                              "x",
+                              "y",
+                              "width",
+                              "height"
+                            ],
+                            "properties": {
+                              "x": {
+                                "minimum": 0,
+                                "maximum": 1,
+                                "type": "number"
+                              },
+                              "y": {
+                                "minimum": 0,
+                                "maximum": 1,
+                                "type": "number"
+                              },
+                              "width": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 1,
+                                "type": "number"
+                              },
+                              "height": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 1,
+                                "type": "number"
+                              }
+                            }
+                          },
+                          "text": {
+                            "minLength": 1,
+                            "maxLength": 4000,
+                            "type": "string"
+                          },
+                          "fontSize": {
+                            "minimum": 6,
+                            "maximum": 72,
+                            "type": "integer"
+                          },
+                          "bold": {
+                            "type": "boolean"
+                          },
+                          "align": {
+                            "title": "TemplateContentBlockAlign",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "left"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "center"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "right"
+                                ]
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "contentPageCount": {
+                      "minimum": 0,
+                      "type": "integer"
                     },
                     "createdAt": {
                       "format": "date-time",
@@ -4120,13 +4310,13 @@
         ],
         "responses": {
           "200": {
-            "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document uploaded through the ordinary path, only referenced here.",
+            "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document, either uploaded through the ordinary path or GENERATED from this template's own authored content, only referenced here.",
             "content": {
               "application/json": {
                 "schema": {
                   "title": "WorkflowTemplate",
                   "additionalProperties": false,
-                  "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document uploaded through the ordinary path, only referenced here.",
+                  "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document, either uploaded through the ordinary path or GENERATED from this template's own authored content, only referenced here.",
                   "type": "object",
                   "required": [
                     "workflowTemplateId",
@@ -4137,6 +4327,8 @@
                     "variables",
                     "documentId",
                     "sourceArtifactId",
+                    "contentBlocks",
+                    "contentPageCount",
                     "createdAt",
                     "updatedAt"
                   ],
@@ -4428,6 +4620,99 @@
                           "type": "string"
                         }
                       ]
+                    },
+                    "contentBlocks": {
+                      "maxItems": 500,
+                      "type": "array",
+                      "items": {
+                        "title": "TemplateContentBlock",
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "pageNumber",
+                          "rect",
+                          "text"
+                        ],
+                        "properties": {
+                          "pageNumber": {
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "rect": {
+                            "title": "PreparationRect",
+                            "additionalProperties": false,
+                            "type": "object",
+                            "required": [
+                              "x",
+                              "y",
+                              "width",
+                              "height"
+                            ],
+                            "properties": {
+                              "x": {
+                                "minimum": 0,
+                                "maximum": 1,
+                                "type": "number"
+                              },
+                              "y": {
+                                "minimum": 0,
+                                "maximum": 1,
+                                "type": "number"
+                              },
+                              "width": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 1,
+                                "type": "number"
+                              },
+                              "height": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 1,
+                                "type": "number"
+                              }
+                            }
+                          },
+                          "text": {
+                            "minLength": 1,
+                            "maxLength": 4000,
+                            "type": "string"
+                          },
+                          "fontSize": {
+                            "minimum": 6,
+                            "maximum": 72,
+                            "type": "integer"
+                          },
+                          "bold": {
+                            "type": "boolean"
+                          },
+                          "align": {
+                            "title": "TemplateContentBlockAlign",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "left"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "center"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "right"
+                                ]
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "contentPageCount": {
+                      "minimum": 0,
+                      "type": "integer"
                     },
                     "createdAt": {
                       "format": "date-time",
@@ -4748,13 +5033,13 @@
         ],
         "responses": {
           "200": {
-            "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document uploaded through the ordinary path, only referenced here.",
+            "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document, either uploaded through the ordinary path or GENERATED from this template's own authored content, only referenced here.",
             "content": {
               "application/json": {
                 "schema": {
                   "title": "WorkflowTemplate",
                   "additionalProperties": false,
-                  "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document uploaded through the ordinary path, only referenced here.",
+                  "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document, either uploaded through the ordinary path or GENERATED from this template's own authored content, only referenced here.",
                   "type": "object",
                   "required": [
                     "workflowTemplateId",
@@ -4765,6 +5050,8 @@
                     "variables",
                     "documentId",
                     "sourceArtifactId",
+                    "contentBlocks",
+                    "contentPageCount",
                     "createdAt",
                     "updatedAt"
                   ],
@@ -5056,6 +5343,99 @@
                           "type": "string"
                         }
                       ]
+                    },
+                    "contentBlocks": {
+                      "maxItems": 500,
+                      "type": "array",
+                      "items": {
+                        "title": "TemplateContentBlock",
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "pageNumber",
+                          "rect",
+                          "text"
+                        ],
+                        "properties": {
+                          "pageNumber": {
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "rect": {
+                            "title": "PreparationRect",
+                            "additionalProperties": false,
+                            "type": "object",
+                            "required": [
+                              "x",
+                              "y",
+                              "width",
+                              "height"
+                            ],
+                            "properties": {
+                              "x": {
+                                "minimum": 0,
+                                "maximum": 1,
+                                "type": "number"
+                              },
+                              "y": {
+                                "minimum": 0,
+                                "maximum": 1,
+                                "type": "number"
+                              },
+                              "width": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 1,
+                                "type": "number"
+                              },
+                              "height": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 1,
+                                "type": "number"
+                              }
+                            }
+                          },
+                          "text": {
+                            "minLength": 1,
+                            "maxLength": 4000,
+                            "type": "string"
+                          },
+                          "fontSize": {
+                            "minimum": 6,
+                            "maximum": 72,
+                            "type": "integer"
+                          },
+                          "bold": {
+                            "type": "boolean"
+                          },
+                          "align": {
+                            "title": "TemplateContentBlockAlign",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "left"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "center"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "right"
+                                ]
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "contentPageCount": {
+                      "minimum": 0,
+                      "type": "integer"
                     },
                     "createdAt": {
                       "format": "date-time",
@@ -5156,13 +5536,13 @@
         ],
         "responses": {
           "200": {
-            "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document uploaded through the ordinary path, only referenced here.",
+            "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document, either uploaded through the ordinary path or GENERATED from this template's own authored content, only referenced here.",
             "content": {
               "application/json": {
                 "schema": {
                   "title": "WorkflowTemplate",
                   "additionalProperties": false,
-                  "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document uploaded through the ordinary path, only referenced here.",
+                  "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document, either uploaded through the ordinary path or GENERATED from this template's own authored content, only referenced here.",
                   "type": "object",
                   "required": [
                     "workflowTemplateId",
@@ -5173,6 +5553,8 @@
                     "variables",
                     "documentId",
                     "sourceArtifactId",
+                    "contentBlocks",
+                    "contentPageCount",
                     "createdAt",
                     "updatedAt"
                   ],
@@ -5464,6 +5846,99 @@
                           "type": "string"
                         }
                       ]
+                    },
+                    "contentBlocks": {
+                      "maxItems": 500,
+                      "type": "array",
+                      "items": {
+                        "title": "TemplateContentBlock",
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "pageNumber",
+                          "rect",
+                          "text"
+                        ],
+                        "properties": {
+                          "pageNumber": {
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "rect": {
+                            "title": "PreparationRect",
+                            "additionalProperties": false,
+                            "type": "object",
+                            "required": [
+                              "x",
+                              "y",
+                              "width",
+                              "height"
+                            ],
+                            "properties": {
+                              "x": {
+                                "minimum": 0,
+                                "maximum": 1,
+                                "type": "number"
+                              },
+                              "y": {
+                                "minimum": 0,
+                                "maximum": 1,
+                                "type": "number"
+                              },
+                              "width": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 1,
+                                "type": "number"
+                              },
+                              "height": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 1,
+                                "type": "number"
+                              }
+                            }
+                          },
+                          "text": {
+                            "minLength": 1,
+                            "maxLength": 4000,
+                            "type": "string"
+                          },
+                          "fontSize": {
+                            "minimum": 6,
+                            "maximum": 72,
+                            "type": "integer"
+                          },
+                          "bold": {
+                            "type": "boolean"
+                          },
+                          "align": {
+                            "title": "TemplateContentBlockAlign",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "left"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "center"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "right"
+                                ]
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "contentPageCount": {
+                      "minimum": 0,
+                      "type": "integer"
                     },
                     "createdAt": {
                       "format": "date-time",
@@ -5505,13 +5980,13 @@
         ],
         "responses": {
           "200": {
-            "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document uploaded through the ordinary path, only referenced here.",
+            "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document, either uploaded through the ordinary path or GENERATED from this template's own authored content, only referenced here.",
             "content": {
               "application/json": {
                 "schema": {
                   "title": "WorkflowTemplate",
                   "additionalProperties": false,
-                  "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document uploaded through the ordinary path, only referenced here.",
+                  "description": "A reusable workflow shape: named role slots and a routing mode, optionally attached to one document. Holds no people and no bytes of its own — the document, when attached, is an ordinary document, either uploaded through the ordinary path or GENERATED from this template's own authored content, only referenced here.",
                   "type": "object",
                   "required": [
                     "workflowTemplateId",
@@ -5522,6 +5997,8 @@
                     "variables",
                     "documentId",
                     "sourceArtifactId",
+                    "contentBlocks",
+                    "contentPageCount",
                     "createdAt",
                     "updatedAt"
                   ],
@@ -5813,6 +6290,99 @@
                           "type": "string"
                         }
                       ]
+                    },
+                    "contentBlocks": {
+                      "maxItems": 500,
+                      "type": "array",
+                      "items": {
+                        "title": "TemplateContentBlock",
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "pageNumber",
+                          "rect",
+                          "text"
+                        ],
+                        "properties": {
+                          "pageNumber": {
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "rect": {
+                            "title": "PreparationRect",
+                            "additionalProperties": false,
+                            "type": "object",
+                            "required": [
+                              "x",
+                              "y",
+                              "width",
+                              "height"
+                            ],
+                            "properties": {
+                              "x": {
+                                "minimum": 0,
+                                "maximum": 1,
+                                "type": "number"
+                              },
+                              "y": {
+                                "minimum": 0,
+                                "maximum": 1,
+                                "type": "number"
+                              },
+                              "width": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 1,
+                                "type": "number"
+                              },
+                              "height": {
+                                "exclusiveMinimum": 0,
+                                "maximum": 1,
+                                "type": "number"
+                              }
+                            }
+                          },
+                          "text": {
+                            "minLength": 1,
+                            "maxLength": 4000,
+                            "type": "string"
+                          },
+                          "fontSize": {
+                            "minimum": 6,
+                            "maximum": 72,
+                            "type": "integer"
+                          },
+                          "bold": {
+                            "type": "boolean"
+                          },
+                          "align": {
+                            "title": "TemplateContentBlockAlign",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "left"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "center"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "right"
+                                ]
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "contentPageCount": {
+                      "minimum": 0,
+                      "type": "integer"
                     },
                     "createdAt": {
                       "format": "date-time",

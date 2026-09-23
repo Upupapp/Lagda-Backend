@@ -29,13 +29,16 @@
 
 import type {
   WorkspaceId, DocumentId, UserId, PreparationFieldType, PreparationRect,
+  Sha256Digest,
 } from "@lagda/contracts";
 import {
   WORKFLOW_ROUTING_MODES, WORKFLOW_SLOT_AUTH_METHODS, RECIPIENT_TYPES,
   WORKFLOW_TEMPLATE_VARIABLE_TYPES,
   WORKFLOW_TEMPLATE_VARIABLE_KEY_MAX_LENGTH, WORKFLOW_TEMPLATE_VARIABLE_LABEL_MAX_LENGTH,
+  WORKFLOW_TEMPLATE_CONTENT_TEXT_MAX_LENGTH, WORKFLOW_TEMPLATE_CONTENT_MAX_PAGES,
   type WorkflowRoutingMode, type WorkflowRoleSlot, type WorkflowRoleResolution,
   type WorkflowCompletionSettings, type WorkflowTemplateVariable,
+  type TemplateContentBlock, type TemplateContentBlockAlign,
 } from "@lagda/contracts";
 import {
   validateRect, roundRect, isValidPageNumber, canPlaceFields, validateFieldLabel,
@@ -49,7 +52,10 @@ import type {
   WorkflowTemplateIdGenerator, WorkflowTemplateRecord, RawWorkflowTemplateRow,
 } from "../common/ports/workflow-templates.js";
 import type { WorkflowTemplateFieldRecord } from "../common/ports/workflow-template-fields.js";
-import type { ArtifactId } from "../common/ports/evidence.js";
+import type { ArtifactId, ArtifactIdGenerator } from "../common/ports/evidence.js";
+import type { DocumentIdGenerator } from "../common/ports/documents.js";
+import type { ObjectStorage, StorageKeyStrategy } from "../common/ports/storage.js";
+import type { TemplateDocumentGenerator } from "../common/ports/template-content.js";
 import type { AuthenticatedActor } from "../common/ports/session.js";
 import {
   ApplicationError, ApplicationValidationError, ResourceNotFoundError,
@@ -511,6 +517,77 @@ function validateVariables(value: unknown): readonly WorkflowTemplateVariable[] 
   });
 }
 
+const CONTENT_BLOCK_ALIGNS: readonly TemplateContentBlockAlign[] = ["left", "center", "right"];
+
+/**
+ * Authored content blocks (066), on the READ side — the same "validate on
+ * write, and again on read" rule `validateVariables` follows, and for the
+ * same reason: a row that somehow holds a malformed block must fail loudly
+ * rather than let a later generate silently drop it.
+ *
+ * A block's REGENERATION-time geometry (rect bounds against the real page
+ * count) is checked separately, by `validateContentForGeneration` — this
+ * function only proves the JSONB is shaped like a `TemplateContentBlock`.
+ */
+function validateContentBlocks(value: unknown): readonly TemplateContentBlock[] {
+  if (!Array.isArray(value)) {
+    throw new WorkflowTemplateMalformedError("its content blocks are missing");
+  }
+
+  return value.map((raw, index) => {
+    const at = `content block ${String(index + 1)}`;
+    if (!isRecord(raw)) throw new WorkflowTemplateMalformedError(`${at} is not an object`);
+
+    const pageNumber = raw["pageNumber"];
+    if (typeof pageNumber !== "number" || !Number.isInteger(pageNumber) || pageNumber < 1) {
+      throw new WorkflowTemplateMalformedError(`${at}'s pageNumber is invalid`);
+    }
+
+    const rect = raw["rect"];
+    if (!isRecord(rect)
+      || typeof rect["x"] !== "number" || typeof rect["y"] !== "number"
+      || typeof rect["width"] !== "number" || typeof rect["height"] !== "number"
+    ) {
+      throw new WorkflowTemplateMalformedError(`${at}'s rect is invalid`);
+    }
+
+    const text = raw["text"];
+    if (typeof text !== "string" || text.length === 0
+      || text.length > WORKFLOW_TEMPLATE_CONTENT_TEXT_MAX_LENGTH
+    ) {
+      throw new WorkflowTemplateMalformedError(`${at}'s text is invalid`);
+    }
+
+    const fontSize = raw["fontSize"];
+    if (fontSize !== undefined
+      && (typeof fontSize !== "number" || fontSize < 6 || fontSize > 72)
+    ) {
+      throw new WorkflowTemplateMalformedError(`${at}'s fontSize is invalid`);
+    }
+
+    const bold = raw["bold"];
+    if (bold !== undefined && typeof bold !== "boolean") {
+      throw new WorkflowTemplateMalformedError(`${at}'s bold flag is invalid`);
+    }
+
+    const align = raw["align"];
+    if (align !== undefined
+      && !CONTENT_BLOCK_ALIGNS.includes(align as never)
+    ) {
+      throw new WorkflowTemplateMalformedError(`${at}'s align is invalid`);
+    }
+
+    return {
+      pageNumber,
+      rect: { x: rect["x"], y: rect["y"], width: rect["width"], height: rect["height"] },
+      text,
+      ...(fontSize === undefined ? {} : { fontSize }),
+      ...(bold === undefined ? {} : { bold }),
+      ...(align === undefined ? {} : { align: align as TemplateContentBlockAlign }),
+    };
+  });
+}
+
 function validateName(value: string): string {
   const name = value.trim();
   if (name.length === 0) throw new WorkflowTemplateMalformedError("it has no name");
@@ -539,6 +616,8 @@ export function parseStoredTemplate(row: RawWorkflowTemplateRow): WorkflowTempla
     updatedAt: row.updatedAt,
     documentId: row.documentId,
     sourceArtifactId: row.sourceArtifactId,
+    contentBlocks: validateContentBlocks(row.contentBlocks),
+    contentPageCount: row.contentPageCount,
   };
 }
 
@@ -618,6 +697,10 @@ export async function createWorkflowTemplate(
       // document named — creation never receives either value to begin with.
       documentId: null,
       sourceArtifactId: null,
+      // Same for authored content (066) — `generateWorkflowTemplateDocument`
+      // is the only path that ever sets it.
+      contentBlocks: [],
+      contentPageCount: 0,
     };
 
     await uow.workflowTemplates.insert(record);
@@ -727,9 +810,11 @@ export async function updateWorkflowTemplate(
       updatedAt: now,
       // Carried over, not touched. `update` (name/routing/slots) never writes
       // these columns — a PUT to the template's shape must not silently
-      // detach its document as a side effect.
+      // detach its document as a side effect, or its authored content.
       documentId: existing.documentId,
       sourceArtifactId: existing.sourceArtifactId,
+      contentBlocks: validateContentBlocks(existing.contentBlocks),
+      contentPageCount: existing.contentPageCount,
     };
   });
 }
@@ -853,6 +938,192 @@ export async function detachWorkflowTemplateDocument(
       sourceArtifactId: null,
       updatedAt,
     };
+  });
+}
+
+// ── Authored documents (066) ─────────────────────────────────────────────────
+
+const MAX_CONTENT_BLOCKS = 500;
+
+/**
+ * A generated document's TEXT, refused before any bytes are ever produced.
+ *
+ * This is the business-rule half of validation, the same split `validate
+ * TemplateFields` makes for field placements: the route's TypeBox schema
+ * already proved every block is SHAPED like a `TemplateContentBlock` (string
+ * lengths, number ranges); this proves the blocks make sense TOGETHER — page
+ * numbers within the page count actually being generated, and rectangles that
+ * do not run off the page. `assertPlaceable` (sealing's own geometry check)
+ * runs again at render time regardless — this is the readable error in front
+ * of it, not a replacement for it.
+ */
+function validateContentForGeneration(
+  blocks: readonly TemplateContentBlock[],
+  pageCount: number,
+): void {
+  const issues: string[] = [];
+
+  if (blocks.length > MAX_CONTENT_BLOCKS) {
+    issues.push(`blocks: at most ${String(MAX_CONTENT_BLOCKS)} are allowed`);
+  }
+
+  blocks.forEach((block, index) => {
+    const at = `blocks[${String(index)}]`;
+    if (!isValidPageNumber(block.pageNumber, pageCount)) {
+      issues.push(`${at}.pageNumber: must be between 1 and ${String(pageCount)}`);
+    }
+    const geometry = validateRect(block.rect);
+    if (!geometry.ok) issues.push(`${at}.rect: ${geometry.reason}`);
+  });
+
+  if (issues.length > 0) {
+    throw new ApplicationValidationError("This content could not be saved.", issues);
+  }
+}
+
+export interface WorkflowTemplateGenerateDocumentInput {
+  readonly pageCount: number;
+  readonly blocks: readonly TemplateContentBlock[];
+}
+
+/**
+ * Extra capabilities ONLY this use case needs — bytes, storage and id
+ * generation that no other template operation touches. Kept separate from
+ * `WorkflowTemplateDependencies` rather than added to it, the same "absent
+ * means no route" shape the API composition root already uses for every
+ * other storage-touching surface (upload, the ceremony, completed-document
+ * download): a deployment with no object storage configured gets every OTHER
+ * template operation and not this one, rather than this whole module
+ * refusing to start.
+ */
+export interface WorkflowTemplateGenerateDocumentDependencies extends WorkflowTemplateDependencies {
+  readonly storage: ObjectStorage;
+  readonly keys: StorageKeyStrategy;
+  readonly templateDocumentGenerator: TemplateDocumentGenerator;
+  readonly documentIds: DocumentIdGenerator;
+  readonly artifactIds: ArtifactIdGenerator;
+}
+
+/**
+ * Authors the template's OWN document — the alternative to
+ * `attachWorkflowTemplateDocument`, which names an ALREADY-uploaded one.
+ *
+ * Every call REPLACES the whole layout and regenerates the PDF from it, the
+ * same whole-layout-replace contract `saveWorkflowTemplateFields` already
+ * uses and for the same reason (§ that function's header): authoring is a
+ * canvas, not an accumulation of patches.
+ *
+ * ── Ordering: bytes, then rows, then attach ─────────────────────────────
+ *
+ * Rendering happens OUTSIDE any database transaction — it touches no row and
+ * holding a connection open across it would serialize nothing. The upload is
+ * BEFORE the row that names it, matching every other artifact-accepting path
+ * in this codebase (`process-upload.ts`'s own header states the rule this
+ * mirrors): a row naming bytes that do not exist is a completion the system
+ * believes in and cannot deliver, so the reverse never happens. A failure
+ * between the two leaves a private, unreferenced object — recoverable, and
+ * deliberately not cleaned up here for the same reason upload does not.
+ *
+ * Inside the one short transaction that follows: a new `documents` row, a new
+ * `document_artifacts` row (`artifactType: "original"`, exactly what an
+ * upload would produce), `saveContent` (the authored blocks themselves), and
+ * finally `attachDocument` — content saved before the document is attached,
+ * so a failure never leaves a template pointing at a document whose content
+ * disagrees with what is stored.
+ */
+export async function generateWorkflowTemplateDocument(
+  actor: AuthenticatedActor,
+  workspaceId: WorkspaceId,
+  workflowTemplateId: string,
+  input: WorkflowTemplateGenerateDocumentInput,
+  deps: WorkflowTemplateGenerateDocumentDependencies,
+): Promise<WorkflowTemplateRecord> {
+  if (input.pageCount < 1 || input.pageCount > WORKFLOW_TEMPLATE_CONTENT_MAX_PAGES) {
+    throw new ApplicationValidationError(
+      "This content could not be saved.",
+      [`pageCount: must be between 1 and ${String(WORKFLOW_TEMPLATE_CONTENT_MAX_PAGES)}`],
+    );
+  }
+  validateContentForGeneration(input.blocks, input.pageCount);
+
+  const now = deps.clock.now();
+
+  let bytes: Uint8Array;
+  let digest: Sha256Digest;
+  try {
+    const generated = await deps.templateDocumentGenerator.generate({
+      pageCount: input.pageCount,
+      blocks: input.blocks,
+      generatedAt: now,
+    });
+    bytes = generated.bytes;
+    digest = generated.digest;
+  } catch (cause) {
+    // A rendering refusal (an unfittable block, an unrenderable code point) is
+    // the admin's problem to fix on the canvas, so it becomes a 422 with the
+    // renderer's own message — never a 500, and never retried by anything,
+    // because the SAME blocks will fail the SAME way every time.
+    const message = cause instanceof Error ? cause.message : "The document could not be generated.";
+    throw new ApplicationValidationError("This content could not be saved.", [message]);
+  }
+
+  const documentId = deps.documentIds.nextDocumentId();
+  const artifactId = deps.artifactIds.nextArtifactId();
+  const ref = deps.keys.artifactKey({ workspaceId, documentId, artifactId });
+
+  await deps.storage.putObject({
+    ref,
+    content: { kind: "bytes", bytes },
+    mediaType: "application/pdf",
+  });
+
+  return deps.transactions.runForWorkspace(workspaceId, async uow => {
+    await authorize(uow, actor, "template.update");
+
+    const existing = await uow.workflowTemplates.find(workflowTemplateId);
+    if (existing === null) throw new ResourceNotFoundError("WorkflowTemplate");
+
+    await uow.documents.insert({
+      documentId,
+      workspaceId,
+      title: `${parseStoredTemplate(existing).name} (generated)`,
+      // No filename — nothing was uploaded. Matches the upload pipeline's own
+      // "unknown until a real file lands" stance for the case that never
+      // applies here.
+      originalFilename: null,
+      createdByUserId: actor.userId,
+      createdAt: now,
+    });
+
+    await uow.artifacts.insert({
+      artifactId,
+      workspaceId,
+      documentId,
+      artifactType: "original",
+      storageReference: ref.key,
+      mediaType: "application/pdf",
+      sizeBytes: bytes.byteLength,
+      digestAlgorithm: "sha-256",
+      digest,
+      pageCount: input.pageCount,
+      // Never rotated — this build drew every page itself at 0°.
+      rotatedPageCount: 0,
+      createdAt: now,
+    });
+
+    const contentSaved = await uow.workflowTemplates.saveContent(workflowTemplateId, {
+      blocks: input.blocks, pageCount: input.pageCount, updatedAt: now,
+    });
+    if (!contentSaved) throw new ResourceNotFoundError("WorkflowTemplate");
+
+    const attached = await uow.workflowTemplates.attachDocument(workflowTemplateId, {
+      documentId, artifactId, updatedAt: now,
+    });
+    if (!attached) throw new ResourceNotFoundError("WorkflowTemplate");
+
+    const updated = await uow.workflowTemplates.find(workflowTemplateId);
+    if (updated === null) throw new ResourceNotFoundError("WorkflowTemplate");
+    return parseStoredTemplate(updated);
   });
 }
 

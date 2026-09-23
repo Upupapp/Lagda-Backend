@@ -9,7 +9,7 @@
 import type { WorkspaceId, UserId, DocumentId } from "@lagda/contracts";
 import type {
   WorkflowRoutingMode, WorkflowRoleSlot, WorkflowCompletionSettings,
-  WorkflowTemplateVariable,
+  WorkflowTemplateVariable, TemplateContentBlock,
 } from "@lagda/contracts";
 import type { ArtifactId } from "./evidence.js";
 
@@ -43,6 +43,11 @@ export interface WorkflowTemplateRecord {
    */
   readonly documentId: DocumentId | null;
   readonly sourceArtifactId: ArtifactId | null;
+  /** 066. Authored text, if the attached document was GENERATED rather than
+   *  uploaded. Empty otherwise. */
+  readonly contentBlocks: readonly TemplateContentBlock[];
+  /** 066. Blank pages the last generate produced. 0 before the first one. */
+  readonly contentPageCount: number;
 }
 
 export interface NewWorkflowTemplate {
@@ -86,6 +91,8 @@ export interface RawWorkflowTemplateRow {
   readonly updatedAt: number;
   readonly documentId: DocumentId | null;
   readonly sourceArtifactId: ArtifactId | null;
+  readonly contentBlocks: unknown;
+  readonly contentPageCount: number;
 }
 
 export interface ScopedWorkflowTemplateRepository {
@@ -121,6 +128,18 @@ export interface ScopedWorkflowTemplateRepository {
   ): Promise<boolean>;
   /** Clears both columns. `false` when no row matched. */
   detachDocument(workflowTemplateId: string, updatedAt: number): Promise<boolean>;
+  /**
+   * 066. Replaces the authored content — the whole layout, like
+   * `attachDocument` replaces the whole document pair. Never touches
+   * `documentId`/`sourceArtifactId`; the generate use case calls this AND
+   * `attachDocument` in the same transaction, content first, so a save that
+   * fails to generate never leaves a stale document pointing at content that
+   * no longer matches it.
+   */
+  saveContent(
+    workflowTemplateId: string,
+    content: { blocks: readonly TemplateContentBlock[]; pageCount: number; updatedAt: number },
+  ): Promise<boolean>;
 }
 
 export interface WorkflowTemplateIdGenerator {

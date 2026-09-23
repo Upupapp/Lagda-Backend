@@ -24,7 +24,7 @@ import type {
   CompletedArtifactDependencies,
   SigningCeremonyDependencies, SigningSubmissionDependencies,
   SigningDeclineDependencies, SigningWorkflowDependencies,
-  WorkflowTemplateDependencies,
+  WorkflowTemplateDependencies, WorkflowTemplateGenerateDocumentDependencies,
   AuditTrailDependencies, OrganizationDependencies,
 } from "@lagda/application";
 
@@ -205,6 +205,15 @@ export interface WorkspaceDependencies {
    * not exist, the same convention every other optional surface here uses.
    */
   readonly workflowTemplates?: () => WorkflowTemplateDependencies;
+  /**
+   * Generating a template's OWN document from authored content (066).
+   *
+   * Separate from `workflowTemplates` because it needs strictly more: object
+   * storage and a document generator, the same reason `documentContent` is
+   * separate from `documents`. Absent means the generate-document route does
+   * not exist; every other template route is unaffected.
+   */
+  readonly workflowTemplateGenerateDocument?: () => WorkflowTemplateGenerateDocumentDependencies;
   /**
    * Documents (BACKEND-29).
    *

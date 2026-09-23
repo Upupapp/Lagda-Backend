@@ -287,6 +287,54 @@ export const WorkflowTemplateVariableSchema = Type.Object(
 );
 export type WorkflowTemplateVariable = Static<typeof WorkflowTemplateVariableSchema>;
 
+// ── Authored content (065/066) ────────────────────────────────────────────────
+//
+// A template's SOURCE DOCUMENT no longer has to be an upload. `contentBlocks`
+// is authored text laid out on blank pages — the same normalized 0-1,
+// top-left-origin rectangle every field already uses (`PreparationRectSchema`),
+// so the SAME canvas that places fields places text.
+//
+// Generating the PDF from these blocks and attaching it is a SEPARATE step
+// (`POST .../generate-document`) — this schema only describes what gets
+// authored, not the bytes that result. A template with content blocks and one
+// with an uploaded document look identical once attached: `documentId` and
+// `sourceArtifactId` are set either way, and nothing downstream (field
+// placement, apply, completion) can tell the two apart or needs to.
+//
+// `{{variable_key}}` inside `text` is substituted the same way a bound field's
+// value is, at the SAME apply-time step — see `resolveTemplateForApply`.
+
+export const WORKFLOW_TEMPLATE_CONTENT_TEXT_MAX_LENGTH = 4000;
+
+export const TemplateContentBlockAlignSchema = Type.Union(
+  [Type.Literal("left"), Type.Literal("center"), Type.Literal("right")],
+  { title: "TemplateContentBlockAlign" },
+);
+export type TemplateContentBlockAlign = Static<typeof TemplateContentBlockAlignSchema>;
+
+export const TemplateContentBlockSchema = Type.Object(
+  {
+    /** 1-based, against `contentPageCount` — not against a document that does
+     *  not exist yet. */
+    pageNumber: Type.Integer({ minimum: 1 }),
+    rect: PreparationRectSchema,
+    text: Type.String({
+      minLength: 1, maxLength: WORKFLOW_TEMPLATE_CONTENT_TEXT_MAX_LENGTH,
+    }),
+    /** Points. Absent means the renderer's own default body size. */
+    fontSize: Type.Optional(Type.Integer({ minimum: 6, maximum: 72 })),
+    bold: Type.Optional(Type.Boolean()),
+    align: Type.Optional(TemplateContentBlockAlignSchema),
+  },
+  { title: "TemplateContentBlock", additionalProperties: false },
+);
+export type TemplateContentBlock = Static<typeof TemplateContentBlockSchema>;
+
+/** How many blank pages the generator lays out. A block naming a page beyond
+ *  this is refused at save time — the same "does not exist yet" reasoning
+ *  `isValidPageNumber` already applies to an uploaded document. */
+export const WORKFLOW_TEMPLATE_CONTENT_MAX_PAGES = 30;
+
 // ── The template ─────────────────────────────────────────────────────────────
 
 export const WorkflowTemplateSchema = Type.Object(
@@ -307,6 +355,13 @@ export const WorkflowTemplateSchema = Type.Object(
      */
     documentId: Type.Union([Type.Null(), Type.String({ minLength: 1, maxLength: 64 })]),
     sourceArtifactId: Type.Union([Type.Null(), Type.String({ minLength: 1, maxLength: 64 })]),
+    /** 066. Authored text, if the attached document (if any) was GENERATED
+     *  from this rather than uploaded. Empty for an uploaded document, or for
+     *  a template with no document at all. */
+    contentBlocks: Type.Array(TemplateContentBlockSchema, { maxItems: 500 }),
+    /** 066. How many blank pages the LAST generate produced. 0 before the
+     *  first generate. */
+    contentPageCount: Type.Integer({ minimum: 0 }),
     createdAt: Type.String({ format: "date-time" }),
     updatedAt: Type.String({ format: "date-time" }),
   },
@@ -316,11 +371,31 @@ export const WorkflowTemplateSchema = Type.Object(
     description:
       "A reusable workflow shape: named role slots and a routing mode, "
       + "optionally attached to one document. Holds no people and no bytes "
-      + "of its own — the document, when attached, is an ordinary document "
-      + "uploaded through the ordinary path, only referenced here.",
+      + "of its own — the document, when attached, is an ordinary document, "
+      + "either uploaded through the ordinary path or GENERATED from this "
+      + "template's own authored content, only referenced here.",
   },
 );
 export type WorkflowTemplateView = Static<typeof WorkflowTemplateSchema>;
+
+/**
+ * The body of `POST .../workflow-templates/:id/generate-document`.
+ *
+ * Authors the template's OWN document rather than naming an uploaded one —
+ * the alternative to `WorkflowTemplateDocumentInputSchema`. Every call
+ * REPLACES the whole layout and regenerates the PDF, the same "whole-layout
+ * replace" contract `WorkflowTemplateFieldsWriteSchema` already uses, and for
+ * the same reason: authoring is a canvas, not an accumulation of patches.
+ */
+export const WorkflowTemplateGenerateDocumentInputSchema = Type.Object(
+  {
+    pageCount: Type.Integer({ minimum: 1, maximum: WORKFLOW_TEMPLATE_CONTENT_MAX_PAGES }),
+    blocks: Type.Array(TemplateContentBlockSchema, { maxItems: 500 }),
+  },
+  { title: "WorkflowTemplateGenerateDocumentInput", additionalProperties: false },
+);
+export type WorkflowTemplateGenerateDocumentInput =
+  Static<typeof WorkflowTemplateGenerateDocumentInputSchema>;
 
 /**
  * The body of `PUT .../workflow-templates/:id/document`.

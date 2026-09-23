@@ -40,7 +40,7 @@ import {
 import type { ObjectStorage, JobScheduler } from "@lagda/application";
 import { createCompletionQueue, type CompletionQueue } from "./job-scheduler.js";
 import { createClamAvScanner, createMetaDefenderScanner, loadScannerConfig } from "@lagda/scanning";
-import { createPdfInspector, sha256 } from "@lagda/sealing";
+import { createPdfInspector, sha256, NodeTemplateDocumentGenerator } from "@lagda/sealing";
 import { createArgon2PasswordHasher } from "../security/password-hasher.js";
 import { buildIdentity } from "./identity-composition.js";
 import {
@@ -174,6 +174,11 @@ export async function createProductionDependencies(
   // ONE object store for every surface that touches bytes: upload writes the
   // artifact, and the ceremony serves the same one back to the recipient.
   const objectStorage = buildObjectStorage();
+  // Pure factories — cheap to call again here rather than threading the
+  // instance `buildUploadDependencies` creates for its own, unrelated scope.
+  const storageKeys = createStorageKeyStrategy();
+  const templateArtifactIds = createArtifactIdGenerator();
+  const templateDocumentGenerator = new NodeTemplateDocumentGenerator();
 
   const documentIds = createDocumentIdGenerator();
   const folderIds = createFolderIdGenerator();
@@ -217,6 +222,17 @@ export async function createProductionDependencies(
       workspace: () => ({ transactions }),
       contacts: () => ({ transactions, clock, ids: contactIds }),
       workflowTemplates: () => ({ transactions, clock, ids: workflowTemplateIds }),
+      // 066. Separate from `workflowTemplates` because it needs strictly
+      // more — object storage and a renderer, the same reason
+      // `documentContent` is separate from `documents`, two lines below.
+      ...(objectStorage === null ? {} : {
+        workflowTemplateGenerateDocument: () => ({
+          transactions, clock, ids: workflowTemplateIds,
+          storage: objectStorage, keys: storageKeys,
+          templateDocumentGenerator,
+          documentIds, artifactIds: templateArtifactIds,
+        }),
+      }),
       documents: () => ({ transactions, clock, ids: documentIds }),
       // Same "absent means no route" convention as upload, the ceremony, and
       // the completed-artifact download below: no object storage, no view
