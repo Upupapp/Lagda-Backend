@@ -7,6 +7,7 @@
 import {
   createDatabase, loadDatabaseConfig, createTransactionManager,
   createSessionRepository, createRateLimitCounterRepository,
+  hasCurrentSchema,
   type LagdaDatabase,
 } from "@lagda/db";
 import {
@@ -191,6 +192,8 @@ export async function createProductionDependencies(
     databaseHealth: {
       // `ping()` from BACKEND-06. The API writes no SQL of its own.
       isReachable: () => database.ping(),
+      // Reachable is not the same as USABLE. See DatabaseHealth's own comment.
+      hasCurrentSchema: () => hasCurrentSchema(database.db),
     },
     // The abuse limiter. Absent, the fourteen policies defined across the
     // codebase attached to nothing: nine route modules call

@@ -198,6 +198,33 @@ export interface MigrationStatus {
   readonly applied: boolean;
 }
 
+/**
+ * True when every migration this build knows about has been applied.
+ *
+ * Exists because readiness checked only REACHABILITY, and that was a false
+ * green that cost an outage: a deploy shipped code requiring a column its
+ * migration had not created, so every template read failed while `/ready`
+ * returned `{"status":"ready"}` — the database was reachable, it just did not
+ * have the schema the code expected.
+ *
+ * Deliberately one-directional. It asks "is anything this build needs
+ * MISSING", not "do the two sets match exactly". A database carrying a
+ * migration this build has never heard of is a ROLLBACK — the previous
+ * release is being served while a newer schema is in place — and that process
+ * should keep serving traffic rather than take itself out of rotation.
+ *
+ * Swallows its own failure into `false` rather than throwing, matching the
+ * readiness contract: a probe must never 500.
+ */
+export async function hasCurrentSchema(db: Kysely<Database>): Promise<boolean> {
+  try {
+    const rows = await migrator(db).getMigrations();
+    return rows.every(row => row.executedAt !== undefined);
+  } catch {
+    return false;
+  }
+}
+
 export async function migrationStatus(db: Kysely<Database>): Promise<readonly MigrationStatus[]> {
   const rows = await migrator(db).getMigrations();
   return rows.map(row => ({ name: row.name, applied: row.executedAt !== undefined }));

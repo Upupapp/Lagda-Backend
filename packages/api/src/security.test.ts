@@ -383,7 +383,10 @@ describe("route protection", () => {
     app = await createApp({
       config: config(over),
       dependencies: {
-        databaseHealth: { isReachable: () => Promise.resolve(true) },
+        databaseHealth: {
+    isReachable: () => Promise.resolve(true),
+    hasCurrentSchema: () => Promise.resolve(true),
+  },
         sessions: service,
       },
       metrics: noopMetrics,
@@ -465,7 +468,10 @@ describe("route protection", () => {
     app = await createApp({
       config: config(),
       dependencies: {
-        databaseHealth: { isReachable: () => Promise.resolve(true) }, sessions: failing,
+        databaseHealth: {
+    isReachable: () => Promise.resolve(true),
+    hasCurrentSchema: () => Promise.resolve(true),
+  }, sessions: failing,
       },
     });
     await app.register((scope) => {
@@ -524,7 +530,10 @@ describe("CSRF", () => {
     app = await createApp({
       config: config({ CORS_ORIGINS: "https://app.lagda.io" }),
       dependencies: {
-        databaseHealth: { isReachable: () => Promise.resolve(true) }, sessions: service,
+        databaseHealth: {
+    isReachable: () => Promise.resolve(true),
+    hasCurrentSchema: () => Promise.resolve(true),
+  }, sessions: service,
       },
     });
     await app.register((scope) => {
@@ -649,7 +658,10 @@ describe("credentials never leak", () => {
     const app = await createApp({
       config: config({ LOG_LEVEL: "debug" }),
       dependencies: {
-        databaseHealth: { isReachable: () => Promise.resolve(true) }, sessions: service,
+        databaseHealth: {
+    isReachable: () => Promise.resolve(true),
+    hasCurrentSchema: () => Promise.resolve(true),
+  }, sessions: service,
       },
     });
     // Replace the logger destination so the capture sees everything.

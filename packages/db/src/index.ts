@@ -14,7 +14,9 @@ export type { DatabaseConfig } from "./config/index.js";
 export { createDatabase } from "./client/index.js";
 export type { LagdaDatabase } from "./client/index.js";
 
-export { migrateToLatest, migrationStatus, migrateDown } from "./migrations/runner.js";
+export {
+  migrateToLatest, migrationStatus, migrateDown, hasCurrentSchema,
+} from "./migrations/runner.js";
 export type { MigrationOutcome, MigrationStatus } from "./migrations/runner.js";
 
 export { createTransactionManager } from "./transactions/index.js";

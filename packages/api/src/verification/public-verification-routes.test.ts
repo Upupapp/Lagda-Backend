@@ -33,7 +33,10 @@ async function buildApp(): Promise<FastifyInstance> {
   return createApp({
     config: loadApiConfig({ NODE_ENV: "test", LOG_LEVEL: "silent" }),
     dependencies: {
-      databaseHealth: { isReachable: () => Promise.resolve(true) },
+      databaseHealth: {
+    isReachable: () => Promise.resolve(true),
+    hasCurrentSchema: () => Promise.resolve(true),
+  },
       publicVerification: () => ({ lookup: { findByVerificationId } }),
     },
   });
