@@ -33,9 +33,21 @@ export type WorkflowTemplateFieldId = string & { readonly __brand: "WorkflowTemp
  */
 export interface WorkflowTemplateFieldRecord {
   readonly fieldId: WorkflowTemplateFieldId;
-  /** One of the template's OWN `role_slots[].slotId` values, validated by
-   *  the use case against the template's current slots on every write. */
-  readonly slotId: string;
+  /**
+   * One of the template's OWN `role_slots[].slotId` values, validated by the
+   * use case against the template's current slots on every write.
+   *
+   * NULL when this field is filled from a VARIABLE instead (064). Exactly one
+   * of `slotId` and `variableKey` is set — a field is signed by a person, or
+   * filled by the sender at apply time, never both and never neither.
+   */
+  readonly slotId: string | null;
+  /**
+   * 064. One of the template's OWN `variables[].key` values, validated the
+   * same way and for the same reason `slotId` is: variables live in JSONB, so
+   * there is no row for a foreign key to reference.
+   */
+  readonly variableKey: string | null;
   readonly type: PreparationFieldType;
   /** 1-based, against the template's attached document. */
   readonly pageNumber: number;

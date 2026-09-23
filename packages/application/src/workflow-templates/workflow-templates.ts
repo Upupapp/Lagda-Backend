@@ -696,13 +696,21 @@ export async function updateWorkflowTemplate(
     // which `saveWorkflowTemplateFields` refuses on write but nothing would
     // catch on an edit that removes the slot a field already used. Dropped
     // here rather than left to be a corrupt-looking read.
+    // ...and 064 adds the same hazard for VARIABLES: an edit that removes a
+    // variable declaration leaves any field bound to it pointing at nothing.
+    // Both are swept the same way and for the same reason.
     const survivingSlotIds = new Set(roleSlots.map(slot => slot.slotId));
+    const survivingVariableKeys = new Set(validated.variables.map(v => v.key));
+    const survives = (field: { slotId: string | null; variableKey: string | null }): boolean =>
+      field.variableKey !== null
+        ? survivingVariableKeys.has(field.variableKey)
+        : field.slotId !== null && survivingSlotIds.has(field.slotId);
+
     const currentFields = await uow.workflowTemplateFields.list(workflowTemplateId);
-    const orphaned = currentFields.some(field => !survivingSlotIds.has(field.slotId));
-    if (orphaned) {
+    if (currentFields.some(field => !survives(field))) {
       await uow.workflowTemplateFields.replaceAll(
         workflowTemplateId,
-        currentFields.filter(field => survivingSlotIds.has(field.slotId)),
+        currentFields.filter(survives),
         now);
     }
 
@@ -937,8 +945,16 @@ export interface WorkflowTemplateFieldWriteInput {
    *  preserve identity across a save — honoured only if it already belongs
    *  to THIS template, mirroring `FieldInput.fieldId` in preparation. */
   readonly fieldId?: string;
-  /** One of the template's own `role_slots[].slotId` values. */
-  readonly slotId: string;
+  /**
+   * One of the template's own `role_slots[].slotId` values — the ROLE that
+   * signs this field.
+   *
+   * Omit it and supply `variableKey` instead for a field the SENDER fills in
+   * once at apply time. Exactly one of the two, never both and never neither.
+   */
+  readonly slotId?: string;
+  /** 064. One of the template's own `variables[].key` values. */
+  readonly variableKey?: string;
   readonly type: PreparationFieldType;
   readonly pageNumber: number;
   readonly rect: PreparationRect;
@@ -972,6 +988,7 @@ async function resolvePageCount(
 function validateTemplateFields(
   inputs: readonly WorkflowTemplateFieldWriteInput[],
   roleSlotIds: ReadonlySet<string>,
+  variableKeys: ReadonlySet<string>,
   pageCount: number,
   existingFieldIds: ReadonlySet<string>,
   mintFieldId: () => string,
@@ -983,9 +1000,26 @@ function validateTemplateFields(
   inputs.forEach((input, index) => {
     const at = `fields[${String(index)}]`;
 
-    if (!roleSlotIds.has(input.slotId)) {
+    // EXACTLY ONE target. A field is signed by a role, or filled by the
+    // sender from a variable — never both, and never neither. The database
+    // carries the same rule as a CHECK; this produces the readable error.
+    const hasSlot = input.slotId !== undefined;
+    const hasVariable = input.variableKey !== undefined;
+    let targetOk = true;
+    if (hasSlot && hasVariable) {
+      issues.push(`${at}: set slotId or variableKey, not both`);
+      targetOk = false;
+    } else if (!hasSlot && !hasVariable) {
+      issues.push(`${at}: needs either slotId or variableKey`);
+      targetOk = false;
+    } else if (input.slotId !== undefined && !roleSlotIds.has(input.slotId)) {
       issues.push(`${at}.slotId: does not name a role on this template`);
+      targetOk = false;
+    } else if (input.variableKey !== undefined && !variableKeys.has(input.variableKey)) {
+      issues.push(`${at}.variableKey: does not name a variable on this template`);
+      targetOk = false;
     }
+
     if (!isValidPageNumber(input.pageNumber, pageCount)) {
       issues.push(`${at}.pageNumber: must be between 1 and ${String(pageCount)}`);
     }
@@ -1008,11 +1042,12 @@ function validateTemplateFields(
     }
     if (fieldId !== undefined) seenFieldIds.add(fieldId);
 
-    if (!roleSlotIds.has(input.slotId) || !geometry.ok || !label.ok) return;
+    if (!targetOk || !geometry.ok || !label.ok) return;
 
     records.push({
       fieldId: (fieldId ?? mintFieldId()) as WorkflowTemplateFieldRecord["fieldId"],
-      slotId: input.slotId,
+      slotId: input.slotId ?? null,
+      variableKey: input.variableKey ?? null,
       type: input.type,
       pageNumber: input.pageNumber,
       // Rounded once, here — the same reason preparation.ts rounds once,
@@ -1093,11 +1128,15 @@ export async function saveWorkflowTemplateFields(
     const pageCount = await resolvePageCount(uow, template.sourceArtifactId);
 
     const roleSlotIds = new Set(template.roleSlots.map(slot => slot.slotId));
+    // 064. A field may target a VARIABLE instead of a role, and it is checked
+    // against the template's CURRENT declarations in the same transaction that
+    // writes the row — the same guarantee `slotId` has, for the same reason.
+    const variableKeys = new Set(template.variables.map(variable => variable.key));
     const existingFieldIds = new Set(
       (await uow.workflowTemplateFields.list(workflowTemplateId)).map(f => f.fieldId));
 
     const fields = validateTemplateFields(
-      inputs, roleSlotIds, pageCount, existingFieldIds,
+      inputs, roleSlotIds, variableKeys, pageCount, existingFieldIds,
       deps.ids.nextWorkflowTemplateFieldId);
 
     await uow.workflowTemplateFields.replaceAll(workflowTemplateId, fields, now);
