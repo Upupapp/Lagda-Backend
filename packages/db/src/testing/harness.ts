@@ -302,6 +302,11 @@ export async function truncateAll(database: LagdaDatabase): Promise<void> {
   // so they need no ordering among themselves. Its own field placements
   // (060) CASCADE from it, so no separate delete is needed for those.
   await database.db.deleteFrom("workflow_template_fields").execute();
+  // Variables AFTER fields, and this one is not optional. A field references
+  // its variable ON DELETE RESTRICT (064), so deleting variables first fails
+  // outright while any bound field is still present. It is also the same order
+  // the repository uses when saving a template, and for the same reason.
+  await database.db.deleteFrom("workflow_template_variables").execute();
   await database.db.deleteFrom("workspace_workflow_templates").execute();
   // Organization units (039, titles added in 061). Members before units:
   // `organization_unit_members` CASCADEs from both `organization_units` and

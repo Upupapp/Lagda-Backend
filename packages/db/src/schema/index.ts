@@ -439,9 +439,6 @@ export interface WorkspaceWorkflowTemplatesTable {
    *  other. */
   document_id: ColumnType<string | null, string | null, string | null>;
   source_artifact_id: ColumnType<string | null, string | null, string | null>;
-  /** 063. A JSON array, always present — empty for a template with no
-   *  variables declared, the ordinary case today. */
-  variables: ColumnType<unknown, string, string>;
 }
 
 /**
@@ -450,6 +447,26 @@ export interface WorkspaceWorkflowTemplatesTable {
  * vocabulary, same normalized-rectangle geometry) with `slot_id` where that
  * table has `recipient_id`.
  */
+/**
+ * Migration 064. A template's declared variables, promoted from 063's JSONB
+ * column to rows so a field can hold a real foreign key to one.
+ */
+export interface WorkflowTemplateVariablesTable {
+  variable_id: string;
+  workspace_id: string;
+  workflow_template_id: string;
+  /** Lowercase ASCII, starts with a letter. Unique per template. */
+  variable_key: string;
+  label: string;
+  /** `short-text` | `multiline-text` | `date` | `number` | `yes-no`. */
+  variable_type: string;
+  required: boolean;
+  /** Declaration order. Rows do not preserve what a JSON array did for free. */
+  ordinal: number;
+  created_at: Timestamptz;
+  updated_at: Timestamptz;
+}
+
 export interface WorkflowTemplateFieldsTable {
   field_id: string;
   workspace_id: string;
@@ -466,6 +483,10 @@ export interface WorkflowTemplateFieldsTable {
   required: boolean;
   label: string;
   layer: number;
+  /** 064. The variable this field renders, or null when it belongs to a role
+   *  slot instead. FK on (workspace_id, workflow_template_id, variable_id)
+   *  ON DELETE RESTRICT — same template, same tenant, enforced structurally. */
+  variable_id: ColumnType<string | null, string | null, string | null>;
   created_at: Timestamptz;
   updated_at: Timestamptz;
 }
@@ -1533,6 +1554,7 @@ export interface Database {
   prepared_signatures: PreparedSignaturesTable;
   workspace_workflow_templates: WorkspaceWorkflowTemplatesTable;
   workflow_template_fields: WorkflowTemplateFieldsTable;
+  workflow_template_variables: WorkflowTemplateVariablesTable;
   user_signed_documents: UserSignedDocumentsTable;
   user_signing_inbox: UserSigningInboxTable;
   signing_resume_intents: SigningResumeIntentsTable;
