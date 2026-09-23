@@ -72,6 +72,7 @@ import * as m061 from "./061_organization_unit_member_titles.js";
 import * as m062 from "./062_static_value_fields.js";
 import * as m063 from "./063_workflow_template_variables.js";
 import * as m064 from "./064_workflow_template_field_variable.js";
+import * as m065 from "./065_template_artifact_fk_removal.js";
 
 /**
  * Migrations listed explicitly rather than read from disk.
@@ -148,6 +149,7 @@ const MIGRATIONS: Record<string, Migration> = {
   "062_static_value_fields": m062,
   "063_workflow_template_variables": m063,
   "064_workflow_template_field_variable": m064,
+  "065_template_artifact_fk_removal": m065,
 };
 
 class ExplicitMigrationProvider implements MigrationProvider {

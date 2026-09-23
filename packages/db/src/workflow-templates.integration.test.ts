@@ -164,6 +164,54 @@ suite("workflow templates (RLS, runtime role)", () => {
       expect(rows).toHaveLength(1);
     });
 
+    it("has NO foreign key pointing at an append-only evidence table (065)", async () => {
+      // The defect this guards, and why it is a SCHEMA assertion rather than a
+      // behavioural one.
+      //
+      // 059 gave `source_artifact_id` a foreign key to `document_artifacts`,
+      // and 003 had already revoked UPDATE and DELETE on that table to make
+      // signing evidence append-only. A foreign key takes a FOR KEY SHARE lock
+      // on the referenced row, and PostgreSQL demands UPDATE or DELETE
+      // privilege for ANY row lock — so every document attachment failed with
+      // "permission denied for table document_artifacts".
+      //
+      // It could not be caught by a behavioural test, because the two
+      // environments differ in OWNERSHIP:
+      //
+      //   local / CI    document_artifacts owned by a SUPERUSER (arwdDxt)
+      //   production    owned by lagda_app itself (arDxt — no UPDATE)
+      //
+      // An RI trigger runs as the referenced table's owner. Locally that owner
+      // is a superuser and the check sails through; in production the owner is
+      // the very role the revoke targeted, so no role can satisfy it. The
+      // attach therefore passes every test suite and fails every real request
+      // — which is exactly how it reached production. Migration 048's header
+      // records the same trap from the other direction.
+      //
+      // So this asserts the RULE instead: nothing may hold a foreign key into
+      // an append-only evidence table. That holds identically in both
+      // environments and catches the next 059 rather than this one.
+      const appendOnly = [
+        "document_artifacts", "evidence_events", "document_seals", "verification_records",
+      ];
+
+      const { rows } = await sql<{ conname: string; from_table: string; to_table: string }>`
+        select c.conname,
+               c.conrelid::regclass::text  as from_table,
+               c.confrelid::regclass::text as to_table
+        from pg_constraint c
+        where c.contype = 'f'
+          and c.confrelid::regclass::text = any(${sql.val(appendOnly)})
+      `.execute(owner.db);
+
+      expect(
+        rows,
+        "a foreign key into an append-only table can never be satisfied at "
+        + "runtime: the row lock it takes needs UPDATE privilege, which 003 "
+        + "revoked. Validate in the application instead, as `slot_id` does.",
+      ).toEqual([]);
+    });
+
     it("refuses a raw INSERT naming another workspace (the WITH CHECK arm)", async () => {
       // The repository would have caught this before it reached the database.
       // Here nothing does but the policy.
