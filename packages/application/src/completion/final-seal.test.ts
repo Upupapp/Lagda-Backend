@@ -438,6 +438,68 @@ describe("retry and duplicate workers", () => {
     expect(h.store.completions).toHaveLength(1);
     expect(h.store.artifacts.filter(a => a.artifactType === "sealed")).toHaveLength(1);
   });
+
+  it("ROLLS BACK when a concurrent attempt finalizes mid-flight", async () => {
+    // The genuine race. `abandonStaleRuns` is purely time-based, so an attempt
+    // that is merely SLOW can be reclaimed while still alive; two workers then
+    // drive the same run and both reach the finalization transaction.
+    //
+    // The loser must roll back COMPLETELY. Several of the rows it would write
+    // are protected by unique constraints anyway
+    // (`document_seals_one_per_request`, `verification_records_one_per_request`,
+    // `signing_request_completions_pk`), so without this it would surface as
+    // `database-rejected` and drive the run terminal on a request that
+    // completed perfectly.
+    seed(h);
+
+    // The loser reads its plan FIRST, then seals. So the winner has to commit
+    // DURING the seal for the plan to be stale — seeding rows beforehand would
+    // be caught by the early `alreadyFinalArtifactId` guard and would never
+    // reach `acceptStep`, which is the code under test.
+    let winningSealHash: string | undefined;
+    let artifactsAfterWinner = 0;
+    let evidenceAfterWinner = 0;
+
+    const realSeal = h.seal.getMockImplementation();
+    h.seal.mockImplementationOnce(async (request: SealRequest) => {
+      // The winning attempt runs to completion while this one is still sealing.
+      // `mockImplementationOnce` is spent, so the nested call uses the real fake.
+      const winner = await run(h);
+      expect(winner.outcome).toBe("completed");
+      winningSealHash = h.store.artifacts
+        .find(a => a.artifactType === "sealed")?.digest;
+      artifactsAfterWinner = h.store.artifacts.length;
+      evidenceAfterWinner = h.store.evidence.length;
+      return realSeal!(request);
+    });
+
+    const second = await run(h);
+
+    expect(second).toMatchObject({
+      outcome: "already-completed",
+      supersededAttempt: true,
+    });
+    expect(second.failureCode).toBeUndefined();
+
+    // Exactly one of each legally significant record.
+    expect(h.store.completions).toHaveLength(1);
+    expect(h.store.seals).toHaveLength(1);
+    expect(h.store.verifications).toHaveLength(1);
+    expect(h.store.artifacts.filter(a => a.artifactType === "sealed")).toHaveLength(1);
+
+    // The seal hash is the WINNER's and did not move. A re-seal carries a fresh
+    // `sealedAt`, so a surviving loser would have changed the document's hash.
+    expect(h.store.artifacts.find(a => a.artifactType === "sealed")?.digest)
+      .toBe(winningSealHash);
+
+    // The request stays completed, once.
+    expect(h.store.signingRequests.find(r => r.signingRequestId === REQUEST)?.state)
+      .toBe("completed");
+
+    // Nothing of the loser's survived.
+    expect(h.store.artifacts).toHaveLength(artifactsAfterWinner);
+    expect(h.store.evidence).toHaveLength(evidenceAfterWinner);
+  });
 });
 
 describe("mapping sealer failures", () => {

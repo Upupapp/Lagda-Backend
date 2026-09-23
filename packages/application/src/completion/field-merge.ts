@@ -73,6 +73,31 @@ export interface FieldMergeResult {
   readonly sqlstate?: string;
   /** The constraint that refused the write, when it named itself. */
   readonly constraint?: string;
+  /**
+   * This attempt lost a race to a concurrent one and rolled itself back.
+   *
+   * Carried on the RESULT rather than logged here, matching how database
+   * diagnostics already travel: the worker's job logger owns the log line, and
+   * this layer owns the fact. Identifiers only — never document contents.
+   *
+   * A non-zero rate of this in production is the signal that `abandonStaleRuns`
+   * is reclaiming attempts that are slow rather than dead.
+   */
+  readonly supersededAttempt?: boolean;
+}
+
+/**
+ * A concurrent attempt accepted this step first.
+ *
+ * A private sentinel, not an exported error: nothing outside this module
+ * should catch it, and it never escapes — the catch below converts it into an
+ * `already-merged` result.
+ */
+class StepAlreadyAcceptedError extends Error {
+  constructor() {
+    super("Another attempt accepted this completion step first.");
+    this.name = "StepAlreadyAcceptedError";
+  }
 }
 
 // ── Mapping the renderer's failures onto the pipeline's vocabulary ───────────
@@ -344,13 +369,29 @@ export async function runFieldMergeStep(
       } satisfies ArtifactRecord);
 
       const stepId = deps.ids.nextCompletionStepId();
-      await uow.completion.acceptStep({
+      const accepted = await uow.completion.acceptStep({
         completionStepId: stepId,
         runId: input.runId,
         step: "field-merge",
         outputArtifactId: artifactId,
         succeededAt: mergedAt,
       });
+
+      // `acceptStep` returns FALSE when `signing_request_completion_steps_one_per_step`
+      // already holds a row for this run and step — i.e. a concurrent attempt
+      // accepted this step first. That is reachable today: `abandonStaleRuns`
+      // is purely time-based, so a merely SLOW attempt can be re-claimed while
+      // it is still alive.
+      //
+      // Throwing here is the point. It rolls back the artifact row and the
+      // evidence event this attempt just wrote, which would otherwise survive
+      // as rows nothing references: the step ledger points at the WINNER's
+      // artifact, and evidence is sourced from this attempt's own `stepId`, so
+      // `evidence_events_source_unique` does not dedupe them away.
+      //
+      // Caught below and converged onto the winner's output — this is not a
+      // failure of the run, which is shared with the attempt that won.
+      if (!accepted) throw new StepAlreadyAcceptedError();
 
       // Evidence, in the SAME transaction as the step acceptance (§156, §160).
       // Sourced by the STEP, so a duplicate worker converges on the one event
@@ -365,6 +406,24 @@ export async function runFieldMergeStep(
       }, stepId));
     });
   } catch (error) {
+    // A concurrent attempt won this step. Nothing of ours was committed, so
+    // there is nothing to undo and nothing to report as broken: converge on
+    // the artifact the winner recorded and let the run carry on.
+    //
+    // Deliberately NOT `fail()`. The run is shared with the attempt that won,
+    // and marking it failed here would push a healthy run toward
+    // `failed-terminal` because it happened to be worked twice.
+    if (error instanceof StepAlreadyAcceptedError) {
+      const winner = await readAcceptedArtifact(input, deps);
+      if (winner !== null) {
+        return { outcome: "already-merged", artifactId: winner, supersededAttempt: true };
+      }
+      // The row vanished between the conflict and this read, which should be
+      // impossible — an accepted step is never deleted. Fall through to the
+      // ordinary failure path rather than inventing an artifact id.
+      return fail(input, deps, "database-rejected");
+    }
+
     // Bytes exist, no row. Recoverable and deliberately NOT cleaned up here:
     // deleting on an uncertain transaction outcome is how a real artifact is
     // destroyed (§78). The object is private and unreferenced.
@@ -376,6 +435,25 @@ export async function runFieldMergeStep(
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * The artifact the WINNING attempt recorded for this step.
+ *
+ * Read in its own transaction, after ours rolled back. Resolved from the step
+ * ledger rather than by querying `document_artifacts` for the newest
+ * `merged-candidate`: a losing attempt may have left bytes in storage, and
+ * "the latest merged artifact" is exactly the wrong way to pick between them.
+ */
+async function readAcceptedArtifact(
+  input: { readonly workspaceId: WorkspaceId; readonly runId: CompletionRunId },
+  deps: FieldMergeDependencies,
+): Promise<ArtifactId | null> {
+  return deps.transactions.runForWorkspace(input.workspaceId, async uow => {
+    const steps = await uow.completion.listSteps(input.runId);
+    const accepted = steps.find(step => step.step === "field-merge");
+    return accepted?.outputArtifactId ?? null;
+  });
+}
 
 async function buildPlan(
   uow: WorkspaceUnitOfWork,

@@ -107,6 +107,26 @@ export interface FinalSealResult {
   readonly sqlstate?: string;
   /** The constraint that refused the write, when it named itself. */
   readonly constraint?: string;
+  /** This attempt lost a race and rolled itself back. Identifiers only. */
+  readonly supersededAttempt?: boolean;
+  /**
+   * The completion committed, but the run was no longer `processing` — it had
+   * been reclaimed mid-flight by the time-based `abandonStaleRuns`.
+   *
+   * The DOCUMENT is correct and complete. The run ledger is not. This is the
+   * `failed-terminal`-on-a-completed-request condition; it is surfaced so the
+   * worker can log it and an operator can tell a lying ledger from a real
+   * failure. Never a reason to roll back the completion.
+   */
+  readonly staleAttemptLedger?: boolean;
+}
+
+/** A concurrent attempt accepted this step first. Private; never escapes. */
+class StepAlreadyAcceptedError extends Error {
+  constructor() {
+    super("Another attempt finalized this signing request first.");
+    this.name = "StepAlreadyAcceptedError";
+  }
 }
 
 /** A precondition failure that already knows its bounded code. */
@@ -317,6 +337,11 @@ async function finalize(
   const verificationId = deps.ids.nextVerificationId(input.workspaceId, sealedAt);
 
   try {
+    // Set inside the finalization transaction when the run had already been
+    // reclaimed. Declared out here so it survives the commit and can be
+    // reported; see `FinalSealResult.staleAttemptLedger`.
+    let staleAttempt = false;
+
     const completedAt = await deps.transactions.runForWorkspace(
       input.workspaceId, async (uow): Promise<number | null> => {
         // §97: the completion time is generated HERE, inside the transaction
@@ -355,6 +380,33 @@ async function finalize(
         // record BACKEND-42 exposes publicly, and the merged digest sitting in
         // it would have been wrong forever. The rename of the seal result made
         // the mistake visible; this line is where it would have been made.
+        // FIRST write after the artifact row, and the position is load-bearing.
+        //
+        // `acceptStep` is the cheapest conflict detector in this transaction:
+        // one conditional insert against `signing_request_completion_steps_one_per_step`.
+        // Placed after `recordFinalization`, as it originally was, a losing
+        // attempt never reaches it — `document_seals_one_per_request` refuses
+        // the seal first, which surfaces as `database-rejected` and drives a
+        // run TERMINAL on a request that completed perfectly. Detecting the
+        // race here lets the loser retire quietly instead.
+        //
+        // It cannot move earlier than the artifact insert: `outputArtifactId`
+        // references that row.
+        const finalSealStepId = deps.ids.nextCompletionStepId();
+        const accepted = await uow.completion.acceptStep({
+          completionStepId: finalSealStepId,
+          runId: input.runId,
+          step: "final-seal",
+          outputArtifactId: finalArtifactId,
+          succeededAt: at,
+        });
+
+        // Throwing rolls back THIS transaction in full — the sealed artifact
+        // row, the seal, the verification record, the completion, the grant
+        // revocations, the evidence and the notification intent. The winner
+        // committed all of the same facts.
+        if (!accepted) throw new StepAlreadyAcceptedError();
+
         await uow.finalizations.recordFinalization({
           seal: {
             sealId,
@@ -380,14 +432,6 @@ async function finalize(
           },
         });
 
-        const finalSealStepId = deps.ids.nextCompletionStepId();
-        await uow.completion.acceptStep({
-          completionStepId: finalSealStepId,
-          runId: input.runId,
-          step: "final-seal",
-          outputArtifactId: finalArtifactId,
-          succeededAt: at,
-        });
 
         const recorded = await uow.completion.recordCompletion({
           signingRequestId: input.signingRequestId,
@@ -420,7 +464,24 @@ async function finalize(
           signingRequestId: input.signingRequestId, revokedAt: at,
         });
 
-        await uow.completion.markRunSucceeded({ runId: input.runId, succeededAt: at });
+        // The run was NOT `processing` when this committed — `abandonStaleRuns`
+        // reclaimed the attempt while it was still alive, because it is purely
+        // time-based and has no lease or fencing token.
+        //
+        // Deliberately NOT thrown. Everything else in this transaction is
+        // correct and legally significant: the document is sealed, the seal and
+        // verification record exist, the request is completed. Rolling that back
+        // to tidy a ledger column would destroy a valid completion and force a
+        // re-seal under a different `sealedAt`, hence a different hash.
+        //
+        // So the completion stands and the run ledger is left saying something
+        // false — this is the `failed-terminal`-on-a-completed-request state.
+        // Reported on the result so the worker logs it; the repair belongs with
+        // the fencing token, not here.
+        const runMarked = await uow.completion.markRunSucceeded({
+          runId: input.runId, succeededAt: at,
+        });
+        if (!runMarked) staleAttempt = true;
 
         // ── Evidence (BACKEND-43) ─────────────────────────────────────────
         //
@@ -509,8 +570,28 @@ async function finalize(
     if (completedAt === null) {
       return { outcome: "already-completed", finalArtifactId };
     }
-    return { outcome: "completed", finalArtifactId, verificationId, completedAt };
+    return {
+      outcome: "completed", finalArtifactId, verificationId, completedAt,
+      ...(staleAttempt ? { staleAttemptLedger: true } : {}),
+    };
   } catch (error) {
+    // A concurrent attempt finalized first. Our whole transaction rolled back,
+    // so the request is completed exactly once, by the winner. Report the
+    // winner's outcome rather than failing a run they share.
+    if (error instanceof StepAlreadyAcceptedError) {
+      const existing = await deps.transactions.runForWorkspace(
+        input.workspaceId,
+        uow => uow.completion.findCompletion(input.signingRequestId),
+      );
+      return existing === null
+        ? fail(input, deps, "database-rejected")
+        : {
+          outcome: "already-completed",
+          finalArtifactId: existing.finalArtifactId,
+          completedAt: existing.completedAt,
+          supersededAttempt: true,
+        };
+    }
     if (error instanceof Precondition) return fail(input, deps, error.code);
     // The object exists and no completion was recorded. §258: the request stays
     // non-completed and the object is a reconciliation candidate. NOT deleted —

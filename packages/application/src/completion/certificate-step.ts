@@ -60,6 +60,21 @@ export interface CertificateStepResult {
   readonly sqlstate?: string;
   /** The constraint that refused the write, when it named itself. */
   readonly constraint?: string;
+  /**
+   * This attempt lost a race to a concurrent one and rolled itself back.
+   * Identifiers only; the worker's job logger owns the log line. See
+   * `FieldMergeResult.supersededAttempt` for why this is reported rather than
+   * treated as a failure.
+   */
+  readonly supersededAttempt?: boolean;
+}
+
+/** A concurrent attempt accepted this step first. Private; never escapes. */
+class StepAlreadyAcceptedError extends Error {
+  constructor() {
+    super("Another attempt accepted this completion step first.");
+    this.name = "StepAlreadyAcceptedError";
+  }
 }
 
 interface CertificatePlan {
@@ -153,13 +168,21 @@ export async function runCertificateStep(
       } satisfies ArtifactRecord);
 
       const stepId = deps.ids.nextCompletionStepId();
-      await uow.completion.acceptStep({
+      const accepted = await uow.completion.acceptStep({
         completionStepId: stepId,
         runId: input.runId,
         step: "certificate",
         outputArtifactId: artifactId,
         succeededAt: generatedAt,
       });
+
+      // A concurrent attempt accepted this step first. Throwing rolls back the
+      // artifact row and the evidence event written just above, which would
+      // otherwise linger unreferenced — the ledger names the WINNER's artifact,
+      // and this attempt's evidence carries its own `stepId`, so the evidence
+      // uniqueness index does not collapse them. See field-merge.ts for the
+      // full reasoning.
+      if (!accepted) throw new StepAlreadyAcceptedError();
 
       // Same transaction as the step acceptance (§157, §160), sourced by the
       // step so a retried worker converges (§252, §260).
@@ -170,6 +193,21 @@ export async function runCertificateStep(
       }, stepId));
     });
   } catch (error) {
+    // Converge on the winner rather than failing a run that is shared with it.
+    if (error instanceof StepAlreadyAcceptedError) {
+      const winner = await deps.transactions.runForWorkspace(
+        input.workspaceId,
+        async uow => {
+          const steps = await uow.completion.listSteps(input.runId);
+          return steps.find(step => step.step === "certificate")?.outputArtifactId ?? null;
+        },
+      );
+      if (winner !== null) {
+        return { outcome: "already-certified", artifactId: winner, supersededAttempt: true };
+      }
+      return fail(input, deps, "database-rejected");
+    }
+
     // Bytes exist, no row. Recoverable, and deliberately NOT cleaned up here:
     // deleting on an uncertain transaction outcome is how a real artifact is
     // destroyed (§78).

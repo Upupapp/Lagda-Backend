@@ -351,6 +351,51 @@ describe("the certificate step", () => {
     });
     expect(h.generate).not.toHaveBeenCalled();
   });
+
+  it("ROLLS BACK when a concurrent attempt accepts the step mid-flight", async () => {
+    // The genuine race, not a pre-seeded row: the plan read finds no accepted
+    // step, this attempt renders and uploads, and only THEN does the winner's
+    // row appear. `acceptStep` is what discovers the conflict.
+    //
+    // Reachable because `abandonStaleRuns` is purely time-based and can reclaim
+    // an attempt that is merely slow rather than dead.
+    seed(h);
+    const realGenerate = h.generate.getMockImplementation();
+    h.generate.mockImplementationOnce(async (...args: unknown[]) => {
+      h.store.completionSteps.push({
+        completionStepId: "cst_winner" as never, completionRunId: RUN, workspaceId: WS,
+        step: "certificate", state: "succeeded",
+        outputArtifactId: "art_winner" as ArtifactId,
+        attemptCount: 1, succeededAt: AT, failureCode: null,
+      } as never);
+      return realGenerate!(...args);
+    });
+
+    const artifactsBefore = h.store.artifacts.length;
+    const evidenceBefore = h.store.evidence.length;
+
+    const result = await run(h);
+
+    expect(result).toMatchObject({
+      outcome: "already-certified",
+      artifactId: "art_winner",
+      supersededAttempt: true,
+    });
+    // Not a failure. The run is shared with the attempt that won.
+    expect(result.failureCode).toBeUndefined();
+
+    // This attempt's artifact row and evidence event rolled back with the
+    // transaction; the ledger names the winner's artifact, and evidence carries
+    // a per-attempt stepId so the uniqueness index would not have deduped them.
+    expect(h.store.artifacts).toHaveLength(artifactsBefore);
+    expect(h.store.evidence).toHaveLength(evidenceBefore);
+
+    const accepted = h.store.completionSteps.filter(
+      (r: { completionRunId: string; step: string }) =>
+        r.completionRunId === RUN && r.step === "certificate");
+    expect(accepted).toHaveLength(1);
+    expect(accepted[0]?.outputArtifactId).toBe("art_winner");
+  });
 });
 
 describe("preconditions", () => {
