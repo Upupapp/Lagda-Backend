@@ -402,6 +402,178 @@ describe("workspace isolation", () => {
   });
 });
 
+// ── Cross-tenant isolation, EVERY per-template route ────────────────────────
+//
+// The three tests above cover read, list and delete. That left six routes —
+// update, document attach/detach, field read/write and role-assignments —
+// whose isolation was asserted at the use-case layer but never over the wire.
+// A route that forgot its workspace scope would have passed the old suite.
+//
+// The actor is the OUTSIDER, who OWNS `OTHER_WORKSPACE`. That is the sharp
+// version of the test: not "a stranger is refused" but "a fully authorized
+// owner, holding every capability, still cannot reach a template that lives
+// in somebody else's workspace by naming its real id".
+
+describe("every per-template route refuses across the workspace boundary", () => {
+  const CROSSED = `/workspaces/${OTHER_WORKSPACE}/workflow-templates/wft_1`;
+
+  interface CrossedRoute {
+    readonly method: "GET" | "PUT" | "DELETE";
+    readonly url: string;
+    readonly payload?: Record<string, unknown>;
+  }
+
+  const ROUTES: readonly CrossedRoute[] = [
+    { method: "GET", url: CROSSED },
+    { method: "PUT", url: CROSSED, payload: { ...BODY, name: "Hijacked" } },
+    { method: "DELETE", url: CROSSED },
+    {
+      method: "PUT", url: `${CROSSED}/document`,
+      payload: { documentId: "doc_1", artifactId: "art_1" },
+    },
+    { method: "DELETE", url: `${CROSSED}/document` },
+    { method: "GET", url: `${CROSSED}/fields` },
+    { method: "PUT", url: `${CROSSED}/fields`, payload: { fields: [] } },
+    { method: "GET", url: `${CROSSED}/role-assignments` },
+    { method: "GET", url: `${CROSSED}/apply` },
+  ];
+
+  it("404s every one of them, and leaves the real template untouched", async () => {
+    const h = await harness();
+    expect((await createAs(h, OWNER)).statusCode).toBe(201);
+
+    const { cookie, csrf } = await h.signIn(OUTSIDER);
+
+    for (const route of ROUTES) {
+      const response = await h.app.inject({
+        method: route.method,
+        url: route.url,
+        headers: {
+          cookie,
+          ...(route.method === "GET" ? {} : { [CSRF_TOKEN_HEADER]: csrf }),
+        },
+        ...(route.payload === undefined ? {} : { payload: route.payload }),
+      });
+
+      expect(response.statusCode, `${route.method} ${route.url}`).toBe(404);
+    }
+
+    // The assertion a status-code-only test would miss: nothing was renamed,
+    // detached, re-fielded or removed on the way to those 404s.
+    expect(templates(h)).toHaveLength(1);
+    expect(templates(h)[0]?.name).toBe(BODY.name);
+    expect(templates(h)[0]?.documentId ?? null).toBeNull();
+  });
+});
+
+// ── Status mutations: no route, and no way to smuggle one ───────────────────
+//
+// The frontend once offered Archive / Restore / Make Available / Return to
+// Draft for a stored template. The backend has no status column and no such
+// route, so those controls were hidden. This proves the SERVER position
+// rather than trusting that the UI stays hidden: there is nothing to call,
+// and the ordinary write cannot be used to smuggle a status in either.
+
+describe("template status mutations do not exist server-side", () => {
+  it("404s every archive-style path, and changes nothing", async () => {
+    const h = await harness();
+    expect((await createAs(h, OWNER)).statusCode).toBe(201);
+    const { cookie, csrf } = await h.signIn(OWNER);
+
+    for (const path of ["archive", "restore", "make-available", "return-to-draft", "status"]) {
+      for (const method of ["POST", "PUT"] as const) {
+        const response = await h.app.inject({
+          method, url: `${URL}/wft_1/${path}`,
+          headers: { cookie, [CSRF_TOKEN_HEADER]: csrf },
+          payload: {},
+        });
+        expect(response.statusCode, `${method} ${path}`).toBe(404);
+      }
+    }
+
+    expect(templates(h)).toHaveLength(1);
+  });
+
+  it("REFUSES a status-like field smuggled into the ordinary write", async () => {
+    // `additionalProperties: false` is doing the work. An extra key is not
+    // ignored — the whole request is rejected, so a client cannot invent
+    // persistence for a concept the schema does not have.
+    const h = await harness();
+    expect((await createAs(h, OWNER)).statusCode).toBe(201);
+    const { cookie, csrf } = await h.signIn(OWNER);
+
+    const smuggled: ReadonlyArray<Record<string, unknown>> = [
+      { status: "archived" },
+      { archivedAt: "2026-09-23T00:00:00.000Z" },
+      { workflowTemplateId: "wft_somebody_elses" },
+      { createdBy: "usr_someone_else" },
+    ];
+
+    for (const extra of smuggled) {
+      const response = await h.app.inject({
+        method: "PUT", url: `${URL}/wft_1`,
+        headers: { cookie, [CSRF_TOKEN_HEADER]: csrf },
+        payload: { ...BODY, ...extra },
+      });
+      expect(response.statusCode, Object.keys(extra)[0]).toBe(422);
+    }
+
+    expect(templates(h)[0]?.name).toBe(BODY.name);
+  });
+});
+
+// ── A sender's exact surface, over the wire ─────────────────────────────────
+//
+// `sender` holds `template.view` and nothing else. Create/update/delete were
+// already asserted; the document and field WRITES were not, and those are
+// precisely the routes that shape what a document asks for. Read and apply
+// are asserted alongside them, because a gate that denies everything is as
+// wrong as one that permits everything.
+
+describe("a sender may read and apply, and write nothing", () => {
+  it("refuses every WRITE route", async () => {
+    const h = await harness();
+    expect((await createAs(h, OWNER)).statusCode).toBe(201);
+
+    const { cookie, csrf } = await h.signIn(SENDER);
+    const writes: ReadonlyArray<{
+      readonly method: "PUT" | "DELETE";
+      readonly url: string;
+      readonly payload?: Record<string, unknown>;
+    }> = [
+      { method: "PUT", url: `${URL}/wft_1/document`, payload: { documentId: "doc_1", artifactId: "art_1" } },
+      { method: "DELETE", url: `${URL}/wft_1/document` },
+      { method: "PUT", url: `${URL}/wft_1/fields`, payload: { fields: [] } },
+    ];
+
+    for (const write of writes) {
+      const response = await h.app.inject({
+        method: write.method, url: write.url,
+        headers: { cookie, [CSRF_TOKEN_HEADER]: csrf },
+        ...(write.payload === undefined ? {} : { payload: write.payload }),
+      });
+      expect(response.statusCode, `${write.method} ${write.url}`).toBe(404);
+    }
+
+    expect(templates(h)[0]?.documentId ?? null).toBeNull();
+  });
+
+  it("ALLOWS every read route, including apply", async () => {
+    const h = await harness();
+    expect((await createAs(h, OWNER)).statusCode).toBe(201);
+
+    const { cookie } = await h.signIn(SENDER);
+    for (const url of [
+      `${URL}/wft_1`,
+      `${URL}/wft_1/fields`,
+      `${URL}/wft_1/apply`,
+    ]) {
+      const response = await h.app.inject({ method: "GET", url, headers: { cookie } });
+      expect(response.statusCode, url).toBe(200);
+    }
+  });
+});
+
 // ── The contract ────────────────────────────────────────────────────────────
 
 describe("POST /workflow-templates", () => {
@@ -623,13 +795,30 @@ describe("GET .../apply", () => {
   });
 
   it("404s an unknown id and a cross-workspace one, indistinguishably", async () => {
+    // This test previously asserted only the unknown id while its NAME claimed
+    // the cross-workspace half too — a test that lied about its own coverage.
+    // Both halves are asserted now, and they must return the SAME status: a
+    // different code for "exists but not yours" would confirm the id exists.
     const h = await harness();
     expect((await createAs(h, OWNER)).statusCode).toBe(201);
-    const { cookie } = await h.signIn(OWNER);
 
+    const { cookie: ownerCookie } = await h.signIn(OWNER);
     const unknown = await h.app.inject({
-      method: "GET", url: `${URL}/wft_nope/apply`, headers: { cookie },
+      method: "GET", url: `${URL}/wft_nope/apply`, headers: { cookie: ownerCookie },
     });
+
+    // `wft_1` genuinely exists — in WORKSPACE, not in OTHER_WORKSPACE. The
+    // outsider owns OTHER_WORKSPACE outright, so this is a fully authorized
+    // request that must still find nothing.
+    const { cookie: outsiderCookie } = await h.signIn(OUTSIDER);
+    const crossWorkspace = await h.app.inject({
+      method: "GET",
+      url: `/workspaces/${OTHER_WORKSPACE}/workflow-templates/wft_1/apply`,
+      headers: { cookie: outsiderCookie },
+    });
+
     expect(unknown.statusCode).toBe(404);
+    expect(crossWorkspace.statusCode).toBe(404);
+    expect(crossWorkspace.statusCode).toBe(unknown.statusCode);
   });
 });
