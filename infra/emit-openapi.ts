@@ -115,6 +115,15 @@ const app = await createApp({
       // comments already warn about for the groups above. Found while adding
       // 059's routes and confirming they would actually reach this document.
       workflowTemplates: () => stub("workspaces.workflowTemplates"),
+      // 066. Missing since that migration shipped, for the same reason the
+      // comment above records — the generate-document route has never been
+      // described by this document. Found while adding 067's routes.
+      workflowTemplateGenerateDocument: () =>
+        stub("workspaces.workflowTemplateGenerateDocument"),
+      // 067. Listed for exactly the reason the comment above records: an
+      // optional group left out here registers no routes, and the emitted
+      // document silently loses them.
+      uploadRequests: () => stub("workspaces.uploadRequests"),
     },
   },
 });

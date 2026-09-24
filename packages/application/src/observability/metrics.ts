@@ -41,6 +41,8 @@ export const METRIC_NAMES = [
   "workspace_member_operations_total",
   // BACKEND-28. Address-book writes — created, updated, archived, restored.
   "contact_operations_total",
+  // Migration 067. Upload-request writes — created, cancelled, fulfilled.
+  "upload_request_operations_total",
   // Migration 058. Workflow-template writes — created, updated, deleted.
   "workflow_template_operations_total",
   // BACKEND-29. Document writes — created, renamed.
@@ -132,6 +134,11 @@ export const METRIC_LABELS = {
   // longer and read more widely than a log, and the address belongs to a
   // counterparty who is not a LAGDA user and consented to nothing.
   contact_operations_total: ["operation", "result", "processRole"],
+  // `operation` is a three-value union in code and `result` is an outcome.
+  // Deliberately NOT the request TITLE or note: both are workspace-supplied
+  // prose naming a document, a party and often a deal, and a metrics store is
+  // retained longer and read more widely than a log.
+  upload_request_operations_total: ["operation", "result", "processRole"],
   // `operation` is a six-value union in code (created, updated, deleted,
   // document_attached, document_detached — 059 — and fields_saved — 060).
   // Deliberately NOT the template NAME or any slot label: a label names the

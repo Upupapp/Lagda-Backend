@@ -29,6 +29,7 @@ import { randomUUID } from "node:crypto";
 import type {
   WorkspaceIdGenerator, WorkspaceMemberIdGenerator,
   ContactIdGenerator, WorkflowTemplateIdGenerator,
+  UploadRequestIdGenerator, UploadRequestId,
   DocumentIdGenerator, FolderIdGenerator, FolderId,
   PreparationIdGenerator,
   RecipientIdGenerator,
@@ -122,6 +123,11 @@ export function createWorkflowTemplateIdGenerator(): WorkflowTemplateIdGenerator
 
 export function createContactIdGenerator(): ContactIdGenerator {
   return { nextContactId: () => mint("con") as ContactId };
+}
+
+/** 067. `ur` — a document this workspace has asked a member to supply. */
+export function createUploadRequestIdGenerator(): UploadRequestIdGenerator {
+  return { nextUploadRequestId: () => mint("ur") as UploadRequestId };
 }
 
 export function createDocumentIdGenerator(): DocumentIdGenerator {

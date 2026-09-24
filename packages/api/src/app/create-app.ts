@@ -46,6 +46,7 @@ import {
 } from "../workspaces/invitation-routes.js";
 import { registerMemberRoutes } from "../workspaces/member-routes.js";
 import { registerContactRoutes } from "../contacts/contact-routes.js";
+import { registerUploadRequestRoutes } from "../upload-requests/upload-request-routes.js";
 import { registerWorkflowTemplateRoutes } from "../workflow-templates/workflow-template-routes.js";
 import { registerDocumentRoutes } from "../documents/document-routes.js";
 import { registerFolderRoutes } from "../folders/folder-routes.js";
@@ -474,6 +475,25 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
               : null,
           ),
           contactDependencies: contacts,
+          metrics,
+        });
+      }
+
+      // 067. Same scope, same reasoning: a request names a colleague and what
+      // is being asked of them, and fulfilling one writes into the workspace.
+      // There is no version of this surface that is safe to reach anonymously.
+      if (workspaces.uploadRequests !== undefined) {
+        const uploadRequests = workspaces.uploadRequests;
+        registerUploadRequestRoutes(scope, {
+          authenticatedUser: (request: FastifyRequest) => Promise.resolve(
+            request.auth.status === "authenticated"
+              ? {
+                  userId: request.auth.actor.userId,
+                  sessionId: request.auth.actor.sessionId,
+                }
+              : null,
+          ),
+          uploadRequestDependencies: uploadRequests,
           metrics,
         });
       }
