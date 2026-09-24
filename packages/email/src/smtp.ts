@@ -19,9 +19,31 @@
 
 import nodemailer from "nodemailer";
 import type {
-  EmailDeliveryProvider, EmailMessage, EmailDeliveryResult,
+  EmailDeliveryProvider, EmailMessage, EmailDeliveryResult, EmailAttachment,
 } from "@lagda/application";
 import type { SmtpConfig } from "./config.js";
+
+/** nodemailer's own attachment shape, narrowed to the CID-inline case this
+ *  adapter ever produces — never a filesystem path or a remote href, which
+ *  nodemailer's real type also allows but this adapter has no use for. */
+interface NodemailerAttachment {
+  readonly filename: string;
+  readonly content: string;
+  readonly encoding: "base64";
+  readonly cid: string;
+  readonly contentType: string;
+}
+
+function toNodemailerAttachments(attachments?: readonly EmailAttachment[]): NodemailerAttachment[] | undefined {
+  if (attachments === undefined || attachments.length === 0) return undefined;
+  return attachments.map(a => ({
+    filename: a.filename,
+    content: a.contentBase64,
+    encoding: "base64" as const,
+    cid: a.contentId,
+    contentType: a.contentType,
+  }));
+}
 
 /**
  * The subset of a nodemailer/Node SMTP error this adapter reads.
@@ -110,6 +132,7 @@ export interface SmtpSender {
     text: string;
     html?: string;
     replyTo?: string;
+    attachments?: NodemailerAttachment[];
   }): Promise<{ messageId?: string }>;
 }
 
@@ -144,6 +167,7 @@ export function createSmtpEmailProvider(
   return {
     async send(message: EmailMessage): Promise<EmailDeliveryResult> {
       try {
+        const attachments = toNodemailerAttachments(message.attachments);
         const info = await transporter.sendMail({
           from: {
             name: config.envelope.fromDisplayName,
@@ -156,6 +180,7 @@ export function createSmtpEmailProvider(
           ...(config.envelope.replyToAddress === undefined
             ? {}
             : { replyTo: config.envelope.replyToAddress }),
+          ...(attachments === undefined ? {} : { attachments }),
         });
 
         return {

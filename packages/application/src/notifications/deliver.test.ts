@@ -184,6 +184,20 @@ describe("rendering", () => {
     // The completion record carries no secret, only a provider reference.
     expect(JSON.stringify(h.completions[0])).not.toContain("raw-token");
   });
+
+  it("carries the template's inline-image attachments through to the provider", async () => {
+    // The registry's render() returns attachments alongside subject/text/html
+    // (the logo, and for signing-invitation, its QR code); this is the
+    // message actually handed to the transport, so a regression that dropped
+    // that field while assembling `EmailMessage` here would leave a real
+    // recipient's mail with a broken cid: reference and no matching part.
+    const h = harness();
+    await deliverNotification(h.deps)(DELIVERY);
+
+    const ids = h.sent[0]?.attachments?.map(a => a.contentId) ?? [];
+    expect(ids).toContain("lagda-logo");
+    expect(ids).toContain("signing-qr");
+  });
 });
 
 describe("the attempt budget", () => {

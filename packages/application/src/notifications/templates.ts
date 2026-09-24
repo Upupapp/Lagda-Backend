@@ -47,7 +47,8 @@ import {
 } from "./template-registry.js";
 import { escapeHtml } from "./rendering.js";
 import { LAGDA_LOGO_PNG_BASE64 } from "./assets/lagda-logo.js";
-import { qrCodeDataUri } from "./qr-code.js";
+import { qrCodePngBase64 } from "./qr-code.js";
+import type { EmailAttachment } from "../common/ports/notifications.js";
 
 /**
  * The product name, as it appears in copy.
@@ -72,7 +73,26 @@ const SILVER = "#64748B";
 const BORDER = "#E2E8F0";
 const CANVAS = "#F1F5F9";
 
-const LOGO_DATA_URI = `data:image/png;base64,${LAGDA_LOGO_PNG_BASE64}`;
+/**
+ * Referenced from every template's HTML as `cid:lagda-logo` rather than a
+ * `data:` URI — Outlook desktop's Word rendering engine is well known to
+ * strip `data:` image sources outright (broken-image icon, not just
+ * hidden-until-clicked). A CID attachment is the one embedding every major
+ * client, Outlook included, actually renders inline. See `EmailAttachment`'s
+ * doc comment in common/ports/notifications.ts.
+ *
+ * One constant, not rebuilt per render: the logo is the same bytes in every
+ * message, so there is nothing per-render to compute — unlike the QR
+ * attachment below, which differs by URL and must be built inside each
+ * template's own `render()`.
+ */
+const LOGO_CONTENT_ID = "lagda-logo";
+const LOGO_ATTACHMENT: EmailAttachment = {
+  contentId: LOGO_CONTENT_ID,
+  filename: "lagda-logo.png",
+  contentType: "image/png",
+  contentBase64: LAGDA_LOGO_PNG_BASE64,
+};
 
 /**
  * Wraps a body in the one shared branded HTML shell, so every template
@@ -88,7 +108,7 @@ const htmlDocument = (heading: string, bodyHtml: string): string =>
     `<table role="presentation" width="100%" style="max-width:520px;background:#ffffff;border-radius:12px;` +
       `overflow:hidden;border:1px solid ${BORDER};" cellpadding="0" cellspacing="0">`,
     `<tr><td style="padding:28px 32px 20px;text-align:center;border-bottom:1px solid ${BORDER};">`,
-    `<img src="${LOGO_DATA_URI}" width="140" height="105" alt="${PRODUCT}" style="display:inline-block;border:0;max-width:140px;height:auto;" />`,
+    `<img src="cid:${LOGO_CONTENT_ID}" width="140" height="105" alt="${PRODUCT}" style="display:inline-block;border:0;max-width:140px;height:auto;" />`,
     `</td></tr>`,
     `<tr><td style="padding:28px 32px 8px;">`,
     `<h1 style="margin:0 0 16px;font-size:19px;color:${NAVY};">${heading}</h1>`,
@@ -117,19 +137,33 @@ const linkHtml = (url: string, label: string): string =>
   `font-weight:700;color:#ffffff;text-decoration:none;border-radius:8px;">${escapeHtml(label)}</a>` +
   `</td></tr></table>`;
 
+const QR_CONTENT_ID = "signing-qr";
+
 /**
  * A scannable alternative to the button above, for a reader opening the mail
  * on a computer who will actually sign on their phone. Renders from the SAME
  * url the button and the text part use — never a second, independently-built
  * link — so there is exactly one URL this message can send someone to.
+ *
+ * Unlike the logo, this differs per message (it encodes THIS message's own
+ * signing link), so it cannot be a module-level constant — the caller must
+ * fold the returned `attachment` into its own `attachments` array.
  */
-const qrBlockHtml = (url: string): string =>
-  `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin:4px 0 4px;">` +
-  `<tr><td align="center" style="padding:16px;background:${CANVAS};border:1px solid ${BORDER};border-radius:10px;">` +
-  `<img src="${qrCodeDataUri(url)}" width="132" height="132" alt="QR code — scan to open on your phone" ` +
-  `style="display:block;border:0;margin:0 auto 8px;" />` +
-  `<p style="margin:0;font-size:11px;color:${SILVER};">Or scan with your phone's camera to open the document</p>` +
-  `</td></tr></table>`;
+const qrBlockHtml = (url: string): { readonly html: string; readonly attachment: EmailAttachment } => ({
+  html:
+    `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin:4px 0 4px;">` +
+    `<tr><td align="center" style="padding:16px;background:${CANVAS};border:1px solid ${BORDER};border-radius:10px;">` +
+    `<img src="cid:${QR_CONTENT_ID}" width="132" height="132" alt="QR code — scan to open on your phone" ` +
+    `style="display:block;border:0;margin:0 auto 8px;" />` +
+    `<p style="margin:0;font-size:11px;color:${SILVER};">Or scan with your phone's camera to open the document</p>` +
+    `</td></tr></table>`,
+  attachment: {
+    contentId: QR_CONTENT_ID,
+    filename: "signing-qr.png",
+    contentType: "image/png",
+    contentBase64: qrCodePngBase64(url),
+  },
+});
 
 export const accountEmailVerificationV1 = defineTemplate({
   key: "account-email-verification",
@@ -159,6 +193,7 @@ export const accountEmailVerificationV1 = defineTemplate({
           linkHtml(url, "Confirm email address") +
           p(`If you did not create this account, you can ignore this message.`),
       ),
+      attachments: [LOGO_ATTACHMENT],
     };
   },
 });
@@ -194,6 +229,7 @@ export const passwordResetV1 = defineTemplate({
           p(`If you did not request a password reset, your account is unchanged ` +
             `and no action is needed.`),
       ),
+      attachments: [LOGO_ATTACHMENT],
     };
   },
 });
@@ -222,6 +258,7 @@ export const workspaceInvitationV1 = defineTemplate({
           `workspace "${escapeHtml(workspace)}".`) +
           linkHtml(url, "Accept invitation"),
       ),
+      attachments: [LOGO_ATTACHMENT],
     };
   },
 });
@@ -238,6 +275,7 @@ export const signingInvitationV1 = defineTemplate({
     const sender = input.senderDisplayName;
     const workspace = input.workspaceName;
     const url = context.buildLink("/sign", context.secret as string);
+    const qr = qrBlockHtml(url);
     return {
       // The document title is in the subject because a signer with several
       // pending requests cannot otherwise tell them apart. It is
@@ -260,9 +298,10 @@ export const signingInvitationV1 = defineTemplate({
           p(`${escapeHtml(sender)} (${escapeHtml(workspace)}) has sent you a ` +
             `document to sign: "${escapeHtml(title)}".`) +
           linkHtml(url, "Open document") +
-          qrBlockHtml(url) +
+          qr.html +
           p(`This link is personal to you. Do not forward this message.`),
       ),
+      attachments: [LOGO_ATTACHMENT, qr.attachment],
     };
   },
 });
@@ -323,6 +362,7 @@ export const signingCompletedV1 = defineTemplate({
           linkHtml(url, `View in ${workspace}`) +
           p(`You are receiving this because you sent this document for signature.`),
       ),
+      attachments: [LOGO_ATTACHMENT],
     };
   },
 });
@@ -380,6 +420,7 @@ export const documentUploadRequestedV1 = defineTemplate({
           linkHtml(url, "Upload the document") +
           p(`You are receiving this because the request was assigned to you.`),
       ),
+      attachments: [LOGO_ATTACHMENT],
     };
   },
 });
