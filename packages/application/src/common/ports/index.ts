@@ -11,6 +11,7 @@ import type {
   UserSigningRecordsRepository, SigningResumeIntentRepository,
 } from "./user-signing-records.js";
 import type { ScopedWorkflowTemplateRepository } from "./workflow-templates.js";
+import type { ScopedUploadRequestRepository } from "./upload-requests.js";
 import type { ScopedWorkflowTemplateFieldRepository } from "./workflow-template-fields.js";
 import type { ScopedUploadRepository } from "./upload.js";
 import type { IdempotencyRepository } from "./idempotency.js";
@@ -464,6 +465,11 @@ export interface WorkspaceUnitOfWork {
   readonly workflowTemplates: ScopedWorkflowTemplateRepository;
   /** 060. A template's field geometry, per role slot. */
   readonly workflowTemplateFields: ScopedWorkflowTemplateFieldRepository;
+  /**
+   * 067. Documents this workspace has ASKED a member to supply — the one
+   * flow where the workspace does not hold the file yet.
+   */
+  readonly uploadRequests: ScopedUploadRequestRepository;
 }
 
 /**
@@ -766,6 +772,7 @@ export * from "./user-signing-records.js";
 export * from "./workflow-templates.js";
 export * from "./workflow-template-fields.js";
 export * from "./template-content.js";
+export * from "./upload-requests.js";
 
 export * from "./signing-access.js";
 

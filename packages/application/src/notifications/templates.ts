@@ -11,19 +11,21 @@
 // completion mail (S231); it has, and the template is registered alongside the
 // transaction that now produces its intent.
 //
-// ── Four carry a secret; one does not ─────────────────────────────────────
+// ── Four carry a secret; two do not ───────────────────────────────────────
 //
 // The four that do are what transactional mail in an eSignature product mostly
 // IS: each exists to hand somebody a credential they could not otherwise
 // have — a verification code, a reset link, an invitation link, a signing
 // link. So the secret-handling path is the main path, not an edge case.
 //
-// `signing-completed` is the exception, and the reason is worth stating,
-// because it is what makes the exception safe: its reader is the SENDER, who
-// already holds an account and already has authorised access to the document.
-// There is nothing to hand them. A bearer token in this message would be a
-// credential minted for somebody who does not need one, with a lifetime
-// nothing tracks — strictly worse than a link to the ordinary signed-in app.
+// `signing-completed` and `document-upload-requested` are the exceptions, and
+// the reason is worth stating, because it is what makes them safe: both
+// readers already hold an account and already have authorised access — the
+// sender to their own finished request, the assignee to the workspace they
+// are a member of. There is nothing to hand either of them. A bearer token in
+// these messages would be a credential minted for somebody who does not need
+// one, with a lifetime nothing tracks — strictly worse than a link to the
+// ordinary signed-in app.
 //
 // That is why `secret` is a render-time argument rather than a model field
 // (S78, S80). The frozen input persisted in JSONB holds names and titles; the
@@ -41,6 +43,7 @@ import { defineTemplate } from "./template-registry.js";
 import {
   AccountEmailVerificationModelV1, PasswordResetModelV1, WorkspaceInvitationModelV1,
   SigningInvitationModelV1, SigningCompletedModelV1,
+  DocumentUploadRequestedModelV1,
 } from "./template-registry.js";
 import { escapeHtml } from "./rendering.js";
 import { LAGDA_LOGO_PNG_BASE64 } from "./assets/lagda-logo.js";
@@ -325,6 +328,59 @@ export const signingCompletedV1 = defineTemplate({
 });
 
 /**
+ * Where an assignee finds what has been asked of them.
+ *
+ * `/app/documents` and not a per-request deep link, for the same reason
+ * `SENDER_DOCUMENTS_PATH` points at a list: the web platform has no
+ * `/app/upload-requests/:id` route, and inventing one would produce a 404 in
+ * a message whose whole purpose is to say "this is waiting for you".
+ */
+const ASSIGNEE_REQUESTS_PATH = "/app/documents";
+
+export const documentUploadRequestedV1 = defineTemplate({
+  key: "document-upload-requested",
+  version: 1,
+  locale: "en",
+  schema: DocumentUploadRequestedModelV1,
+  // Carries no credential. The reader is a workspace member who signs in as
+  // themselves — see this type's own entry in NOTIFICATION_TYPES.
+  secretBearing: false,
+  render: (input, context) => {
+    const name = input.recipientName;
+    const title = input.requestTitle;
+    const requester = input.requesterDisplayName;
+    const workspace = input.workspaceName;
+    const note = input.note;
+    const url = context.buildPath(ASSIGNEE_REQUESTS_PATH);
+    return {
+      // Names the thing being asked for, because somebody with several
+      // outstanding requests cannot otherwise tell them apart.
+      subject: `${requester} asked you to upload "${title}"`,
+      textBody: [
+        `Hello ${name},`,
+        ``,
+        `${requester} (${workspace}) has asked you to upload a document: "${title}".`,
+        ...(note === undefined ? [] : [``, `Their note: ${note}`]),
+        ``,
+        `Sign in to ${workspace} to upload it:`,
+        url,
+        ``,
+        `You are receiving this because the request was assigned to you.`,
+      ].join("\n"),
+      htmlBody: htmlDocument(
+        `A document has been requested from you`,
+        p(`Hello ${escapeHtml(name)},`) +
+          p(`${escapeHtml(requester)} (${escapeHtml(workspace)}) has asked you ` +
+            `to upload a document: "${escapeHtml(title)}".`) +
+          (note === undefined ? "" : p(`<em>${escapeHtml(note)}</em>`)) +
+          linkHtml(url, "Upload the document") +
+          p(`You are receiving this because the request was assigned to you.`),
+      ),
+    };
+  },
+});
+
+/**
  * Every template version LAGDA can render.
  *
  * A version is removed from this list only when no pending intent references
@@ -337,6 +393,7 @@ export const ALL_TEMPLATES = [
   workspaceInvitationV1,
   signingInvitationV1,
   signingCompletedV1,
+  documentUploadRequestedV1,
 ] as const;
 
 export type AccountEmailVerificationModel = Static<typeof AccountEmailVerificationModelV1>;
@@ -344,3 +401,4 @@ export type PasswordResetModel = Static<typeof PasswordResetModelV1>;
 export type WorkspaceInvitationModel = Static<typeof WorkspaceInvitationModelV1>;
 export type SigningInvitationModel = Static<typeof SigningInvitationModelV1>;
 export type SigningCompletedModel = Static<typeof SigningCompletedModelV1>;
+export type DocumentUploadRequestedModel = Static<typeof DocumentUploadRequestedModelV1>;

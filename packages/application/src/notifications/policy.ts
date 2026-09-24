@@ -152,6 +152,27 @@ export const NOTIFICATION_POLICIES: Record<NotificationType, NotificationPolicy>
     // tenant whose data it describes.
     scopeKind: "WORKSPACE",
   },
+  DOCUMENT_UPLOAD_REQUESTED: {
+    notificationType: "DOCUMENT_UPLOAD_REQUESTED",
+    templateKey: "document-upload-requested",
+    channel: "EMAIL",
+    // The REQUEST. There is exactly one notification per request, so this is
+    // the granularity at which `notification_intents_logical_key` becomes the
+    // no-duplicates guarantee.
+    sourceKind: "DOCUMENT_UPLOAD_REQUEST",
+    // The ASSIGNEE's account. Addressed to a user rather than a contact
+    // because fulfilling this means writing into the workspace, and workspace
+    // writes are authorized by membership — see migration 067's header.
+    audienceKind: "USER",
+    // No `secretKind`. The reader signs in and follows an ordinary
+    // authenticated route to their own queue; a bearer token here would be a
+    // credential minted for somebody who does not need one.
+    //
+    // Workspace-scoped for the same reason `SIGNING_COMPLETED` is: the
+    // request is the WORKSPACE's record, even though the person told about it
+    // is an account holder.
+    scopeKind: "WORKSPACE",
+  },
 };
 
 export function policyFor(notificationType: NotificationType): NotificationPolicy {
