@@ -186,6 +186,7 @@ export function deliverNotification(deps: DeliverNotificationDependencies) {
       subject: rendered.subject,
       textBody: rendered.textBody,
       ...(rendered.htmlBody === undefined ? {} : { htmlBody: rendered.htmlBody }),
+      ...(rendered.attachments === undefined ? {} : { attachments: rendered.attachments }),
     };
 
     const sent = await deps.provider.send(message);

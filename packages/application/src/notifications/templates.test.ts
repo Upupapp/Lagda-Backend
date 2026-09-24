@@ -206,3 +206,69 @@ describe("secrets", () => {
     }
   });
 });
+
+// The logo and QR code must survive Outlook desktop's Word rendering engine,
+// which is well known to strip `data:` image sources outright. These tests
+// exist because nothing previously asserted on the actual embedding
+// mechanism — a regression back to a `data:` URI would have shipped silently.
+/** Minimal valid input per registered template, matched to each one's own
+ *  schema — reused here because every template's HTML must be checked, not
+ *  only `signing-invitation`'s. */
+const INPUT_BY_KEY: Record<string, NotificationTemplateInput> = {
+  "account-email-verification": { recipientName: "Maria Santos" },
+  "password-reset": { recipientName: "Maria Santos" },
+  "workspace-invitation": { inviterDisplayName: "Paulo Reyes", workspaceName: "Reyes Legal" },
+  "signing-invitation": signingInput,
+  "signing-completed": { recipientName: "Paulo Reyes", documentTitle: "Lease Agreement", workspaceName: "Reyes Legal", signerCount: 2 },
+  "document-upload-requested": { recipientName: "Maria Santos", requestTitle: "Signed W-9", requesterDisplayName: "Paulo Reyes", workspaceName: "Reyes Legal" },
+};
+
+describe("inline images", () => {
+  it("embeds the logo as a CID attachment, never a data: URI, on every HTML-bearing template", () => {
+    for (const template of ALL_TEMPLATES) {
+      const input = INPUT_BY_KEY[template.key];
+      expect(input, `no test input registered for ${template.key}`).toBeDefined();
+      const rendered = registry.render(
+        { key: template.key, version: template.version }, input!, context(),
+      );
+      if (rendered.htmlBody === undefined) continue;
+
+      expect(rendered.htmlBody).not.toMatch(/data:image/u);
+      expect(rendered.htmlBody).toContain('src="cid:lagda-logo"');
+
+      const logo = rendered.attachments?.find(a => a.contentId === "lagda-logo");
+      expect(logo).toBeDefined();
+      expect(logo?.contentType).toBe("image/png");
+      expect(logo?.contentBase64.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("embeds the signing QR code as its own CID attachment, encoding the message's own link", () => {
+    const rendered = registry.render(
+      { key: "signing-invitation", version: 1 }, signingInput, context(),
+    );
+
+    expect(rendered.htmlBody).toContain('src="cid:signing-qr"');
+    const qr = rendered.attachments?.find(a => a.contentId === "signing-qr");
+    expect(qr).toBeDefined();
+    expect(qr?.contentType).toBe("image/png");
+    // Two different secrets must produce two different QR images — proof the
+    // code is actually built from this message's own link, not a shared or
+    // cached asset like the logo.
+    const other = registry.render(
+      { key: "signing-invitation", version: 1 }, signingInput, context("a-different-secret"),
+    );
+    const otherQr = other.attachments?.find(a => a.contentId === "signing-qr");
+    expect(otherQr?.contentBase64).not.toBe(qr?.contentBase64);
+  });
+
+  it("gives the logo and QR images explicit HTML width/height, not just CSS", () => {
+    // Outlook ignores CSS width/height on <img>; only the HTML attributes
+    // reliably size the image there.
+    const rendered = registry.render(
+      { key: "signing-invitation", version: 1 }, signingInput, context(),
+    );
+    expect(rendered.htmlBody).toMatch(/<img src="cid:lagda-logo" width="\d+" height="\d+"/u);
+    expect(rendered.htmlBody).toMatch(/<img src="cid:signing-qr" width="\d+" height="\d+"/u);
+  });
+});

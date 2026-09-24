@@ -131,6 +131,29 @@ describe("the request", () => {
 
     expect(captured?.replyTo).toBe("support@lagda.test");
   });
+
+  it("omits attachments when the message carries none", async () => {
+    const options = await capture();
+    expect(options.attachments).toBeUndefined();
+  });
+
+  it("forwards CID attachments to nodemailer as base64 content, keyed by cid", async () => {
+    const withAttachment: EmailMessage = {
+      ...message,
+      attachments: [
+        { contentId: "lagda-logo", filename: "lagda-logo.png", contentType: "image/png", contentBase64: "aGVsbG8=" },
+      ],
+    };
+    let captured: Parameters<SmtpSender["sendMail"]>[0] | undefined;
+    await createSmtpEmailProvider(config, fakeSender((options) => {
+      captured = options;
+      return Promise.resolve({});
+    })).send(withAttachment);
+
+    expect(captured?.attachments).toEqual([
+      { filename: "lagda-logo.png", content: "aGVsbG8=", encoding: "base64", cid: "lagda-logo", contentType: "image/png" },
+    ]);
+  });
 });
 
 describe("configuration", () => {

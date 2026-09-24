@@ -599,12 +599,38 @@ export interface NotificationRepository {
  * vendor's request object reached the application layer, swapping providers
  * would become a refactor of the notification domain rather than a new file.
  */
+/**
+ * An inline image a message's HTML references by `cid:` rather than by a
+ * remote URL or a `data:` URI.
+ *
+ * Both alternatives fail in ways that matter for a transactional message: a
+ * remote URL requires the recipient to click "show images" (most clients
+ * block them by default, so the one thing the image exists to do —
+ * establish the brand, or be scanned as a QR code — doesn't happen until
+ * they do), and a `data:` URI is well known to be stripped outright by
+ * Outlook desktop's Word rendering engine, which shows a broken-image icon
+ * instead. A CID-embedded attachment is the one approach every major mail
+ * client, including Outlook, actually renders inline without a click.
+ */
+export interface EmailAttachment {
+  /** Referenced from the HTML body as `cid:<contentId>`. Unique per message,
+   *  not globally — it only has to be unambiguous within one MIME envelope. */
+  readonly contentId: string;
+  readonly filename: string;
+  readonly contentType: string;
+  /** Raw bytes, base64-encoded. Never a filesystem path or a remote fetch —
+   *  the same "no I/O in a template render" constraint `qr-code.ts` documents. */
+  readonly contentBase64: string;
+}
+
 export interface EmailMessage {
   readonly destination: string;
   readonly subject: string;
   readonly textBody: string;
   /** Optional: not every template needs an HTML part (S69). */
   readonly htmlBody?: string;
+  /** Optional: only an HTML-bearing message with an inline image needs one. */
+  readonly attachments?: readonly EmailAttachment[];
 }
 
 /**

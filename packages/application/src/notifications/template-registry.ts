@@ -240,6 +240,9 @@ export function createTemplateRegistry(
         ...(message.htmlBody === undefined
           ? {}
           : { htmlBody: assertBoundedBody(message.htmlBody) }),
+        ...(message.attachments === undefined
+          ? {}
+          : { attachments: message.attachments }),
       };
     },
   };
