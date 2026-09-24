@@ -1,0 +1,96 @@
+// The in-app DOCUMENT notification feed.
+//
+//   GET /workspaces/:workspaceId/document-notifications
+//
+// Not `/me/notifications`. That one reads the EMAIL substrate — what we tried
+// to send you — and a workspace member's own row there is almost always
+// empty, because signing invitations address a recipient and workspace
+// invitations address an invitee. This one reads evidence: what has happened
+// to this workspace's documents. See `document-feed.ts`'s header.
+//
+// Workspace-scoped rather than user-scoped for the same reason the audit
+// route is: the capability being checked is `signing-request.view`, which is
+// held per workspace, and the answer differs per workspace.
+
+import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import { Type, type Static } from "@sinclair/typebox";
+import {
+  getDocumentNotifications, DEFAULT_FEED_LIMIT, MAX_FEED_LIMIT,
+  type DocumentNotificationFeedDependencies,
+} from "@lagda/application";
+import type { WorkspaceId } from "@lagda/contracts";
+
+const ParamsSchema = Type.Object({
+  workspaceId: Type.String({ minLength: 1, maxLength: 64 }),
+});
+
+const QuerySchema = Type.Object({
+  limit: Type.Optional(Type.Integer({ minimum: 1, maximum: MAX_FEED_LIMIT })),
+}, { additionalProperties: false });
+
+/**
+ * The response, stated as a closed schema.
+ *
+ * A security boundary rather than documentation, the same as the audit
+ * route's: a field added to the view type without being added here is
+ * stripped at the wire instead of published.
+ */
+const NotificationSchema = Type.Object({
+  id: Type.String(),
+  type: Type.String(),
+  title: Type.String(),
+  body: Type.String(),
+  severity: Type.Union([
+    Type.Literal("info"), Type.Literal("success"),
+    Type.Literal("warning"), Type.Literal("critical"),
+  ]),
+  actionRequired: Type.Boolean(),
+  signingRequestId: Type.String(),
+  documentTitle: Type.String(),
+  recipientName: Type.Union([Type.String(), Type.Null()]),
+  occurredAt: Type.Number(),
+}, { additionalProperties: false });
+
+const FeedSchema = Type.Object({
+  notifications: Type.Array(NotificationSchema),
+}, { additionalProperties: false });
+
+export interface DocumentFeedRouteOptions {
+  readonly documentFeedDependencies: () => DocumentNotificationFeedDependencies;
+  readonly actorOf: (request: FastifyRequest) => Promise<{ userId: string } | null>;
+  readonly unauthenticated: (reply: FastifyReply) => FastifyReply;
+  readonly noStore: (reply: FastifyReply) => void;
+}
+
+export function registerDocumentFeedRoutes(
+  app: FastifyInstance,
+  options: DocumentFeedRouteOptions,
+): void {
+  app.get("/workspaces/:workspaceId/document-notifications", {
+    schema: {
+      params: ParamsSchema,
+      querystring: QuerySchema,
+      response: { 200: FeedSchema },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    // A feed is never cached: it is the thing that is supposed to change.
+    options.noStore(reply);
+    const actor = await options.actorOf(request);
+    if (actor === null) return options.unauthenticated(reply);
+
+    const { workspaceId } = request.params as Static<typeof ParamsSchema>;
+    const { limit } = request.query as Static<typeof QuerySchema>;
+
+    // Authorization and tenancy both happen inside the use case's own
+    // transaction, as everywhere else — the route performs no role check.
+    const notifications = await getDocumentNotifications({
+      actor: actor as never,
+      workspaceId: workspaceId as WorkspaceId,
+      limit: limit ?? DEFAULT_FEED_LIMIT,
+    }, options.documentFeedDependencies());
+
+    // Not logged. A feed read is a page refresh, and the document titles it
+    // carries are business-sensitive (S160).
+    return reply.status(200).send({ notifications });
+  });
+}

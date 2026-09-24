@@ -220,10 +220,11 @@ describe("production composition", () => {
     // `documentContent` (viewing a document's own bytes), 13 -> 14 with
     // `workflowTemplates` (migration 058), 14 -> 15 with
     // `workflowTemplateGenerateDocument` (066) — authoring a template's own
-    // document rather than uploading one — and 15 -> 16 with
-    // `uploadRequests` (067), asking a member to supply one the workspace
-    // does not have.
-    expect(subWired).toBe(16);
+    // document rather than uploading one — 15 -> 16 with `uploadRequests`
+    // (067), asking a member to supply one the workspace does not have, and
+    // 16 -> 17 with `documentFeed`, the in-app notification feed projected
+    // from evidence.
+    expect(subWired).toBe(17);
   });
 });
 

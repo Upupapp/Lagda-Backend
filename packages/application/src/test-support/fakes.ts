@@ -2920,6 +2920,17 @@ function scopedEvidence(store: InMemoryStore, scope: WorkspaceId): ScopedEvidenc
             a.occurredAt - b.occurredAt
             || a.evidenceEventId.localeCompare(b.evidenceEventId)),
       ),
+
+    listRecentForWorkspace: (limit: number) =>
+      Promise.resolve(
+        store.evidence
+          .filter(e => e.workspaceId === scope)
+          // The adapter's order, reversed: newest first, id as the tiebreak.
+          .sort((a, b) =>
+            b.occurredAt - a.occurredAt
+            || b.evidenceEventId.localeCompare(a.evidenceEventId))
+          .slice(0, limit),
+      ),
   };
 }
 
