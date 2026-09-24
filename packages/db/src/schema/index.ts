@@ -467,11 +467,17 @@ export interface WorkspaceWorkflowTemplatesTable {
   /** 063. A JSON array, always present — empty for a template with no
    *  variables declared, the ordinary case today. */
   variables: ColumnType<unknown, string, string>;
-  /** 066. A JSON array, always present — empty for an uploaded document, or
-   *  no document at all. */
+  /** 066. A JSON array, always present. Deprecated by 070's `content`
+   *  column — nothing writes this anymore, kept only so authored history
+   *  predating 070 is not silently dropped from the row. */
   content_blocks: ColumnType<unknown, string, string>;
-  /** 066. Blank pages the last generate produced. 0 before the first one. */
+  /** Pages the last generate produced. 0 before the first one. Written by
+   *  the fixed-box generator through 066, and by the flow layout engine
+   *  (070) after. */
   content_page_count: number;
+  /** 070. The authored FLOWING document — a JSON object, always present,
+   *  empty content for an uploaded document or one with none at all. */
+  content: ColumnType<unknown, string, string>;
 }
 
 /**

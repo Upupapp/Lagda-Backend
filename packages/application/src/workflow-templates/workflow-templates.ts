@@ -29,17 +29,17 @@
 
 import type {
   WorkspaceId, DocumentId, UserId, PreparationFieldType, PreparationRect,
-  Sha256Digest,
+  Sha256Digest, FlowDocument,
 } from "@lagda/contracts";
 import {
   WORKFLOW_ROUTING_MODES, WORKFLOW_SLOT_AUTH_METHODS, RECIPIENT_TYPES,
   WORKFLOW_TEMPLATE_VARIABLE_TYPES,
   WORKFLOW_TEMPLATE_VARIABLE_KEY_MAX_LENGTH, WORKFLOW_TEMPLATE_VARIABLE_LABEL_MAX_LENGTH,
-  WORKFLOW_TEMPLATE_CONTENT_TEXT_MAX_LENGTH, WORKFLOW_TEMPLATE_CONTENT_MAX_PAGES,
+  FlowDocumentSchema, EMPTY_FLOW_DOCUMENT,
   type WorkflowRoutingMode, type WorkflowRoleSlot, type WorkflowRoleResolution,
   type WorkflowCompletionSettings, type WorkflowTemplateVariable,
-  type TemplateContentBlock, type TemplateContentBlockAlign,
 } from "@lagda/contracts";
+import { Value } from "@sinclair/typebox/value";
 import {
   validateRect, roundRect, isValidPageNumber, canPlaceFields, validateFieldLabel,
   effectiveRequired, type WorkspaceCapability,
@@ -55,7 +55,7 @@ import type { WorkflowTemplateFieldRecord } from "../common/ports/workflow-templ
 import type { ArtifactId, ArtifactIdGenerator } from "../common/ports/evidence.js";
 import type { DocumentIdGenerator } from "../common/ports/documents.js";
 import type { ObjectStorage, StorageKeyStrategy } from "../common/ports/storage.js";
-import type { TemplateDocumentGenerator } from "../common/ports/template-content.js";
+import type { FlowDocumentGenerator, ResolvedFlowFieldAnchor } from "../common/ports/flow-document.js";
 import type { AuthenticatedActor } from "../common/ports/session.js";
 import {
   ApplicationError, ApplicationValidationError, ResourceNotFoundError,
@@ -517,75 +517,70 @@ function validateVariables(value: unknown): readonly WorkflowTemplateVariable[] 
   });
 }
 
-const CONTENT_BLOCK_ALIGNS: readonly TemplateContentBlockAlign[] = ["left", "center", "right"];
-
 /**
- * Authored content blocks (066), on the READ side — the same "validate on
+ * The authored flowing document, on the READ side — the same "validate on
  * write, and again on read" rule `validateVariables` follows, and for the
- * same reason: a row that somehow holds a malformed block must fail loudly
- * rather than let a later generate silently drop it.
+ * same reason: a row that somehow holds a malformed document must fail
+ * loudly rather than let a later generate silently drop content.
  *
- * A block's REGENERATION-time geometry (rect bounds against the real page
- * count) is checked separately, by `validateContentForGeneration` — this
- * function only proves the JSONB is shaped like a `TemplateContentBlock`.
+ * A TYPEBOX check against `FlowDocumentSchema`, not a hand-rolled walk —
+ * the shape is a recursive tree (paragraphs, headings, nested ordered lists
+ * three deep, inline runs of five possible mark kinds), and reimplementing
+ * that recursion here would be a second place for it to drift from the
+ * schema the editor and the layout engine both already trust. The same
+ * choice `template-registry.ts` makes for notification template input.
+ *
+ * An anchor's `slotId`/`variableKey` exclusivity — exactly one, never both,
+ * never neither — is NOT expressible in the schema (TypeBox has no clean XOR
+ * across sibling object shapes) and is checked separately by
+ * `validateFieldAnchorTargets`, the same two-layer split
+ * `WorkflowTemplateFieldInput`'s own slotId/variableKey pair already uses.
  */
-function validateContentBlocks(value: unknown): readonly TemplateContentBlock[] {
-  if (!Array.isArray(value)) {
-    throw new WorkflowTemplateMalformedError("its content blocks are missing");
+function validateFlowDocument(value: unknown): FlowDocument {
+  if (!Value.Check(FlowDocumentSchema, value)) {
+    const [firstError] = [...Value.Errors(FlowDocumentSchema, value)];
+    throw new WorkflowTemplateMalformedError(
+      `its content is invalid${firstError ? ` (at ${firstError.path || "/"})` : ""}`);
   }
+  validateFieldAnchorTargets(value);
+  return value;
+}
 
-  return value.map((raw, index) => {
-    const at = `content block ${String(index + 1)}`;
-    if (!isRecord(raw)) throw new WorkflowTemplateMalformedError(`${at} is not an object`);
+interface InlineRunLike { readonly kind: string; readonly slotId?: string; readonly variableKey?: string }
+interface BlockLike {
+  readonly kind: string;
+  readonly content?: readonly (InlineRunLike | { readonly content: readonly BlockLike[] })[];
+}
 
-    const pageNumber = raw["pageNumber"];
-    if (typeof pageNumber !== "number" || !Number.isInteger(pageNumber) || pageNumber < 1) {
-      throw new WorkflowTemplateMalformedError(`${at}'s pageNumber is invalid`);
+/** Every `fieldAnchor` run names exactly one of `slotId` / `variableKey`.
+ *  Walks the whole tree once; the recursion here is bounded by
+ *  `FLOW_DOCUMENT_MAX_LIST_DEPTH`, so it cannot recurse unboundedly on a
+ *  document that already passed schema validation. */
+function validateFieldAnchorTargets(doc: FlowDocument): void {
+  let index = 0;
+
+  const walkBlock = (block: BlockLike): void => {
+    if (block.kind === "paragraph" || block.kind === "heading") {
+      for (const run of (block.content ?? []) as readonly InlineRunLike[]) {
+        if (run.kind !== "fieldAnchor") continue;
+        index += 1;
+        const hasSlot = run.slotId !== undefined;
+        const hasVariable = run.variableKey !== undefined;
+        if (hasSlot === hasVariable) {
+          throw new WorkflowTemplateMalformedError(
+            `its field anchor ${String(index)} must name exactly one of a role or a variable`);
+        }
+      }
+      return;
     }
-
-    const rect = raw["rect"];
-    if (!isRecord(rect)
-      || typeof rect["x"] !== "number" || typeof rect["y"] !== "number"
-      || typeof rect["width"] !== "number" || typeof rect["height"] !== "number"
-    ) {
-      throw new WorkflowTemplateMalformedError(`${at}'s rect is invalid`);
+    if (block.kind === "orderedList") {
+      for (const item of (block.content ?? []) as readonly { content: readonly BlockLike[] }[]) {
+        for (const child of item.content) walkBlock(child);
+      }
     }
+  };
 
-    const text = raw["text"];
-    if (typeof text !== "string" || text.length === 0
-      || text.length > WORKFLOW_TEMPLATE_CONTENT_TEXT_MAX_LENGTH
-    ) {
-      throw new WorkflowTemplateMalformedError(`${at}'s text is invalid`);
-    }
-
-    const fontSize = raw["fontSize"];
-    if (fontSize !== undefined
-      && (typeof fontSize !== "number" || fontSize < 6 || fontSize > 72)
-    ) {
-      throw new WorkflowTemplateMalformedError(`${at}'s fontSize is invalid`);
-    }
-
-    const bold = raw["bold"];
-    if (bold !== undefined && typeof bold !== "boolean") {
-      throw new WorkflowTemplateMalformedError(`${at}'s bold flag is invalid`);
-    }
-
-    const align = raw["align"];
-    if (align !== undefined
-      && !CONTENT_BLOCK_ALIGNS.includes(align as never)
-    ) {
-      throw new WorkflowTemplateMalformedError(`${at}'s align is invalid`);
-    }
-
-    return {
-      pageNumber,
-      rect: { x: rect["x"], y: rect["y"], width: rect["width"], height: rect["height"] },
-      text,
-      ...(fontSize === undefined ? {} : { fontSize }),
-      ...(bold === undefined ? {} : { bold }),
-      ...(align === undefined ? {} : { align: align as TemplateContentBlockAlign }),
-    };
-  });
+  for (const block of doc.content) walkBlock(block);
 }
 
 function validateName(value: string): string {
@@ -616,7 +611,7 @@ export function parseStoredTemplate(row: RawWorkflowTemplateRow): WorkflowTempla
     updatedAt: row.updatedAt,
     documentId: row.documentId,
     sourceArtifactId: row.sourceArtifactId,
-    contentBlocks: validateContentBlocks(row.contentBlocks),
+    content: validateFlowDocument(row.content),
     contentPageCount: row.contentPageCount,
   };
 }
@@ -697,9 +692,9 @@ export async function createWorkflowTemplate(
       // document named — creation never receives either value to begin with.
       documentId: null,
       sourceArtifactId: null,
-      // Same for authored content (066) — `generateWorkflowTemplateDocument`
-      // is the only path that ever sets it.
-      contentBlocks: [],
+      // Same for authored content — `generateWorkflowTemplateDocument` is the
+      // only path that ever sets it.
+      content: EMPTY_FLOW_DOCUMENT,
       contentPageCount: 0,
     };
 
@@ -813,7 +808,7 @@ export async function updateWorkflowTemplate(
       // detach its document as a side effect, or its authored content.
       documentId: existing.documentId,
       sourceArtifactId: existing.sourceArtifactId,
-      contentBlocks: validateContentBlocks(existing.contentBlocks),
+      content: validateFlowDocument(existing.content),
       contentPageCount: existing.contentPageCount,
     };
   });
@@ -943,47 +938,15 @@ export async function detachWorkflowTemplateDocument(
 
 // ── Authored documents (066) ─────────────────────────────────────────────────
 
-const MAX_CONTENT_BLOCKS = 500;
-
-/**
- * A generated document's TEXT, refused before any bytes are ever produced.
- *
- * This is the business-rule half of validation, the same split `validate
- * TemplateFields` makes for field placements: the route's TypeBox schema
- * already proved every block is SHAPED like a `TemplateContentBlock` (string
- * lengths, number ranges); this proves the blocks make sense TOGETHER — page
- * numbers within the page count actually being generated, and rectangles that
- * do not run off the page. `assertPlaceable` (sealing's own geometry check)
- * runs again at render time regardless — this is the readable error in front
- * of it, not a replacement for it.
- */
-function validateContentForGeneration(
-  blocks: readonly TemplateContentBlock[],
-  pageCount: number,
-): void {
-  const issues: string[] = [];
-
-  if (blocks.length > MAX_CONTENT_BLOCKS) {
-    issues.push(`blocks: at most ${String(MAX_CONTENT_BLOCKS)} are allowed`);
-  }
-
-  blocks.forEach((block, index) => {
-    const at = `blocks[${String(index)}]`;
-    if (!isValidPageNumber(block.pageNumber, pageCount)) {
-      issues.push(`${at}.pageNumber: must be between 1 and ${String(pageCount)}`);
-    }
-    const geometry = validateRect(block.rect);
-    if (!geometry.ok) issues.push(`${at}.rect: ${geometry.reason}`);
-  });
-
-  if (issues.length > 0) {
-    throw new ApplicationValidationError("This content could not be saved.", issues);
-  }
+export interface WorkflowTemplateGenerateDocumentInput {
+  readonly content: FlowDocument;
 }
 
-export interface WorkflowTemplateGenerateDocumentInput {
-  readonly pageCount: number;
-  readonly blocks: readonly TemplateContentBlock[];
+export interface WorkflowTemplateGenerateDocumentOutput {
+  readonly template: WorkflowTemplateRecord;
+  /** In document order — see `ResolvedFieldAnchor`'s own doc comment for
+   *  what a caller does with these. */
+  readonly resolvedAnchors: readonly ResolvedFlowFieldAnchor[];
 }
 
 /**
@@ -999,7 +962,7 @@ export interface WorkflowTemplateGenerateDocumentInput {
 export interface WorkflowTemplateGenerateDocumentDependencies extends WorkflowTemplateDependencies {
   readonly storage: ObjectStorage;
   readonly keys: StorageKeyStrategy;
-  readonly templateDocumentGenerator: TemplateDocumentGenerator;
+  readonly flowDocumentGenerator: FlowDocumentGenerator;
   readonly documentIds: DocumentIdGenerator;
   readonly artifactIds: ArtifactIdGenerator;
 }
@@ -1008,10 +971,18 @@ export interface WorkflowTemplateGenerateDocumentDependencies extends WorkflowTe
  * Authors the template's OWN document — the alternative to
  * `attachWorkflowTemplateDocument`, which names an ALREADY-uploaded one.
  *
- * Every call REPLACES the whole layout and regenerates the PDF from it, the
- * same whole-layout-replace contract `saveWorkflowTemplateFields` already
- * uses and for the same reason (§ that function's header): authoring is a
- * canvas, not an accumulation of patches.
+ * Every call REPLACES the whole document and regenerates the PDF from it,
+ * the same whole-document-replace contract `saveWorkflowTemplateFields`
+ * already uses and for the same reason (§ that function's header): authoring
+ * is a document, not an accumulation of patches.
+ *
+ * ── No page-count validation on the way in ──────────────────────────────
+ *
+ * 066's shape asked the admin to declare `pageCount` and then checked every
+ * block's `pageNumber` against it. A flowing document has neither: how many
+ * pages result is computed by the layout engine from how much content there
+ * is, and comes back on the result — see `pageCount` below, no longer an
+ * input.
  *
  * ── Ordering: bytes, then rows, then attach ─────────────────────────────
  *
@@ -1026,10 +997,16 @@ export interface WorkflowTemplateGenerateDocumentDependencies extends WorkflowTe
  *
  * Inside the one short transaction that follows: a new `documents` row, a new
  * `document_artifacts` row (`artifactType: "original"`, exactly what an
- * upload would produce), `saveContent` (the authored blocks themselves), and
+ * upload would produce), `saveContent` (the authored document itself), and
  * finally `attachDocument` — content saved before the document is attached,
  * so a failure never leaves a template pointing at a document whose content
  * disagrees with what is stored.
+ *
+ * `resolvedAnchors` on the result is NOT persisted by this call at all — the
+ * caller writes it through `saveWorkflowTemplateFields` separately, on
+ * purpose: this use case authors a DOCUMENT, and a field layout is a
+ * different act with its own capability and its own whole-layout-replace
+ * semantics, the same separation 060 drew from the start.
  */
 export async function generateWorkflowTemplateDocument(
   actor: AuthenticatedActor,
@@ -1037,32 +1014,28 @@ export async function generateWorkflowTemplateDocument(
   workflowTemplateId: string,
   input: WorkflowTemplateGenerateDocumentInput,
   deps: WorkflowTemplateGenerateDocumentDependencies,
-): Promise<WorkflowTemplateRecord> {
-  if (input.pageCount < 1 || input.pageCount > WORKFLOW_TEMPLATE_CONTENT_MAX_PAGES) {
-    throw new ApplicationValidationError(
-      "This content could not be saved.",
-      [`pageCount: must be between 1 and ${String(WORKFLOW_TEMPLATE_CONTENT_MAX_PAGES)}`],
-    );
-  }
-  validateContentForGeneration(input.blocks, input.pageCount);
-
+): Promise<WorkflowTemplateGenerateDocumentOutput> {
   const now = deps.clock.now();
 
   let bytes: Uint8Array;
   let digest: Sha256Digest;
+  let pageCount: number;
+  let resolvedAnchors: readonly ResolvedFlowFieldAnchor[];
   try {
-    const generated = await deps.templateDocumentGenerator.generate({
-      pageCount: input.pageCount,
-      blocks: input.blocks,
+    const generated = await deps.flowDocumentGenerator.generate({
+      content: input.content,
       generatedAt: now,
     });
     bytes = generated.bytes;
     digest = generated.digest;
+    pageCount = generated.pageCount;
+    resolvedAnchors = generated.resolvedAnchors;
   } catch (cause) {
-    // A rendering refusal (an unfittable block, an unrenderable code point) is
-    // the admin's problem to fix on the canvas, so it becomes a 422 with the
-    // renderer's own message — never a 500, and never retried by anything,
-    // because the SAME blocks will fail the SAME way every time.
+    // A rendering refusal (an unrenderable code point, a document too long to
+    // lay out) is the admin's problem to fix in the editor, so it becomes a
+    // 422 with the renderer's own message — never a 500, and never retried
+    // by anything, because the SAME content will fail the SAME way every
+    // time.
     const message = cause instanceof Error ? cause.message : "The document could not be generated.";
     throw new ApplicationValidationError("This content could not be saved.", [message]);
   }
@@ -1077,7 +1050,7 @@ export async function generateWorkflowTemplateDocument(
     mediaType: "application/pdf",
   });
 
-  return deps.transactions.runForWorkspace(workspaceId, async uow => {
+  const template = await deps.transactions.runForWorkspace(workspaceId, async uow => {
     await authorize(uow, actor, "template.update");
 
     const existing = await uow.workflowTemplates.find(workflowTemplateId);
@@ -1105,14 +1078,14 @@ export async function generateWorkflowTemplateDocument(
       sizeBytes: bytes.byteLength,
       digestAlgorithm: "sha-256",
       digest,
-      pageCount: input.pageCount,
+      pageCount,
       // Never rotated — this build drew every page itself at 0°.
       rotatedPageCount: 0,
       createdAt: now,
     });
 
     const contentSaved = await uow.workflowTemplates.saveContent(workflowTemplateId, {
-      blocks: input.blocks, pageCount: input.pageCount, updatedAt: now,
+      document: input.content, pageCount, updatedAt: now,
     });
     if (!contentSaved) throw new ResourceNotFoundError("WorkflowTemplate");
 
@@ -1125,6 +1098,8 @@ export async function generateWorkflowTemplateDocument(
     if (updated === null) throw new ResourceNotFoundError("WorkflowTemplate");
     return parseStoredTemplate(updated);
   });
+
+  return { template, resolvedAnchors };
 }
 
 /**

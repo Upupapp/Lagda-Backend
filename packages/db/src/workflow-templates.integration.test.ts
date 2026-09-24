@@ -225,6 +225,7 @@ suite("workflow templates (RLS, runtime role)", () => {
           completion_notification_settings: JSON.stringify(SETTINGS),
           variables: JSON.stringify([]),
           content_blocks: JSON.stringify([]),
+          content: JSON.stringify({ kind: "flowDocument", content: [] }),
           content_page_count: 0,
           created_by: USER,
           created_at: new Date(AT),

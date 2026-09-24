@@ -51,6 +51,7 @@ import {
 import {
   WorkflowTemplateSchema, WorkflowTemplateWriteSchema, WorkflowTemplateListSchema,
   WorkflowTemplateDocumentInputSchema, WorkflowTemplateGenerateDocumentInputSchema,
+  WorkflowTemplateGenerateDocumentResultSchema,
   WorkflowTemplateFieldListSchema, WorkflowTemplateFieldsWriteSchema,
   WorkflowRoleAssignmentListSchema, WorkflowTemplateApplicationSchema,
   type WorkflowTemplateWrite, type WorkflowTemplateDocumentInput,
@@ -137,14 +138,7 @@ const present = (template: WorkflowTemplateRecord) => ({
   })),
   documentId: template.documentId,
   sourceArtifactId: template.sourceArtifactId,
-  contentBlocks: template.contentBlocks.map(b => ({
-    pageNumber: b.pageNumber,
-    rect: b.rect,
-    text: b.text,
-    ...(b.fontSize === undefined ? {} : { fontSize: b.fontSize }),
-    ...(b.bold === undefined ? {} : { bold: b.bold }),
-    ...(b.align === undefined ? {} : { align: b.align }),
-  })),
+  content: template.content,
   contentPageCount: template.contentPageCount,
   createdAt: iso(template.createdAt),
   updatedAt: iso(template.updatedAt),
@@ -440,7 +434,7 @@ export function registerWorkflowTemplateRoutes(
     return reply.status(200).send(present(template));
   });
 
-  // ── Generate document from authored content (066) ──────────────────────
+  // ── Generate document from authored content (070) ──────────────────────
   //
   // The alternative to PUT .../document: authors the template's OWN document
   // rather than naming an uploaded one. Absent when no object storage is
@@ -451,7 +445,7 @@ export function registerWorkflowTemplateRoutes(
       schema: {
         params: TemplateParamsSchema,
         body: WorkflowTemplateGenerateDocumentInputSchema,
-        response: { 200: WorkflowTemplateSchema },
+        response: { 200: WorkflowTemplateGenerateDocumentResultSchema },
       },
     }, async (request: FastifyRequest, reply: FastifyReply) => {
       noStore(reply);
@@ -462,19 +456,21 @@ export function registerWorkflowTemplateRoutes(
         request.params as Static<typeof TemplateParamsSchema>;
       const body = request.body as WorkflowTemplateGenerateDocumentInput;
 
-      const template = await generateWorkflowTemplateDocument(
+      const { template, resolvedAnchors } = await generateWorkflowTemplateDocument(
         actor, workspaceId as WorkspaceId, workflowTemplateId,
-        { pageCount: body.pageCount, blocks: body.blocks },
+        { content: body.content },
         generateDocumentDependencies());
 
-      // Identifiers and counts only — never a block's TEXT. Matches every
-      // other observability event in this file.
+      // Block/anchor COUNTS only — never any of the document's own text.
+      // Matches every other observability event in this file.
       record(request, "workflow_template.document_generated", {
         workspaceId, workflowTemplateId, actorUserId: actor.userId,
-        blockCount: body.blocks.length, pageCount: body.pageCount,
+        blockCount: body.content.content.length,
+        anchorCount: resolvedAnchors.length,
+        pageCount: template.contentPageCount,
       });
 
-      return reply.status(200).send(present(template));
+      return reply.status(200).send({ template: present(template), resolvedAnchors });
     });
   }
 

@@ -18,7 +18,6 @@ import {
 import { EVIDENCE_EVENT_TYPES } from "../common/ports/evidence.js";
 import type { EvidenceEventType } from "../common/ports/evidence.js";
 import type { AuthenticatedActor, SessionId } from "../common/ports/session.js";
-import type { SigningRequestId } from "../common/ports/index.js";
 import {
   FixedClock, SequentialWorkspaceIds, SequentialMemberIds,
   FakeTransactionManager, InMemoryStore,
@@ -110,7 +109,7 @@ function evidence(
 const read = (h: Harness, limit?: number) => getDocumentNotifications({
   actor: actor(OWNER), workspaceId: h.workspaceId,
   ...(limit === undefined ? {} : { limit }),
-}, h.deps as never);
+}, h.deps);
 
 describe("what reaches the feed", () => {
   it("reports a participant declining — the outcome that ends the request", async () => {
@@ -190,7 +189,7 @@ describe("what reaches the feed", () => {
 });
 
 describe("the vocabulary", () => {
-  it("only names event types that actually exist", async () => {
+  it("only names event types that actually exist", () => {
     // A typo here would silently mean "never notify", which is exactly the
     // bug this feed was built to fix.
     for (const type of NOTIFIABLE_EVENT_TYPES) {

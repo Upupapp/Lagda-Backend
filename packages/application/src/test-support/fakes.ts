@@ -1123,7 +1123,7 @@ function scopedWorkflowTemplates(
     updatedAt: t.updatedAt,
     documentId: t.documentId,
     sourceArtifactId: t.sourceArtifactId,
-    contentBlocks: t.contentBlocks,
+    content: t.content,
     contentPageCount: t.contentPageCount,
   });
   const key = (name: string) => name.trim().toLowerCase();
@@ -1133,11 +1133,11 @@ function scopedWorkflowTemplates(
       // No document on creation — 059's `attachWorkflowTemplateDocument` is
       // the only path that ever sets either field, mirroring the real
       // repository's `insert` (which never receives them either). Same for
-      // 066's content — `saveContent` is the only writer.
+      // the authored content — `saveContent` is the only writer.
       store.workflowTemplates.push({
         ...template, updatedAt: template.createdAt,
         documentId: null, sourceArtifactId: null,
-        contentBlocks: [], contentPageCount: 0,
+        content: { kind: "flowDocument", content: [] }, contentPageCount: 0,
       });
       return Promise.resolve();
     },
@@ -1206,7 +1206,7 @@ function scopedWorkflowTemplates(
       if (index < 0) return Promise.resolve(false);
       store.workflowTemplates[index] = {
         ...store.workflowTemplates[index]!,
-        contentBlocks: content.blocks,
+        content: content.document,
         contentPageCount: content.pageCount,
         updatedAt: content.updatedAt,
       };

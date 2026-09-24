@@ -430,7 +430,9 @@ export function runRepositoryContract(
       await seed(WS_A, MEM_A, USER_A);
       await harness.transactions.runForWorkspace(WS_A, uow => {
         const names = Object.keys(uow.evidence).sort().join(",");
-        expect(names).toBe("append,listForSigningRequest");
+        // `listRecentForWorkspace` (070) — the read behind the in-app
+        // document notification feed. Still no mutation beyond `append`.
+        expect(names).toBe("append,listForSigningRequest,listRecentForWorkspace");
         return Promise.resolve();
       });
     });

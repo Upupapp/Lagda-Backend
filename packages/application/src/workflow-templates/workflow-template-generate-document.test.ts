@@ -1,30 +1,30 @@
-// Generating a template's OWN document from authored content (066).
+// Generating a template's OWN document from authored content (070).
 //
-// A FAKE `TemplateDocumentGenerator`, not the real one — application never
+// A FAKE `FlowDocumentGenerator`, not the real one — application never
 // imports `@lagda/sealing` (an architecture guard enforces it; the port is
 // defined here and IMPLEMENTED there, and an import the other way would
-// invert that). This file proves the USE CASE's orchestration: validation
-// BEFORE any byte is produced, bytes-before-rows, and regenerate-replaces.
-// The renderer itself — real PDFs, word-wrap, the overflow refusal — is
-// proven in `packages/sealing`'s own
-// `node-template-document-generator.test.ts`, the same split
-// `field-merge.test.ts` already makes for `FieldMerger`.
+// invert that). This file proves the USE CASE's orchestration: bytes-
+// before-rows, and regenerate-replaces. The renderer itself — real PDFs,
+// line-wrapping, pagination, the layout-overflow refusal — is proven in
+// `packages/sealing`'s own tests, the same split `field-merge.test.ts`
+// already makes for `FieldMerger`.
 //
 // The claims that carry weight here:
 //
-//   BYTES BEFORE ROWS. A generate that fails VALIDATION (bad page number, a
-//   rectangle off the page) writes nothing — no document, no artifact, no
-//   content, and the generator is never even called.
+//   BYTES BEFORE ROWS. A GENERATOR FAILURE (an unrenderable code point, a
+//   document too long to lay out) writes nothing — no document, no
+//   artifact, no content.
 //
-//   A GENERATOR FAILURE writes nothing either — the same ordering, one layer
-//   later.
+//   RESOLVED ANCHORS pass through to the caller, in document order, and are
+//   NOT written to `workflow_template_fields` by this use case — that is a
+//   separate act with its own capability, left to the caller.
 //
 //   REGENERATING REPLACES. A second generate on the same template produces a
 //   NEW document/artifact pair and the template points at the new one.
 
 import { describe, it, expect, vi } from "vitest";
 import type {
-  UserId, WorkspaceId, DocumentId, Sha256Digest,
+  UserId, WorkspaceId, DocumentId, Sha256Digest, FlowDocument,
 } from "@lagda/contracts";
 import {
   createWorkflowTemplate, generateWorkflowTemplateDocument,
@@ -36,8 +36,8 @@ import type { AuthenticatedActor, SessionId } from "../common/ports/session.js";
 import type { ArtifactId } from "../common/ports/evidence.js";
 import type { StorageObjectRef } from "../common/ports/storage.js";
 import type {
-  TemplateDocumentGenerator, GenerateTemplateDocumentResult,
-} from "../common/ports/template-content.js";
+  FlowDocumentGenerator, GenerateFlowDocumentResult,
+} from "../common/ports/flow-document.js";
 import { createInMemoryObjectStorage, collect } from "../test-support/in-memory-object-storage.js";
 import {
   FixedClock, SequentialWorkspaceIds, SequentialMemberIds,
@@ -47,21 +47,19 @@ import {
   createIdempotencyKeyDigester, createIdempotencyRecordIds,
 } from "../test-support/idempotency-support.js";
 
-/** A minimal, deterministic stand-in for `NodeTemplateDocumentGenerator`.
+/** A minimal, deterministic stand-in for `NodeFlowDocumentGenerator`.
  *  Produces bytes that LOOK like a PDF (the magic bytes a real reader checks
- *  for) without any real rendering — this file is not the one proving
- *  rendering works.
- *
- *  Returns the spy as its OWN value, not as a property read off the port
- *  object — the port's `generate` is a method-shorthand interface member, and
- *  reading it back off an object (`generator.generate`) trips
- *  `@typescript-eslint/unbound-method`. */
-function fakeGenerator(): { port: TemplateDocumentGenerator; generate: ReturnType<typeof vi.fn> } {
+ *  for) without any real rendering, and a page count/anchor list the test
+ *  controls directly — this file is not the one proving rendering works. */
+function fakeGenerator(
+  over: { pageCount?: number; resolvedAnchors?: GenerateFlowDocumentResult["resolvedAnchors"] } = {},
+): { port: FlowDocumentGenerator; generate: ReturnType<typeof vi.fn> } {
   const generate = vi.fn(
-    (): Promise<GenerateTemplateDocumentResult> => Promise.resolve({
+    (): Promise<GenerateFlowDocumentResult> => Promise.resolve({
       bytes: new TextEncoder().encode("%PDF-1.7\n%%EOF"),
       digest: "a".repeat(64) as Sha256Digest,
-      pageCount: 1,
+      pageCount: over.pageCount ?? 1,
+      resolvedAnchors: over.resolvedAnchors ?? [],
     }),
   );
   return { port: { generate }, generate };
@@ -83,6 +81,13 @@ const ROLE_SLOTS: WorkflowTemplateInput["roleSlots"] = [
 
 const SETTINGS: WorkflowTemplateInput["completionSettings"] = { notifySenderOnComplete: true };
 
+const SIMPLE_DOC: FlowDocument = {
+  kind: "flowDocument",
+  content: [
+    { kind: "paragraph", content: [{ kind: "text", text: "This offer letter confirms your position." }] },
+  ],
+};
+
 interface Harness {
   readonly store: InMemoryStore;
   readonly workspaceId: WorkspaceId;
@@ -91,7 +96,9 @@ interface Harness {
   readonly generator: ReturnType<typeof fakeGenerator>;
 }
 
-async function harness(): Promise<Harness> {
+async function harness(
+  generatorOverride?: ReturnType<typeof fakeGenerator>,
+): Promise<Harness> {
   const store = new InMemoryStore();
   const transactions = new FakeTransactionManager(store);
   const clock = new FixedClock(AT);
@@ -109,7 +116,7 @@ async function harness(): Promise<Harness> {
   }).execute({ actor: actor(OWNER), name: "Acme Legal" });
 
   const storage = createInMemoryObjectStorage({ now: () => AT });
-  const generator = fakeGenerator();
+  const generator = generatorOverride ?? fakeGenerator();
 
   let documentCounter = 0;
   let artifactCounter = 0;
@@ -130,7 +137,7 @@ async function harness(): Promise<Harness> {
         zone: "quarantine", key: uploadId as never,
       }),
     },
-    templateDocumentGenerator: generator.port,
+    flowDocumentGenerator: generator.port,
     documentIds: { nextDocumentId: () => `doc_${String(++documentCounter)}` as DocumentId },
     artifactIds: { nextArtifactId: () => `art_${String(++artifactCounter)}` as ArtifactId },
   };
@@ -146,23 +153,16 @@ describe("generating a template's own document", () => {
       { name: "Offer Letter", routingMode: "sequential", roleSlots: ROLE_SLOTS, completionSettings: SETTINGS, variables: [] },
       h.deps);
 
-    const updated = await generateWorkflowTemplateDocument(
+    const { template: updated, resolvedAnchors } = await generateWorkflowTemplateDocument(
       actor(OWNER), h.workspaceId, template.workflowTemplateId,
-      {
-        pageCount: 1,
-        blocks: [{
-          pageNumber: 1,
-          rect: { x: 0.1, y: 0.1, width: 0.8, height: 0.1 },
-          text: "This offer letter confirms your position.",
-        }],
-      },
+      { content: SIMPLE_DOC },
       h.deps);
 
     expect(updated.documentId).not.toBeNull();
     expect(updated.sourceArtifactId).not.toBeNull();
-    expect(updated.contentBlocks).toHaveLength(1);
-    expect(updated.contentBlocks[0]?.text).toBe("This offer letter confirms your position.");
+    expect(updated.content).toEqual(SIMPLE_DOC);
     expect(updated.contentPageCount).toBe(1);
+    expect(resolvedAnchors).toEqual([]);
 
     const stored = h.store.artifacts.find(a => a.artifactId === updated.sourceArtifactId);
     expect(stored?.artifactType).toBe("original");
@@ -179,34 +179,41 @@ describe("generating a template's own document", () => {
     expect(h.generator.generate).toHaveBeenCalledTimes(1);
   });
 
-  it("writes NOTHING and never calls the generator when a block names a page beyond pageCount", async () => {
-    const h = await harness();
+  it("passes resolved field anchors straight through, in the generator's own order", async () => {
+    const anchors: GenerateFlowDocumentResult["resolvedAnchors"] = [
+      {
+        fieldType: "signature", slotId: "slot_1", required: true, label: "Employer Signature",
+        pageNumber: 1, rect: { x: 0.1, y: 0.8, width: 0.2, height: 0.03 },
+      },
+      {
+        fieldType: "date-signed", variableKey: "signed_on", required: false, label: "Date",
+        pageNumber: 1, rect: { x: 0.5, y: 0.8, width: 0.15, height: 0.03 },
+      },
+    ];
+    const h = await harness(fakeGenerator({ resolvedAnchors: anchors }));
     const template = await createWorkflowTemplate(
       actor(OWNER), h.workspaceId,
       { name: "T", routingMode: "sequential", roleSlots: ROLE_SLOTS, completionSettings: SETTINGS, variables: [] },
       h.deps);
 
-    await expect(generateWorkflowTemplateDocument(
+    const { resolvedAnchors } = await generateWorkflowTemplateDocument(
       actor(OWNER), h.workspaceId, template.workflowTemplateId,
-      {
-        pageCount: 1,
-        blocks: [{
-          pageNumber: 2, rect: { x: 0, y: 0, width: 0.5, height: 0.1 }, text: "Off the end.",
-        }],
-      },
-      h.deps,
-    )).rejects.toBeInstanceOf(ApplicationValidationError);
+      { content: SIMPLE_DOC },
+      h.deps);
 
-    // Nothing rendered, nothing uploaded, nothing attached.
-    expect(h.storage.size).toBe(0);
-    expect(h.generator.generate).not.toHaveBeenCalled();
-    const reread = h.store.workflowTemplates.find(
-      t => t.workflowTemplateId === template.workflowTemplateId);
-    expect(reread?.documentId).toBeNull();
+    expect(resolvedAnchors).toEqual(anchors);
+    // Not persisted by THIS use case — the caller (the route) writes it
+    // through `saveWorkflowTemplateFields` separately.
+    expect(h.store.workflowTemplateFields).toEqual([]);
   });
 
-  it("writes NOTHING and never calls the generator when a rectangle runs off the page", async () => {
+  it("writes NOTHING when the generator itself refuses (e.g. an unrenderable code point)", async () => {
+    // The renderer's own refusals are proven for real in
+    // `packages/sealing`'s tests — this proves only that THIS layer reacts
+    // to one correctly: no bytes uploaded, no rows written, and the caller
+    // sees a 422, not a 500.
     const h = await harness();
+    h.generator.generate.mockRejectedValueOnce(new Error("has no glyph for U+65E5"));
     const template = await createWorkflowTemplate(
       actor(OWNER), h.workspaceId,
       { name: "T", routingMode: "sequential", roleSlots: ROLE_SLOTS, completionSettings: SETTINGS, variables: [] },
@@ -214,39 +221,7 @@ describe("generating a template's own document", () => {
 
     await expect(generateWorkflowTemplateDocument(
       actor(OWNER), h.workspaceId, template.workflowTemplateId,
-      {
-        pageCount: 1,
-        blocks: [{
-          pageNumber: 1, rect: { x: 0.8, y: 0.8, width: 0.5, height: 0.5 }, text: "Runs off.",
-        }],
-      },
-      h.deps,
-    )).rejects.toBeInstanceOf(ApplicationValidationError);
-
-    expect(h.storage.size).toBe(0);
-    expect(h.generator.generate).not.toHaveBeenCalled();
-  });
-
-  it("writes NOTHING when the generator itself refuses (e.g. text does not fit)", async () => {
-    // The renderer's own refusals (an unfittable block, an unrenderable code
-    // point) are proven for real in `node-template-document-generator.test.ts`
-    // — this proves only that THIS layer reacts to one correctly: no bytes
-    // uploaded, no rows written, and the caller sees a 422, not a 500.
-    const h = await harness();
-    h.generator.generate.mockRejectedValueOnce(new Error("does not fit its box"));
-    const template = await createWorkflowTemplate(
-      actor(OWNER), h.workspaceId,
-      { name: "T", routingMode: "sequential", roleSlots: ROLE_SLOTS, completionSettings: SETTINGS, variables: [] },
-      h.deps);
-
-    await expect(generateWorkflowTemplateDocument(
-      actor(OWNER), h.workspaceId, template.workflowTemplateId,
-      {
-        pageCount: 1,
-        blocks: [{
-          pageNumber: 1, rect: { x: 0.1, y: 0.1, width: 0.5, height: 0.1 }, text: "Anything.",
-        }],
-      },
+      { content: SIMPLE_DOC },
       h.deps,
     )).rejects.toBeInstanceOf(ApplicationValidationError);
 
@@ -257,7 +232,7 @@ describe("generating a template's own document", () => {
     const h = await harness();
     await expect(generateWorkflowTemplateDocument(
       actor(OWNER), h.workspaceId, "wft_missing",
-      { pageCount: 1, blocks: [] },
+      { content: { kind: "flowDocument", content: [] } },
       h.deps,
     )).rejects.toBeInstanceOf(ResourceNotFoundError);
   });
@@ -269,29 +244,28 @@ describe("generating a template's own document", () => {
       { name: "T", routingMode: "sequential", roleSlots: ROLE_SLOTS, completionSettings: SETTINGS, variables: [] },
       h.deps);
 
-    const first = await generateWorkflowTemplateDocument(
+    const { template: first } = await generateWorkflowTemplateDocument(
       actor(OWNER), h.workspaceId, template.workflowTemplateId,
-      {
-        pageCount: 1,
-        blocks: [{
-          pageNumber: 1, rect: { x: 0.1, y: 0.1, width: 0.5, height: 0.1 }, text: "First version.",
-        }],
-      },
+      { content: { kind: "flowDocument", content: [{ kind: "paragraph", content: [{ kind: "text", text: "First version." }] }] } },
       h.deps);
 
-    const second = await generateWorkflowTemplateDocument(
+    h.generator.generate.mockResolvedValueOnce({
+      bytes: new TextEncoder().encode("%PDF-1.7\n%%EOF"),
+      digest: "b".repeat(64) as Sha256Digest,
+      pageCount: 2,
+      resolvedAnchors: [],
+    });
+    const secondDoc: FlowDocument = {
+      kind: "flowDocument",
+      content: [{ kind: "paragraph", content: [{ kind: "text", text: "Second version." }] }],
+    };
+    const { template: second } = await generateWorkflowTemplateDocument(
       actor(OWNER), h.workspaceId, template.workflowTemplateId,
-      {
-        pageCount: 2,
-        blocks: [{
-          pageNumber: 2, rect: { x: 0.1, y: 0.1, width: 0.5, height: 0.1 }, text: "Second version.",
-        }],
-      },
+      { content: secondDoc },
       h.deps);
 
     expect(second.sourceArtifactId).not.toBe(first.sourceArtifactId);
     expect(second.contentPageCount).toBe(2);
-    expect(second.contentBlocks).toHaveLength(1);
-    expect(second.contentBlocks[0]?.text).toBe("Second version.");
+    expect(second.content).toEqual(secondDoc);
   });
 });

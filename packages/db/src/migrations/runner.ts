@@ -77,6 +77,7 @@ import * as m066 from "./066_workflow_template_content.js";
 import * as m067 from "./067_document_upload_requests.js";
 import * as m068 from "./068_document_upload_requested_notification.js";
 import * as m069 from "./069_approval_workflow.js";
+import * as m070 from "./070_workflow_template_flow_document.js";
 
 /**
  * Migrations listed explicitly rather than read from disk.
@@ -158,6 +159,7 @@ const MIGRATIONS: Record<string, Migration> = {
   "067_document_upload_requests": m067,
   "068_document_upload_requested_notification": m068,
   "069_approval_workflow": m069,
+  "070_workflow_template_flow_document": m070,
 };
 
 class ExplicitMigrationProvider implements MigrationProvider {
