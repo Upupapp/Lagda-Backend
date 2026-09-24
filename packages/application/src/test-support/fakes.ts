@@ -106,6 +106,9 @@ import type {
   WorkflowTemplateIdGenerator,
 } from "../common/ports/workflow-templates.js";
 import type {
+  ScopedUploadRequestRepository, UploadRequestRecord,
+} from "../common/ports/upload-requests.js";
+import type {
   ScopedWorkflowTemplateFieldRepository, WorkflowTemplateFieldRecord,
 } from "../common/ports/workflow-template-fields.js";
 import type {
@@ -418,6 +421,7 @@ interface StoreSnapshot {
   readonly invitationDigests: Map<string, string>;
   readonly contacts: ContactRecord[];
   readonly workflowTemplates: WorkflowTemplateRecord[];
+  readonly uploadRequests: UploadRequestRecord[];
   readonly workflowTemplateFields: WorkflowTemplateFieldRecord[];
   readonly documents: DocumentRecord[];
   readonly folders: FolderRecord[];
@@ -465,6 +469,7 @@ export class InMemoryStore {
   readonly notificationDeliveries = new Map<string, NotificationDeliveryRecord>();
   contacts: ContactRecord[] = [];
   workflowTemplates: WorkflowTemplateRecord[] = [];
+  uploadRequests: UploadRequestRecord[] = [];
   workflowTemplateFields: WorkflowTemplateFieldRecord[] = [];
   documents: DocumentRecord[] = [];
   folders: FolderRecord[] = [];
@@ -515,6 +520,7 @@ export class InMemoryStore {
   snapshot(): StoreSnapshot {
     return {
       workflowTemplates: [...this.workflowTemplates],
+      uploadRequests: [...this.uploadRequests],
       workflowTemplateFields: [...this.workflowTemplateFields],
       workspaces: new Map(this.workspaces),
       uploads: new Map(this.uploads),
@@ -577,6 +583,7 @@ export class InMemoryStore {
     // restore exists to prevent. Found while adding the sibling
     // `workflowTemplateFields` restore just below.
     this.workflowTemplates = [...snapshot.workflowTemplates];
+    this.uploadRequests = [...snapshot.uploadRequests];
     this.workflowTemplateFields = [...snapshot.workflowTemplateFields];
     this.invitations = [...snapshot.invitations];
     this.contacts = [...snapshot.contacts];
@@ -1041,6 +1048,62 @@ function scopedInvitations(
  * make `parseStoredTemplate` untested on the path that matters most — a row
  * whose slots are malformed.
  */
+function scopedUploadRequests(
+  store: InMemoryStore, scope: WorkspaceId,
+): ScopedUploadRequestRepository {
+  const inScope = () => store.uploadRequests.filter(r => r.workspaceId === scope);
+  const indexOf = (requestId: string) =>
+    store.uploadRequests.findIndex(
+      r => r.requestId === requestId && r.workspaceId === scope);
+
+  return {
+    insert: input => {
+      store.uploadRequests.push({
+        ...input,
+        status: "pending",
+        documentId: null,
+        updatedAt: input.createdAt,
+        fulfilledAt: null,
+        cancelledAt: null,
+      });
+      return Promise.resolve();
+    },
+    find: requestId =>
+      Promise.resolve(inScope().find(r => r.requestId === requestId) ?? null),
+    list: filter => Promise.resolve(
+      inScope()
+        .filter(r => filter?.assigneeUserId === undefined
+          || r.assigneeUserId === filter.assigneeUserId)
+        .filter(r => filter?.status === undefined || r.status === filter.status)
+        // Newest first, matching the real repository's index order.
+        .sort((a, b) => b.createdAt - a.createdAt),
+    ),
+    markFulfilled: (requestId, input) => {
+      const at = indexOf(requestId);
+      const current = at < 0 ? null : store.uploadRequests[at]!;
+      // Only a PENDING request can be fulfilled — the same guard the real
+      // repository puts in its WHERE clause, so a second fulfilment is a
+      // no-op here too rather than silently overwriting the first.
+      if (current === null || current.status !== "pending") return Promise.resolve(false);
+      store.uploadRequests[at] = {
+        ...current, status: "fulfilled",
+        documentId: input.documentId, fulfilledAt: input.at, updatedAt: input.at,
+      };
+      return Promise.resolve(true);
+    },
+    markCancelled: (requestId, input) => {
+      const at = indexOf(requestId);
+      const current = at < 0 ? null : store.uploadRequests[at]!;
+      if (current === null || current.status !== "pending") return Promise.resolve(false);
+      store.uploadRequests[at] = {
+        ...current, status: "cancelled",
+        cancelledAt: input.at, updatedAt: input.at,
+      };
+      return Promise.resolve(true);
+    },
+  };
+}
+
 function scopedWorkflowTemplates(
   store: InMemoryStore, scope: WorkspaceId,
 ): ScopedWorkflowTemplateRepository {
@@ -2969,6 +3032,7 @@ export class FakeTransactionManager implements TransactionManager {
         userSigningRecords: userSigningRecords(),
         accountLinks: signingAccountLinks(),
         workflowTemplates: scopedWorkflowTemplates(this.store, workspaceId),
+        uploadRequests: scopedUploadRequests(this.store, workspaceId),
         workflowTemplateFields: scopedWorkflowTemplateFields(this.store, workspaceId),
         organizationUnits: scopedOrganizationUnits(this.store, workspaceId),
         workspaces: scopedWorkspaces(this.store, workspaceId),
@@ -3053,6 +3117,7 @@ export class FakeTransactionManager implements TransactionManager {
           return inner({
             workspaceId,
             workflowTemplates: scopedWorkflowTemplates(store, workspaceId),
+            uploadRequests: scopedUploadRequests(store, workspaceId),
             workflowTemplateFields: scopedWorkflowTemplateFields(store, workspaceId),
             actorProfiles: { displayNameOf: () => Promise.resolve(null) },
             userSigningRecords: userSigningRecords(),

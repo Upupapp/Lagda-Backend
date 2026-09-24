@@ -307,3 +307,27 @@ export const SigningInvitationModelV1 = Type.Object(
   },
   { additionalProperties: false },
 );
+
+/**
+ * Somebody has been asked to supply a document (067).
+ *
+ * `requestTitle` is what the REQUESTER typed — "your signed contract", "the
+ * 2026 permit" — not a document title, because the document does not exist
+ * yet. That is the whole difference between this message and every other one
+ * in this file.
+ *
+ * `note` is the requester's optional instruction, bounded and optional
+ * because most requests do not need one. Frozen like every other field here:
+ * display data, never a credential.
+ */
+export const DocumentUploadRequestedModelV1 = Type.Object(
+  {
+    /** The ASSIGNEE's display name. This message is addressed to them. */
+    recipientName: DisplayName,
+    requestTitle: BoundedText(200),
+    requesterDisplayName: DisplayName,
+    workspaceName: DisplayName,
+    note: Type.Optional(BoundedText(1000)),
+  },
+  { additionalProperties: false },
+);

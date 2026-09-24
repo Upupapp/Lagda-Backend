@@ -101,6 +101,18 @@ export const NOTIFICATION_TYPES = [
    * optional on the policy rather than every message pretending to have one.
    */
   "SIGNING_COMPLETED",
+  /**
+   * Somebody has been asked to SUPPLY a document (067).
+   *
+   * The inverse of `SIGNING_INVITATION`: that one hands a counterparty a way
+   * into a document the workspace already holds, this one asks a MEMBER for
+   * a document the workspace does not have yet. So it carries no credential
+   * for the same reason `SIGNING_COMPLETED` does not — the reader is an
+   * account holder following an ordinary authenticated route to their own
+   * queue, and minting a bearer token for somebody who can already sign in
+   * would be a credential with a lifetime nothing tracks.
+   */
+  "DOCUMENT_UPLOAD_REQUESTED",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -198,6 +210,16 @@ export const NOTIFICATION_SOURCE_KINDS = [
    * producer needs no `if (!exists)` check and no advisory lock.
    */
   "SIGNING_REQUEST",
+  /**
+   * The upload request itself (067).
+   *
+   * One notification per request, so the request IS the right granularity —
+   * the same reasoning as `SIGNING_REQUEST` above. The unique index on
+   * (source_kind, source_id, notification_type) then physically cannot hold
+   * two DOCUMENT_UPLOAD_REQUESTED rows for one request, so creating the
+   * intent needs no existence check of its own.
+   */
+  "DOCUMENT_UPLOAD_REQUEST",
 ] as const;
 export type NotificationSourceKind =
   (typeof NOTIFICATION_SOURCE_KINDS)[number];
@@ -321,6 +343,7 @@ export const NOTIFICATION_TEMPLATE_KEYS = [
   "workspace-invitation",
   "signing-invitation",
   "signing-completed",
+  "document-upload-requested",
 ] as const;
 export type NotificationTemplateKey =
   (typeof NOTIFICATION_TEMPLATE_KEYS)[number];

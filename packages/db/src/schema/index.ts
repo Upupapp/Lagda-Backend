@@ -424,6 +424,31 @@ export interface PreparedSignaturesTable {
  * application validates on write AND on apply — PostgreSQL checks only that
  * they are a non-empty array and an object respectively.
  */
+/**
+ * 067. A document this workspace has ASKED a member to supply.
+ *
+ * `document_id` is set exactly when `status = 'fulfilled'` — CHECK-
+ * constrained as a biconditional, so a pending row physically cannot carry
+ * one. `assignee_contact_id` is provenance only: which address-book entry the
+ * requester picked, never the authority on who may fulfil it.
+ */
+export interface WorkspaceDocumentUploadRequestsTable {
+  request_id: string;
+  workspace_id: string;
+  title: string;
+  note: ColumnType<string | null, string | null, string | null>;
+  requested_by_user_id: string;
+  assignee_user_id: string;
+  assignee_contact_id: ColumnType<string | null, string | null, string | null>;
+  /** `pending` | `fulfilled` | `cancelled`. CHECK-constrained. */
+  status: string;
+  document_id: ColumnType<string | null, string | null, string | null>;
+  created_at: Timestamptz;
+  updated_at: Timestamptz;
+  fulfilled_at: ColumnType<Date | null, Date | null, Date | null>;
+  cancelled_at: ColumnType<Date | null, Date | null, Date | null>;
+}
+
 export interface WorkspaceWorkflowTemplatesTable {
   workflow_template_id: string;
   workspace_id: string;
@@ -1542,6 +1567,7 @@ export interface Database {
   user_signatures: UserSignaturesTable;
   prepared_signatures: PreparedSignaturesTable;
   workspace_workflow_templates: WorkspaceWorkflowTemplatesTable;
+  workspace_document_upload_requests: WorkspaceDocumentUploadRequestsTable;
   workflow_template_fields: WorkflowTemplateFieldsTable;
   user_signed_documents: UserSignedDocumentsTable;
   user_signing_inbox: UserSigningInboxTable;
