@@ -106,6 +106,7 @@ const app = await createApp({
       completedArtifact: () => stub("workspaces.completedArtifact"),
       sendSigningRequest: () => stub("workspaces.sendSigningRequest"),
       audit: () => stub("workspaces.audit"),
+      documentFeed: () => stub("workspaces.documentFeed"),
       organization: () => stub("workspaces.organization"),
       cancelSigningRequest: () => stub("workspaces.cancelSigningRequest"),
       // Missing since migration 058 first added this group: the emitted

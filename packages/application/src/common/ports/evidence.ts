@@ -421,6 +421,23 @@ export interface ScopedEvidenceRepository {
    * order the planner chose that day.
    */
   listForSigningRequest(signingRequestId: TransactionId): Promise<readonly EvidenceEventRecord[]>;
+
+  /**
+   * The workspace's most recent evidence, newest first, across every signing
+   * request in it — the read behind the in-app document notification feed.
+   *
+   * Scoped to the bound workspace like every other method here, and bounded by
+   * `limit` because a feed shows a page, never a history. Ordering mirrors
+   * `listForSigningRequest`'s total order, reversed: `occurredAt` descending,
+   * then `evidenceEventId` descending, so two events in the same millisecond
+   * do not swap places between calls.
+   *
+   * Deliberately NOT filtered by event type. Which events are worth
+   * notifying somebody about is a presentation decision that changes with the
+   * product, and baking it into SQL would put it a migration away from being
+   * changed.
+   */
+  listRecentForWorkspace(limit: number): Promise<readonly EvidenceEventRecord[]>;
 }
 
 export interface ScopedArtifactRepository {

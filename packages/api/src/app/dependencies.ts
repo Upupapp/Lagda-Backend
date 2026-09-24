@@ -27,6 +27,7 @@ import type {
   SigningDeclineDependencies, SigningSkipDependencies, SigningWorkflowDependencies,
   WorkflowTemplateDependencies, WorkflowTemplateGenerateDocumentDependencies,
   AuditTrailDependencies, OrganizationDependencies,
+  DocumentNotificationFeedDependencies,
 } from "@lagda/application";
 
 /**
@@ -311,6 +312,14 @@ export interface WorkspaceDependencies {
    * workspace could not read its own audit trail over HTTP.
    */
   readonly audit?: () => AuditTrailDependencies;
+  /**
+   * The in-app DOCUMENT notification feed, projected from evidence.
+   *
+   * Needs the transaction manager and nothing else, like `audit` — and for
+   * the same reason: the actor and the workspace are the use case's INPUT,
+   * not its dependencies.
+   */
+  readonly documentFeed?: () => DocumentNotificationFeedDependencies;
   /**
    * The org chart (TENANT_CORE): departments, offices, teams.
    *

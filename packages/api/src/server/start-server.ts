@@ -283,6 +283,9 @@ export async function createProductionDependencies(
       // called it request-scoped, which was wrong: the actor and the request
       // id belong to the use case's INPUT, not to its dependencies.
       audit: () => ({ transactions }),
+      // The in-app document feed, projected from the same evidence the
+      // audit read returns — so it needs the same single dependency.
+      documentFeed: () => ({ transactions }),
       ...buildLinkedSurfaces({
         config, transactions, clock, idempotency, memberIds, database,
       }),

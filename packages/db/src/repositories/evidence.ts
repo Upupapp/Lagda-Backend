@@ -38,6 +38,77 @@ function assertScope(scope: WorkspaceId, actual: WorkspaceId, entity: string): v
 
 // ── Evidence ─────────────────────────────────────────────────────────────────
 
+/**
+ * One row, as the application sees it.
+ *
+ * Module-level and shared by both reads. It was inline in
+ * `listForSigningRequest` until the notification feed needed the identical
+ * mapping — two copies of this would drift the first time a column moved,
+ * and the halves of the paired fields below are exactly the kind of detail
+ * a second copy gets subtly wrong.
+ */
+function toEvidenceEvent(
+  row: Selectable<Database["evidence_events"]>,
+): EvidenceEventRecord {
+  const actor: EvidenceActor =
+    row.actor_type === "system"
+      ? { type: "system" }
+      : row.actor_type === "recipient"
+        ? {
+          type: "recipient",
+          // The IMMUTABLE signing-request recipient, not the mutable
+          // preparation one — see the note on the port.
+          actorId: (row.actor_id ?? "") as SigningRequestRecipientId,
+        }
+        : { type: "workspace-user", actorId: row.actor_id ?? "" };
+
+  return {
+    evidenceEventId: row.evidence_event_id as EvidenceEventId,
+    workspaceId: row.workspace_id as WorkspaceId,
+    signingRequestId: row.signing_request_id as TransactionId,
+    ...(row.document_id === null ? {} : { documentId: row.document_id as DocumentId }),
+    ...(row.recipient_id === null
+      ? {}
+      : { recipientId: row.recipient_id as SigningRequestRecipientId }),
+    eventType: row.event_type as EvidenceEventType,
+    eventVersion: row.event_version,
+    actor,
+    // Read back as the same paired object it was written from. The
+    // biconditional CHECK guarantees the halves agree, so testing one is
+    // testing both — but the pair is reconstructed whole rather than as
+    // two independently-optional fields, which is what keeps a projection
+    // from ever seeing a type without an id.
+    ...(row.source_type === null || row.source_id === null
+      ? {}
+      : {
+          source: {
+            type: row.source_type as EvidenceSourceType,
+            id: row.source_id,
+          },
+        }),
+    occurredAt: row.occurred_at.getTime(),
+    recordedAt: row.recorded_at.getTime(),
+    ...(row.client_ip === null && row.client_user_agent === null
+      ? {}
+      : {
+          observed: {
+            ...(row.client_ip === null ? {} : { clientIp: row.client_ip }),
+            ...(row.client_user_agent === null
+              ? {}
+              : { clientUserAgent: row.client_user_agent }),
+          },
+        }),
+    ...(row.details === null || row.details_version === null
+      ? {}
+      : {
+          details: {
+            version: row.details_version,
+            payload: row.details as Readonly<Record<string, string | number | boolean>>,
+          },
+        }),
+  };
+}
+
 export function createEvidenceRepository(
   trx: Trx,
   scope: WorkspaceId,
@@ -98,65 +169,22 @@ export function createEvidenceRepository(
         .orderBy("evidence_event_id", "asc")
         .execute();
 
-      return rows.map((row): EvidenceEventRecord => {
-        const actor: EvidenceActor =
-          row.actor_type === "system"
-            ? { type: "system" }
-            : row.actor_type === "recipient"
-              ? {
-                type: "recipient",
-                // The IMMUTABLE signing-request recipient, not the mutable
-                // preparation one — see the note on the port.
-                actorId: (row.actor_id ?? "") as SigningRequestRecipientId,
-              }
-              : { type: "workspace-user", actorId: row.actor_id ?? "" };
+      return rows.map(toEvidenceEvent);
+    },
 
-        return {
-          evidenceEventId: row.evidence_event_id as EvidenceEventId,
-          workspaceId: row.workspace_id as WorkspaceId,
-          signingRequestId: row.signing_request_id as TransactionId,
-          ...(row.document_id === null ? {} : { documentId: row.document_id as DocumentId }),
-          ...(row.recipient_id === null
-            ? {}
-            : { recipientId: row.recipient_id as SigningRequestRecipientId }),
-          eventType: row.event_type as EvidenceEventType,
-          eventVersion: row.event_version,
-          actor,
-          // Read back as the same paired object it was written from. The
-          // biconditional CHECK guarantees the halves agree, so testing one is
-          // testing both — but the pair is reconstructed whole rather than as
-          // two independently-optional fields, which is what keeps a projection
-          // from ever seeing a type without an id.
-          ...(row.source_type === null || row.source_id === null
-            ? {}
-            : {
-                source: {
-                  type: row.source_type as EvidenceSourceType,
-                  id: row.source_id,
-                },
-              }),
-          occurredAt: row.occurred_at.getTime(),
-          recordedAt: row.recorded_at.getTime(),
-          ...(row.client_ip === null && row.client_user_agent === null
-            ? {}
-            : {
-                observed: {
-                  ...(row.client_ip === null ? {} : { clientIp: row.client_ip }),
-                  ...(row.client_user_agent === null
-                    ? {}
-                    : { clientUserAgent: row.client_user_agent }),
-                },
-              }),
-          ...(row.details === null || row.details_version === null
-            ? {}
-            : {
-                details: {
-                  version: row.details_version,
-                  payload: row.details as Readonly<Record<string, string | number | boolean>>,
-                },
-              }),
-        };
-      });
+    async listRecentForWorkspace(limit: number): Promise<readonly EvidenceEventRecord[]> {
+      const rows = await trx
+        .selectFrom("evidence_events")
+        .selectAll()
+        .where("workspace_id", "=", scope)
+        // The same total order as above, reversed: newest first, with the id
+        // as the tiebreak so a feed does not reshuffle between reads.
+        .orderBy("occurred_at", "desc")
+        .orderBy("evidence_event_id", "desc")
+        .limit(limit)
+        .execute();
+
+      return rows.map(toEvidenceEvent);
     },
   };
 }

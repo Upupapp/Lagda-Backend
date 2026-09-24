@@ -64,6 +64,7 @@ import {
   registerPublicVerificationRoutes,
 } from "../verification/public-verification-routes.js";
 import { registerAuditRoutes } from "../audit/audit-routes.js";
+import { registerDocumentFeedRoutes } from "../notifications/document-feed-routes.js";
 import {
   registerOrganizationRoutes,
 } from "../organization/organization-routes.js";
@@ -692,6 +693,31 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
           // An audit trail is who did what and when, for one legal document.
           // `no-store`, not `no-cache`: the latter lets a shared cache KEEP the
           // response and merely revalidate it.
+          noStore: reply => {
+            void reply.header("Cache-Control", "no-store");
+            void reply.header("Pragma", "no-cache");
+          },
+        });
+      }
+
+      // The in-app document notification feed. Same scope, same actor and
+      // cache posture as the audit read above — it is the same evidence,
+      // asked workspace-wide instead of one request at a time.
+      if (workspaces.documentFeed !== undefined) {
+        const documentFeed = workspaces.documentFeed;
+        registerDocumentFeedRoutes(scope, {
+          documentFeedDependencies: documentFeed,
+          actorOf: (request: FastifyRequest) => Promise.resolve(
+            request.auth.status === "authenticated"
+              ? { userId: request.auth.actor.userId }
+              : null,
+          ),
+          unauthenticated: reply => reply.code(401).send({
+            error: {
+              code: "AUTHENTICATION_REQUIRED",
+              message: "Sign in to continue.",
+            },
+          }),
           noStore: reply => {
             void reply.header("Cache-Control", "no-store");
             void reply.header("Pragma", "no-cache");
