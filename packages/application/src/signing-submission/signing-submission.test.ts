@@ -264,6 +264,7 @@ function seed(h: Harness, fields: readonly FieldSpec[], over: {
     signingRequestId: String(REQUEST),
     signedAt: null, submissionId: null,
     declinedAt: null, declineReason: null,
+    approvedAt: null, skippedAt: null,
   });
   h.store.artifacts.push({
     artifactId: "art_1" as ArtifactId, workspaceId: WS,

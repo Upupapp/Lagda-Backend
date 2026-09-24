@@ -36,8 +36,10 @@ import type { RecipientSubmissionId } from "./signing-submission.js";
 export type SigningWorkflowIntentId =
   string & { readonly __brand: "SigningWorkflowIntentId" };
 
-/** What made a request's routing need re-evaluating. */
-export type WorkflowAdvanceTrigger = "submission" | "decline";
+/** What made a request's routing need re-evaluating. 069 adds `skip` — an
+ *  approver's pass, shaped like `decline` (no submission) but never ending
+ *  the request. */
+export type WorkflowAdvanceTrigger = "submission" | "decline" | "skip";
 
 // ── Records ──────────────────────────────────────────────────────────────────
 
@@ -62,9 +64,14 @@ export interface WorkflowRecipientRecord {
   readonly activatedAt: number | null;
   /** From `recipient_submissions.accepted_at`. Never a separate clock. */
   readonly signedAt: number | null;
+  /** 069. An approver's acceptance instant — shares `submissionId` with
+   *  `signedAt` rather than a parallel identity. */
+  readonly approvedAt: number | null;
   readonly submissionId: RecipientSubmissionId | null;
   readonly declinedAt: number | null;
   readonly declineReason: SigningDeclineReason | null;
+  /** 069. An approver's pass instant. No reason — see `markSkipped`. */
+  readonly skippedAt: number | null;
 }
 
 /** An outstanding advance, as the reconciler sees it: identifiers only. */
@@ -125,6 +132,28 @@ export interface RecipientWorkflowRepository {
   markDeclined(input: {
     readonly declinedAt: number;
     readonly reason: SigningDeclineReason;
+  }): Promise<boolean>;
+
+  /**
+   * 069. `active -> approved`, conditionally — an APPROVER's counterpart to
+   * `markSignedFromSubmission`. Same submission-instant reasoning: the
+   * timestamp is the accepted `RecipientSubmission`'s own, never a second
+   * clock reading (INV-548).
+   */
+  markApprovedFromSubmission(input: {
+    readonly submissionId: RecipientSubmissionId;
+    readonly approvedAt: number;
+  }): Promise<boolean>;
+
+  /**
+   * 069. `active -> skipped`, conditionally — an APPROVER's counterpart to
+   * `markDeclined`. No reason, unlike a decline: a skip is not a refusal
+   * that needs explaining, it is "I have nothing to add", and §78's warning
+   * against free-text PII applies here even more directly since there is no
+   * closed vocabulary to reach for instead.
+   */
+  markSkipped(input: {
+    readonly skippedAt: number;
   }): Promise<boolean>;
 
   /**

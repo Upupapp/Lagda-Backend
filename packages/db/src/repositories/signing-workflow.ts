@@ -30,7 +30,7 @@ import { translatePersistenceError } from "../errors.js";
 /** The states a request may still be moved out of by a workflow transition. */
 const ADVANCEABLE_STATES = ["sent", "partially-completed"] as const;
 
-const ADVANCE_TRIGGERS: readonly WorkflowAdvanceTrigger[] = ["submission", "decline"];
+const ADVANCE_TRIGGERS: readonly WorkflowAdvanceTrigger[] = ["submission", "decline", "skip"];
 
 /**
  * Validated rather than cast.
@@ -141,6 +141,47 @@ export function createRecipientWorkflowRepository(
       }
     },
 
+    // 069. An approver's counterpart to `markSignedFromSubmission` — same
+    // conditional shape, same submission-instant reasoning, sharing
+    // `submission_id` rather than a parallel column.
+    async markApprovedFromSubmission(input): Promise<boolean> {
+      try {
+        const result = await trx.updateTable("signing_request_recipient_activation")
+          .set({
+            recipient_state: "approved",
+            approved_at: new Date(input.approvedAt),
+            submission_id: input.submissionId,
+          })
+          .where("workspace_id", "=", scope.workspaceId)
+          .where("signing_request_id", "=", scope.signingRequestId)
+          .where("request_recipient_id", "=", scope.recipientId)
+          .where("recipient_state", "=", "active")
+          .executeTakeFirst();
+        return Number(result.numUpdatedRows) === 1;
+      } catch (error) {
+        throw translatePersistenceError(error);
+      }
+    },
+
+    // 069. An approver's counterpart to `markDeclined` — no reason column.
+    async markSkipped(input): Promise<boolean> {
+      try {
+        const result = await trx.updateTable("signing_request_recipient_activation")
+          .set({
+            recipient_state: "skipped",
+            skipped_at: new Date(input.skippedAt),
+          })
+          .where("workspace_id", "=", scope.workspaceId)
+          .where("signing_request_id", "=", scope.signingRequestId)
+          .where("request_recipient_id", "=", scope.recipientId)
+          .where("recipient_state", "=", "active")
+          .executeTakeFirst();
+        return Number(result.numUpdatedRows) === 1;
+      } catch (error) {
+        throw translatePersistenceError(error);
+      }
+    },
+
     async enqueueAdvance(intent: NewWorkflowAdvanceIntent): Promise<boolean> {
       // `on conflict do nothing` against the (request, recipient, trigger)
       // unique key. A second delivery of the same fact converges on one intent
@@ -206,7 +247,8 @@ export function createScopedSigningWorkflowRepository(
           .onRef("p.request_recipient_id", "=", "a.request_recipient_id"))
         .select([
           "a.request_recipient_id", "a.recipient_state", "a.activated_at",
-          "a.signed_at", "a.submission_id", "a.declined_at", "a.decline_reason",
+          "a.signed_at", "a.approved_at", "a.submission_id",
+          "a.declined_at", "a.decline_reason", "a.skipped_at",
           "p.recipient_type", "p.is_required", "p.routing_order",
         ])
         .where("a.workspace_id", "=", scope)
@@ -229,11 +271,13 @@ export function createScopedSigningWorkflowRepository(
           "recipient_state", row.recipient_state),
         activatedAt: millis(row.activated_at),
         signedAt: millis(row.signed_at),
+        approvedAt: millis(row.approved_at),
         submissionId: row.submission_id as RecipientSubmissionId | null,
         declinedAt: millis(row.declined_at),
         declineReason: row.decline_reason === null ? null : oneOf<SigningDeclineReason>(
           SIGNING_DECLINE_REASONS, "signing_request_recipient_activation",
           "decline_reason", row.decline_reason),
+        skippedAt: millis(row.skipped_at),
       }));
     },
 

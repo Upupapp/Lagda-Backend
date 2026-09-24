@@ -383,7 +383,9 @@ function buildRecipientAccess(
  * `signingAccess`, that named the work rather than a blocker -- every port
  * already had an implementation in `@lagda/api`. What was genuinely missing
  * was three ID GENERATORS, which nothing had needed before precisely because
- * none of these surfaces had ever been composed.
+ * none of these surfaces had ever been composed. `signingSkip` (069) joined
+ * the same graph later, for an approver's pass rather than a signer's
+ * refusal.
  *
  * ── Conditional, and on two different things ───────────────────────────────
  *
@@ -391,11 +393,12 @@ function buildRecipientAccess(
  * instance upload writes through, not a second client that could be pointed at
  * a different bucket.
  *
- * Submission and decline ADVANCE the workflow, and advancing provisions the
- * next recipient's access: a grant, a sealed credential and a link. So they
- * need the same graph `sendSigningRequest` needs, and are conditional on the
- * same delivery key and base URL. A deployment that cannot send cannot advance,
- * which is coherent rather than awkward: there would be nobody to advance to.
+ * Submission, decline and skip ADVANCE the workflow, and advancing provisions
+ * the next recipient's access: a grant, a sealed credential and a link. So
+ * they need the same graph `sendSigningRequest` needs, and are conditional on
+ * the same delivery key and base URL. A deployment that cannot send cannot
+ * advance, which is coherent rather than awkward: there would be nobody to
+ * advance to.
  */
 function buildRecipientCeremony(input: {
   readonly transactions: ReturnType<typeof createTransactionManager>;
@@ -405,7 +408,7 @@ function buildRecipientCeremony(input: {
   readonly idempotency: IdempotencyComposition;
   readonly completionScheduler?: JobScheduler;
 }): Partial<Pick<AppDependencies,
-  "signingCeremony" | "signingSubmission" | "signingDecline">> {
+  "signingCeremony" | "signingSubmission" | "signingDecline" | "signingSkip">> {
   const { transactions, clock, config, storage, idempotency, completionScheduler } = input;
   const sessionTokens = createRecipientSessionTokenFactory();
 
@@ -469,6 +472,15 @@ function buildRecipientCeremony(input: {
       workflowIds: createSigningWorkflowIdGenerator(),
       completionIds: createCompletionIdGenerator(),
       access: workflowAccess,
+    }),
+    // 069. Needs strictly more than decline: an evidence id generator for the
+    // `participant-skipped` event decline has never needed to append.
+    signingSkip: () => ({
+      transactions, clock, sessionTokens,
+      workflowIds: createSigningWorkflowIdGenerator(),
+      completionIds: createCompletionIdGenerator(),
+      access: workflowAccess,
+      evidenceIds: createEvidenceEventIdGenerator(),
     }),
   };
 }

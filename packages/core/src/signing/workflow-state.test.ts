@@ -33,15 +33,17 @@ function person(over: Partial<WorkflowRecipient> = {}): WorkflowRecipient {
 // ── The recipient state machine ──────────────────────────────────────────────
 
 describe("the recipient state machine", () => {
-  it("has exactly the four states the product can distinguish", () => {
+  it("has exactly the six states the product can distinguish", () => {
     expect([...RECIPIENT_WORKFLOW_STATES]).toEqual(
-      ["waiting", "active", "signed", "declined"]);
+      ["waiting", "active", "signed", "approved", "skipped", "declined"]);
   });
 
   it.each([
     ["waiting", "activate", "active"],
     ["active", "sign", "signed"],
     ["active", "decline", "declined"],
+    ["active", "approve", "approved"],
+    ["active", "skip", "skipped"],
   ] as const)("allows %s --%s--> %s", (from, action, expected) => {
     expect(transitionRecipient(from, action)).toBe(expected);
   });
@@ -326,6 +328,103 @@ describe("decline outranks everything", () => {
       person({ recipientId: "b", routingOrder: 2, state: "waiting" }),
     ]);
     expect(plan).toEqual({ kind: "declined", declinedBy: "d" });
+  });
+
+  it("still outranks a cohort where an approver merely SKIPPED", () => {
+    // 069's product decision was that a skip never blocks — but a decline is
+    // still a decline, whoever else in the same cohort skipped.
+    const plan = planWorkflowAdvance([
+      person({ recipientId: "s", type: "approver", routingOrder: 1, state: "skipped" }),
+      person({ recipientId: "d", routingOrder: 1, state: "declined" }),
+    ]);
+    expect(plan).toEqual({ kind: "declined", declinedBy: "d" });
+  });
+});
+
+// ── The approval pair (069) ───────────────────────────────────────────────────
+
+describe("approve/skip eligibility — mutually exclusive with sign/decline", () => {
+  it("gives an APPROVER approve/skip and NEITHER sign nor decline", () => {
+    const access = assessSigningEligibility({
+      requestState: "sent", recipientState: "active", recipientType: "approver",
+    });
+    expect(access.mayApprove).toBe(true);
+    expect(access.maySkip).toBe(true);
+    expect(access.maySubmit).toBe(false);
+    expect(access.mayDecline).toBe(false);
+  });
+
+  it("gives a SIGNER sign/decline and NEITHER approve nor skip", () => {
+    const access = assessSigningEligibility({
+      requestState: "sent", recipientState: "active", recipientType: "signer",
+    });
+    expect(access.maySubmit).toBe(true);
+    expect(access.mayDecline).toBe(true);
+    expect(access.mayApprove).toBe(false);
+    expect(access.maySkip).toBe(false);
+  });
+
+  it("gives a viewer none of the four — asked for nothing, refuses nothing", () => {
+    const access = assessSigningEligibility({
+      requestState: "sent", recipientState: "active", recipientType: "viewer",
+    });
+    expect(access.maySubmit).toBe(false);
+    expect(access.mayDecline).toBe(false);
+    expect(access.mayApprove).toBe(false);
+    expect(access.maySkip).toBe(false);
+  });
+
+  it("tells a recipient who already approved or skipped so, not a generic denial", () => {
+    expect(assessSigningEligibility({
+      requestState: "sent", recipientState: "approved", recipientType: "approver",
+    }).blocker).toBe("already-approved");
+    expect(assessSigningEligibility({
+      requestState: "sent", recipientState: "skipped", recipientType: "approver",
+    }).blocker).toBe("already-skipped");
+  });
+});
+
+describe("approved and skipped both satisfy a required participant", () => {
+  it("reaches completion-ready when every required approver approved", () => {
+    const plan = planWorkflowAdvance([
+      person({ type: "approver", routingOrder: 1, state: "approved" }),
+    ]);
+    expect(plan).toEqual({ kind: "completion-ready" });
+  });
+
+  it("reaches completion-ready when every required approver SKIPPED", () => {
+    // The load-bearing case: a skip is NOT a refusal. Unlike a decline, it
+    // does not end the request — it satisfies the requirement and the
+    // workflow proceeds exactly as if this approver had approved.
+    const plan = planWorkflowAdvance([
+      person({ type: "approver", routingOrder: 1, state: "skipped" }),
+    ]);
+    expect(plan).toEqual({ kind: "completion-ready" });
+  });
+
+  it("advances PAST a skipped approver's cohort to activate the next one", () => {
+    const plan = planWorkflowAdvance([
+      person({ recipientId: "a", type: "approver", routingOrder: 1, state: "skipped" }),
+      person({ recipientId: "b", routingOrder: 2, state: "waiting" }),
+    ]);
+    expect(plan).toEqual({
+      kind: "activate", cohort: 2, active: ["b"], provision: ["b"],
+    });
+  });
+
+  it("still waits when an approver's cohort has neither approved nor skipped", () => {
+    const plan = planWorkflowAdvance([
+      person({ type: "approver", routingOrder: 1, state: "active" }),
+    ]);
+    expect(plan).toEqual({ kind: "waiting", outstandingRequired: 1 });
+  });
+
+  it("mixes a signer and an approver in one cohort without either blocking the other", () => {
+    const plan = planWorkflowAdvance([
+      person({ recipientId: "signer", type: "signer", routingOrder: 1, state: "signed" }),
+      person({ recipientId: "approver", type: "approver", routingOrder: 1, state: "skipped" }),
+    ]);
+    expect(plan).toEqual({ kind: "completion-ready" });
   });
 });
 

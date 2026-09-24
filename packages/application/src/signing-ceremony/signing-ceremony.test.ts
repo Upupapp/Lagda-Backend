@@ -199,6 +199,7 @@ function seed(
       signingRequestId: String(signingRequestId),
       signedAt: null, submissionId: null,
       declinedAt: null, declineReason: null,
+      approvedAt: null, skippedAt: null,
     });
   }
   h.store.signingAccessGrants.push({
@@ -355,6 +356,7 @@ async function sessionForNonSignable(h: Harness, mutation: string): Promise<stri
       signingRequestId: String(REQUEST),
       signedAt: null, submissionId: null,
       declinedAt: null, declineReason: null,
+      approvedAt: null, skippedAt: null,
     });
   }
 
@@ -371,6 +373,7 @@ async function sessionForNonSignable(h: Harness, mutation: string): Promise<stri
         signingRequestId: String(REQUEST),
         signedAt: null, submissionId: null,
         declinedAt: null, declineReason: null,
+        approvedAt: null, skippedAt: null,
       });
     }
   } else {

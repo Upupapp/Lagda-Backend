@@ -68,7 +68,7 @@ function harness(): Harness {
 interface Spec {
   readonly id: string;
   readonly order: number;
-  readonly state: "waiting" | "active" | "signed" | "declined";
+  readonly state: "waiting" | "active" | "signed" | "approved" | "skipped" | "declined";
   readonly type?: RecipientType;
   readonly required?: boolean;
 }
@@ -109,14 +109,19 @@ function seed(h: Harness, people: readonly Spec[], state = "sent"): void {
       state: spec.state,
       activatedAt: spec.state === "waiting" ? null : AT,
       signedAt: spec.state === "signed" ? AT : null,
-      submissionId: spec.state === "signed" ? ("sub_x" as RecipientSubmissionId) : null,
+      approvedAt: spec.state === "approved" ? AT : null,
+      submissionId: spec.state === "signed" || spec.state === "approved"
+        ? ("sub_x" as RecipientSubmissionId) : null,
       declinedAt: spec.state === "declined" ? AT : null,
       declineReason: spec.state === "declined" ? "not-agree" : null,
+      skippedAt: spec.state === "skipped" ? AT : null,
     });
   }
 }
 
-function intent(h: Harness, recipientId: string, trigger: "submission" | "decline"): void {
+function intent(
+  h: Harness, recipientId: string, trigger: "submission" | "decline" | "skip",
+): void {
   h.store.workflowIntents.push({
     intentId: `swi_${recipientId}` as SigningWorkflowIntentId,
     workspaceId: WS, signingRequestId: REQUEST,
@@ -277,6 +282,42 @@ describe("decline", () => {
   });
 });
 
+// ── Approve and skip (069) ─────────────────────────────────────────────────────
+
+describe("approve and skip", () => {
+  it("an approver's approval reaches completion-ready like a signature does", async () => {
+    seed(h, [{ id: "a", order: 1, state: "approved", type: "approver" }]);
+    intent(h, "a", "submission");
+
+    const result = await advance(h);
+    expect(result.outcome).toBe("completion-ready");
+    expect(h.store.signingRequests[0]?.state).toBe("completion-ready");
+  });
+
+  it("a skip does NOT end the request — it activates the next cohort", async () => {
+    // The load-bearing behavioural difference from decline: a skip is not a
+    // refusal, and the request must keep moving.
+    seed(h, [
+      { id: "a", order: 1, state: "skipped", type: "approver" },
+      { id: "b", order: 2, state: "waiting" },
+    ]);
+    intent(h, "a", "skip");
+
+    const result = await advance(h);
+    expect(result.outcome).toBe("cohort-activated");
+    expect(h.store.signingRequests[0]?.state).not.toBe("declined");
+    expect(h.store.activations.find(r => r.recipientId === "b")?.state).toBe("active");
+  });
+
+  it("a skip reaches completion-ready when nobody is left outstanding", async () => {
+    seed(h, [{ id: "a", order: 1, state: "skipped", type: "approver" }]);
+    intent(h, "a", "skip");
+
+    const result = await advance(h);
+    expect(result.outcome).toBe("completion-ready");
+  });
+});
+
 // ── Terminal states ──────────────────────────────────────────────────────────
 
 describe("a request that is no longer advanceable", () => {
@@ -326,6 +367,7 @@ describe("integrity failures", () => {
       submissionId: "sub_1" as RecipientSubmissionId,
       acceptedAt: AT,
       intentId: "swi_1" as SigningWorkflowIntentId,
+      recipientType: "signer",
       newEvidenceEventId: (() => {
         let n = 0;
         return () => `ev_${String(++n)}` as never;

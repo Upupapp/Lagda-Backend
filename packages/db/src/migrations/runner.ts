@@ -76,6 +76,7 @@ import * as m065 from "./065_template_artifact_fk_removal.js";
 import * as m066 from "./066_workflow_template_content.js";
 import * as m067 from "./067_document_upload_requests.js";
 import * as m068 from "./068_document_upload_requested_notification.js";
+import * as m069 from "./069_approval_workflow.js";
 
 /**
  * Migrations listed explicitly rather than read from disk.
@@ -156,6 +157,7 @@ const MIGRATIONS: Record<string, Migration> = {
   "066_workflow_template_content": m066,
   "067_document_upload_requests": m067,
   "068_document_upload_requested_notification": m068,
+  "069_approval_workflow": m069,
 };
 
 class ExplicitMigrationProvider implements MigrationProvider {

@@ -72,6 +72,7 @@ function seed(h: Harness, state = "completion-ready"): void {
     recipientId: "r1" as SigningRequestRecipientId,
     state: "signed", activatedAt: AT, signedAt: AT,
     submissionId: "sub_1" as never, declinedAt: null, declineReason: null,
+    approvedAt: null, skippedAt: null,
   });
 }
 

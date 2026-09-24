@@ -25,10 +25,10 @@ import type { WorkspaceId } from "@lagda/contracts";
 import type { PreparedSignature } from "../common/ports/prepared-signatures.js";
 import {
   assessCeremonyAccess, resolveSubmission, canonicalSubmissionFingerprint,
-  CEREMONY_CONSENT_TYPE,
+  CEREMONY_CONSENT_TYPE, isApproverType,
   type SubmittedValue, type SubmissionProblem, type ResolvedFieldValue,
 } from "@lagda/core";
-import type { IdempotencyKey } from "@lagda/contracts";
+import type { IdempotencyKey, RecipientType } from "@lagda/contracts";
 import type {
   IdempotencyKeyDigester, IdempotencyRecordIdGenerator, IdempotencyScope,
 } from "../common/ports/idempotency.js";
@@ -655,6 +655,8 @@ async function acceptSubmission(args: {
     submissionId,
     acceptedAt: now,
     intentId: deps.workflowIds.nextSigningWorkflowIntentId(),
+    // 069. Decides signed-vs-approved inside the workflow application.
+    recipientType: recipient.type,
     // BACKEND-43. The two evidence events for this signature are appended by
     // the workflow application, inside this same transaction.
     newEvidenceEventId: () => deps.ids.nextEvidenceEventId(),
@@ -667,7 +669,7 @@ async function acceptSubmission(args: {
   // Migration 056: the account's "must sign" entry closes, for the same
   // reason -- a signature that landed while the entry still said "waiting"
   // would be the two tables disagreeing about one act.
-  await recordForAccountHolder(uow, { request, now });
+  await recordForAccountHolder(uow, { request, now, recipientType: recipient.type });
 
   const result = {
     submissionId: String(submissionId),
@@ -696,13 +698,22 @@ async function acceptSubmission(args: {
  */
 async function recordForAccountHolder(
   uow: RecipientCeremonyUnitOfWork,
-  input: { readonly request: SigningRequestRecord; readonly now: number },
+  input: {
+    readonly request: SigningRequestRecord;
+    readonly now: number;
+    /** 069. Closes the inbox entry with the outcome that actually happened —
+     *  `approved` for an approver, `signed` for everyone else. */
+    readonly recipientType: RecipientType;
+  },
 ): Promise<void> {
   const signingRequestId = String(uow.signingRequestId);
   const recipientId = String(uow.recipientId);
 
   const entry = await uow.userSigningRecords.findInboxEntryForRecipient(signingRequestId, recipientId);
-  await uow.userSigningRecords.closeInboxForRecipient(signingRequestId, recipientId, "signed", input.now);
+  await uow.userSigningRecords.closeInboxForRecipient(
+    signingRequestId, recipientId,
+    isApproverType(input.recipientType) ? "approved" : "signed",
+    input.now);
 
   const link = await uow.accountLinks.findLinkForRecipient(signingRequestId, recipientId);
   if (link === null) return;

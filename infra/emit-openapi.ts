@@ -80,6 +80,7 @@ const app = await createApp({
     signingCeremony: () => stub("signingCeremony"),
     signingSubmission: () => stub("signingSubmission"),
     signingDecline: () => stub("signingDecline"),
+    signingSkip: () => stub("signingSkip"),
     workspaces: {
       create: () => stub("workspaces.create"),
       list: () => stub("workspaces.list"),

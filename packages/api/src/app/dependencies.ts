@@ -24,7 +24,7 @@ import type {
   SendSigningRequestDependencies, SigningAccessDependencies,
   CompletedArtifactDependencies,
   SigningCeremonyDependencies, SigningSubmissionDependencies,
-  SigningDeclineDependencies, SigningWorkflowDependencies,
+  SigningDeclineDependencies, SigningSkipDependencies, SigningWorkflowDependencies,
   WorkflowTemplateDependencies, WorkflowTemplateGenerateDocumentDependencies,
   AuditTrailDependencies, OrganizationDependencies,
 } from "@lagda/application";
@@ -125,6 +125,14 @@ export interface AppDependencies {
    * signature-image machinery.
    */
   readonly signingDecline?: () => SigningDeclineDependencies;
+
+  /**
+   * 069, routed alongside decline. An APPROVER's pass — same realm, same
+   * CSRF validator, its own dependencies because it also needs an evidence
+   * id generator decline has never needed (see `SigningSkipDependencies`'s
+   * own header for why).
+   */
+  readonly signingSkip?: () => SigningSkipDependencies;
 
   /**
    * Document upload (BACKEND-17).
