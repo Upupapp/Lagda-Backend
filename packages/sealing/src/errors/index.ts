@@ -46,6 +46,19 @@ export class InvalidSealInputError extends SealingError {
 }
 
 /**
+ * A flowing document laid out beyond `FLOW_LAYOUT_MAX_PAGES`.
+ *
+ * Never retryable — the same content produces the same page count every
+ * time. Distinct from `InvalidSealInputError`: the document is well-formed
+ * and every block is individually fine, there is simply too much of it. The
+ * admin's fix is to shorten it, not to fix a malformed field.
+ */
+export class LayoutOverflowError extends SealingError {
+  readonly code = "layout_overflow" as const;
+  readonly retryable = false;
+}
+
+/**
  * A value contains a character the embedded typeface cannot draw.
  *
  * Never retryable: the same value will be missing the same glyph forever.

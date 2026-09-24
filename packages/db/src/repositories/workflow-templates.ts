@@ -15,7 +15,7 @@ import type {
   ScopedWorkflowTemplateRepository, NewWorkflowTemplate,
   WorkflowTemplateUpdate, RawWorkflowTemplateRow, ArtifactId,
 } from "@lagda/application";
-import type { TemplateContentBlock } from "@lagda/contracts";
+import type { FlowDocument } from "@lagda/contracts";
 import type { Database } from "../schema/index.js";
 import { WorkspaceScopeMismatchError, translatePersistenceError } from "../errors.js";
 
@@ -32,7 +32,7 @@ interface Row {
   updated_at: Date;
   document_id: string | null;
   source_artifact_id: string | null;
-  content_blocks: unknown;
+  content: unknown;
   content_page_count: number;
 }
 
@@ -64,7 +64,7 @@ const toRaw = (row: Row): RawWorkflowTemplateRow => ({
   updatedAt: row.updated_at.getTime(),
   documentId: row.document_id as DocumentId | null,
   sourceArtifactId: row.source_artifact_id as ArtifactId | null,
-  contentBlocks: jsonValue(row.content_blocks),
+  content: jsonValue(row.content),
   contentPageCount: row.content_page_count,
 });
 
@@ -91,11 +91,12 @@ export function createScopedWorkflowTemplateRepository(
           role_slots: JSON.stringify(template.roleSlots),
           completion_notification_settings: JSON.stringify(template.completionSettings),
           variables: JSON.stringify(template.variables),
-          // 066. No content on creation — `saveContent` is the only writer,
-          // the same "insert never receives it" stance the file's own header
+          // No content on creation — `saveContent` is the only writer, the
+          // same "insert never receives it" stance the file's own header
           // states for the document pair. Explicit here rather than left to
           // the column's DB default, because Kysely's generated insert type
           // does not know a default exists.
+          content: JSON.stringify({ kind: "flowDocument", content: [] }),
           content_blocks: "[]",
           content_page_count: 0,
           created_by: template.createdBy,
@@ -201,12 +202,12 @@ export function createScopedWorkflowTemplateRepository(
     },
 
     async saveContent(workflowTemplateId, content: {
-      blocks: readonly TemplateContentBlock[]; pageCount: number; updatedAt: number;
+      document: FlowDocument; pageCount: number; updatedAt: number;
     }) {
       try {
         const result = await trx.updateTable("workspace_workflow_templates")
           .set({
-            content_blocks: JSON.stringify(content.blocks),
+            content: JSON.stringify(content.document),
             content_page_count: content.pageCount,
             updated_at: new Date(content.updatedAt),
           })

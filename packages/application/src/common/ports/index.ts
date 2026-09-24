@@ -771,7 +771,7 @@ export * from "./signing-requests.js";
 export * from "./user-signing-records.js";
 export * from "./workflow-templates.js";
 export * from "./workflow-template-fields.js";
-export * from "./template-content.js";
+export * from "./flow-document.js";
 export * from "./upload-requests.js";
 
 export * from "./signing-access.js";

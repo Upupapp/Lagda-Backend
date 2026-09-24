@@ -287,53 +287,287 @@ export const WorkflowTemplateVariableSchema = Type.Object(
 );
 export type WorkflowTemplateVariable = Static<typeof WorkflowTemplateVariableSchema>;
 
-// ── Authored content (065/066) ────────────────────────────────────────────────
+// ── Authored content (065/066, replaced) ───────────────────────────────────
 //
-// A template's SOURCE DOCUMENT no longer has to be an upload. `contentBlocks`
-// is authored text laid out on blank pages — the same normalized 0-1,
-// top-left-origin rectangle every field already uses (`PreparationRectSchema`),
-// so the SAME canvas that places fields places text.
+// A template's SOURCE DOCUMENT no longer has to be an upload. The FIRST shape
+// this took (066) was a fixed-rectangle canvas — the same normalized 0-1 box
+// every field placement uses, one plain-text string per box. It worked, and
+// it was also not a document editor: nothing knew a paragraph came after
+// another one, lengthening a sentence did not push anything down, and an
+// admin who typed one word too many got a save refused at 4pm with no
+// warning while they were typing. That is a LAYOUT TOOL, not the Word
+// alternative this was asked to be.
 //
-// Generating the PDF from these blocks and attaching it is a SEPARATE step
-// (`POST .../generate-document`) — this schema only describes what gets
-// authored, not the bytes that result. A template with content blocks and one
-// with an uploaded document look identical once attached: `documentId` and
-// `sourceArtifactId` are set either way, and nothing downstream (field
-// placement, apply, completion) can tell the two apart or needs to.
+// This is the replacement: a FLOWING document — an ordered tree of blocks,
+// each carrying runs of styled inline content, the same model every real
+// word processor uses. Content no longer OWNS a page or a rectangle; where
+// it lands is computed by the layout engine at generate time
+// (`packages/sealing/src/internal/flow-layout.ts`), the same way a page
+// break in Word is a consequence of what came before it, not a decision the
+// author makes about coordinates.
 //
-// `{{variable_key}}` inside `text` is substituted the same way a bound field's
-// value is, at the SAME apply-time step — see `resolveTemplateForApply`.
+// ── Fields are still placed the OLD way — reused, not replaced ─────────────
+//
+// `workflow_template_fields` (060/064) does not change: a signature, a date,
+// a role's field is still one row with a page number and a rectangle. What
+// changes is WHO computes that rectangle. `fieldAnchor`, below, is an INLINE
+// node inside the flowing text — "the Employer signs here" is typed into the
+// sentence it belongs to, not dragged onto a separate canvas afterward — and
+// `POST .../generate-document`'s response resolves each anchor's position
+// once the layout engine has actually placed it, which the caller then
+// writes through the SAME `PUT .../fields` endpoint 060 already built. A
+// field this template ends up with is indistinguishable from one placed the
+// old way — same table, same shape, same downstream consumers (apply,
+// preparation, signing) — only the AUTHORING experience is new.
+//
+// ── Generating the PDF is still a separate step ─────────────────────────────
+//
+// `POST .../generate-document` remains the seam between "what was typed" and
+// "the bytes that resulted." A template with authored content and one with
+// an uploaded document still look identical once attached — `documentId` and
+// `sourceArtifactId` are set either way, and nothing downstream can tell the
+// two apart or needs to.
 
-export const WORKFLOW_TEMPLATE_CONTENT_TEXT_MAX_LENGTH = 4000;
+/** How deep an ordered list may nest — "1." / "1.1." / "1.1.1." and no
+ *  further. A fourth level is where clause numbering stops reading as a
+ *  contract and starts reading as an outline nobody signs. */
+export const FLOW_DOCUMENT_MAX_LIST_DEPTH = 3;
 
-export const TemplateContentBlockAlignSchema = Type.Union(
-  [Type.Literal("left"), Type.Literal("center"), Type.Literal("right")],
-  { title: "TemplateContentBlockAlign" },
+/** Total blocks (paragraphs, headings, list items at every depth, page
+ *  breaks) a document may hold, and total inline runs within one block.
+ *  Bounds that make a pathological document a 422 at save time rather than
+ *  a multi-minute render or an unbounded PDF at generate time. */
+export const FLOW_DOCUMENT_MAX_BLOCKS = 2000;
+export const FLOW_DOCUMENT_MAX_RUNS_PER_BLOCK = 400;
+export const FLOW_DOCUMENT_RUN_TEXT_MAX_LENGTH = 4000;
+
+export const DocumentFontFamilySchema = Type.Union(
+  [
+    Type.Literal("times"), Type.Literal("georgia"), Type.Literal("helvetica"),
+    Type.Literal("calibri"), Type.Literal("courier"),
+  ],
+  { title: "DocumentFontFamily" },
 );
-export type TemplateContentBlockAlign = Static<typeof TemplateContentBlockAlignSchema>;
+export type DocumentFontFamily = Static<typeof DocumentFontFamilySchema>;
 
-export const TemplateContentBlockSchema = Type.Object(
+export const DocumentBlockAlignSchema = Type.Union(
+  [Type.Literal("left"), Type.Literal("center"), Type.Literal("right"), Type.Literal("justify")],
+  { title: "DocumentBlockAlign" },
+);
+export type DocumentBlockAlign = Static<typeof DocumentBlockAlignSchema>;
+
+/**
+ * A style applied to a RUN of text, not a block. Two runs in the same
+ * paragraph can carry different marks — "the **Employer** shall pay" bolds
+ * one word without bolding the sentence — which a per-block `bold: boolean`
+ * (066's shape) could never express.
+ */
+export const DocumentTextMarkSchema = Type.Union(
+  [
+    Type.Object({ kind: Type.Literal("bold") }, { additionalProperties: false }),
+    Type.Object({ kind: Type.Literal("italic") }, { additionalProperties: false }),
+    Type.Object({ kind: Type.Literal("underline") }, { additionalProperties: false }),
+    Type.Object({
+      kind: Type.Literal("fontFamily"), family: DocumentFontFamilySchema,
+    }, { additionalProperties: false }),
+    Type.Object({
+      kind: Type.Literal("fontSize"),
+      /** Points. */
+      size: Type.Integer({ minimum: 6, maximum: 72 }),
+    }, { additionalProperties: false }),
+  ],
+  { title: "DocumentTextMark" },
+);
+export type DocumentTextMark = Static<typeof DocumentTextMarkSchema>;
+
+export const DocumentTextRunSchema = Type.Object(
   {
-    /** 1-based, against `contentPageCount` — not against a document that does
-     *  not exist yet. */
-    pageNumber: Type.Integer({ minimum: 1 }),
-    rect: PreparationRectSchema,
-    text: Type.String({
-      minLength: 1, maxLength: WORKFLOW_TEMPLATE_CONTENT_TEXT_MAX_LENGTH,
-    }),
-    /** Points. Absent means the renderer's own default body size. */
-    fontSize: Type.Optional(Type.Integer({ minimum: 6, maximum: 72 })),
-    bold: Type.Optional(Type.Boolean()),
-    align: Type.Optional(TemplateContentBlockAlignSchema),
+    kind: Type.Literal("text"),
+    text: Type.String({ minLength: 1, maxLength: FLOW_DOCUMENT_RUN_TEXT_MAX_LENGTH }),
+    marks: Type.Optional(Type.Array(DocumentTextMarkSchema, { maxItems: 8 })),
   },
-  { title: "TemplateContentBlock", additionalProperties: false },
+  { title: "DocumentTextRun", additionalProperties: false },
 );
-export type TemplateContentBlock = Static<typeof TemplateContentBlockSchema>;
+export type DocumentTextRun = Static<typeof DocumentTextRunSchema>;
 
-/** How many blank pages the generator lays out. A block naming a page beyond
- *  this is refused at save time — the same "does not exist yet" reasoning
- *  `isValidPageNumber` already applies to an uploaded document. */
-export const WORKFLOW_TEMPLATE_CONTENT_MAX_PAGES = 30;
+/**
+ * A dropped-in reference to `variables[].key` — "insert variable" from the
+ * ribbon. Renders as its own label ("[Employee Name]") until a value is
+ * bound; does NOT substitute text in place (that would mean re-rendering the
+ * PDF per use, a different feature). `label` is a presentational SNAPSHOT
+ * taken at insert time, so a variable renamed later does not retroactively
+ * relabel every document that already reference it.
+ */
+export const DocumentVariableRunSchema = Type.Object(
+  {
+    kind: Type.Literal("variable"),
+    key: Type.String({ minLength: 1, maxLength: WORKFLOW_TEMPLATE_VARIABLE_KEY_MAX_LENGTH }),
+    label: Type.String({ minLength: 1, maxLength: PREPARATION_FIELD_LABEL_MAX_LENGTH }),
+  },
+  { title: "DocumentVariableRun", additionalProperties: false },
+);
+export type DocumentVariableRun = Static<typeof DocumentVariableRunSchema>;
+
+/**
+ * A dropped-in signature/initials/date placement — "insert signature" from
+ * the ribbon, typed inline ("Signed: [Employer Signature]") rather than
+ * dragged onto a separate canvas. EXACTLY ONE of `slotId` / `variableKey`,
+ * mirroring `WorkflowTemplateFieldInputSchema`'s own rule, because this
+ * anchor's whole purpose is to become a row in that same table once the
+ * layout engine resolves where it landed.
+ */
+export const DocumentFieldAnchorRunSchema = Type.Object(
+  {
+    kind: Type.Literal("fieldAnchor"),
+    fieldType: PreparationFieldTypeSchema,
+    slotId: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
+    variableKey: Type.Optional(
+      Type.String({ minLength: 1, maxLength: WORKFLOW_TEMPLATE_VARIABLE_KEY_MAX_LENGTH }),
+    ),
+    required: Type.Boolean(),
+    label: Type.String({ minLength: 1, maxLength: PREPARATION_FIELD_LABEL_MAX_LENGTH }),
+  },
+  { title: "DocumentFieldAnchorRun", additionalProperties: false },
+);
+export type DocumentFieldAnchorRun = Static<typeof DocumentFieldAnchorRunSchema>;
+
+/** One paragraph's content: plain runs, variable references, field anchors,
+ *  in reading order. */
+export const DocumentInlineContentSchema = Type.Array(
+  Type.Union([DocumentTextRunSchema, DocumentVariableRunSchema, DocumentFieldAnchorRunSchema]),
+  { maxItems: FLOW_DOCUMENT_MAX_RUNS_PER_BLOCK },
+);
+export type DocumentInlineContent = Static<typeof DocumentInlineContentSchema>;
+
+export const DocumentHeadingLevelSchema = Type.Union(
+  [Type.Literal(1), Type.Literal(2), Type.Literal(3)], { title: "DocumentHeadingLevel" });
+export type DocumentHeadingLevel = Static<typeof DocumentHeadingLevelSchema>;
+
+export const DocumentParagraphSchema = Type.Object(
+  {
+    kind: Type.Literal("paragraph"),
+    align: Type.Optional(DocumentBlockAlignSchema),
+    content: DocumentInlineContentSchema,
+  },
+  { title: "DocumentParagraph", additionalProperties: false },
+);
+export type DocumentParagraph = Static<typeof DocumentParagraphSchema>;
+
+export const DocumentHeadingSchema = Type.Object(
+  {
+    kind: Type.Literal("heading"),
+    level: DocumentHeadingLevelSchema,
+    align: Type.Optional(DocumentBlockAlignSchema),
+    content: DocumentInlineContentSchema,
+  },
+  { title: "DocumentHeading", additionalProperties: false },
+);
+export type DocumentHeading = Static<typeof DocumentHeadingSchema>;
+
+/** Forces the next block onto a new page — a signature page, an annex,
+ *  starting clean. An atom: no content of its own. */
+export const DocumentPageBreakSchema = Type.Object(
+  { kind: Type.Literal("pageBreak") },
+  { title: "DocumentPageBreak", additionalProperties: false },
+);
+export type DocumentPageBreak = Static<typeof DocumentPageBreakSchema>;
+
+/**
+ * Numbered clauses — "1.", "1.1.", "1.1.1." — via NESTING rather than a
+ * stored number: an ordered list's own list items may each contain a further
+ * ordered list (bounded by `FLOW_DOCUMENT_MAX_LIST_DEPTH`), and the layout
+ * engine computes each item's label from its position in that tree at
+ * render time. The same reason numbers are never stored in Word's own list
+ * model: inserting a clause 2 must renumber everything after it, and a
+ * computed label cannot go stale the way a stored one could.
+ *
+ * ── UNROLLED, not `Type.Recursive` ───────────────────────────────────────
+ *
+ * A genuinely recursive TypeBox schema compiles fine for AJV validation but
+ * overflows the stack when Fastify's response serializer (fast-json-
+ * stringify) tries to compile it — a known limitation of generating a
+ * serializer for a self-referencing schema, hit and confirmed while wiring
+ * this route. `FLOW_DOCUMENT_MAX_LIST_DEPTH` already bounds nesting to
+ * three levels, so the fix is to WRITE three levels explicitly rather than
+ * express them recursively — provably terminating, and safe for both AJV
+ * and fast-json-stringify by construction. The three levels are identical
+ * in shape; only the deepest omits a further nested list, matching the max
+ * depth.
+ */
+const DocumentListItemLevel3Schema = Type.Object(
+  {
+    kind: Type.Literal("listItem"),
+    /** At max depth, a list item holds paragraphs only — no further nesting. */
+    content: Type.Array(DocumentParagraphSchema, { minItems: 1, maxItems: 50 }),
+  },
+  { title: "DocumentListItemLevel3", additionalProperties: false },
+);
+const DocumentOrderedListLevel3Schema = Type.Object(
+  {
+    kind: Type.Literal("orderedList"),
+    content: Type.Array(DocumentListItemLevel3Schema, { minItems: 1, maxItems: 200 }),
+  },
+  { title: "DocumentOrderedListLevel3", additionalProperties: false },
+);
+
+const DocumentListItemLevel2Schema = Type.Object(
+  {
+    kind: Type.Literal("listItem"),
+    content: Type.Array(
+      Type.Union([DocumentParagraphSchema, DocumentOrderedListLevel3Schema]),
+      { minItems: 1, maxItems: 50 },
+    ),
+  },
+  { title: "DocumentListItemLevel2", additionalProperties: false },
+);
+const DocumentOrderedListLevel2Schema = Type.Object(
+  {
+    kind: Type.Literal("orderedList"),
+    content: Type.Array(DocumentListItemLevel2Schema, { minItems: 1, maxItems: 200 }),
+  },
+  { title: "DocumentOrderedListLevel2", additionalProperties: false },
+);
+
+const DocumentListItemLevel1Schema = Type.Object(
+  {
+    kind: Type.Literal("listItem"),
+    content: Type.Array(
+      Type.Union([DocumentParagraphSchema, DocumentOrderedListLevel2Schema]),
+      { minItems: 1, maxItems: 50 },
+    ),
+  },
+  { title: "DocumentListItemLevel1", additionalProperties: false },
+);
+
+/** The top-level ordered list every `DocumentBlock` union references — three
+ *  levels deep, matching `FLOW_DOCUMENT_MAX_LIST_DEPTH`. */
+export const DocumentOrderedListSchema = Type.Object(
+  {
+    kind: Type.Literal("orderedList"),
+    content: Type.Array(DocumentListItemLevel1Schema, { minItems: 1, maxItems: 200 }),
+  },
+  { title: "DocumentOrderedList", additionalProperties: false },
+);
+export type DocumentOrderedList = Static<typeof DocumentOrderedListSchema>;
+
+export const DocumentBlockSchema = Type.Union(
+  [DocumentParagraphSchema, DocumentHeadingSchema, DocumentOrderedListSchema, DocumentPageBreakSchema],
+  { title: "DocumentBlock" },
+);
+export type DocumentBlock = Static<typeof DocumentBlockSchema>;
+
+/** The whole authored document — top-level blocks in reading order. */
+export const FlowDocumentSchema = Type.Object(
+  {
+    kind: Type.Literal("flowDocument"),
+    content: Type.Array(DocumentBlockSchema, { maxItems: FLOW_DOCUMENT_MAX_BLOCKS }),
+  },
+  { title: "FlowDocument", additionalProperties: false },
+);
+export type FlowDocument = Static<typeof FlowDocumentSchema>;
+
+/** An empty document — the state a brand-new template's content starts in. */
+export const EMPTY_FLOW_DOCUMENT: FlowDocument = { kind: "flowDocument", content: [] };
 
 // ── The template ─────────────────────────────────────────────────────────────
 
@@ -355,12 +589,12 @@ export const WorkflowTemplateSchema = Type.Object(
      */
     documentId: Type.Union([Type.Null(), Type.String({ minLength: 1, maxLength: 64 })]),
     sourceArtifactId: Type.Union([Type.Null(), Type.String({ minLength: 1, maxLength: 64 })]),
-    /** 066. Authored text, if the attached document (if any) was GENERATED
-     *  from this rather than uploaded. Empty for an uploaded document, or for
-     *  a template with no document at all. */
-    contentBlocks: Type.Array(TemplateContentBlockSchema, { maxItems: 500 }),
-    /** 066. How many blank pages the LAST generate produced. 0 before the
-     *  first generate. */
+    /** 071. The authored flowing document — empty content for an uploaded
+     *  document, or for a template with no document at all. */
+    content: FlowDocumentSchema,
+    /** How many pages the LAST generate produced, computed by the layout
+     *  engine — not admin-declared the way 066's `pageCount` was. 0 before
+     *  the first generate. */
     contentPageCount: Type.Integer({ minimum: 0 }),
     createdAt: Type.String({ format: "date-time" }),
     updatedAt: Type.String({ format: "date-time" }),
@@ -383,19 +617,61 @@ export type WorkflowTemplateView = Static<typeof WorkflowTemplateSchema>;
  *
  * Authors the template's OWN document rather than naming an uploaded one —
  * the alternative to `WorkflowTemplateDocumentInputSchema`. Every call
- * REPLACES the whole layout and regenerates the PDF, the same "whole-layout
- * replace" contract `WorkflowTemplateFieldsWriteSchema` already uses, and for
- * the same reason: authoring is a canvas, not an accumulation of patches.
+ * REPLACES the whole document and regenerates the PDF, the same
+ * "whole-layout replace" contract `WorkflowTemplateFieldsWriteSchema` already
+ * uses, and for the same reason: authoring is a document, not an
+ * accumulation of patches.
+ *
+ * No `pageCount` — 066's shape asked the admin to declare one, because a
+ * fixed-box canvas needed to know how many boxes-worth of blank page existed
+ * before any were drawn. A flowing document has no such thing to declare:
+ * how many pages result is what the layout engine computes from how much
+ * content there is, and is reported back, not asked for.
  */
 export const WorkflowTemplateGenerateDocumentInputSchema = Type.Object(
-  {
-    pageCount: Type.Integer({ minimum: 1, maximum: WORKFLOW_TEMPLATE_CONTENT_MAX_PAGES }),
-    blocks: Type.Array(TemplateContentBlockSchema, { maxItems: 500 }),
-  },
+  { content: FlowDocumentSchema },
   { title: "WorkflowTemplateGenerateDocumentInput", additionalProperties: false },
 );
 export type WorkflowTemplateGenerateDocumentInput =
   Static<typeof WorkflowTemplateGenerateDocumentInputSchema>;
+
+/**
+ * One `fieldAnchor` run, resolved to where the layout engine actually placed
+ * it — returned alongside the generated document so the caller can write it
+ * straight through to `PUT .../fields` (`WorkflowTemplateFieldInputSchema`),
+ * which is the SAME shape as this one plus `fieldId`/`pageNumber`/`rect`.
+ *
+ * Ephemeral: not persisted under this name anywhere. The field row it
+ * becomes, once written, is indistinguishable from one placed the old way.
+ */
+export const ResolvedFieldAnchorSchema = Type.Object(
+  {
+    fieldType: PreparationFieldTypeSchema,
+    slotId: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
+    variableKey: Type.Optional(
+      Type.String({ minLength: 1, maxLength: WORKFLOW_TEMPLATE_VARIABLE_KEY_MAX_LENGTH }),
+    ),
+    required: Type.Boolean(),
+    label: Type.String({ minLength: 1, maxLength: PREPARATION_FIELD_LABEL_MAX_LENGTH }),
+    pageNumber: Type.Integer({ minimum: 1 }),
+    rect: PreparationRectSchema,
+  },
+  { title: "ResolvedFieldAnchor", additionalProperties: false },
+);
+export type ResolvedFieldAnchor = Static<typeof ResolvedFieldAnchorSchema>;
+
+export const WorkflowTemplateGenerateDocumentResultSchema = Type.Object(
+  {
+    template: WorkflowTemplateSchema,
+    /** In DOCUMENT ORDER — the same order the caller's anchors were typed
+     *  in, so a caller zipping this against its own local anchor list never
+     *  has to match by content. */
+    resolvedAnchors: Type.Array(ResolvedFieldAnchorSchema, { maxItems: PREPARATION_MAX_FIELDS }),
+  },
+  { title: "WorkflowTemplateGenerateDocumentResult", additionalProperties: false },
+);
+export type WorkflowTemplateGenerateDocumentResult =
+  Static<typeof WorkflowTemplateGenerateDocumentResultSchema>;
 
 /**
  * The body of `PUT .../workflow-templates/:id/document`.

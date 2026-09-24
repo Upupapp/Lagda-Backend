@@ -316,7 +316,7 @@ describe.skipIf(!hasIntegrationDatabase())("evidence persistence on PostgreSQL",
     it("exposes no update or delete method on the repository", async () => {
       await transactions.runForWorkspace(WS_A, (uow) => {
         const methods = Object.keys(uow.evidence);
-        expect(methods.sort()).toEqual(["append", "listForSigningRequest"]);
+        expect(methods.sort()).toEqual(["append", "listForSigningRequest", "listRecentForWorkspace"]);
         return Promise.resolve();
       });
     });

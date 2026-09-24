@@ -9,7 +9,7 @@
 import type { WorkspaceId, UserId, DocumentId } from "@lagda/contracts";
 import type {
   WorkflowRoutingMode, WorkflowRoleSlot, WorkflowCompletionSettings,
-  WorkflowTemplateVariable, TemplateContentBlock,
+  WorkflowTemplateVariable, FlowDocument,
 } from "@lagda/contracts";
 import type { ArtifactId } from "./evidence.js";
 
@@ -43,10 +43,10 @@ export interface WorkflowTemplateRecord {
    */
   readonly documentId: DocumentId | null;
   readonly sourceArtifactId: ArtifactId | null;
-  /** 066. Authored text, if the attached document was GENERATED rather than
-   *  uploaded. Empty otherwise. */
-  readonly contentBlocks: readonly TemplateContentBlock[];
-  /** 066. Blank pages the last generate produced. 0 before the first one. */
+  /** 070. The authored flowing document, if the attached document was
+   *  GENERATED rather than uploaded. Empty content otherwise. */
+  readonly content: FlowDocument;
+  /** Pages the last generate produced. 0 before the first one. */
   readonly contentPageCount: number;
 }
 
@@ -91,7 +91,7 @@ export interface RawWorkflowTemplateRow {
   readonly updatedAt: number;
   readonly documentId: DocumentId | null;
   readonly sourceArtifactId: ArtifactId | null;
-  readonly contentBlocks: unknown;
+  readonly content: unknown;
   readonly contentPageCount: number;
 }
 
@@ -129,7 +129,7 @@ export interface ScopedWorkflowTemplateRepository {
   /** Clears both columns. `false` when no row matched. */
   detachDocument(workflowTemplateId: string, updatedAt: number): Promise<boolean>;
   /**
-   * 066. Replaces the authored content — the whole layout, like
+   * Replaces the authored content — the whole document, like
    * `attachDocument` replaces the whole document pair. Never touches
    * `documentId`/`sourceArtifactId`; the generate use case calls this AND
    * `attachDocument` in the same transaction, content first, so a save that
@@ -138,7 +138,7 @@ export interface ScopedWorkflowTemplateRepository {
    */
   saveContent(
     workflowTemplateId: string,
-    content: { blocks: readonly TemplateContentBlock[]; pageCount: number; updatedAt: number },
+    content: { document: FlowDocument; pageCount: number; updatedAt: number },
   ): Promise<boolean>;
 }
 

@@ -40,7 +40,7 @@ import {
 import type { ObjectStorage, JobScheduler } from "@lagda/application";
 import { createCompletionQueue, type CompletionQueue } from "./job-scheduler.js";
 import { createClamAvScanner, createMetaDefenderScanner, loadScannerConfig } from "@lagda/scanning";
-import { createPdfInspector, sha256, NodeTemplateDocumentGenerator } from "@lagda/sealing";
+import { createPdfInspector, sha256, NodeFlowDocumentGenerator } from "@lagda/sealing";
 import { createArgon2PasswordHasher } from "../security/password-hasher.js";
 import { buildIdentity } from "./identity-composition.js";
 import {
@@ -179,7 +179,7 @@ export async function createProductionDependencies(
   // instance `buildUploadDependencies` creates for its own, unrelated scope.
   const storageKeys = createStorageKeyStrategy();
   const templateArtifactIds = createArtifactIdGenerator();
-  const templateDocumentGenerator = new NodeTemplateDocumentGenerator();
+  const flowDocumentGenerator = new NodeFlowDocumentGenerator();
 
   const documentIds = createDocumentIdGenerator();
   const folderIds = createFolderIdGenerator();
@@ -234,14 +234,14 @@ export async function createProductionDependencies(
         },
       }),
       workflowTemplates: () => ({ transactions, clock, ids: workflowTemplateIds }),
-      // 066. Separate from `workflowTemplates` because it needs strictly
-      // more — object storage and a renderer, the same reason
-      // `documentContent` is separate from `documents`, two lines below.
+      // Separate from `workflowTemplates` because it needs strictly more —
+      // object storage and a renderer, the same reason `documentContent` is
+      // separate from `documents`, two lines below.
       ...(objectStorage === null ? {} : {
         workflowTemplateGenerateDocument: () => ({
           transactions, clock, ids: workflowTemplateIds,
           storage: objectStorage, keys: storageKeys,
-          templateDocumentGenerator,
+          flowDocumentGenerator,
           documentIds, artifactIds: templateArtifactIds,
         }),
       }),
