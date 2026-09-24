@@ -45,7 +45,7 @@ import { createArgon2PasswordHasher } from "../security/password-hasher.js";
 import { buildIdentity } from "./identity-composition.js";
 import {
   createWorkspaceIdGenerator, createWorkspaceMemberIdGenerator,
-  createContactIdGenerator, createWorkflowTemplateIdGenerator,
+  createContactIdGenerator, createUploadRequestIdGenerator, createWorkflowTemplateIdGenerator,
   createDocumentIdGenerator, createFolderIdGenerator,
   createPreparationIdGenerator, createRecipientIdGenerator,
   createSigningRequestIdGenerator, createEvidenceEventIdGenerator,
@@ -170,6 +170,7 @@ export async function createProductionDependencies(
   const workspaceIds = createWorkspaceIdGenerator();
   const memberIds = createWorkspaceMemberIdGenerator();
   const contactIds = createContactIdGenerator();
+  const uploadRequestIds = createUploadRequestIdGenerator();
   const workflowTemplateIds = createWorkflowTemplateIdGenerator();
   // ONE object store for every surface that touches bytes: upload writes the
   // artifact, and the ceremony serves the same one back to the recipient.
@@ -221,6 +222,17 @@ export async function createProductionDependencies(
       list: () => ({ transactions }),
       workspace: () => ({ transactions }),
       contacts: () => ({ transactions, clock, ids: contactIds }),
+      // 067. Needs strictly more than `contacts` does: creating a request
+      // also creates the notification that tells the assignee about it, so
+      // it carries the template registry and the notification id generators.
+      uploadRequests: () => ({
+        transactions, clock, ids: uploadRequestIds,
+        templates: createTemplateRegistry(ALL_TEMPLATES),
+        notificationIds: {
+          ...createNotificationIntentIdGenerator(),
+          ...createNotificationDeliveryIdGenerator(),
+        },
+      }),
       workflowTemplates: () => ({ transactions, clock, ids: workflowTemplateIds }),
       // 066. Separate from `workflowTemplates` because it needs strictly
       // more — object storage and a renderer, the same reason

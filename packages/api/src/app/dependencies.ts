@@ -17,7 +17,8 @@ import type {
   ListMyWorkspacesDependencies,
   InvitationDependencies, AcceptInvitationDependencies,
   MemberAdministrationDependencies, WorkspaceAccessDependencies,
-  ContactDependencies, DocumentDependencies, DocumentContentDependencies, FolderDependencies,
+  ContactDependencies,
+  UploadRequestDependencies, DocumentDependencies, DocumentContentDependencies, FolderDependencies,
   PreparationDependencies,
   RecipientDependencies, SigningRequestDependencies,
   SendSigningRequestDependencies, SigningAccessDependencies,
@@ -200,6 +201,14 @@ export interface WorkspaceDependencies {
    * `restore` without `archive`, which reads as harmless and is not.
    */
   readonly contacts?: () => ContactDependencies;
+  /**
+   * 067. Documents this workspace has asked a member to supply.
+   *
+   * Absent means no route, like every other key here — a deployment that
+   * cannot send notifications should not offer a surface whose whole purpose
+   * is to notify somebody.
+   */
+  readonly uploadRequests?: () => UploadRequestDependencies;
   /**
    * Reusable workflow templates (migration 058). Absent means the routes do
    * not exist, the same convention every other optional surface here uses.
