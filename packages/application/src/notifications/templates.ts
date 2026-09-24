@@ -330,12 +330,16 @@ export const signingCompletedV1 = defineTemplate({
 /**
  * Where an assignee finds what has been asked of them.
  *
- * `/app/documents` and not a per-request deep link, for the same reason
- * `SENDER_DOCUMENTS_PATH` points at a list: the web platform has no
+ * The LIST, not a per-request deep link: the web platform has no
  * `/app/upload-requests/:id` route, and inventing one would produce a 404 in
- * a message whose whole purpose is to say "this is waiting for you".
+ * a message whose whole purpose is to say "this is waiting for you". The
+ * list is where the reader finds it, so the list is what this points at —
+ * the same rule `SENDER_DOCUMENTS_PATH` follows.
+ *
+ * This pointed at `/app/documents` until the queue itself shipped, because
+ * until then there was nowhere truer to send someone.
  */
-const ASSIGNEE_REQUESTS_PATH = "/app/documents";
+const ASSIGNEE_REQUESTS_PATH = "/app/upload-requests";
 
 export const documentUploadRequestedV1 = defineTemplate({
   key: "document-upload-requested",
