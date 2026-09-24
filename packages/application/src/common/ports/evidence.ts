@@ -123,6 +123,16 @@ export const EVIDENCE_EVENT_TYPES = [
   "field-merge-completed",
   "certificate-generated",
   "final-seal-completed",
+
+  // ── 069 ───────────────────────────────────────────────────────────────────
+  //
+  // An approver's two ceremony outcomes. `approval-completed` mirrors
+  // `signature-completed`'s pairing with `submission-accepted` — the same
+  // submission source, the same reason those two are distinct facts rather
+  // than one. `participant-skipped` mirrors `participant-declined`'s shape
+  // exactly, with the opposite consequence: it does not end the request.
+  "approval-completed",
+  "participant-skipped",
 ] as const;
 export type EvidenceEventType = (typeof EVIDENCE_EVENT_TYPES)[number];
 

@@ -163,6 +163,7 @@ function seed(
       signingRequestId: String(signingRequestId),
       signedAt: null, submissionId: null,
       declinedAt: null, declineReason: null,
+      approvedAt: null, skippedAt: null,
     });
   }
   h.store.signingAccessGrants.push({

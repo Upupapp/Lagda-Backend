@@ -3,7 +3,8 @@
 // ── What this module turns into what ───────────────────────────────────────
 //
 //   accepted RecipientSubmission
-//        -> recipient SIGNED, at the submission's own instant
+//        -> recipient SIGNED (or, for an approver, APPROVED — 069), at the
+//           submission's own instant
 //        -> a durable advance intent
 //   [commit — the recipient's transaction ends here]
 //
@@ -48,18 +49,22 @@ import type {
 import { COMPLETION_PIPELINE_VERSION } from "@lagda/contracts";
 import {
   planWorkflowAdvance, deriveRequestState, assessSigningEligibility,
-  isRequestSignableState,
+  isRequestSignableState, isApproverType,
   type WorkflowAdvance, type WorkflowRecipient, type WorkspaceCapability,
 } from "@lagda/core";
+import type { RecipientType } from "@lagda/contracts";
 import type {
   Clock, TransactionManager, WorkspaceUnitOfWork,
   RecipientCeremonyUnitOfWork, RecipientSubmissionId,
   SigningRequestId, SigningRequestRecipientId, SigningRequestRecord,
   SigningWorkflowIdGenerator,
-  RecipientSessionTokenFactory, EvidenceEventId,
+  RecipientSessionTokenFactory, EvidenceEventId, EvidenceEventIdGenerator,
 } from "../common/ports/index.js";
 // BACKEND-43. Factories, never hand-built event literals.
-import { submissionAccepted, recipientSigned } from "../evidence/events.js";
+import {
+  submissionAccepted, recipientSigned, recipientApproved,
+  participantSkipped,
+} from "../evidence/events.js";
 import type { AuthenticatedActor } from "../common/ports/session.js";
 import type { CompletionIdGenerator, CompletionRunId } from "../common/ports/completion.js";
 import {
@@ -188,6 +193,14 @@ export async function applyRecipientSubmissionToWorkflow(
     readonly acceptedAt: number;
     readonly intentId: ReturnType<SigningWorkflowIdGenerator["nextSigningWorkflowIntentId"]>;
     /**
+     * 069. Which pair of outcomes this submission produces. An APPROVER's
+     * accepted submission becomes `approved`, exactly like `signed` in every
+     * other respect — same table, same `submission_id`, same evidence
+     * shape — because this is the SAME mechanism an approver reuses rather
+     * than a second one built for them (see the module header).
+     */
+    readonly recipientType: RecipientType;
+    /**
      * BACKEND-43. Passed in rather than taken from a generator on the uow,
      * because this function receives a unit of work and not a dependency set —
      * and the caller already holds the generator.
@@ -195,10 +208,16 @@ export async function applyRecipientSubmissionToWorkflow(
     readonly newEvidenceEventId: () => EvidenceEventId;
   },
 ): Promise<void> {
-  const moved = await uow.workflow.markSignedFromSubmission({
-    submissionId: input.submissionId,
-    signedAt: input.acceptedAt,
-  });
+  const isApprover = isApproverType(input.recipientType);
+  const moved = isApprover
+    ? await uow.workflow.markApprovedFromSubmission({
+        submissionId: input.submissionId,
+        approvedAt: input.acceptedAt,
+      })
+    : await uow.workflow.markSignedFromSubmission({
+        submissionId: input.submissionId,
+        signedAt: input.acceptedAt,
+      });
 
   if (!moved) {
     // The UPDATE was conditional on `active`. Reaching here means the row was
@@ -275,7 +294,9 @@ export async function applyRecipientSubmissionToWorkflow(
     submissionAccepted(
       evidenceBase, uow.recipientId, input.submissionId, artifactRef));
   await uow.evidence.append(
-    recipientSigned(evidenceBase, uow.recipientId, input.submissionId));
+    isApprover
+      ? recipientApproved(evidenceBase, uow.recipientId, input.submissionId)
+      : recipientSigned(evidenceBase, uow.recipientId, input.submissionId));
 }
 
 // ── Decline ──────────────────────────────────────────────────────────────────
@@ -397,6 +418,138 @@ export async function declineSigningRequest(
         deps);
     } catch {
       // Swallowed without the error object, as the submission path does.
+    }
+  }
+
+  return result;
+}
+
+// ── Skip (069) ───────────────────────────────────────────────────────────────
+
+export interface SkipApprovalInput {
+  readonly rawSessionToken: string;
+}
+
+export interface SkipApprovalResult {
+  readonly skippedAt: number;
+  /** True when this call performed the skip rather than replaying one. */
+  readonly applied: boolean;
+}
+
+/** The recipient may not skip right now. */
+export class SigningSkipNotPermittedError extends ApplicationError {
+  readonly category = "conflict" as const;
+  readonly code = "signing_skip_not_permitted";
+  constructor(readonly reason: string) {
+    super(`This request can no longer be skipped: ${reason}.`);
+  }
+}
+
+export interface SigningSkipDependencies extends SigningWorkflowDependencies {
+  readonly sessionTokens: RecipientSessionTokenFactory;
+  /** For the `participant-skipped` evidence event. Not on the base
+   *  dependencies: the decline path appends no evidence at all today, so
+   *  this generator has no existing caller to share it with. */
+  readonly evidenceIds: EvidenceEventIdGenerator;
+}
+
+/**
+ * An APPROVER passes. `declineSigningRequest`'s shape — same clock-is-
+ * authoritative reasoning (no submission exists, so the moment the backend
+ * accepted the pass IS the fact), same revalidate-at-commit-time discipline
+ * — with the ONE consequence that is genuinely different: a skip does not
+ * end the request. `markSkipped` transitions this recipient alone;
+ * `planWorkflowAdvance` (069) already counts `skipped` as satisfied, so the
+ * advance below simply moves the workflow forward as if this approver had
+ * nothing further to add.
+ *
+ * `eligibility.maySkip`, never `mayDecline` — the two are mutually exclusive
+ * per recipient type (see `assessSigningEligibility`), so a non-approver who
+ * somehow reaches this route is refused here, not merely steered elsewhere.
+ */
+export async function skipApprovalRequest(
+  input: SkipApprovalInput,
+  deps: SigningSkipDependencies,
+): Promise<SkipApprovalResult> {
+  const sessionDeps = {
+    transactions: deps.transactions,
+    clock: deps.clock,
+    sessionTokens: deps.sessionTokens,
+  } as SigningAccessDependencies;
+
+  const context: RecipientSigningContext =
+    await resolveRecipientSession(input.rawSessionToken, sessionDeps);
+
+  const digest = deps.sessionTokens.digestToken(input.rawSessionToken);
+  if (digest === null) throw new SigningSkipNotPermittedError("session");
+
+  const now = deps.clock.now();
+  const intentId = deps.workflowIds.nextSigningWorkflowIntentId();
+
+  const result = await deps.transactions.runForRecipientSession(digest, sessionUow =>
+    sessionUow.enterWorkspace(
+      {
+        workspaceId: context.workspaceId,
+        signingRequestId: context.signingRequestId,
+        recipientId: context.recipientId,
+      },
+      async uow => {
+        // Revalidated AT COMMIT TIME through the canonical policy, not
+        // trusted because the page rendered a Skip button (§77, §131 —
+        // decline's own reasoning, unchanged here).
+        const request = await uow.ceremony.getRequest();
+        const recipient = await uow.ceremony.getRecipient();
+        if (request === null || recipient === null) {
+          throw new SigningSkipNotPermittedError("snapshot");
+        }
+        const state = await uow.workflow.getState();
+        const eligibility = assessSigningEligibility({
+          requestState: request.state,
+          recipientState: state,
+          recipientType: recipient.type,
+        });
+        if (!eligibility.maySkip) {
+          throw new SigningSkipNotPermittedError(
+            eligibility.blocker ?? "recipient-cannot-act");
+        }
+
+        const applied = await uow.workflow.markSkipped({ skippedAt: now });
+        if (!applied) {
+          // The policy said `active` and the conditional update disagreed. A
+          // concurrent skip is the only way to get here, and it did the job.
+          return { skippedAt: now, applied: false };
+        }
+
+        await uow.workflow.enqueueAdvance({
+          intentId, trigger: "skip", submissionId: null, createdAt: now,
+        });
+        await uow.evidence.append(
+          participantSkipped({
+            newEventId: () => deps.evidenceIds.nextEvidenceEventId(),
+            signingRequestId: uow.signingRequestId as unknown as TransactionId,
+            occurredAt: now,
+          }, uow.recipientId));
+        // The skipper's "must sign" entry closes with the skip (056) — their
+        // action is done, exactly as it does for a signature or a decline.
+        await uow.userSigningRecords.closeInboxForRecipient(
+          String(uow.signingRequestId), String(uow.recipientId), "skipped", now);
+        return { skippedAt: now, applied: true };
+      },
+    ));
+
+  // ── The advance, AFTER the commit, exactly as decline does it ────────────
+  //
+  // Unlike a decline, this advance will find the workflow able to CONTINUE:
+  // `skipped` satisfies the requirement, so the next cohort activates (or
+  // the request reaches completion-ready) rather than the request ending.
+  if (result.applied) {
+    try {
+      await advanceSigningWorkflow(
+        { workspaceId: context.workspaceId, signingRequestId: context.signingRequestId },
+        deps);
+    } catch {
+      // Swallowed without the error object, as the submission and decline
+      // paths do.
     }
   }
 

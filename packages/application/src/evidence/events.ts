@@ -69,6 +69,8 @@ export const EVENT_VERSIONS: Readonly<Record<EvidenceEventType, number>> =
     "field-merge-completed": 1,
     "certificate-generated": 1,
     "final-seal-completed": 1,
+    "approval-completed": 1,
+    "participant-skipped": 1,
   });
 
 /**
@@ -360,6 +362,36 @@ export function participantDeclined(
   base: EventBase, recipientId: SigningRequestRecipientId,
 ): EvidenceEventInput {
   return build(base, "participant-declined",
+    { type: "recipient", actorId: recipientId },
+    { type: "signing-request-recipient", id: recipientId },
+    { recipientId });
+}
+
+/**
+ * 069. The workflow transitioned this APPROVER to APPROVED.
+ *
+ * `recipientSigned`'s exact counterpart, sharing the same submission source
+ * for the same reason — a retried workflow application converges on one
+ * event rather than appending a second.
+ */
+export function recipientApproved(
+  base: EventBase, recipientId: SigningRequestRecipientId, submissionId: string,
+): EvidenceEventInput {
+  return build(base, "approval-completed",
+    { type: "recipient", actorId: recipientId },
+    { type: "recipient-submission", id: submissionId },
+    { recipientId });
+}
+
+/**
+ * 069. An APPROVER skipped. `participantDeclined`'s exact shape — no
+ * submission exists to source it from, same as a decline — but a DIFFERENT
+ * fact: this one does not end the request.
+ */
+export function participantSkipped(
+  base: EventBase, recipientId: SigningRequestRecipientId,
+): EvidenceEventInput {
+  return build(base, "participant-skipped",
     { type: "recipient", actorId: recipientId },
     { type: "signing-request-recipient", id: recipientId },
     { recipientId });

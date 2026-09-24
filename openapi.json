@@ -12921,6 +12921,18 @@
                               {
                                 "type": "string",
                                 "enum": [
+                                  "approved"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "skipped"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
                                   "declined"
                                 ]
                               }
@@ -19479,6 +19491,53 @@
                     },
                     "applied": {
                       "description": "False when a concurrent decline had already been recorded.",
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/signing/skip": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "title": "SkipApprovalBody",
+                "description": "Empty. Skipping needs no input beyond the recipient's own session.",
+                "type": "object",
+                "properties": {}
+              }
+            }
+          },
+          "description": "Empty. Skipping needs no input beyond the recipient's own session."
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "title": "SkipApprovalResponse",
+                  "type": "object",
+                  "required": [
+                    "skippedAt",
+                    "applied"
+                  ],
+                  "properties": {
+                    "skippedAt": {
+                      "description": "Backend instant, epoch milliseconds.",
+                      "type": "integer"
+                    },
+                    "applied": {
+                      "description": "False when a concurrent skip had already been recorded.",
                       "type": "boolean"
                     }
                   }

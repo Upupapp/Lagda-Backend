@@ -58,6 +58,7 @@ import { registerSigningAccessRoutes } from "../signing-access/signing-access-ro
 import { registerSigningCeremonyRoutes } from "../signing-ceremony/signing-ceremony-routes.js";
 import { registerSigningSubmissionRoutes } from "../signing-submission/signing-submission-routes.js";
 import { registerSigningDeclineRoutes } from "../signing-decline/signing-decline-routes.js";
+import { registerSigningSkipRoutes } from "../signing-skip/signing-skip-routes.js";
 import { registerCancelRoutes } from "../signing-requests/cancel-routes.js";
 import {
   registerPublicVerificationRoutes,
@@ -964,6 +965,20 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
       registerSigningDeclineRoutes(app, {
         config,
         declineDependencies: decline,
+        signingAccessDependencies: signingAccess,
+        ...(signingLimiter === undefined
+          ? {}
+          : { rateLimit: { limiter: signingLimiter, metrics } }),
+        metrics,
+      });
+    }
+
+    // 069's skip, alongside decline. Same realm, same CSRF validator.
+    if (dependencies.signingSkip !== undefined) {
+      const skip = dependencies.signingSkip;
+      registerSigningSkipRoutes(app, {
+        config,
+        skipDependencies: skip,
         signingAccessDependencies: signingAccess,
         ...(signingLimiter === undefined
           ? {}

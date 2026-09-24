@@ -165,7 +165,15 @@ export function assessCeremonyAccess(input: CeremonyAccessInput): CeremonyAccess
     mayAcceptConsent: consentRequired && !input.consentAccepted,
     // Consent is the ceremony's own extra gate on top of the policy's
     // `maySubmit`; `canHoldFields` is already inside that answer.
-    mayProceedToInput: consentSatisfied && eligibility.maySubmit,
+    //
+    // 069. `eligibility.maySubmit || eligibility.mayApprove` rather than
+    // just the first: a recipient falls on exactly one side of that pair
+    // (see `assessSigningEligibility`), so this single flag still means
+    // "may proceed to fill in and accept" for EITHER a signer or an
+    // approver — the frontend already renders one generic "proceed" step
+    // and picks Sign vs Approve wording from `recipient.type`.
+    mayProceedToInput:
+      consentSatisfied && (eligibility.maySubmit || eligibility.mayApprove),
     consentRequired,
     blocker: null,
   };

@@ -39,43 +39,59 @@ export type { RecipientWorkflowState };
 /**
  * What can happen to a recipient.
  *
- * Three, and every one of them is caused by a durable fact somewhere else:
- * `activate` by a routing advance, `sign` by an accepted submission, `decline`
- * by an accepted decline. There is no `markSigned` a caller can simply decide
- * to perform, which is the shape §16 and §134 are asking for.
+ * Five, and every one of them is caused by a durable fact somewhere else:
+ * `activate` by a routing advance, `sign`/`approve` by an accepted
+ * submission, `decline`/`skip` by an accepted refusal or pass. There is no
+ * `markSigned` a caller can simply decide to perform, which is the shape §16
+ * and §134 are asking for.
+ *
+ * `approve` and `skip` (069) are the APPROVER's pair, `sign` and `decline`
+ * the SIGNER's — see `isApproverType` below for which recipient may use
+ * which. The transition table itself stays type-blind on purpose, matching
+ * how `active -> signed` was never type-checked either; the gate belongs to
+ * `assessSigningEligibility`, the one place that already answers "may this
+ * recipient act right now".
  */
-export const RECIPIENT_WORKFLOW_ACTIONS = ["activate", "sign", "decline"] as const;
+export const RECIPIENT_WORKFLOW_ACTIONS =
+  ["activate", "sign", "decline", "approve", "skip"] as const;
 export type RecipientWorkflowAction = (typeof RECIPIENT_WORKFLOW_ACTIONS)[number];
 
 /**
  * The complete transition table. Anything absent is forbidden.
  *
- * Note the two deliberate absences:
+ * Note the deliberate absences from `waiting`:
  *
- *   waiting -> signed    §28. A recipient whose turn has not come holds no
- *                        credential, so an accepted submission for them means
- *                        something is wrong with provisioning or with the
- *                        routing evaluation — not that they signed early.
- *   waiting -> declined  the same argument. You cannot refuse a document you
- *                        have never been given access to.
+ *   waiting -> signed/approved   §28. A recipient whose turn has not come
+ *                        holds no credential, so an accepted submission for
+ *                        them means something is wrong with provisioning or
+ *                        with the routing evaluation — not that they acted
+ *                        early.
+ *   waiting -> declined/skipped  the same argument. You cannot refuse or pass
+ *                        on a document you have never been given access to.
  *
  * Terminal states carry an explicitly empty action set rather than being
- * omitted, so adding a fifth state is a compile error instead of a silent hole.
+ * omitted, so adding a state is a compile error instead of a silent hole.
  */
 const RECIPIENT_TRANSITIONS: Record<
   RecipientWorkflowState,
   Partial<Record<RecipientWorkflowAction, RecipientWorkflowState>>
 > = {
   waiting: { activate: "active" },
-  active: { sign: "signed", decline: "declined" },
+  active: {
+    sign: "signed", decline: "declined", approve: "approved", skip: "skipped",
+  },
   signed: {},
+  approved: {},
+  skipped: {},
   declined: {},
 };
 
-/** Once a recipient has signed or refused, nothing moves them again. */
+/** Once a recipient has reached any outcome, nothing moves them again. */
 export function isRecipientTerminal(state: RecipientWorkflowState): boolean {
   switch (state) {
     case "signed":
+    case "approved":
+    case "skipped":
     case "declined":
       return true;
     case "waiting":
@@ -84,6 +100,16 @@ export function isRecipientTerminal(state: RecipientWorkflowState): boolean {
     default:
       return assertNever(state, "isRecipientTerminal");
   }
+}
+
+/**
+ * Whether this recipient acts through the approver pair (approve/skip)
+ * rather than the signer pair (sign/decline). 069's product decision, not a
+ * capability — an approver who happens to hold zero fields still approves or
+ * skips, never signs.
+ */
+export function isApproverType(type: RecipientType): boolean {
+  return type === "approver";
 }
 
 export function canTransitionRecipient(
@@ -211,7 +237,9 @@ export type SigningBlocker =
   | "routing-waiting"
   | "recipient-cannot-act"
   | "already-signed"
-  | "already-declined";
+  | "already-declined"
+  | "already-approved"
+  | "already-skipped";
 
 export interface SigningEligibilityInput {
   readonly requestState: SigningRequestState;
@@ -223,10 +251,18 @@ export interface SigningEligibilityInput {
 export interface SigningEligibility {
   /** May reach the ceremony at all — including to read their own outcome. */
   readonly mayEnter: boolean;
-  /** May submit an accepted signing act. The gate BACKEND-36 revalidates. */
+  /** May submit an accepted signing act. The gate BACKEND-36 revalidates.
+   *  Only ever true for a NON-approver — see `isApproverType`. */
   readonly maySubmit: boolean;
-  /** May refuse. The same gate, with the same states. */
+  /** May refuse. The same gate, with the same states. Only ever true for a
+   *  NON-approver; an approver skips instead of declining. */
   readonly mayDecline: boolean;
+  /** 069. May accept, through the submission mechanism. Only ever true for
+   *  an APPROVER — the approve/skip pair's counterpart to `maySubmit`. */
+  readonly mayApprove: boolean;
+  /** 069. May pass without ending the request. Only ever true for an
+   *  APPROVER — the counterpart to `mayDecline`. */
+  readonly maySkip: boolean;
   /** `null` exactly when `mayEnter` is true. */
   readonly blocker: SigningBlocker | null;
 }
@@ -254,12 +290,17 @@ export function assessSigningEligibility(
   input: SigningEligibilityInput,
 ): SigningEligibility {
   const deny = (blocker: SigningBlocker): SigningEligibility => ({
-    mayEnter: false, maySubmit: false, mayDecline: false, blocker,
+    mayEnter: false, maySubmit: false, mayDecline: false,
+    mayApprove: false, maySkip: false, blocker,
   });
 
   switch (input.recipientState) {
     case "signed":
       return deny("already-signed");
+    case "approved":
+      return deny("already-approved");
+    case "skipped":
+      return deny("already-skipped");
     case "declined":
       return deny("already-declined");
     case null:
@@ -281,12 +322,18 @@ export function assessSigningEligibility(
   }
 
   const canAct = canParticipantSubmit(input.recipientType);
+  // 069's split: an APPROVER acts through approve/skip and never through
+  // sign/decline; every other type keeps the original pair. Not two
+  // independent booleans — a recipient falls on exactly one side.
+  const approverFlow = isApproverType(input.recipientType);
   return {
     mayEnter: true,
-    maySubmit: canAct,
+    maySubmit: canAct && !approverFlow,
     // A viewer cannot decline either. Refusing requires having been asked for
     // something, and a viewer was not.
-    mayDecline: canAct,
+    mayDecline: canAct && !approverFlow,
+    mayApprove: canAct && approverFlow,
+    maySkip: canAct && approverFlow,
     blocker: null,
   };
 }
@@ -393,7 +440,15 @@ export function planWorkflowAdvance(
     return { kind: "invalid", reason: "no-required-participants" };
   }
 
-  const outstanding = required.filter(recipient => recipient.state !== "signed");
+  // 069. THREE states now satisfy a required participant, not one.
+  // `approved` is an approver's acceptance — it counts exactly as `signed`
+  // does. `skipped` is an approver's pass — unlike `declined` (handled above,
+  // and still the only state that ends the request for everyone), a skip is
+  // NOT a refusal: the approver had nothing to add, and the workflow treats
+  // that as satisfied rather than as a block.
+  const isSatisfied = (state: RecipientWorkflowState): boolean =>
+    state === "signed" || state === "approved" || state === "skipped";
+  const outstanding = required.filter(recipient => !isSatisfied(recipient.state));
   if (outstanding.length === 0) return { kind: "completion-ready" };
 
   // The cohort in play is the earliest one that still owes something. Not
@@ -497,7 +552,12 @@ export function deriveRequestState(
  * **Expiry evaluation.** `isExpired` is in `lifecycle.ts` and BACKEND-46 owns
  * whether a scheduled job acts on it (OD-014).
  *
- * **Skip, reassign and recipient correction.** §149, §150, §151 — each needs
- * amendment semantics for a workflow people have already signed.
+ * **Reassign and recipient correction.** §150, §151 — each needs amendment
+ * semantics for a workflow people have already signed.
+ *
+ * **Not the same "skip" as §149.** That one is amending an IN-PROGRESS
+ * workflow to remove a participant after the fact. 069's `skip` is an
+ * APPROVER's own first-class ceremony outcome — their own act, on their own
+ * turn, never a sender editing someone else's obligation out from under them.
  */
 export type WorkflowStateOperationsDeferred = never;

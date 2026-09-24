@@ -66,6 +66,9 @@ export const EVENT_VISIBILITY: Readonly<Record<EvidenceEventType, "timeline" | "
     "consent-accepted": "timeline",
     "signature-completed": "timeline",
     "participant-declined": "timeline",
+    // 069. An approver's two outcomes — exactly as visible as a signer's.
+    "approval-completed": "timeline",
+    "participant-skipped": "timeline",
 
     // Pipeline provenance. Retained in evidence, kept out of the ordinary
     // timeline (§66, §67, §210) — a signer does not need to know a field merge
@@ -164,6 +167,8 @@ const DESCRIPTIONS: Readonly<Record<EvidenceEventType, string>> = Object.freeze(
   "submission-accepted": "Recipient's signing submission accepted",
   "signature-completed": "Recipient completed signing",
   "participant-declined": "Recipient declined to sign",
+  "approval-completed": "Recipient approved",
+  "participant-skipped": "Recipient skipped approval",
   "completion-ready": "All required participants completed their obligations",
   "field-merge-completed": "Signed values merged into the document",
   "certificate-generated": "Completion certificate generated",

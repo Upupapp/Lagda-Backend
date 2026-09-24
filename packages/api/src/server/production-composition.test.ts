@@ -207,9 +207,10 @@ describe("production composition", () => {
     // group, this number moves and the change is visible in the diff.
     const wired = groups.length - Object.keys(NOT_WIRED_IN_PRODUCTION).length;
     // 6 -> 7 with `signingAccess`, 7 -> 10 with the ceremony, submission and
-    // decline, and 10 -> 11 with public verification. The number moving IS the
-    // record, and it now equals `groups.length`: every surface is reachable.
-    expect(wired).toBe(11);
+    // decline, 10 -> 11 with public verification, and 11 -> 12 with 069's
+    // skip. The number moving IS the record, and it now equals
+    // `groups.length`: every surface is reachable.
+    expect(wired).toBe(12);
     expect(wired, "every group is wired; the register is empty")
       .toBe(groups.length);
 

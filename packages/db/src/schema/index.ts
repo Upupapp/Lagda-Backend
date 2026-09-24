@@ -676,7 +676,8 @@ export interface SigningRequestRecipientActivationTable {
   workspace_id: string;
   signing_request_id: string;
   request_recipient_id: string;
-  /** `waiting` | `active` | `signed` | `declined`. CHECK-constrained. */
+  /** `waiting` | `active` | `signed` | `approved` | `skipped` | `declined`.
+   *  CHECK-constrained. */
   recipient_state: string;
   activated_at: ColumnType<Date | null, Date | null, Date | null>;
   /**
@@ -684,10 +685,16 @@ export interface SigningRequestRecipientActivationTable {
    * reading — INV-548, and the FK beside it is what makes that checkable.
    */
   signed_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
+  /** 069. An approver's acceptance, through the SAME submission mechanism a
+   *  signer uses — shares `submission_id` rather than a parallel one. */
+  approved_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
   submission_id: ColumnType<string | null, string | null | undefined, string | null>;
   declined_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
   /** A closed code from the product's five categories. Never free text. */
   decline_reason: ColumnType<string | null, string | null | undefined, string | null>;
+  /** 069. An approver passed, with no submission. Unlike a decline, this does
+   *  NOT end the request — it counts as satisfied and routing continues. */
+  skipped_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
   created_at: Timestamptz;
 }
 

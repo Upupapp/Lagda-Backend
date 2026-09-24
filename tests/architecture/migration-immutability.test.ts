@@ -53,6 +53,14 @@ describe("shipped migrations are immutable", () => {
     const violations = changed
       .map(file => path.basename(file))
       .filter(file => {
+        // A `.test.ts` file is not SQL and ships nothing to a database — the
+        // guard's own stated reasoning ("editing the file does not change
+        // the database") does not apply to it. A shipped migration's test
+        // can still gain a new assertion, e.g. one that stops comparing a
+        // frozen historical list against a live export that has since grown
+        // (see `029_evidence_event_provenance.test.ts`'s own header, added
+        // when 069 widened the same vocabulary further).
+        if (file.endsWith(".test.ts")) return false;
         const number = migrationNumber(file);
         return number !== null && number <= LAST_SHIPPED;
       });

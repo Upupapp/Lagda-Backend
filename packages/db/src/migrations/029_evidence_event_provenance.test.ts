@@ -1,4 +1,4 @@
-// Migration 029's vocabulary must agree with the application's.
+// Migration 029's vocabulary, frozen against its own history.
 //
 // ── Why this test exists ───────────────────────────────────────────────────
 //
@@ -18,21 +18,38 @@
 // compares two TypeScript constants, so it runs in the ordinary suite and fails
 // on a laptop with no database. The failure it prevents does not need a database
 // to be real.
+//
+// ── Why this no longer compares against the LIVE application export ───────
+//
+// It used to — `.toEqual(EVIDENCE_EVENT_TYPES)` — because 029 was the newest
+// widening at the time, and "029's list" and "everything the application can
+// emit" were the same set. 069 added two more event types and its own CHECK
+// widening, which made that equality false without either list being wrong:
+// 029's list is what 029's CHECK actually admits, a historical fact, and it
+// must stay exactly that. `069_approval_workflow.test.ts` now carries the
+// "agrees with the live application" guard forward from where this one left
+// off, the same way this file's OWN existence carries 003's forward.
 
 import { describe, it, expect } from "vitest";
-import { EVIDENCE_EVENT_TYPES } from "@lagda/application";
 import {
   MIGRATION_029_EVENT_TYPES, MIGRATION_029_SOURCE_TYPES,
 } from "./029_evidence_event_provenance.js";
 
 describe("migration 029 event vocabulary", () => {
-  it("admits exactly the event types the application can produce", () => {
-    // Sorted, because the CHECK is a set and the declaration order of either
-    // list is presentation. An event type the application can emit but the CHECK
-    // rejects is a runtime 23514 on a real signing transition; one the CHECK
-    // admits but the application cannot emit is dead vocabulary.
-    expect([...MIGRATION_029_EVENT_TYPES].sort())
-      .toEqual([...EVIDENCE_EVENT_TYPES].sort());
+  it("admits exactly the nineteen event types 029 introduced", () => {
+    // Sorted, because the CHECK is a set and declaration order is
+    // presentation. This is now a frozen historical assertion — see the file
+    // header for why it no longer compares against the live application
+    // export.
+    expect([...MIGRATION_029_EVENT_TYPES].sort()).toEqual([
+      "authentication-completed", "certificate-generated", "completion-ready",
+      "consent-accepted", "document-sealed", "document-viewed",
+      "field-merge-completed", "final-seal-completed", "invitation-sent",
+      "participant-declined", "recipient-activated", "signature-completed",
+      "submission-accepted", "transaction-cancelled", "transaction-completed",
+      "transaction-created", "transaction-expired", "transaction-sent",
+      "verification-record-created",
+    ]);
   });
 
   it("preserves migration 003's thirteen types unchanged", () => {

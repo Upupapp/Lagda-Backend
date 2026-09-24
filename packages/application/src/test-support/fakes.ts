@@ -366,9 +366,11 @@ interface ActivationRow {
   state: RecipientWorkflowState;
   activatedAt: number | null;
   signedAt: number | null;
+  approvedAt: number | null;
   submissionId: RecipientSubmissionId | null;
   declinedAt: number | null;
   declineReason: SigningDeclineReason | null;
+  skippedAt: number | null;
 }
 
 /** A durable "this request needs re-evaluating" record. */
@@ -1572,8 +1574,8 @@ function scopedSigningAccess(
           recipientId: activation.recipientId,
           state: activation.state,
           activatedAt: activation.activatedAt,
-          signedAt: null, submissionId: null,
-          declinedAt: null, declineReason: null,
+          signedAt: null, approvedAt: null, submissionId: null,
+          declinedAt: null, declineReason: null, skippedAt: null,
         });
       }
       return Promise.resolve();
@@ -1634,6 +1636,26 @@ function recipientWorkflow(
       row.state = "declined";
       row.declinedAt = input.declinedAt;
       row.declineReason = input.reason;
+      return Promise.resolve(true);
+    },
+
+    // 069. An approver's counterpart to `markSignedFromSubmission` — same
+    // conditional shape, same submission-instant reasoning.
+    markApprovedFromSubmission: input => {
+      const row = own();
+      if (row === undefined || row.state !== "active") return Promise.resolve(false);
+      row.state = "approved";
+      row.approvedAt = input.approvedAt;
+      row.submissionId = input.submissionId;
+      return Promise.resolve(true);
+    },
+
+    // 069. An approver's counterpart to `markDeclined` — no reason.
+    markSkipped: input => {
+      const row = own();
+      if (row === undefined || row.state !== "active") return Promise.resolve(false);
+      row.state = "skipped";
+      row.skippedAt = input.skippedAt;
       return Promise.resolve(true);
     },
 
@@ -1712,9 +1734,11 @@ function scopedSigningWorkflow(
           state: row.state,
           activatedAt: row.activatedAt,
           signedAt: row.signedAt,
+          approvedAt: row.approvedAt,
           submissionId: row.submissionId,
           declinedAt: row.declinedAt,
           declineReason: row.declineReason,
+          skippedAt: row.skippedAt,
         }];
       });
       return Promise.resolve(

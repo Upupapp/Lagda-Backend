@@ -5,7 +5,10 @@
 // workspace read model, and no method here takes a workspace id as a filter.
 // The migrations state the rule and the authorization story in full.
 
-export type InboxClosedReason = "signed" | "declined" | "cancelled";
+/** 069 adds `approved`/`skipped` — an approver's two outcomes, closing the
+ *  inbox entry exactly as `signed`/`declined` do for a signer. */
+export type InboxClosedReason =
+  "signed" | "approved" | "skipped" | "declined" | "cancelled";
 
 export interface SenderSnapshot {
   readonly senderName: string | null;

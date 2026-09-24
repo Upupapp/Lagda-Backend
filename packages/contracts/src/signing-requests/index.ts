@@ -114,6 +114,18 @@ export const RECIPIENT_WORKFLOW_STATES = [
   "active",
   /** An accepted `RecipientSubmission` exists for them. Terminal. */
   "signed",
+  /**
+   * 069. An APPROVER accepted, through the same submission mechanism `signed`
+   * uses — shares `submission_id` rather than a parallel evidence path.
+   * Terminal, and counts toward completion exactly as `signed` does.
+   */
+  "approved",
+  /**
+   * 069. An APPROVER passed, with no submission. Terminal, but unlike
+   * `declined` it does NOT end the request — it counts as satisfied and
+   * routing continues, same as `approved`/`signed`.
+   */
+  "skipped",
   /** They refused. Terminal, and it ends the request for everyone. */
   "declined",
 ] as const;
