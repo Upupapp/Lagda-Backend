@@ -307,6 +307,8 @@ export const SigningInvitationModelV1 = Type.Object(
     documentTitle: BoundedText(300),
     senderDisplayName: DisplayName,
     workspaceName: DisplayName,
+    /** OD-135. Absent means "sign" — every intent queued before it existed. */
+    accessKind: Type.Optional(Type.Union([Type.Literal("sign"), Type.Literal("view")])),
   },
   { additionalProperties: false },
 );

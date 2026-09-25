@@ -311,9 +311,8 @@ function validateCrossSlotRules(slots: readonly WorkflowRoleSlot[]): void {
   }
 
   // At least one participant who actually blocks. A template made entirely of
-  // viewers and carbon-copies routes to nobody and can never complete — and
-  // `needsSigningAccess` gives neither of those a credential, so the request
-  // would be sent to an empty audience.
+  // viewers and carbon-copies can never complete: a viewer's link is
+  // read-only and a copy recipient gets no link, so nobody could ever act.
   const blocking = slots.filter(
     slot => slot.role !== "viewer" && slot.role !== "carbon-copy");
   if (blocking.length === 0) {

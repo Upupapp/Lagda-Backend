@@ -166,6 +166,20 @@ export function canHoldFields(type: RecipientType): boolean {
 }
 
 /**
+ * Whether this participant is sent a personal link when their turn comes.
+ *
+ * Everyone who can act — and a VIEWER, whose link opens the document
+ * read-only. The ceremony policy is what makes it read-only, not the link: a
+ * viewer is never asked for consent, cannot submit, decline, approve or skip
+ * (`assessSigningEligibility`), and once the request completes every link is
+ * revoked. A copy recipient gets no link: they receive the final document,
+ * not access to the signing.
+ */
+export function receivesAccessLink(type: RecipientType): boolean {
+  return canHoldFields(type) || type === "viewer";
+}
+
+/**
  * Whether a field type needs a recipient before the preparation is complete.
  *
  * Every implemented field type asks a PARTICIPANT for something — there is no

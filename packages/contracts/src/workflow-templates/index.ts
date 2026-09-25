@@ -44,13 +44,12 @@ export const WORKFLOW_ROUTING_MODES = [
    *
    * ── What this does and does not claim ──────────────────────────────────
    *
-   * It is ORDERING. The real workflow engine advances on `routing_order` and
-   * does not branch on recipient type: there is no `approved` recipient state,
-   * and an approver's act is recorded exactly as a signature is. So this value
-   * means "the approver goes first, and if they decline the request ends for
-   * everyone" — which is true and useful — and it does NOT mean the system
-   * holds a distinct approval record. Any wording shown to a user must say the
-   * former.
+   * It is ORDERING. The workflow engine advances on `routing_order`; this
+   * value puts approver and reviewer steps first. What an approver DOES is
+   * the recipient type's business, not the routing mode's: since 069 an
+   * approver approves or skips (never declines) and is recorded as `approved`
+   * or `skipped`. So "approval-based" means "the approvers go first, then the
+   * signers" — any wording shown to a user must say that, and nothing more.
    */
   "approval-based",
 ] as const;

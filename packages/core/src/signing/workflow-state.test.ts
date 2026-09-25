@@ -264,18 +264,20 @@ describe("sequential routing", () => {
     expect([...plan.active].sort()).toEqual(["b", "c"]);
   });
 
-  it("activates a viewer WITHOUT provisioning them", () => {
-    // The `active` / `provision` split: a viewer is activated and receives no
-    // signing credential, because a signing credential is not what they need.
+  it("provisions a viewer (read-only link) but never a copy recipient", () => {
+    // OD-135: a viewer gets a personal link that opens the document
+    // read-only. A copy recipient is activated and receives nothing until the
+    // document completes.
     const plan = planWorkflowAdvance([
       person({ recipientId: "a", routingOrder: 1, state: "signed" }),
       person({ recipientId: "v", routingOrder: 2, state: "waiting", type: "viewer" }),
+      person({ recipientId: "c", routingOrder: 2, state: "waiting", type: "carbon-copy" }),
       person({ recipientId: "b", routingOrder: 2, state: "waiting" }),
     ]);
     expect(plan.kind).toBe("activate");
     if (plan.kind !== "activate") throw new Error("unreachable");
-    expect([...plan.active].sort()).toEqual(["b", "v"]);
-    expect(plan.provision).toEqual(["b"]);
+    expect([...plan.active].sort()).toEqual(["b", "c", "v"]);
+    expect([...plan.provision].sort()).toEqual(["b", "v"]);
   });
 
   it("walks THROUGH a cohort that contains nobody it would wait for", () => {
@@ -290,7 +292,8 @@ describe("sequential routing", () => {
     expect(plan.kind).toBe("activate");
     if (plan.kind !== "activate") throw new Error("unreachable");
     expect([...plan.active].sort()).toEqual(["b", "v"]);
-    expect(plan.provision).toEqual(["b"]);
+    // The viewer's cohort is walked through, and the viewer still gets a link.
+    expect([...plan.provision].sort()).toEqual(["b", "v"]);
   });
 
   it("uses the earliest cohort PRESENT, not the literal 1", () => {

@@ -99,6 +99,25 @@ describe("template input", () => {
   });
 });
 
+describe("a viewer's invitation (OD-135)", () => {
+  it("says view, not sign", () => {
+    const rendered = registry.render(
+      { key: "signing-invitation", version: 1 },
+      { ...signingInput, accessKind: "view" },
+      context(),
+    );
+    expect(rendered.subject).toContain("to view");
+    expect(rendered.subject).not.toContain("to sign");
+    expect(rendered.textBody).toContain("Nothing is needed from you");
+  });
+
+  it("an invitation queued before accessKind existed still reads as sign", () => {
+    const rendered = registry.render(
+      { key: "signing-invitation", version: 1 }, signingInput, context());
+    expect(rendered.subject).toContain("to sign");
+  });
+});
+
 describe("escaping and injection", () => {
   it("escapes HTML in a recipient's own name", () => {
     // S245. A signer may legitimately be named with characters that are markup.

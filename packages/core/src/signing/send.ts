@@ -4,7 +4,7 @@
 // at which a document leaves the building, so the decisions that govern it
 // should be evaluable without a database and testable exhaustively.
 
-import { canHoldFields, type RecipientType } from "../recipients/index.js";
+import { canHoldFields, receivesAccessLink, type RecipientType } from "../recipients/index.js";
 import type { SigningRequestState } from "@lagda/contracts";
 import { isEditableForSend } from "./policies.js";
 
@@ -87,7 +87,9 @@ export function assessSendEligibility(
     }
   });
 
-  if (recipients.length > 0 && !recipients.some(r => needsSigningAccess(r.type))) {
+  // Someone who can ACT. A request of only viewers would open read-only links
+  // to a document nobody is ever asked to complete.
+  if (recipients.length > 0 && !recipients.some(r => canHoldFields(r.type))) {
     blockers.push({ kind: "no-deliverable-recipient" });
   }
 
@@ -115,23 +117,17 @@ export function describeSendBlocker(blocker: SendBlocker): string {
 // ── Who gets a signing credential ────────────────────────────────────────────
 
 /**
- * Whether this participant type receives a SIGNING-access credential.
+ * Whether this participant type receives an access credential.
  *
- * Exactly the types that can hold fields — signer, approver, reviewer,
- * acknowledgment-recipient. `viewer` and `carbon-copy` cannot, and giving them
- * a signing credential would hand a bearer key for a signing ceremony to
- * someone the ceremony does not involve (§101).
+ * The types that can hold fields — signer, approver, reviewer,
+ * acknowledgment-recipient — and, since OD-135, a `viewer`, whose credential
+ * opens the ceremony READ-ONLY (see `receivesAccessLink`). A `carbon-copy`
+ * gets none: they are sent the finished document, not the signing.
  *
- * They are still ACTIVATED, so their routing position is recorded and a later
- * command can find them. What they need is a document-VIEW credential, which
- * is a different thing that does not exist yet — OD-135.
- *
- * Delegating to `canHoldFields` rather than restating the list is deliberate:
- * "can be asked to do something" and "needs a way in" are the same question,
- * and two lists would drift.
+ * Every type is still ACTIVATED, so its routing position is recorded.
  */
 export function needsSigningAccess(type: RecipientType): boolean {
-  return canHoldFields(type);
+  return receivesAccessLink(type);
 }
 
 // ── Routing activation ───────────────────────────────────────────────────────

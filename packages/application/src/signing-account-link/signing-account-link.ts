@@ -311,13 +311,16 @@ export async function requestSigningLinkIntent(
       readonly recipientId: string;
       readonly signingSessionId: string;
     }>;
-    /** The recipient's delivery address, from the immutable snapshot. */
-    readonly readRecipientEmail: (raw: string) => Promise<string>;
+    /** The recipient's delivery address and role, from the immutable snapshot. */
+    readonly readRecipient: (raw: string) => Promise<{ readonly email: string; readonly type: string }>;
     readonly normalize: (raw: string) => string | null;
   },
 ): Promise<MintedSigningLinkIntent> {
   const context = await deps.resolveSession(rawSessionToken);
-  const email = await deps.readRecipientEmail(rawSessionToken);
+  const { email, type } = await deps.readRecipient(rawSessionToken);
+  // A viewer's link is read-only access, not a document of theirs: it is
+  // never bound to an account, so it never appears in their Documents.
+  if (type === "viewer") throw new SigningLinkNotClaimableError();
 
   const normalized = deps.normalize(email);
   // A snapshot address that will not normalize cannot be compared with an
