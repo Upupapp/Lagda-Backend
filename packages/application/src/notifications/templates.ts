@@ -43,7 +43,7 @@ import { defineTemplate } from "./template-registry.js";
 import {
   AccountEmailVerificationModelV1, PasswordResetModelV1, WorkspaceInvitationModelV1,
   SigningInvitationModelV1, SigningCompletedModelV1,
-  DocumentUploadRequestedModelV1,
+  DocumentUploadRequestedModelV1, FinalCopyAvailableModelV1,
 } from "./template-registry.js";
 import { escapeHtml } from "./rendering.js";
 import { LAGDA_LOGO_PNG_BASE64 } from "./assets/lagda-logo.js";
@@ -454,6 +454,48 @@ export const documentUploadRequestedV1 = defineTemplate({
 });
 
 /**
+ * A participant's copy of the completed document (073).
+ *
+ * `/copy` + the sealed download credential. The link opens only the sealed
+ * PDF of this one completed request; it cannot reach the signing ceremony.
+ */
+export const finalCopyAvailableV1 = defineTemplate({
+  key: "final-copy-available",
+  version: 1,
+  locale: "en",
+  schema: FinalCopyAvailableModelV1,
+  secretBearing: true,
+  render: (input, context) => {
+    const name = input.recipientName;
+    const title = input.documentTitle;
+    const sender = input.senderDisplayName;
+    const workspace = input.workspaceName;
+    const url = context.buildLink("/copy", context.secret as string);
+    return {
+      subject: `"${title}" is complete — download your copy`,
+      textBody: [
+        `Hello ${name},`,
+        ``,
+        `"${title}", sent by ${sender} (${workspace}), has been completed by everyone involved.`,
+        `Your copy of the final signed document is ready:`,
+        url,
+        ``,
+        `This link is personal to you and expires in 30 days. Do not forward this message.`,
+      ].join("\n"),
+      htmlBody: htmlDocument(
+        `Your signed document is ready`,
+        p(`Hello ${escapeHtml(name)},`) +
+          p(`"${escapeHtml(title)}", sent by ${escapeHtml(sender)} ` +
+            `(${escapeHtml(workspace)}), has been completed by everyone involved.`) +
+          linkHtml(url, "Download signed document") +
+          p(`This link is personal to you and expires in 30 days. Do not forward this message.`),
+      ),
+      attachments: [LOGO_ATTACHMENT],
+    };
+  },
+});
+
+/**
  * Every template version LAGDA can render.
  *
  * A version is removed from this list only when no pending intent references
@@ -467,6 +509,7 @@ export const ALL_TEMPLATES = [
   signingInvitationV1,
   signingCompletedV1,
   documentUploadRequestedV1,
+  finalCopyAvailableV1,
 ] as const;
 
 export type AccountEmailVerificationModel = Static<typeof AccountEmailVerificationModelV1>;

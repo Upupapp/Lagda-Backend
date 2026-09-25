@@ -55,12 +55,17 @@ const SendParamsSchema = Type.Object({
  * There is nothing to configure at send time because the product configures
  * nothing at send time. An empty body is the honest contract.
  */
-const SendRequestBodySchema = Type.Object({}, {
+const SendRequestBodySchema = Type.Object({
+  shareFinalCopy: Type.Optional(Type.Boolean({
+    description: "Email every participant the final signed copy when the "
+      + "document completes. Defaults to true; false for a sensitive document.",
+  })),
+}, {
   title: "SendSigningRequestRequest",
   additionalProperties: false,
   description:
-    "Deliberately empty. Everything sent is determined by the immutable "
-    + "request snapshot and by routing policy.",
+    "Everything else sent is determined by the immutable request snapshot "
+    + "and by routing policy.",
 });
 
 const SentResponseSchema = Type.Object({
@@ -135,6 +140,7 @@ export function registerSendRoutes(
 
     const { workspaceId, signingRequestId } =
       request.params as Static<typeof SendParamsSchema>;
+    const body = (request.body ?? {}) as Static<typeof SendRequestBodySchema>;
 
     // Abuse control BEFORE anything expensive. A send can mint up to 50 bearer
     // credentials and 50 delivery intents; the cheap check comes first.
@@ -158,6 +164,7 @@ export function registerSendRoutes(
       workspaceId: workspaceId as WorkspaceId,
       signingRequestId,
       idempotencyKey: key,
+      ...(body.shareFinalCopy === undefined ? {} : { shareFinalCopy: body.shareFinalCopy }),
     }, options.sendDependencies());
 
     /**

@@ -44,6 +44,7 @@ export * from "./recipients/recipients.js";
 export * from "./signing-requests/signing-requests.js";
 export * from "./signing-requests/expiry.js";
 export * from "./signing-requests/readiness.js";
+export * from "./final-copies/final-copies.js";
 export * from "./signing-requests/send.js";
 export * from "./signing-requests/completed-artifact.js";
 export * from "./signing-requests/signatures.js";

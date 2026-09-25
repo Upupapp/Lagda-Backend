@@ -321,6 +321,14 @@ describe("hashing is confined to the sealing adapter", () => {
     //                              double-submit scheme — cannot digest to a
     //                              value that resolves a session.
     //
+    //   security/final-copy-token — FINAL-COPY DOWNLOAD digests (073). A
+    //                              thirteenth domain, `lagda.final-copy-download:`,
+    //                              in `@lagda/security` because the worker mints
+    //                              these at completion and the API digests what a
+    //                              participant presents. The prefix keeps a
+    //                              signing link from opening a download, and
+    //                              the reverse.
+    //
     // Each addition is a deliberate entry with a named domain. A caller that
     // appears without one still fails, which is what keeps this from becoming a
     // list that grows whenever it is inconvenient.
@@ -337,6 +345,7 @@ describe("hashing is confined to the sealing adapter", () => {
       "packages/api/src/security/verification-token.ts",
       "packages/api/src/verification/verification-file.ts",
       "packages/sealing/src/internal/digest.ts",
+      "packages/security/src/final-copy-token.ts",
     ]);
   });
 });

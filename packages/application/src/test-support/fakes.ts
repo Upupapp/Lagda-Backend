@@ -11,6 +11,9 @@
 // Not exported from the package entry point. Test support is not public API.
 
 import type {
+  ScopedFinalCopyRepository, NewFinalCopyGrant, FinalCopyDigest, FinalCopyCredentialUnitOfWork,
+} from "../common/ports/final-copies.js";
+import type {
   RecipientWorkflowRepository, ScopedSigningWorkflowRepository,
   SigningWorkflowReconciliationRepository, WorkflowAdvanceIntentRef,
   WorkflowAdvanceTrigger, SigningWorkflowIntentId, SigningWorkflowIdGenerator,
@@ -438,6 +441,7 @@ interface StoreSnapshot {
   readonly signingRequestRecipients: SigningRequestRecipientRecord[];
   readonly signingRequestFields: SigningRequestFieldRecord[];
   readonly signingAccessGrants: NewSigningAccessGrant[];
+  readonly finalCopyGrants: (NewFinalCopyGrant & { revokedAt: number | null })[];
   readonly notificationIntents: Map<string, NotificationIntentRecord>;
   readonly notificationDeliveries: Map<string, NotificationDeliveryRecord>;
   readonly activations: ActivationRow[];
@@ -488,6 +492,7 @@ export class InMemoryStore {
   signingRequestRecipients: SigningRequestRecipientRecord[] = [];
   signingRequestFields: SigningRequestFieldRecord[] = [];
   signingAccessGrants: NewSigningAccessGrant[] = [];
+  finalCopyGrants: (NewFinalCopyGrant & { revokedAt: number | null })[] = [];
   /**
    * Invitation ciphertexts, keyed by invitation id.
    *
@@ -546,6 +551,7 @@ export class InMemoryStore {
       signingRequestRecipients: [...this.signingRequestRecipients],
       signingRequestFields: [...this.signingRequestFields],
       signingAccessGrants: [...this.signingAccessGrants],
+      finalCopyGrants: this.finalCopyGrants.map(row => ({ ...row })),
       // Notifications restore with everything else. Omitting them would let a
       // rolled-back send leave an invitation owed for a request that never
       // reached `sent` -- exactly the inconsistency same-transaction creation
@@ -606,6 +612,7 @@ export class InMemoryStore {
     this.signingRequestRecipients = [...snapshot.signingRequestRecipients];
     this.signingRequestFields = [...snapshot.signingRequestFields];
     this.signingAccessGrants = [...snapshot.signingAccessGrants];
+    this.finalCopyGrants = snapshot.finalCopyGrants.map(row => ({ ...row }));
     this.activations = snapshot.activations.map(row => ({ ...row }));
     this.workflowIntents = snapshot.workflowIntents.map(row => ({ ...row }));
     this.completionRuns = snapshot.completionRuns.map(row => ({ ...row }));
@@ -1595,6 +1602,28 @@ function scopedPreparations(
  * recipient, and ONE delivery intent per grant. Without them a duplicate-send
  * bug would pass here and be caught only by PostgreSQL.
  */
+function scopedFinalCopies(
+  store: InMemoryStore, scope: WorkspaceId,
+): ScopedFinalCopyRepository {
+  return {
+    // Mirrors the UNIQUE (workspace, request, recipient): a second grant for
+    // the same participant is refused, not added.
+    insertGrant: grant => {
+      if (grant.workspaceId !== scope) return Promise.resolve(false);
+      const exists = store.finalCopyGrants.some(row =>
+        row.workspaceId === grant.workspaceId
+        && row.signingRequestId === grant.signingRequestId
+        && row.recipientId === grant.recipientId);
+      if (exists) return Promise.resolve(false);
+      store.finalCopyGrants.push({ ...grant, revokedAt: null });
+      return Promise.resolve(true);
+    },
+    isGrantUsable: (grantId, now) => Promise.resolve(store.finalCopyGrants.some(row =>
+      row.workspaceId === scope && String(row.grantId) === grantId
+      && row.revokedAt === null && row.expiresAt > now)),
+  };
+}
+
 function scopedSigningAccess(
   store: InMemoryStore, scope: WorkspaceId,
 ): ScopedSigningAccessRepository {
@@ -2714,6 +2743,7 @@ function scopedSigningRequests(
       if (current === undefined) return Promise.resolve(false);
       store.signingRequests[index] = {
         ...current, state: "sent", updatedAt: input.sentAt,
+        shareFinalCopy: input.shareFinalCopy ?? true,
       };
       return Promise.resolve(true);
     },
@@ -3146,6 +3176,7 @@ export class FakeTransactionManager implements TransactionManager {
         recipients: scopedRecipients(this.store, workspaceId),
         signingRequests: scopedSigningRequests(this.store, workspaceId),
         signingAccess: scopedSigningAccess(this.store, workspaceId),
+        finalCopies: scopedFinalCopies(this.store, workspaceId),
         signingWorkflow: scopedSigningWorkflow(this.store, workspaceId),
         completion: scopedCompletion(this.store, workspaceId),
         completionReconciliation:
@@ -3232,6 +3263,7 @@ export class FakeTransactionManager implements TransactionManager {
             recipients: scopedRecipients(store, workspaceId),
             signingRequests: scopedSigningRequests(store, workspaceId),
             signingAccess: scopedSigningAccess(store, workspaceId),
+            finalCopies: scopedFinalCopies(store, workspaceId),
             signingWorkflow: scopedSigningWorkflow(store, workspaceId),
             completion: scopedCompletion(store, workspaceId),
             completionReconciliation:
@@ -3261,6 +3293,40 @@ export class FakeTransactionManager implements TransactionManager {
    * `ResolvedSigningAccess` from the store the same way the SQL join does, so a
    * use case that read a field the real query does not select would fail here.
    */
+  async runForFinalCopyCredential<T>(
+    credentialDigest: FinalCopyDigest,
+    operation: (uow: FinalCopyCredentialUnitOfWork) => Promise<T>,
+  ): Promise<T> {
+    const store = this.store;
+    this.started++;
+    const snapshot = store.snapshot();
+    try {
+      return await operation({
+        lookup: {
+          // The realm's policy: exactly the grant whose digest is presented.
+          findByCredentialDigest: digest => {
+            const grant = store.finalCopyGrants.find(
+              row => String(row.credentialDigest) === String(digest));
+            return Promise.resolve(grant === undefined ? null : {
+              grantId: grant.grantId, workspaceId: grant.workspaceId,
+              signingRequestId: grant.signingRequestId, recipientId: grant.recipientId,
+              expiresAt: grant.expiresAt, revokedAt: grant.revokedAt,
+            });
+          },
+        },
+        enterWorkspace: (workspaceId, inner) => inner({
+          signingRequests: scopedSigningRequests(store, workspaceId),
+          finalizations: scopedFinalizations(store, workspaceId),
+          artifacts: scopedArtifacts(store, workspaceId),
+        }),
+      });
+    } catch (error) {
+      store.restore(snapshot);
+      this.rolledBack++;
+      throw error;
+    }
+  }
+
   async runForSigningCredential<T>(
     credentialDigest: SigningAccessDigest,
     operation: (uow: SigningCredentialUnitOfWork) => Promise<T>,
@@ -3574,6 +3640,13 @@ export class FailingTransactionManager implements TransactionManager {
   runForSigningCredential<T>(
     _credentialDigest: SigningAccessDigest,
     _operation: (uow: SigningCredentialUnitOfWork) => Promise<T>,
+  ): Promise<T> {
+    return this.fail();
+  }
+
+  runForFinalCopyCredential<T>(
+    _credentialDigest: FinalCopyDigest,
+    _operation: (uow: FinalCopyCredentialUnitOfWork) => Promise<T>,
   ): Promise<T> {
     return this.fail();
   }

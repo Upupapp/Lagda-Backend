@@ -13,7 +13,7 @@ import type {
 } from "../common/ports/index.js";
 import type { StorageKeyStrategy, StorageObjectRef } from "../common/ports/storage.js";
 import {
-  FixedClock, FakeTransactionManager, InMemoryStore, SequentialCompletionIds,
+  FixedClock, FakeTransactionManager, InMemoryStore, SequentialCompletionIds, fakeTemplateRegistry,
 } from "../test-support/fakes.js";
 import {
   isRequestSignableState, isRequestTerminal, SIGNABLE_REQUEST_STATES,
@@ -282,6 +282,45 @@ describe("the happy path", () => {
     const after = JSON.stringify(
       h.store.artifacts.filter(a => a.artifactId !== "art_final"));
     expect(after).toBe(before);
+  });
+});
+
+describe("every participant's copy (073)", () => {
+  const finalCopies = () => {
+    let n = 0;
+    return {
+      tokens: {
+        issue: () => ({ raw: `r${String(++n).padStart(42, "x")}`, digest: String(n).padStart(64, "a") as never }),
+        digest: () => null,
+      },
+      sealer: { keyVersion: "v1", seal: (raw: string) => `sealed:${raw}` as never },
+      ids: {
+        nextFinalCopyGrantId: () => `fcg_${String(++n)}` as never,
+        nextNotificationIntentId: () => `ni_${String(++n)}` as never,
+        nextNotificationDeliveryId: () => `nd_${String(++n)}` as never,
+      },
+      templates: fakeTemplateRegistry,
+      clock: new FixedClock(AT),
+    };
+  };
+
+  it("queues a copy for each participant in the completing transaction", async () => {
+    seed(h);
+    const deps = { ...h.deps, finalCopies: finalCopies() } as FinalSealDependencies;
+    expect((await runFinalSealStep(
+      { workspaceId: WS, runId: RUN, signingRequestId: REQUEST }, deps)).outcome).toBe("completed");
+    expect(h.store.finalCopyGrants).toHaveLength(1);
+    expect(h.store.finalCopyGrants[0]?.createdAt).toBe(request(h)?.completedAt);
+  });
+
+  it("queues none when the sender switched it off", async () => {
+    seed(h);
+    const index = h.store.signingRequests.findIndex(r => r.signingRequestId === REQUEST);
+    h.store.signingRequests[index] = { ...h.store.signingRequests[index]!, shareFinalCopy: false };
+    const deps = { ...h.deps, finalCopies: finalCopies() } as FinalSealDependencies;
+    await runFinalSealStep({ workspaceId: WS, runId: RUN, signingRequestId: REQUEST }, deps);
+    expect(request(h)?.state).toBe("completed");
+    expect(h.store.finalCopyGrants).toHaveLength(0);
   });
 });
 

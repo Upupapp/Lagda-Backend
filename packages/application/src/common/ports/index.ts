@@ -40,6 +40,9 @@ import type {
   SigningCredentialUnitOfWork, RecipientSessionUnitOfWork,
   RecipientSessionDigest,
 } from "./signing-sessions.js";
+import type {
+  ScopedFinalCopyRepository, FinalCopyDigest, FinalCopyCredentialUnitOfWork,
+} from "./final-copies.js";
 import type { SigningAccessDigest } from "./signing-access.js";
 
 import type {
@@ -424,6 +427,8 @@ export interface WorkspaceUnitOfWork {
    * recipients hold no way in is worse than one that failed to send.
    */
   readonly signingAccess: ScopedSigningAccessRepository;
+  /** 073. Final-copy download grants, minted in the finalization transaction. */
+  readonly finalCopies: ScopedFinalCopyRepository;
   /**
    * Signing workflow state (BACKEND-37).
    *
@@ -730,6 +735,16 @@ export interface TransactionManager {
   ): Promise<T>;
 
   /**
+   * 073. A transaction bound to a presented final-copy DOWNLOAD credential —
+   * a fourth realm with its own setting, so it can never resolve a signing
+   * grant, a session or an invitation, nor they it.
+   */
+  runForFinalCopyCredential<T>(
+    credentialDigest: FinalCopyDigest,
+    operation: (uow: FinalCopyCredentialUnitOfWork) => Promise<T>,
+  ): Promise<T>;
+
+  /**
    * A transaction bound to an established recipient SESSION cookie.
    *
    * A third realm. Read-only: resolving a session tells the caller who is
@@ -785,6 +800,7 @@ export * from "./upload-requests.js";
 export * from "./signing-access.js";
 
 export * from "./signing-sessions.js";
+export * from "./final-copies.js";
 export * from "./signing-ceremony.js";
 export * from "./signing-submission.js";
 export * from "./signing-workflow.js";

@@ -121,6 +121,12 @@ export interface SigningRequestRecord {
    */
   readonly completionReadyAt: number | null;
   /**
+   * 073. Whether every participant is emailed the final signed copy on
+   * completion. Absent means true — the default, and every request stored
+   * before the choice existed.
+   */
+  readonly shareFinalCopy?: boolean;
+  /**
    * When this request stops accepting signatures, or null for no deadline.
    *
    * Null is NO DEADLINE, not "unknown" and not "already passed". Opt-in, and an
@@ -308,6 +314,8 @@ export interface ScopedSigningRequestRepository {
   markSentIfSendable(input: {
     readonly signingRequestId: SigningRequestId;
     readonly sentAt: number;
+    /** 073. Frozen with the send, in the same UPDATE. Absent means true. */
+    readonly shareFinalCopy?: boolean;
   }): Promise<boolean>;
 
   /**

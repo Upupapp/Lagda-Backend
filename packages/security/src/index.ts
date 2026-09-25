@@ -29,3 +29,4 @@ export {
   createEvidenceEventIdGenerator, createVerificationIdGenerator,
   createNotificationIntentIdGenerator, createNotificationDeliveryIdGenerator,
 } from "./completion-identifiers.js";
+export { createFinalCopyTokenFactory } from "./final-copy-token.js";
