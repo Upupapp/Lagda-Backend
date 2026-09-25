@@ -159,6 +159,29 @@ describe("getSigningRequestSignatures", () => {
     expect(view.requiredCount).toBe(1);
   });
 
+  // 069. An approver who APPROVED — or was skipped — has finished their
+  // part. Counting only `signed` meant a completed request with an approver
+  // never read as complete, and the dialog could not render their state.
+  it.each(["approved", "skipped"] as const)("counts a %s participant as done", async (state) => {
+    const { h, signingRequestId } = await oneSigner();
+    const recipientId = h.store.signingRequestRecipients[0]!.recipientId;
+    const at = Date.parse("2026-09-25T10:00:00Z");
+    h.store.activations.push({
+      signingRequestId: String(signingRequestId), recipientId, state,
+      activatedAt: at, signedAt: null, submissionId: null,
+      approvedAt: state === "approved" ? at : null,
+      skippedAt: state === "skipped" ? at : null,
+      declinedAt: null, declineReason: null,
+    });
+
+    const view = await getSigningRequestSignatures(
+      actor(OWNER), h.workspaceId, signingRequestId, h.deps);
+
+    expect(view.signedCount).toBe(1);
+    expect(view.signatories[0]?.state).toBe(state);
+    expect(state === "approved" ? view.signatories[0]?.approvedAt : view.signatories[0]?.skippedAt).toBe(at);
+  });
+
   it("refuses a request that belongs to another tenant, as an absence", async () => {
     const { h } = await oneSigner();
 

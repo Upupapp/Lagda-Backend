@@ -528,6 +528,10 @@ export const SignatorySchema = Type.Object(
     state: RecipientWorkflowStateSchema,
     /** The instant they signed. Null unless `state` is `signed`. */
     signedAt: Type.Union([Type.String({ format: "date-time" }), Type.Null()]),
+    /** 069. The instant an APPROVER approved. Null unless `state` is `approved`. */
+    approvedAt: Type.Union([Type.String({ format: "date-time" }), Type.Null()]),
+    /** 069. The instant an approver was skipped. Null unless `state` is `skipped`. */
+    skippedAt: Type.Union([Type.String({ format: "date-time" }), Type.Null()]),
     declinedAt: Type.Union([Type.String({ format: "date-time" }), Type.Null()]),
     declineReason: Type.Union([SigningDeclineReasonSchema, Type.Null()]),
     /** The account bound to this recipient (051), if any. See the header. */
