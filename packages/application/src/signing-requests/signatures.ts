@@ -30,6 +30,10 @@ import type { WorkflowRecipientRecord } from "../common/ports/signing-workflow.j
 import type { AuthenticatedActor } from "../common/ports/session.js";
 import type { SigningRequestState } from "@lagda/contracts";
 
+
+/** The workflow states in which a participant's part is finished. */
+const DONE_STATES: ReadonlySet<string> = new Set(["signed", "approved", "skipped"]);
+
 export interface SigningRequestSignaturesDependencies {
   readonly transactions: TransactionManager;
 }
@@ -57,6 +61,9 @@ export interface SignatoryView {
   readonly state: RecipientWorkflowState;
   /** The instant they signed. Null unless `state` is `signed`. */
   readonly signedAt: number | null;
+  /** 069. Set when an approver approved / was skipped. */
+  readonly approvedAt: number | null;
+  readonly skippedAt: number | null;
   readonly declinedAt: number | null;
   readonly declineReason: SigningDeclineReason | null;
   /** The bound account's display name, or null if none is bound. */
@@ -133,6 +140,8 @@ export async function getSigningRequestSignatures(
         // as one who did something.
         state: row?.state ?? "waiting",
         signedAt: row?.signedAt ?? null,
+        approvedAt: row?.approvedAt ?? null,
+        skippedAt: row?.skippedAt ?? null,
         declinedAt: row?.declinedAt ?? null,
         declineReason: row?.declineReason ?? null,
         linkedAccountName: account?.name ?? null,
@@ -145,7 +154,10 @@ export async function getSigningRequestSignatures(
     return {
       signingRequestId: request.signingRequestId,
       state: request.state,
-      signedCount: required.filter(signatory => signatory.state === "signed").length,
+      // "Done", not only "signed": an approver who approved — or was skipped
+      // (069) — has finished their part. Counting only `signed` meant a
+      // completed request with an approver never read as complete.
+      signedCount: required.filter(signatory => DONE_STATES.has(signatory.state)).length,
       requiredCount: required.length,
       signatories,
     };

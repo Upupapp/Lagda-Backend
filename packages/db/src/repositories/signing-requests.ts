@@ -206,12 +206,18 @@ export function createScopedSigningRequestRepository(
           -- workspace record, not the sender one.
           u.display_name as initiator_name,
           u.email        as initiator_email,
+          -- Participants who ACT. Viewers and carbon-copy recipients never
+          -- sign, approve or skip, so counting them made "all done"
+          -- unreachable for any request that had one.
           (select count(*) from signing_request_recipients r
-             where r.signing_request_id = sr.signing_request_id)
+             where r.signing_request_id = sr.signing_request_id
+               and r.recipient_type not in ('viewer', 'carbon-copy'))
             as participant_count,
+          -- Finished, not only signed: an approver who approved or was
+          -- skipped (069) has done their part too.
           (select count(*) from signing_request_recipient_activation a
              where a.signing_request_id = sr.signing_request_id
-               and a.recipient_state = 'signed')
+               and a.recipient_state in ('signed', 'approved', 'skipped'))
             as completed_participant_count
         from signing_requests sr
         left join users u on u.user_id = sr.created_by_user_id

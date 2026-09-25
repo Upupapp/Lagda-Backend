@@ -26972,6 +26972,8 @@
                           "routingOrder",
                           "state",
                           "signedAt",
+                          "approvedAt",
+                          "skippedAt",
                           "declinedAt",
                           "declineReason",
                           "linkedAccountName",
@@ -27093,6 +27095,28 @@
                             ]
                           },
                           "signedAt": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "approvedAt": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "skippedAt": {
                             "anyOf": [
                               {
                                 "format": "date-time",

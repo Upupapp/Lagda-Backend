@@ -200,6 +200,8 @@ const presentSignatures = (view: SigningRequestSignaturesView) => ({
     // Nullable instants stay null. Somebody who has not signed has no
     // signing time, and the epoch is a date rather than an absence.
     signedAt: signatory.signedAt === null ? null : iso(signatory.signedAt),
+    approvedAt: signatory.approvedAt === null ? null : iso(signatory.approvedAt),
+    skippedAt: signatory.skippedAt === null ? null : iso(signatory.skippedAt),
     declinedAt: signatory.declinedAt === null ? null : iso(signatory.declinedAt),
     declineReason: signatory.declineReason,
     linkedAccountName: signatory.linkedAccountName,
