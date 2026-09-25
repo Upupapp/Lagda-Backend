@@ -7,6 +7,7 @@
 import {
   createDatabase, loadDatabaseConfig, createTransactionManager,
   createSessionRepository, createRateLimitCounterRepository,
+  createAccountProfileRepository,
   hasCurrentSchema,
   type LagdaDatabase,
 } from "@lagda/db";
@@ -285,7 +286,18 @@ export async function createProductionDependencies(
       audit: () => ({ transactions }),
       // The in-app document feed, projected from the same evidence the
       // audit read returns — so it needs the same single dependency.
-      documentFeed: () => ({ transactions }),
+      documentFeed: () => ({
+        transactions,
+        // The reader's OWN address, by their own session user id, and OUTSIDE
+        // the tenant transaction — see `DocumentNotificationFeedDependencies`.
+        // Verified only, the same posture migration 056 takes: an address the
+        // account has not proven it controls does not make it a participant.
+        accountEmailOf: async (userId: UserId) => {
+          const account = await createAccountProfileRepository(database.db)
+            .findCurrentUser(userId);
+          return account !== null && account.emailVerified ? account.email : null;
+        },
+      }),
       ...buildLinkedSurfaces({
         config, transactions, clock, idempotency, memberIds, database,
       }),

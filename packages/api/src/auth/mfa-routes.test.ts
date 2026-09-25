@@ -43,6 +43,9 @@ async function build(options: {
   | "attempts-exhausted" | "pending-expired" | "pending-not-found";
   recoveryRemaining?: number | null;
   authenticated?: boolean;
+  /** Defaults to a valid token, so the tests below that are not ABOUT CSRF
+   *  exercise the route rather than the check. */
+  csrfValid?: boolean;
   enrolOutcome?: "started" | "already-enabled";
   confirmOutcome?: "enabled" | "invalid-code" | "no-pending-enrolment";
   disableOutcome?: "disabled" | "invalid-password" | "not-enabled";
@@ -251,6 +254,7 @@ async function build(options: {
     },
     authenticatedUser: () => Promise.resolve(
       options.authenticated === false ? null : ("usr_1" as UserId)),
+    validateCsrf: () => options.csrfValid !== false,
   });
   await app.ready();
   return { app, issuedSessions };
@@ -411,6 +415,33 @@ describe("MFA settings routes", () => {
       // mid-ceremony would let a password alone change account security (§255).
       expect(response.statusCode).toBe(401);
     }
+    await app.close();
+  });
+
+  // The header claimed this check for a long time before any handler made it.
+  // A fully signed-in session is not enough on its own: a forged cross-site
+  // request carries that cookie too.
+  it("all three refuse a signed-in caller without a valid CSRF token", async () => {
+    const { app } = await build({ csrfValid: false });
+    for (const [path, payload] of [
+      ["/auth/mfa/enroll", undefined],
+      ["/auth/mfa/confirm", { code: "123456" }],
+      ["/auth/mfa/disable", { password: PASSWORD }],
+    ] as const) {
+      const response = await post(app, path, payload);
+      expect(response.statusCode, path).toBe(403);
+      const body: { error: { code: string } } = response.json();
+      expect(body.error.code).toBe("csrf_validation_failed");
+    }
+    await app.close();
+  });
+
+  it("does NOT demand CSRF of the login ceremony, which has no token yet", async () => {
+    // A browser mid-sign-in holds only the pre-auth cookie. Requiring a CSRF
+    // token here would lock every MFA user out of signing in.
+    const { app } = await build({ csrfValid: false });
+    const response = await post(app, "/auth/mfa/verify", { code: "123456" });
+    expect(response.statusCode).not.toBe(403);
     await app.close();
   });
 

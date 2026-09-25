@@ -14,6 +14,7 @@ import type {
   SessionId, UserId,
 } from "@lagda/application";
 import type { ApiConfig } from "../config/index.js";
+import { ACCOUNT_RATE_LIMITED_PATHS } from "../app/identity-routes.js";
 import type { UserSignatureRepository, SavedSignature } from "@lagda/db";
 import { createSignatureImageValidator } from "../security/signature-image.js";
 import {
@@ -572,5 +573,57 @@ describe("GET /me/notifications", () => {
     expect(res.body).not.toContain("SHOULD-NEVER-BE-SERIALIZED");
     expect(res.body).not.toContain("sealedKeyVersion");
     expect(res.body).not.toContain("challengeId");
+  });
+});
+
+// ── CSRF on every state change ──────────────────────────────────────────────
+//
+// `/me` sits outside the authenticated scope, so no hook applies CSRF here —
+// each handler must. Only the signature and signing-link routes did at first;
+// profile, preferences, password change and session revoke did not, and a
+// forged cross-site request could rename an account or sign it out
+// everywhere. Each body is VALID, so the request reaches the handler and it is
+// the CSRF check, not schema validation, that refuses it.
+describe("CSRF on /me state changes", () => {
+  it("refuses every state-changing route without a valid token", async () => {
+    const { app } = await build({ csrfValid: false });
+    const routes: [string, string, unknown][] = [
+      ["PATCH", "/me/profile", { fullName: "Ana Cruz" }],
+      ["PATCH", "/me/preferences", { appearance: "dark" }],
+      ["POST", "/me/password", {
+        currentPassword: PASSWORD, newPassword: "a different passphrase",
+      }],
+      ["POST", "/me/sessions/revoke", {}],
+    ];
+    for (const [method, url, payload] of routes) {
+      const response = await app.inject({
+        method: method as "PATCH" | "POST", url, payload: payload as object,
+      });
+      expect(response.statusCode, `${method} ${url}`).toBe(403);
+      const body: { error: { code: string } } = response.json();
+      expect(body.error.code).toBe("csrf_validation_failed");
+    }
+    await app.close();
+  });
+
+  it("still serves reads without a token — GET is not a state change", async () => {
+    const { app } = await build({ csrfValid: false });
+    for (const url of ["/me", "/me/sessions"]) {
+      const response = await app.inject({ method: "GET", url });
+      expect(response.statusCode, url).toBe(200);
+    }
+    await app.close();
+  });
+});
+
+// The rate-limit table names `ACCOUNT_RATE_LIMITED_PATHS.changePassword`; this module
+// registers the route with its own literal. If the two ever drift, the limit
+// silently stops applying — the table would still "cover" a path nobody
+// serves. Asserted here, on the module that owns the literal.
+describe("rate-limit path agreement", () => {
+  it("registers password change at the path the rate-limit table names", async () => {
+    const { app } = await build();
+    expect(app.hasRoute({ method: "POST", url: ACCOUNT_RATE_LIMITED_PATHS.changePassword })).toBe(true);
+    await app.close();
   });
 });

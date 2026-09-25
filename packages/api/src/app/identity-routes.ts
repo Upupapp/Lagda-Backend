@@ -70,6 +70,19 @@ export const IDENTITY_PATHS = {
 } as const;
 
 /**
+ * Account routes that take a credential, and therefore need a rate limit.
+ *
+ * Not `IDENTITY_PATHS`, which is the `/auth/*` contract and asserted to be
+ * nothing else. These live under `/me` and are registered by
+ * `account-routes.ts`; listing them here is what puts them in the rate-limit
+ * completeness gate. `/me/password` accepts the current password and had no
+ * limit at all before it was listed.
+ */
+export const ACCOUNT_RATE_LIMITED_PATHS = {
+  changePassword: "/me/password",
+} as const;
+
+/**
  * Everything the identity surface needs.
  *
  * Factories throughout, so a route holds no repository, no hasher and no
@@ -231,13 +244,15 @@ export function registerIdentityRoutes(
     // password alone change the account's security configuration.
     authenticatedUser: async request =>
       (await deps.authenticatedUser(request))?.userId ?? null,
+    validateCsrf: deps.validateCsrf,
   });
 
   registerAccountRoutes(app, {
     config,
     authenticatedUser: deps.authenticatedUser,
     // `/me` sits outside the authenticated scope, so `requireSession`'s CSRF
-    // hook never runs here. The saved-signature writes ask for it explicitly.
+    // hook never runs here. Every state-changing `/me` route asks for it
+    // explicitly instead.
     validateCsrf: deps.validateCsrf,
     signatures: deps.signatures,
     notificationFeed: deps.notificationFeed,

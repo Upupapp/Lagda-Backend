@@ -279,6 +279,19 @@ export const RATE_LIMIT_POLICIES = {
       + "sign-in (handoff §317, 5/min): both verify a password and both are "
       + "worth guessing against.",
   },
+  // `POST /me/password` accepts the CURRENT password, so a stolen session
+  // could use it as an unlimited oracle for the real one. Same shape and
+  // numbers as `mfa.disable.user`, for the same two reasons.
+  "account.password.change.user": {
+    id: "account.password.change.user",
+    scopeType: "user",
+    limit: 5,
+    windowMs: MINUTE,
+    failureMode: "fail-closed",
+    source: "not specified by the handoff. Chosen to match mfa.disable.user "
+      + "and sign-in (handoff §317, 5/min): all three verify a password and "
+      + "all three are worth guessing against.",
+  },
 
   // ── Workspace lifecycle (BACKEND-25) ────────────────────────────────────
   //

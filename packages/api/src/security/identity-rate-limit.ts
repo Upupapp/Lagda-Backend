@@ -30,7 +30,7 @@ import {
   type RateLimitCheck, type RateLimitPolicyId,
 } from "@lagda/application";
 import { checkSemanticLimits, type RateLimitOptions } from "./rate-limit-plugin.js";
-import { IDENTITY_PATHS } from "../app/identity-routes.js";
+import { IDENTITY_PATHS, ACCOUNT_RATE_LIMITED_PATHS } from "../app/identity-routes.js";
 
 /**
  * The policies guarding one route.
@@ -82,6 +82,7 @@ const ROUTE_POLICIES: Readonly<Record<string, RoutePolicies>> = {
   [IDENTITY_PATHS.mfaEnroll]: { user: "mfa.enroll.user" },
   [IDENTITY_PATHS.mfaConfirm]: { user: "mfa.enroll.user" },
   [IDENTITY_PATHS.mfaDisable]: { user: "mfa.disable.user" },
+  [ACCOUNT_RATE_LIMITED_PATHS.changePassword]: { user: "account.password.change.user" },
 };
 
 /** Exported for the completeness gate, not for callers. */

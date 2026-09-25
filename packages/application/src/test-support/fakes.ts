@@ -112,6 +112,9 @@ import type {
   ScopedWorkflowTemplateFieldRepository, WorkflowTemplateFieldRecord,
 } from "../common/ports/workflow-template-fields.js";
 import type {
+  ScopedDocumentNotificationStateRepository,
+} from "../common/ports/document-notification-states.js";
+import type {
   UserSigningRecordsRepository, UserSignedDocumentRecord, UserSigningInboxRecord,
   SigningResumeIntentRepository, SigningResumeIntentRecord,
 } from "../common/ports/user-signing-records.js";
@@ -425,6 +428,7 @@ interface StoreSnapshot {
   readonly workflowTemplates: WorkflowTemplateRecord[];
   readonly uploadRequests: UploadRequestRecord[];
   readonly workflowTemplateFields: WorkflowTemplateFieldRecord[];
+  readonly notificationStates: NotificationStateRow[];
   readonly documents: DocumentRecord[];
   readonly folders: FolderRecord[];
   readonly preparations: PreparationRecord[];
@@ -473,6 +477,8 @@ export class InMemoryStore {
   workflowTemplates: WorkflowTemplateRecord[] = [];
   uploadRequests: UploadRequestRecord[] = [];
   workflowTemplateFields: WorkflowTemplateFieldRecord[] = [];
+  /** 071. One reader's read/dismissed state on one feed row. */
+  notificationStates: NotificationStateRow[] = [];
   documents: DocumentRecord[] = [];
   folders: FolderRecord[] = [];
   preparations: PreparationRecord[] = [];
@@ -524,6 +530,7 @@ export class InMemoryStore {
       workflowTemplates: [...this.workflowTemplates],
       uploadRequests: [...this.uploadRequests],
       workflowTemplateFields: [...this.workflowTemplateFields],
+      notificationStates: this.notificationStates.map(row => ({ ...row })),
       workspaces: new Map(this.workspaces),
       uploads: new Map(this.uploads),
       memberships: [...this.memberships],
@@ -587,6 +594,7 @@ export class InMemoryStore {
     this.workflowTemplates = [...snapshot.workflowTemplates];
     this.uploadRequests = [...snapshot.uploadRequests];
     this.workflowTemplateFields = [...snapshot.workflowTemplateFields];
+    this.notificationStates = [...snapshot.notificationStates];
     this.invitations = [...snapshot.invitations];
     this.contacts = [...snapshot.contacts];
     this.documents = [...snapshot.documents];
@@ -1218,6 +1226,55 @@ function scopedWorkflowTemplates(
 /** Migration 060's field placements, in memory. Mirrors `scopedPreparation`'s
  *  `listFields`/`replaceLayout` pair, minus the revision — see
  *  `ScopedWorkflowTemplateFieldRepository`'s header for why there is none. */
+/** 071. A state row, with the scope the real table carries as columns. */
+interface NotificationStateRow {
+  readonly workspaceId: WorkspaceId;
+  readonly userId: UserId;
+  readonly evidenceEventId: string;
+  read: boolean;
+  dismissed: boolean;
+}
+
+/**
+ * Mirrors the adapter: only ids that are real evidence events in THIS
+ * workspace are written (the adapter's INSERT ... SELECT from evidence), and
+ * an absent half of the change leaves that half alone.
+ */
+function scopedNotificationStates(
+  store: InMemoryStore, scope: WorkspaceId,
+): ScopedDocumentNotificationStateRepository {
+  const find = (userId: UserId, id: string) => store.notificationStates.find(r =>
+    r.workspaceId === scope && r.userId === userId && r.evidenceEventId === id);
+  return {
+    listStates: (userId, eventIds) => {
+      const states = new Map<string, { read: boolean; dismissed: boolean }>();
+      for (const id of eventIds) {
+        const row = find(userId, id);
+        if (row !== undefined) states.set(id, { read: row.read, dismissed: row.dismissed });
+      }
+      return Promise.resolve(states);
+    },
+    setState: (userId, eventIds, change) => {
+      if (change.read === undefined && change.dismissed === undefined) return Promise.resolve(0);
+      let written = 0;
+      for (const id of new Set(eventIds)) {
+        const real = store.evidence.some(
+          e => e.workspaceId === scope && String(e.evidenceEventId) === id);
+        if (!real) continue;
+        let row = find(userId, id);
+        if (row === undefined) {
+          row = { workspaceId: scope, userId, evidenceEventId: id, read: false, dismissed: false };
+          store.notificationStates.push(row);
+        }
+        if (change.read !== undefined) row.read = change.read;
+        if (change.dismissed !== undefined) row.dismissed = change.dismissed;
+        written++;
+      }
+      return Promise.resolve(written);
+    },
+  };
+}
+
 function scopedWorkflowTemplateFields(
   store: InMemoryStore, scope: WorkspaceId,
 ): ScopedWorkflowTemplateFieldRepository {
@@ -3069,6 +3126,7 @@ export class FakeTransactionManager implements TransactionManager {
         workflowTemplates: scopedWorkflowTemplates(this.store, workspaceId),
         uploadRequests: scopedUploadRequests(this.store, workspaceId),
         workflowTemplateFields: scopedWorkflowTemplateFields(this.store, workspaceId),
+        notificationStates: scopedNotificationStates(this.store, workspaceId),
         organizationUnits: scopedOrganizationUnits(this.store, workspaceId),
         workspaces: scopedWorkspaces(this.store, workspaceId),
         memberships: scopedMemberships(this.store, workspaceId),
@@ -3154,6 +3212,7 @@ export class FakeTransactionManager implements TransactionManager {
             workflowTemplates: scopedWorkflowTemplates(store, workspaceId),
             uploadRequests: scopedUploadRequests(store, workspaceId),
             workflowTemplateFields: scopedWorkflowTemplateFields(store, workspaceId),
+            notificationStates: scopedNotificationStates(store, workspaceId),
             actorProfiles: { displayNameOf: () => Promise.resolve(null) },
             userSigningRecords: userSigningRecords(),
             accountLinks: signingAccountLinks(),

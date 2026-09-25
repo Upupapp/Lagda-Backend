@@ -1,9 +1,12 @@
 // Multi-factor authentication routes.
 //
-//   POST /auth/mfa/verify     complete a login ceremony  (pre-auth cookie)
-//   POST /auth/mfa/enroll     begin TOTP enrolment       (full session + CSRF)
-//   POST /auth/mfa/confirm    finish enrolment           (full session + CSRF)
-//   POST /auth/mfa/disable    remove the factor          (full session + CSRF + password)
+//   POST /auth/mfa/verifications        complete a login ceremony  (pre-auth cookie)
+//   POST /auth/mfa/enrolments           begin TOTP enrolment       (full session + CSRF)
+//   POST /auth/mfa/enrolments/confirm   finish enrolment           (full session + CSRF)
+//   POST /auth/mfa/enrolments/current   remove the factor          (full session + CSRF + password)
+//
+// The paths are `IDENTITY_PATHS` in `identity-routes.ts` — the source of
+// truth. This list once named four paths that were never mounted.
 //
 // ── Two different credentials guard these ──────────────────────────────────
 //
@@ -12,15 +15,17 @@
 // grants exactly one thing: finishing this ceremony (§46).
 //
 // The other three are ordinary authenticated mutations from a fully logged-in
-// session, and take standard CSRF (§148, §262). Enrolling or removing a second
+// session, and take standard CSRF (§148, §262) — each handler calls
+// `validateCsrf` itself, because these routes sit outside the authenticated
+// scope whose hook would otherwise do it. (This comment claimed the check for
+// a long time before any handler made it.) Enrolling or removing a second
 // factor from a half-authenticated browser would defeat the point of having
 // one.
 //
 // ── No resend, no delivery ─────────────────────────────────────────────────
 //
 // The factor is TOTP. Nothing is issued per login and nothing is sent, so there
-// is no `/auth/mfa/resend` — it would have nothing to resend. See
-// MFA_OTP_PRODUCT_INVENTORY.md.
+// is no `/auth/mfa/resend` — it would have nothing to resend.
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { Type, type Static } from "@sinclair/typebox";
@@ -125,6 +130,12 @@ export interface MfaRouteOptions {
    * let a password alone change the account's security configuration (§255).
    */
   readonly authenticatedUser: (request: FastifyRequest) => Promise<UserId | null>;
+  /**
+   * The double-submit CSRF check, for the three settings routes. Not applied
+   * to `/verifications`: that browser holds only a pre-auth cookie and no
+   * CSRF token yet — it is what the ceremony is about to issue.
+   */
+  readonly validateCsrf: (request: FastifyRequest) => boolean;
 }
 
 export function registerMfaRoutes(
@@ -229,6 +240,7 @@ export function registerMfaRoutes(
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     const userId = await options.authenticatedUser(request);
     if (userId === null) return unauthenticated(reply);
+    if (!options.validateCsrf(request)) return csrfFailed(reply);
 
     const result = await beginMfaEnrolment(userId, options.enrollDependencies());
     if (result.outcome === "already-enabled") {
@@ -256,6 +268,7 @@ export function registerMfaRoutes(
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     const userId = await options.authenticatedUser(request);
     if (userId === null) return unauthenticated(reply);
+    if (!options.validateCsrf(request)) return csrfFailed(reply);
 
     const body = request.body as ConfirmMfaRequest;
     const result = await confirmMfaEnrolment(
@@ -291,6 +304,7 @@ export function registerMfaRoutes(
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     const userId = await options.authenticatedUser(request);
     if (userId === null) return unauthenticated(reply);
+    if (!options.validateCsrf(request)) return csrfFailed(reply);
 
     const body = request.body as DisableMfaRequest;
     const result = await disableMfa(
@@ -317,6 +331,16 @@ export function registerMfaRoutes(
     }
 
     return reply.status(200).send({ status: "disabled" as const });
+  });
+}
+
+/** The same envelope `/me`'s routes send, so a client handles one shape. */
+function csrfFailed(reply: FastifyReply): FastifyReply {
+  return reply.status(403).send({
+    error: {
+      code: "csrf_validation_failed",
+      message: "The request could not be verified. Please retry from the application.",
+    },
   });
 }
 

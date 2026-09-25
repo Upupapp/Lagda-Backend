@@ -102,7 +102,8 @@ describe("policy registry", () => {
     // Unlimited password or OTP guessing during a database blip is worse than
     // refusing the operation during one.
     for (const id of ["auth.signin.ip", "auth.signin.account",
-                      "otp.deliver.account", "otp.verify.challenge"] as const) {
+                      "otp.deliver.account", "otp.verify.challenge",
+                      "mfa.disable.user", "account.password.change.user"] as const) {
       expect(RATE_LIMIT_POLICIES[id].failureMode, id).toBe("fail-closed");
     }
   });

@@ -321,9 +321,15 @@ export interface AccountRouteOptions {
    * The same double-submit check `requireSession` installs.
    *
    * `/me` is registered OUTSIDE the authenticated scope, so that hook does not
-   * reach it. Every existing route here is either a read or a write already
-   * gated by the current password — but a saved signature is neither, and its
-   * payload is later drawn onto a legally binding document. It gets the check.
+   * reach it — every state-changing route here therefore calls this itself,
+   * and every one of them does.
+   *
+   * That was not always true. Only the signature and signing-link routes did
+   * at first, on the reasoning that the rest were "a read or a write already
+   * gated by the current password". Profile, preferences and session revoke
+   * are none of those: a forged cross-site request could rename an account
+   * or sign it out everywhere. SameSite=Lax blocks that in current browsers;
+   * this is the check that does not depend on the browser.
    */
   readonly validateCsrf: (request: FastifyRequest) => boolean;
   readonly signatures: () => UserSignatureRepository;
@@ -402,15 +408,15 @@ export function registerAccountRoutes(
     noStore(reply);
     const actor = await options.authenticatedUser(request);
     if (actor === null) return unauthenticated(reply);
+    if (!options.validateCsrf(request)) return csrfFailed(reply);
 
+    // Passed through as-is: an ABSENT key must stay absent so the use case
+    // leaves that column alone. Coercing it to null here (as this route once
+    // did) turned every partial PATCH into a full replace. The schema is
+    // closed, so nothing beyond the five fields can reach the use case.
     const body = request.body as UpdateProfileRequest;
-    const result = await updateCurrentUserProfile(actor.userId, {
-      fullName: body.fullName ?? null,
-      displayName: body.displayName ?? null,
-      jobTitle: body.jobTitle ?? null,
-      department: body.department ?? null,
-      preferredSenderName: body.preferredSenderName ?? null,
-    }, options.updateProfileDependencies());
+    const result = await updateCurrentUserProfile(
+      actor.userId, body, options.updateProfileDependencies());
 
     if (result.outcome === "invalid") {
       return reply.status(422).send({
@@ -431,6 +437,7 @@ export function registerAccountRoutes(
     noStore(reply);
     const actor = await options.authenticatedUser(request);
     if (actor === null) return unauthenticated(reply);
+    if (!options.validateCsrf(request)) return csrfFailed(reply);
 
     // The cast is sound because AJV has already validated the body against the
     // CLOSED enums above — a value outside `DATE_FORMATS` is a 400 before this
@@ -795,6 +802,7 @@ export function registerAccountRoutes(
     noStore(reply);
     const actor = await options.authenticatedUser(request);
     if (actor === null) return unauthenticated(reply);
+    if (!options.validateCsrf(request)) return csrfFailed(reply);
 
     const body = request.body as ChangePasswordRequest;
     const result = await changeCurrentPassword(actor.userId, {
@@ -856,6 +864,7 @@ export function registerAccountRoutes(
     noStore(reply);
     const actor = await options.authenticatedUser(request);
     if (actor === null) return unauthenticated(reply);
+    if (!options.validateCsrf(request)) return csrfFailed(reply);
 
     const body = request.body as RevokeSessionRequest;
 
