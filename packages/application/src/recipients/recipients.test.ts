@@ -787,6 +787,25 @@ describe("replaceRecipients", () => {
     expect(owners).toEqual([stays.recipientId, newcomer].sort());
   });
 
+  it("REMOVES a left-out person's fields when asked, instead of reassigning them", async () => {
+    // Re-send to the same participants with one excluded: their signature
+    // boxes must not silently become somebody else's.
+    const h = await harness();
+    const stays = await addRecipient(actor(OWNER), h.workspaceId, DOC, manual(), h.deps);
+    const leaves = await addRecipient(actor(OWNER), h.workspaceId, DOC,
+      manual({ name: "Pedro Reyes", email: "pedro@example.com" }), h.deps);
+    await saveDocumentPreparation(actor(OWNER), h.workspaceId, DOC, {
+      expectedRevision: 1,
+      fields: [signatureFieldFor(stays.recipientId), signatureFieldFor(leaves.recipientId)],
+    }, h.prep);
+
+    const replaced = await replaceRecipients(actor(OWNER), h.workspaceId, DOC,
+      [manual()], h.deps, { departingFields: "remove" });
+
+    expect(replaced.map(r => r.recipientId)).toEqual([stays.recipientId]);
+    expect(h.store.preparationFields.map(f => f.recipientId)).toEqual([stays.recipientId]);
+  });
+
   it("leaves the list untouched when the request is invalid", async () => {
     // The whole point of doing this in one transaction.
     const h = await harness();

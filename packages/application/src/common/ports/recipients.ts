@@ -155,6 +155,16 @@ export interface ScopedRecipientRepository {
     readonly fromRecipientId: RecipientId;
     readonly toRecipientId: RecipientId;
   }): Promise<number>;
+
+  /**
+   * Deletes one recipient's fields — for a re-send that deliberately leaves
+   * somebody OUT, whose signature boxes must not silently become someone
+   * else's. Bound to the preparation like `reassignFields`. Returns how many.
+   */
+  removeFields(input: {
+    readonly preparationId: PreparationId;
+    readonly recipientId: RecipientId;
+  }): Promise<number>;
 }
 
 export interface RecipientIdGenerator {
