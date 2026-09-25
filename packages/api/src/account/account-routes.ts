@@ -403,14 +403,13 @@ export function registerAccountRoutes(
     const actor = await options.authenticatedUser(request);
     if (actor === null) return unauthenticated(reply);
 
+    // Passed through as-is: an ABSENT key must stay absent so the use case
+    // leaves that column alone. Coercing it to null here (as this route once
+    // did) turned every partial PATCH into a full replace. The schema is
+    // closed, so nothing beyond the five fields can reach the use case.
     const body = request.body as UpdateProfileRequest;
-    const result = await updateCurrentUserProfile(actor.userId, {
-      fullName: body.fullName ?? null,
-      displayName: body.displayName ?? null,
-      jobTitle: body.jobTitle ?? null,
-      department: body.department ?? null,
-      preferredSenderName: body.preferredSenderName ?? null,
-    }, options.updateProfileDependencies());
+    const result = await updateCurrentUserProfile(
+      actor.userId, body, options.updateProfileDependencies());
 
     if (result.outcome === "invalid") {
       return reply.status(422).send({

@@ -1554,6 +1554,22 @@ export interface SigningRequestCompletionsTable {
   created_at: Timestamptz;
 }
 
+/**
+ * 071. One reader's read/dismissed state on one feed row. NULL means "not
+ * read" / "not dismissed". `evidence_event_id` names a real event in the same
+ * workspace — enforced by the repository's INSERT ... SELECT, NOT a foreign
+ * key (see the migration for why an FK into evidence is forbidden). No DELETE
+ * is granted: clearing a state nulls its timestamp.
+ */
+export interface DocumentNotificationStatesTable {
+  workspace_id: string;
+  user_id: string;
+  evidence_event_id: string;
+  read_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
+  dismissed_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
+  updated_at: ColumnType<Date, Date | undefined, Date>;
+}
+
 export interface Database {
   workspaces: WorkspacesTable;
   workspace_memberships: WorkspaceMembershipsTable;
@@ -1599,6 +1615,7 @@ export interface Database {
   recipient_signing_sessions: RecipientSigningSessionsTable;
   document_artifacts: DocumentArtifactsTable;
   evidence_events: EvidenceEventsTable;
+  document_notification_states: DocumentNotificationStatesTable;
   document_seals: DocumentSealsTable;
   verification_records: VerificationRecordsTable;
   user_sessions: UserSessionsTable;

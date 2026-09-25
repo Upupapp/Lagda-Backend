@@ -230,6 +230,43 @@ describe.skipIf(!hasIntegrationDatabase())("account and profile", () => {
       .toBe(before.email_verified_at?.getTime());
   });
 
+  // A PATCH, not a replace. This route once wrote every absent key as null,
+  // so sending only a job title cleared the name, department and sender name.
+  it("a partial update leaves unmentioned profile fields alone", async () => {
+    const userId = await register("partial-profile@example.com");
+    await updateCurrentUserProfile(userId, {
+      fullName: "Maria de los Reyes",
+      displayName: "Maria",
+      jobTitle: "Notary",
+      department: "Legal",
+      preferredSenderName: "Maria R.",
+    }, profileDeps());
+
+    const result = await updateCurrentUserProfile(
+      userId, { jobTitle: "Senior Notary" }, profileDeps());
+
+    expect(result.outcome).toBe("updated");
+    const row = await userRow(userId);
+    expect(row.job_title).toBe("Senior Notary");
+    expect(row.full_name).toBe("Maria de los Reyes");
+    expect(row.display_name).toBe("Maria");
+    expect(row.department).toBe("Legal");
+    expect(row.preferred_sender_name).toBe("Maria R.");
+  });
+
+  it("an explicit null CLEARS a profile field", async () => {
+    const userId = await register("clear-profile@example.com");
+    await updateCurrentUserProfile(userId, {
+      fullName: "Ana Cruz", department: "Legal",
+    }, profileDeps());
+
+    await updateCurrentUserProfile(userId, { department: null }, profileDeps());
+
+    const row = await userRow(userId);
+    expect(row.department).toBeNull();
+    expect(row.full_name).toBe("Ana Cruz");
+  });
+
   it("accepts names with Unicode, apostrophes and hyphens", async () => {
     const userId = await register("names@example.com");
     // Real names. An ASCII allowlist would reject most of these, and a large
@@ -370,6 +407,24 @@ describe.skipIf(!hasIntegrationDatabase())("account and profile", () => {
     expect(row.appearance).toBe("light");
     expect(row.timezone).toBe("Asia/Manila");
     expect(row.date_format).toBe("DD/MM/YYYY");
+  });
+
+  // The sibling of the test above, for the two fields it did not cover — and
+  // the two a partial update used to clear: they were normalized BEFORE the
+  // absent-key check, which turned `undefined` into null.
+  it("leaves an unmentioned locale and language alone", async () => {
+    const userId = await register("partial-locale@example.com");
+    await updateCurrentUserPreferences(userId, {
+      locale: "en-PH", language: "en", appearance: "dark",
+    }, preferenceDeps());
+
+    await updateCurrentUserPreferences(
+      userId, { appearance: "light" }, preferenceDeps());
+
+    const row = await userRow(userId);
+    expect(row.appearance).toBe("light");
+    expect(row.locale).toBe("en-PH");
+    expect(row.language).toBe("en");
   });
 
   it("an explicit null CLEARS a preference", async () => {

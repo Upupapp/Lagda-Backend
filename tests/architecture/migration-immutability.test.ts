@@ -25,7 +25,7 @@ const MIGRATIONS = path.resolve(process.cwd(), "packages/db/src/migrations");
  * Raised deliberately, as part of a deploy, never casually — the number is a
  * claim that every database in existence has already run these.
  */
-const LAST_SHIPPED = 51;
+const LAST_SHIPPED = 70;
 
 function migrationNumber(file: string): number | null {
   const match = /^(\d{3})_/.exec(file);

@@ -707,6 +707,8 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
         const documentFeed = workspaces.documentFeed;
         registerDocumentFeedRoutes(scope, {
           documentFeedDependencies: documentFeed,
+          // The same transaction manager; a state change needs nothing else.
+          stateDependencies: documentFeed,
           actorOf: (request: FastifyRequest) => Promise.resolve(
             request.auth.status === "authenticated"
               ? { userId: request.auth.actor.userId }

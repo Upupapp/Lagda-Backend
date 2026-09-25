@@ -256,12 +256,22 @@ function normalizeOptional(value: string | null | undefined): string | null {
   return trimmed === "" ? null : trimmed;
 }
 
+/**
+ * A PATCH, with the same rule as `UpdatePreferencesInput`: an ABSENT key
+ * leaves the stored value alone; an explicit null (or a blank string) clears
+ * it.
+ *
+ * It used to be a full replace under a PATCH verb — every absent key was
+ * written as null, so `{ jobTitle }` alone silently cleared the full name,
+ * department and sender name. The product's own form masked it by always
+ * sending all five; any other caller would have lost data.
+ */
 export interface UpdateProfileInput {
-  readonly fullName: string | null;
-  readonly displayName: string | null;
-  readonly jobTitle: string | null;
-  readonly department: string | null;
-  readonly preferredSenderName: string | null;
+  readonly fullName?: string | null;
+  readonly displayName?: string | null;
+  readonly jobTitle?: string | null;
+  readonly department?: string | null;
+  readonly preferredSenderName?: string | null;
 }
 
 export type UpdateProfileResult =
@@ -283,35 +293,44 @@ export async function updateCurrentUserProfile(
   input: UpdateProfileInput,
   deps: UpdateProfileDependencies,
 ): Promise<UpdateProfileResult> {
-  const fullName = normalizeOptional(input.fullName);
-  const jobTitle = normalizeOptional(input.jobTitle);
-  const department = normalizeOptional(input.department);
-  const preferredSenderName = normalizeOptional(input.preferredSenderName);
-
-  if (fullName !== null && fullName.length < NAME_MIN_LENGTH) {
-    return { outcome: "invalid", reason: "full-name-too-short" };
-  }
-  for (const value of [fullName, jobTitle, department, preferredSenderName]) {
-    const rejection = checkText(value);
-    if (rejection !== null) return { outcome: "invalid", reason: rejection };
-  }
-
-  // `displayName` falls back to `fullName`, matching the product's own form:
-  // `displayName: form.displayName?.trim() || form.fullName?.trim()`. It is
-  // NOT NULL in the schema, so a blank submission with no full name to fall
-  // back on is a validation failure rather than a constraint violation.
-  const displayName = normalizeOptional(input.displayName) ?? fullName;
-  if (displayName === null) {
-    return { outcome: "invalid", reason: "display-name-required" };
-  }
-  const displayRejection = checkText(displayName);
-  if (displayRejection !== null) {
-    return { outcome: "invalid", reason: displayRejection };
-  }
-
   const now = deps.clock.now();
 
   return deps.commit(async ({ accounts }) => {
+    // Merged against what is stored, so validation sees the RESULT of the
+    // patch — a partial update that leaves a stored name alone is not
+    // rejected for a name it never mentioned.
+    const current = await accounts.findCurrentUser(userId);
+    if (current === null) return { outcome: "not-found" };
+    const stored = current.profile;
+    const pick = (next: string | null | undefined, existing: string | null): string | null =>
+      next === undefined ? existing : normalizeOptional(next);
+
+    const fullName = pick(input.fullName, stored.fullName);
+    const jobTitle = pick(input.jobTitle, stored.jobTitle);
+    const department = pick(input.department, stored.department);
+    const preferredSenderName = pick(input.preferredSenderName, stored.preferredSenderName);
+
+    if (fullName !== null && fullName.length < NAME_MIN_LENGTH) {
+      return { outcome: "invalid", reason: "full-name-too-short" };
+    }
+    for (const value of [fullName, jobTitle, department, preferredSenderName]) {
+      const rejection = checkText(value);
+      if (rejection !== null) return { outcome: "invalid", reason: rejection };
+    }
+
+    // `displayName` falls back to `fullName`, matching the product's own form:
+    // `displayName: form.displayName?.trim() || form.fullName?.trim()`. It is
+    // NOT NULL in the schema, so a blank submission with no full name to fall
+    // back on is a validation failure rather than a constraint violation.
+    const displayName = pick(input.displayName, stored.displayName) ?? fullName;
+    if (displayName === null) {
+      return { outcome: "invalid", reason: "display-name-required" };
+    }
+    const displayRejection = checkText(displayName);
+    if (displayRejection !== null) {
+      return { outcome: "invalid", reason: displayRejection };
+    }
+
     const updated = await accounts.updateProfile({
       userId,
       profile: {
@@ -420,9 +439,16 @@ export async function updateCurrentUserPreferences(
         timezone: input.timezone === undefined
           ? current.preferences.timezone
           : timezone,
-        locale: merge(normalizeOptional(input.locale), current.preferences.locale),
-        language: merge(
-          normalizeOptional(input.language), current.preferences.language),
+        // NOT `merge(normalizeOptional(...))`: normalizing first turns an
+        // absent key into null, so `merge` never saw `undefined` and a
+        // partial update cleared both. Checked for absence first, as
+        // `timezone` above always was.
+        locale: input.locale === undefined
+          ? current.preferences.locale
+          : normalizeOptional(input.locale),
+        language: input.language === undefined
+          ? current.preferences.language
+          : normalizeOptional(input.language),
         dateFormat: merge(input.dateFormat, current.preferences.dateFormat),
         timeFormat: merge(input.timeFormat, current.preferences.timeFormat),
         numberFormat: merge(input.numberFormat, current.preferences.numberFormat),
