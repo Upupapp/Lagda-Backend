@@ -28550,6 +28550,27 @@
           },
           {
             "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "mine"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "workspace"
+                  ]
+                }
+              ]
+            },
+            "in": "query",
+            "name": "scope",
+            "required": false
+          },
+          {
+            "schema": {
               "minLength": 1,
               "maxLength": 64,
               "type": "string"
@@ -28586,7 +28607,9 @@
                           "signingRequestId",
                           "documentTitle",
                           "recipientName",
-                          "occurredAt"
+                          "occurredAt",
+                          "read",
+                          "dismissed"
                         ],
                         "properties": {
                           "id": {
@@ -28650,9 +28673,85 @@
                           },
                           "occurredAt": {
                             "type": "number"
+                          },
+                          "read": {
+                            "type": "boolean"
+                          },
+                          "dismissed": {
+                            "type": "boolean"
                           }
                         }
                       }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/document-notifications/state": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "ids"
+                ],
+                "properties": {
+                  "ids": {
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "type": "string"
+                    }
+                  },
+                  "read": {
+                    "type": "boolean"
+                  },
+                  "dismissed": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "updated"
+                  ],
+                  "properties": {
+                    "updated": {
+                      "minimum": 0,
+                      "type": "integer"
                     }
                   }
                 }

@@ -233,6 +233,9 @@ export async function truncateAll(database: LagdaDatabase): Promise<void> {
   await database.db.deleteFrom("document_uploads").execute();
   await database.db.deleteFrom("verification_records").execute();
   await database.db.deleteFrom("document_seals").execute();
+  // 071. Names evidence events by id (no FK — see the migration), so it is
+  // cleared alongside them rather than left pointing at nothing.
+  await database.db.deleteFrom("document_notification_states").execute();
   await database.db.deleteFrom("evidence_events").execute();
   // Preparation fields cascade from preparations, but delete both explicitly:
   // the order is load-bearing and an implicit cascade hides it.

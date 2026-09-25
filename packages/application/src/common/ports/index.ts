@@ -13,6 +13,7 @@ import type {
 import type { ScopedWorkflowTemplateRepository } from "./workflow-templates.js";
 import type { ScopedUploadRequestRepository } from "./upload-requests.js";
 import type { ScopedWorkflowTemplateFieldRepository } from "./workflow-template-fields.js";
+import type { ScopedDocumentNotificationStateRepository } from "./document-notification-states.js";
 import type { ScopedUploadRepository } from "./upload.js";
 import type { IdempotencyRepository } from "./idempotency.js";
 import type {
@@ -466,6 +467,12 @@ export interface WorkspaceUnitOfWork {
   /** 060. A template's field geometry, per role slot. */
   readonly workflowTemplateFields: ScopedWorkflowTemplateFieldRepository;
   /**
+   * 071. This reader's own read/dismissed state on the document notification
+   * feed. Keyed by the SESSION's user id, which the use case supplies — never
+   * a body field.
+   */
+  readonly notificationStates: ScopedDocumentNotificationStateRepository;
+  /**
    * 067. Documents this workspace has ASKED a member to supply — the one
    * flow where the workspace does not hold the file yet.
    */
@@ -771,6 +778,7 @@ export * from "./signing-requests.js";
 export * from "./user-signing-records.js";
 export * from "./workflow-templates.js";
 export * from "./workflow-template-fields.js";
+export * from "./document-notification-states.js";
 export * from "./flow-document.js";
 export * from "./upload-requests.js";
 

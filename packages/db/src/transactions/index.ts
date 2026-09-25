@@ -46,6 +46,7 @@ import {
 import { createScopedWorkflowTemplateRepository } from "../repositories/workflow-templates.js";
 import { createScopedUploadRequestRepository } from "../repositories/upload-requests.js";
 import { createScopedWorkflowTemplateFieldRepository } from "../repositories/workflow-template-fields.js";
+import { createScopedDocumentNotificationStateRepository } from "../repositories/document-notification-states.js";
 import { createIdempotencyRepository } from "../repositories/idempotency.js";
 import {
   createScopedInvitationRepository, createInvitationCredentialLookup,
@@ -160,6 +161,8 @@ function buildUnitOfWork(
     workflowTemplates: createScopedWorkflowTemplateRepository(trx, workspaceId),
     uploadRequests: createScopedUploadRequestRepository(trx, workspaceId),
     workflowTemplateFields: createScopedWorkflowTemplateFieldRepository(trx, workspaceId),
+    // 071. The reader's own read/dismissed state on the document feed.
+    notificationStates: createScopedDocumentNotificationStateRepository(trx, workspaceId),
   };
 }
 
