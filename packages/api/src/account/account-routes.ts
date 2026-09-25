@@ -45,8 +45,9 @@ import {
 import type { ApiConfig } from "../config/index.js";
 import type {
   UserSignatureRepository, UserSignaturePurpose, SavedSignature,
-  NotificationFeedRepository,
+  NotificationFeedRepository, UserAvatarRepository,
 } from "@lagda/db";
+import { validateAvatarImage } from "../security/avatar-image.js";
 import type { SignatureImageValidator } from "@lagda/application";
 import { SignatureRepresentationSchema } from "@lagda/contracts";
 import { randomUUID } from "node:crypto";
@@ -198,6 +199,14 @@ export const CurrentUserResponseSchema = Type.Object({
     mfaFactor: Type.Union([Type.Literal("TOTP"), Type.Null()]),
     recoveryCodesRemaining: Type.Union([Type.Integer(), Type.Null()]),
   }, { additionalProperties: false }),
+  /**
+   * 072. The profile photo, by VERSION only — the digest of the stored bytes.
+   * The image itself is `GET /me/avatar?v=<version>`: a new photo is a new
+   * URL, so every page showing it updates and nothing serves a stale copy.
+   */
+  avatar: Type.Union([Type.Null(), Type.Object({
+    version: Type.String(),
+  }, { additionalProperties: false })]),
   createdAt: Type.Integer(),
 }, { additionalProperties: false });
 
@@ -327,6 +336,8 @@ export interface AccountRouteOptions {
    */
   readonly validateCsrf: (request: FastifyRequest) => boolean;
   readonly signatures: () => UserSignatureRepository;
+  /** 072. The account's own profile photo. */
+  readonly avatars: () => UserAvatarRepository;
   /** Claims a ceremony handoff code as this account. See migration 051. */
   readonly claimSigningLink: (
     userId: UserId, code: string, currentPassword: string,
@@ -389,7 +400,76 @@ export function registerAccountRoutes(
       void reply.clearCookie(CSRF_COOKIE_NAME, clearCsrfCookieOptions(options.config));
       return unauthenticated(reply);
     }
-    return reply.status(200).send(project(user));
+    return reply.status(200).send(project(user, await options.avatars().versionOf(actor.userId)));
+  });
+
+  // ── Profile photo (072) ─────────────────────────────────────────────────
+  //
+  // The account's OWN photo only, by the session's user id — there is no
+  // `:userId`, so nobody can read or replace anyone else's.
+  app.get("/me/avatar", async (request: FastifyRequest, reply: FastifyReply) => {
+    const actor = await options.authenticatedUser(request);
+    if (actor === null) return unauthenticated(reply);
+    const avatar = await options.avatars().find(actor.userId);
+    if (avatar === null) {
+      noStore(reply);
+      return reply.status(404).send({
+        error: { code: "AVATAR_NOT_FOUND", message: "No profile photo is set." },
+      });
+    }
+    // Versioned URL (`?v=<digest>`), so the browser may keep it: a changed
+    // photo is a different URL. `private` so no shared cache holds it.
+    void reply.header("Cache-Control", "private, max-age=31536000, immutable");
+    void reply.header("ETag", `"${avatar.digest}"`);
+    // Served from our origin, so it must never be interpreted as anything
+    // but the PNG it was validated as.
+    void reply.header("X-Content-Type-Options", "nosniff");
+    void reply.header("Content-Security-Policy", "default-src 'none'");
+    return reply.type(avatar.mediaType).send(avatar.bytes);
+  });
+
+  app.put("/me/avatar", {
+    schema: {
+      body: Type.Object({
+        /** Base64 PNG, no `data:` prefix. Checked from its bytes. */
+        image: Type.String({ minLength: 1, maxLength: 600_000 }),
+      }, { additionalProperties: false }),
+      response: { 200: Type.Object({ version: Type.String() }, { additionalProperties: false }) },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await options.authenticatedUser(request);
+    if (actor === null) return unauthenticated(reply);
+    if (!options.validateCsrf(request)) return csrfFailed(reply);
+
+    const { image } = request.body as { image: string };
+    const validated = validateAvatarImage(image);
+    if (validated === null) {
+      return reply.status(422).send({
+        error: {
+          code: "INVALID_AVATAR",
+          message: "That image could not be used. Use a PNG or JPEG photo under 5 MB.",
+        },
+      });
+    }
+    await options.avatars().save({
+      userId: actor.userId,
+      bytes: validated.bytes,
+      width: validated.width,
+      height: validated.height,
+      digest: validated.digest,
+      updatedAt: options.now(),
+    });
+    return reply.status(200).send({ version: validated.digest });
+  });
+
+  app.delete("/me/avatar", async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await options.authenticatedUser(request);
+    if (actor === null) return unauthenticated(reply);
+    if (!options.validateCsrf(request)) return csrfFailed(reply);
+    await options.avatars().remove(actor.userId);
+    return reply.status(204).send();
   });
 
   // ── Profile ─────────────────────────────────────────────────────────────
@@ -417,7 +497,7 @@ export function registerAccountRoutes(
       });
     }
     if (result.outcome === "not-found") return unauthenticated(reply);
-    return reply.status(200).send(project(result.user));
+    return reply.status(200).send(project(result.user, await options.avatars().versionOf(actor.userId)));
   });
 
   // ── Preferences ─────────────────────────────────────────────────────────
@@ -449,7 +529,7 @@ export function registerAccountRoutes(
       });
     }
     if (result.outcome === "not-found") return unauthenticated(reply);
-    return reply.status(200).send(project(result.user));
+    return reply.status(200).send(project(result.user, await options.avatars().versionOf(actor.userId)));
   });
 
   // ── Saved signatures ────────────────────────────────────────────────────
@@ -890,7 +970,9 @@ export function registerAccountRoutes(
 }
 
 /** Maps the domain projection to the wire shape. Never a database row (§104). */
-function project(user: Awaited<ReturnType<typeof getCurrentUser>>) {
+function project(
+  user: Awaited<ReturnType<typeof getCurrentUser>>, avatarVersion: string | null,
+) {
   if (user === null) throw new Error("unreachable");
   return {
     userId: user.userId,
@@ -899,6 +981,7 @@ function project(user: Awaited<ReturnType<typeof getCurrentUser>>) {
     profile: user.profile,
     preferences: user.preferences,
     security: user.security,
+    avatar: avatarVersion === null ? null : { version: avatarVersion },
     createdAt: user.createdAt,
   };
 }

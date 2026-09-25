@@ -27,6 +27,17 @@ import {
   RASTER_SIGNATURE_MAX_BYTES, RASTER_SIGNATURE_MAX_DIMENSION,
 } from "@lagda/contracts";
 
+/**
+ * SHA-256 over stored image bytes, hex. Exported so the profile-photo
+ * validator (072) digests images with THIS implementation rather than a
+ * second one — the hashing allowlist in tests/architecture/sealing.test.ts
+ * keeps one implementation per domain, and "image bytes as stored" is this
+ * module's domain.
+ */
+export function sha256Hex(bytes: Buffer): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
 /** The eight-byte PNG signature. Nothing else is accepted. */
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 /** Length(4) + "IHDR"(4) + width(4) + height(4) = the first 24 bytes matter. */

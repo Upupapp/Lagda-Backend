@@ -1570,6 +1570,17 @@ export interface DocumentNotificationStatesTable {
   updated_at: ColumnType<Date, Date | undefined, Date>;
 }
 
+/** 072. One profile photo per account. PNG only; bounds are CHECKs. */
+export interface UserAvatarsTable {
+  user_id: string;
+  media_type: string;
+  image_bytes: Buffer;
+  width: number;
+  height: number;
+  digest: string;
+  updated_at: Timestamptz;
+}
+
 export interface Database {
   workspaces: WorkspacesTable;
   workspace_memberships: WorkspaceMembershipsTable;
@@ -1616,6 +1627,7 @@ export interface Database {
   document_artifacts: DocumentArtifactsTable;
   evidence_events: EvidenceEventsTable;
   document_notification_states: DocumentNotificationStatesTable;
+  user_avatars: UserAvatarsTable;
   document_seals: DocumentSealsTable;
   verification_records: VerificationRecordsTable;
   user_sessions: UserSessionsTable;
