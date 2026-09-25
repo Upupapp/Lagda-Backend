@@ -14,6 +14,7 @@
 //   nothing is sent, in the provider sense, at all.
 
 import { describe, it, expect } from "vitest";
+import { fakeSigningInbox, resetUserSigningRecordFakes } from "../test-support/fakes.js";
 import type {
   ContactId, DocumentId, IdempotencyKey, UserId, WorkspaceId, WorkspaceMemberId,
 } from "@lagda/contracts";
@@ -404,19 +405,26 @@ describe("routing activation", () => {
     expect(sent.activatedRecipientCount).toBe(1);
   });
 
-  it("activates a viewer but gives it no credential", async () => {
-    // A viewer cannot hold fields, so a signing credential is not what it
-    // needs. It is activated so a later command can find it (OD-135).
+  it("sends a viewer a read-only invitation, and a copy recipient nothing", async () => {
+    // OD-135. The viewer's link opens the document read-only; the copy
+    // recipient is activated and waits for the finished document.
+    resetUserSigningRecordFakes();
     const h = await harness();
     const id = await requestWith(h, [
       { email: "signer@x.com" }, { email: "watcher@x.com", type: "viewer" },
+      { email: "cc@x.com", type: "carbon-copy" },
     ]);
     const sent = await send(h, id);
 
-    expect(sent.activatedRecipientCount).toBe(2);
-    expect(h.store.signingAccessGrants).toHaveLength(1);
-    expect([...h.store.notificationDeliveries.values()]).toHaveLength(1);
-    expect([...h.store.notificationDeliveries.values()][0]?.destination).toBe("signer@x.com");
+    expect(sent.activatedRecipientCount).toBe(3);
+    expect(h.store.signingAccessGrants).toHaveLength(2);
+    const deliveries = [...h.store.notificationDeliveries.values()];
+    expect(deliveries.map(d => d.destination).sort()).toEqual(["signer@x.com", "watcher@x.com"]);
+    // Nothing is asked of a viewer, so nothing is added to a "must sign" list.
+    const inbox = [...fakeSigningInbox.values()].map(e => e.recipientNormalizedEmail);
+    expect(inbox).toContain("signer@x.com");
+    expect(inbox).not.toContain("watcher@x.com");
+    expect(inbox).not.toContain("cc@x.com");
   });
 });
 

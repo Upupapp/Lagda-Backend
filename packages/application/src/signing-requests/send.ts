@@ -494,6 +494,8 @@ export async function provisionSigningRecipientAccess(
       // change the message a queued invitation renders (§181, §182).
       senderDisplayName: await senderDisplayName(uow),
       workspaceName: await workspaceName(uow),
+      // A viewer's link opens the document read-only; the email says so.
+      ...(recipient.type === "viewer" ? { accessKind: "view" as const } : {}),
     },
     // The credential travels SEALED, because a signing link cannot be
     // recovered from a digest and the renderer runs long after this commits.
@@ -507,11 +509,16 @@ export async function provisionSigningRecipientAccess(
   // is owned now if a VERIFIED account holds the address, and otherwise waits
   // for one to claim it. Either way it tells that inbox exactly what the
   // email does, and nobody else.
-  await openSigningInboxEntry(uow, {
-    request, recipient, now,
-    grantCredentialDigest: credential.digest,
-    expiresAt: now + deps.policy.bootstrapLifetimeMs,
-  });
+  //
+  // Not for a viewer: nothing is asked of them, so nothing belongs in a
+  // "must sign" list — their access is the emailed link alone.
+  if (recipient.type !== "viewer") {
+    await openSigningInboxEntry(uow, {
+      request, recipient, now,
+      grantCredentialDigest: credential.digest,
+      expiresAt: now + deps.policy.bootstrapLifetimeMs,
+    });
+  }
 
   // The link is NOT built here and NOT stored. `deps.links` exists so the
   // renderer can build it from the sealed token; building it now would mean

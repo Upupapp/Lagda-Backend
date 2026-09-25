@@ -28,7 +28,7 @@ import {
   RECIPIENT_WORKFLOW_STATES, type RecipientWorkflowState,
   type SigningRequestState,
 } from "@lagda/contracts";
-import { canHoldFields, type RecipientType } from "../recipients/index.js";
+import { canHoldFields, receivesAccessLink, type RecipientType } from "../recipients/index.js";
 import { InvalidStateTransitionError, assertNever } from "../common/index.js";
 
 export { RECIPIENT_WORKFLOW_STATES };
@@ -482,9 +482,9 @@ export function planWorkflowAdvance(
     cohort = order;
     for (const member of members) {
       active.push(member.recipientId);
-      // Exactly the types that can act. A viewer is activated and receives
-      // nothing, because a signing credential is not what a viewer needs.
-      if (canParticipantSubmit(member.type)) provision.push(member.recipientId);
+      // Everyone who acts, and a viewer (read-only link). A copy recipient is
+      // activated and receives nothing until the document completes.
+      if (receivesAccessLink(member.type)) provision.push(member.recipientId);
     }
     if (members.some(isRequiredSigningParticipant)) break;
   }

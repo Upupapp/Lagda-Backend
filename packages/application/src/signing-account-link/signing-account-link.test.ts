@@ -7,7 +7,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
-  mintSigningLinkIntent, claimSigningLink, SigningLinkNotClaimableError,
+  mintSigningLinkIntent, claimSigningLink, requestSigningLinkIntent, SigningLinkNotClaimableError,
   SigningLinkAddressedElsewhereError,
 } from "./signing-account-link.js";
 import type {
@@ -106,6 +106,22 @@ function accounts(identity: {
 
 let ids: () => string;
 beforeEach(() => { ids = vi.fn(() => "lnk_1"); });
+
+describe("a viewer's link (OD-135)", () => {
+  it("can never be bound to an account", async () => {
+    const { repo, intents } = repository();
+    await expect(requestSigningLinkIntent("raw", {
+      clock, codes, links: repo, ids,
+      resolveSession: () => Promise.resolve({
+        workspaceId: RECIPIENT.workspaceId, signingRequestId: RECIPIENT.signingRequestId,
+        recipientId: RECIPIENT.recipientId, signingSessionId: RECIPIENT.recipientSessionId,
+      }),
+      readRecipient: () => Promise.resolve({ email: "viewer@example.com", type: "viewer" }),
+      normalize: (raw) => raw,
+    })).rejects.toBeInstanceOf(SigningLinkNotClaimableError);
+    expect(intents.size).toBe(0);
+  });
+});
 
 describe("minting", () => {
   it("returns a code and stores only its digest", async () => {

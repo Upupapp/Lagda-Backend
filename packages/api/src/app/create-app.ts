@@ -952,9 +952,9 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
                   signingSessionId: context.signingSessionId,
                 };
               },
-              readRecipientEmail: async (token) => {
+              readRecipient: async (token) => {
                 const view = await getSigningCeremony(token, ceremony());
-                return view.recipient.email;
+                return { email: view.recipient.email, type: view.recipient.type };
               },
               normalize: (raw) => {
                 const result = normalizeEmail(raw);

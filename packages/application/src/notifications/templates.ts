@@ -276,6 +276,34 @@ export const signingInvitationV1 = defineTemplate({
     const workspace = input.workspaceName;
     const url = context.buildLink("/sign", context.secret as string);
     const qr = qrBlockHtml(url);
+    if (input.accessKind === "view") {
+      // A viewer: the same personal link, opening the document read-only.
+      return {
+        subject: `${sender} shared "${title}" with you to view`,
+        textBody: [
+          `Hello ${name},`,
+          ``,
+          `${sender} (${workspace}) has given you access to view a document: "${title}".`,
+          `Nothing is needed from you — you can read it while it is being signed.`,
+          ``,
+          `View the document:`,
+          url,
+          ``,
+          `This link is personal to you. Do not forward this message.`,
+        ].join("\n"),
+        htmlBody: htmlDocument(
+          `A document has been shared with you`,
+          p(`Hello ${escapeHtml(name)},`) +
+            p(`${escapeHtml(sender)} (${escapeHtml(workspace)}) has given you access ` +
+              `to view a document: "${escapeHtml(title)}".`) +
+            p(`Nothing is needed from you — you can read it while it is being signed.`) +
+            linkHtml(url, "View document") +
+            qr.html +
+            p(`This link is personal to you. Do not forward this message.`),
+        ),
+        attachments: [LOGO_ATTACHMENT, qr.attachment],
+      };
+    }
     return {
       // The document title is in the subject because a signer with several
       // pending requests cannot otherwise tell them apart. It is
