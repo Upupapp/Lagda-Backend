@@ -172,5 +172,14 @@ export function createScopedRecipientRepository(
         .executeTakeFirst();
       return Number(result.numUpdatedRows);
     },
+
+    async removeFields(input) {
+      const result = await trx.deleteFrom("preparation_fields")
+        .where("workspace_id", "=", scope)
+        .where("preparation_id", "=", input.preparationId)
+        .where("recipient_id", "=", input.recipientId)
+        .executeTakeFirst();
+      return Number(result.numDeletedRows);
+    },
   };
 }

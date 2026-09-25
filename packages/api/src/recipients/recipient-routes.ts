@@ -150,6 +150,13 @@ const ReorderRequestSchema = Type.Object({
  */
 const ReplaceRecipientsRequestSchema = Type.Object({
   recipients: Type.Array(AddRecipientRequestSchema, { minItems: 1, maxItems: 50 }),
+  departingFields: Type.Optional(Type.Union([
+    Type.Literal("reassign"), Type.Literal("remove"),
+  ], {
+    description: "A departing recipient's fields: handed to a newcomer "
+      + "(reassign, the default) or deleted (remove, for a re-send that leaves "
+      + "somebody out).",
+  })),
 }, { title: "ReplaceRecipientsRequest", additionalProperties: false });
 
 const RecipientListSchema = Type.Object({
@@ -318,11 +325,14 @@ export function registerRecipientRoutes(
     if (actor === null) return unauthenticated(reply);
 
     const { workspaceId, documentId } = request.params as Static<typeof DocumentParamsSchema>;
-    const body = request.body as { recipients: AddRecipientBody[] };
+    const body = request.body as {
+      recipients: AddRecipientBody[]; departingFields?: "reassign" | "remove";
+    };
 
     const recipients = await replaceRecipients(
       actor, workspaceId as WorkspaceId, documentId as DocumentId,
-      body.recipients, options.recipientDependencies());
+      body.recipients, options.recipientDependencies(),
+      body.departingFields === undefined ? {} : { departingFields: body.departingFields });
 
     record(request, "document.recipients.replaced", {
       workspaceId,

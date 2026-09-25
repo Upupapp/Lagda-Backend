@@ -403,6 +403,15 @@ export async function replaceRecipients(
   documentId: DocumentId,
   inputs: readonly AddRecipientInput[],
   deps: RecipientDependencies,
+  options: {
+    /**
+     * What happens to a departing recipient's fields. `reassign` (default)
+     * hands them to a newcomer — right when one person REPLACES another.
+     * `remove` deletes them — right when somebody is deliberately LEFT OUT of
+     * a re-send, whose boxes must not become someone else's.
+     */
+    readonly departingFields?: "reassign" | "remove";
+  } = {},
 ): Promise<readonly RecipientView[]> {
   if (inputs.length === 0) {
     throw new ApplicationValidationError(
@@ -513,6 +522,17 @@ export async function replaceRecipients(
     const fallback = finalIds[finalIds.length - 1];
 
     for (const [position, leaver] of departing.entries()) {
+      if (options.departingFields === "remove") {
+        await uow.recipients.removeFields({
+          preparationId: preparation.preparationId,
+          recipientId: leaver.recipientId,
+        });
+        await uow.recipients.remove({
+          preparationId: preparation.preparationId,
+          recipientId: leaver.recipientId,
+        });
+        continue;
+      }
       const heir = newcomers[position] ?? newcomers[newcomers.length - 1] ?? fallback;
       if (heir !== undefined) {
         await uow.recipients.reassignFields({

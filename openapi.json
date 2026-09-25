@@ -25313,6 +25313,23 @@
                         }
                       ]
                     }
+                  },
+                  "departingFields": {
+                    "description": "A departing recipient's fields: handed to a newcomer (reassign, the default) or deleted (remove, for a re-send that leaves somebody out).",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "reassign"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "remove"
+                        ]
+                      }
+                    ]
                   }
                 }
               }

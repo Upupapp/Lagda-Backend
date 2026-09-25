@@ -2949,6 +2949,13 @@ function scopedRecipients(
       });
       return Promise.resolve(moved);
     },
+    removeFields: (input) => {
+      const before = store.preparationFields.length;
+      store.preparationFields = store.preparationFields.filter(field =>
+        preparationOf(store, field) !== input.preparationId
+        || field.recipientId !== input.recipientId);
+      return Promise.resolve(before - store.preparationFields.length);
+    },
   };
 }
 
