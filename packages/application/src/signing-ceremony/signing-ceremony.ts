@@ -29,7 +29,7 @@ import { ceremonyEntered, consentAccepted } from "../evidence/events.js";
 import type { PreparationFieldType } from "@lagda/contracts";
 import {
   assessCeremonyAccess, orderCeremonyFields, fieldInputPolicy,
-  CEREMONY_CONSENT_TYPE,
+  CEREMONY_CONSENT_TYPE, isApproverType,
   type CeremonyAccess, type CeremonyBlocker,
   type FieldValueAuthority, type FieldValueKind,
 } from "@lagda/core";
@@ -313,8 +313,10 @@ async function buildCeremonyView(
   }
   if (access.mayViewAssignedFields) {
     const assigned = await ceremony.listAssignedFields();
+    // Shown to an approver as optional, exactly as submission treats them.
+    const approver = isApproverType(recipient.type);
     fields = orderCeremonyFields(
-      assigned.map(f => ({ ...f, requestFieldId: f.fieldId })),
+      assigned.map(f => ({ ...f, required: f.required && !approver, requestFieldId: f.fieldId })),
     ).map(toFieldView);
   }
 

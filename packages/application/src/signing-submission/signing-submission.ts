@@ -592,9 +592,12 @@ async function acceptSubmission(args: {
 
   // ── Resolve against the IMMUTABLE assignments ─────────────────────────────
   const assigned = await uow.ceremony.listAssignedFields();
+  // An approver's fields are never required (069): approving needs no input,
+  // and an empty approver field is drawn as an Approved label on completion.
+  const approver = isApproverType(recipient.type);
   const resolution = resolveSubmission({
     assigned: assigned.map(f => ({
-      fieldId: String(f.fieldId), type: f.type, required: f.required,
+      fieldId: String(f.fieldId), type: f.type, required: f.required && !approver,
     })),
     submitted: input.fieldValues,
     recipient: {

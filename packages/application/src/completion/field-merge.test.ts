@@ -495,3 +495,42 @@ describe("evidence (BACKEND-43)", () => {
     expect(h.store.evidence).toHaveLength(0);
   });
 });
+
+describe("approver outcome labels (069)", () => {
+  function approverWithField(state: "approved" | "skipped" | "active") {
+    h.store.signingRequestRecipients.push({
+      recipientId: "rr_a", type: "approver", isRequired: true, routingOrder: 1,
+    } as never);
+    h.store.activations.push({
+      signingRequestId: String(REQUEST), recipientId: "rr_a", state,
+      activatedAt: AT, signedAt: null, submissionId: null,
+      approvedAt: state === "approved" ? AT : null,
+      skippedAt: state === "skipped" ? AT : null,
+      declinedAt: null, declineReason: null,
+    } as never);
+    h.store.signingRequestFields.push({
+      fieldId: "srf_a", sourcePreparationFieldId: null, type: "signature",
+      pageNumber: 1, x: 0.1, y: 0.1, width: 0.2, height: 0.05,
+      required: true, label: "Signature", layer: 0,
+      recipientId: "rr_a", staticValue: null,
+    } as never);
+    h.store.snapshotOwners.set("srf_a", REQUEST);
+  }
+  const drawn = () => (h.merge.mock.calls[0]?.[0] as MergeFieldsRequest).fields;
+
+  it.each([["approved", "APPROVED"], ["skipped", "SKIPPED"]] as const)(
+    "an %s approver's empty field is drawn as a dated label", async (state, word) => {
+      approverWithField(state);
+      expect((await run(h)).outcome).toBe("merged");
+      expect(drawn()).toEqual([expect.objectContaining({
+        fieldId: "srf_a", pageNumber: 1,
+        value: { kind: "text", text: `${word} ${new Date(AT).toISOString().slice(0, 10)} (UTC)` },
+      })]);
+    });
+
+  it("draws nothing for an approver who has not acted", async () => {
+    approverWithField("active");
+    await run(h);
+    expect(drawn()).toEqual([]);
+  });
+});

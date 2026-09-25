@@ -10,6 +10,7 @@
 // without a transaction open.
 
 import { canHoldFields, type RecipientType } from "../recipients/index.js";
+import { isApproverType } from "./workflow-state.js";
 import type { PreparationFieldType, SigningRequestState } from "@lagda/contracts";
 
 /** The state every request starts in. Named, so no caller writes the literal. */
@@ -165,8 +166,12 @@ export function assessSnapshotReadiness(
   // block completion: an optional approver with nothing to fill is a coherent
   // configuration, and a required signer with nothing to fill is a workflow
   // that waits forever on an action nobody can perform.
+  //
+  // An approver is the exception (069): they act by approving or skipping,
+  // which needs no field, so an approver with nothing placed is complete.
   recipients.forEach((recipient, recipientIndex) => {
     if (!recipient.isRequired || !canHoldFields(recipient.type)) return;
+    if (isApproverType(recipient.type)) return;
     if (!assigned.has(recipient.recipientId)) {
       blockers.push({ kind: "participant-without-field", recipientIndex });
     }

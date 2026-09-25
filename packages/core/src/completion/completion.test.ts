@@ -56,6 +56,45 @@ describe("completion eligibility", () => {
     expect(assessCompletionEligibility(eligible())).toEqual({ eligible: true });
   });
 
+  describe("approvers (069)", () => {
+    const approver = (state: WorkflowRecipient["state"]) =>
+      signer({ recipientId: "a1", type: "approver", state });
+
+    it.each(["approved", "skipped"] as const)("an %s approver has finished", state => {
+      expect(assessCompletionEligibility(eligible({
+        recipients: [signer(), approver(state)],
+        submittedRecipientIds: state === "approved" ? ["r1", "a1"] : ["r1"],
+      }))).toEqual({ eligible: true });
+    });
+
+    it("an approver who has not acted still blocks", () => {
+      expect(assessCompletionEligibility(eligible({
+        recipients: [signer(), approver("active")],
+      }))).toEqual({ eligible: false, blocker: "missing-submission" });
+    });
+
+    it("an approver's empty required field does not block", () => {
+      expect(assessCompletionEligibility(eligible({
+        recipients: [signer(), approver("skipped")],
+        fields: [field(), field({ fieldId: "f2", recipientId: "a1", valueRecipientId: null })],
+      }))).toEqual({ eligible: true });
+    });
+
+    it("a signer's empty required field still blocks", () => {
+      expect(assessCompletionEligibility(eligible({
+        recipients: [signer(), approver("approved")],
+        submittedRecipientIds: ["r1", "a1"],
+        fields: [field({ valueRecipientId: null })],
+      }))).toEqual({ eligible: false, blocker: "missing-field-value" });
+    });
+
+    it("a signer must still be signed, not approved", () => {
+      expect(assessCompletionEligibility(eligible({
+        recipients: [signer({ state: "approved" })],
+      }))).toEqual({ eligible: false, blocker: "missing-submission" });
+    });
+  });
+
   it("begins from exactly one request state", () => {
     expect(COMPLETION_ELIGIBLE_REQUEST_STATE).toBe("completion-ready");
     for (const state of SIGNING_REQUEST_STATES) {

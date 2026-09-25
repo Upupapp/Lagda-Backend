@@ -17,7 +17,7 @@ import {
   type SigningRequestState,
 } from "@lagda/contracts";
 import { InvalidStateTransitionError, assertNever } from "../common/index.js";
-import { isRequiredSigningParticipant, type WorkflowRecipient } from "../signing/index.js";
+import { isApproverType, isRequiredSigningParticipant, type WorkflowRecipient } from "../signing/index.js";
 
 export {
   COMPLETION_RUN_STATES, COMPLETION_STEPS, COMPLETION_FAILURE_CLASSIFICATION,
@@ -110,8 +110,11 @@ export function assessCompletionEligibility(
   const submitted = new Set(input.submittedRecipientIds);
 
   for (const recipient of input.recipients) {
-    // A required participant who has not signed means readiness was wrong.
-    if (isRequiredSigningParticipant(recipient) && recipient.state !== "signed") {
+    // A required participant who has not finished means readiness was wrong.
+    // An approver finishes by approving or skipping (069) — never by signing —
+    // so for an approver those are the finished states; everyone else must
+    // have signed.
+    if (isRequiredSigningParticipant(recipient) && !hasFinished(recipient)) {
       return deny("missing-submission");
     }
     // And every recipient the workflow CALLS signed must have the submission
@@ -122,10 +125,19 @@ export function assessCompletionEligibility(
     }
   }
 
+  // An approver's fields are never required (069): an approver who skips
+  // leaves them empty, and one who approves need not fill them. The document
+  // shows an Approved/Skipped label there instead.
+  const approverIds = new Set(input.recipients
+    .filter(recipient => isApproverType(recipient.type))
+    .map(recipient => recipient.recipientId));
+
   for (const field of input.fields) {
     if (field.valueRecipientId === null) {
       // An optional field nobody filled in is not a failure; a required one is.
-      if (field.required) return deny("missing-field-value");
+      if (field.required && !approverIds.has(field.recipientId)) {
+        return deny("missing-field-value");
+      }
       continue;
     }
     // A value that exists but names a different recipient than the assignment
@@ -134,6 +146,12 @@ export function assessCompletionEligibility(
   }
 
   return { eligible: true };
+}
+
+function hasFinished(recipient: WorkflowRecipient): boolean {
+  return isApproverType(recipient.type)
+    ? recipient.state === "approved" || recipient.state === "skipped"
+    : recipient.state === "signed";
 }
 
 // ── The run state machine ────────────────────────────────────────────────────
