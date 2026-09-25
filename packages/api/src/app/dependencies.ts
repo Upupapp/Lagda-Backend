@@ -21,7 +21,7 @@ import type {
   UploadRequestDependencies, DocumentDependencies, DocumentContentDependencies, FolderDependencies,
   PreparationDependencies,
   RecipientDependencies, SigningRequestDependencies,
-  SendSigningRequestDependencies, SigningAccessDependencies,
+  SendSigningRequestDependencies, SigningAccessDependencies, FinalCopyDownloadDependencies,
   CompletedArtifactDependencies,
   SigningCeremonyDependencies, SigningSubmissionDependencies,
   SigningDeclineDependencies, SigningSkipDependencies, SigningWorkflowDependencies,
@@ -73,6 +73,11 @@ export interface AppDependencies {
    * realm inside the first.
    */
   readonly signingAccess?: () => SigningAccessDependencies;
+  /**
+   * 073. A participant's download of the finished document. Absent when the
+   * deployment has no object storage — then the route does not exist.
+   */
+  readonly finalCopies?: () => FinalCopyDownloadDependencies;
   /**
    * Public document verification (BACKEND-42).
    *

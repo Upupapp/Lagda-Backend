@@ -755,6 +755,19 @@ export interface SigningAccessGrantsTable {
   revoked_at: ColumnType<Date | null, Date | null, Date | null>;
 }
 
+/** 073. A final-copy DOWNLOAD credential — shaped like a signing grant, its
+ *  own table and digest domain, so it can open nothing but the sealed PDF. */
+export interface FinalCopyGrantsTable {
+  grant_id: string;
+  workspace_id: string;
+  signing_request_id: string;
+  request_recipient_id: string;
+  credential_digest: string;
+  created_at: Timestamptz;
+  expires_at: Timestamptz;
+  revoked_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
+}
+
 
 /**
  * The durable decision to communicate. Immutable once written.
@@ -933,6 +946,8 @@ export interface SigningRequestsTable {
    * exist yet, and BACKEND-38 owns that column.
    */
   completion_ready_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
+  /** 073. The sender's choice to email every participant the final copy. */
+  share_final_copy: ColumnType<boolean, boolean | undefined, boolean>;
   /**
    * BACKEND-41. Set ONLY by the finalization transaction.
    *
@@ -1616,6 +1631,7 @@ export interface Database {
   signing_account_links: SigningAccountLinksTable;
   signing_field_values: SigningFieldValuesTable;
   signing_access_grants: SigningAccessGrantsTable;
+  final_copy_grants: FinalCopyGrantsTable;
   notification_intents: NotificationIntentsTable;
   notification_deliveries: NotificationDeliveriesTable;
   notification_delivery_attempts: NotificationDeliveryAttemptsTable;

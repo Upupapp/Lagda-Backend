@@ -71,6 +71,7 @@ function toRequest(row: RequestRow): SigningRequestRecord {
     expiresAt: row.expires_at === null ? null : row.expires_at.getTime(),
     completionReadyAt:
       row.completion_ready_at === null ? null : row.completion_ready_at.getTime(),
+    shareFinalCopy: row.share_final_copy,
     terminatedAt: row.terminated_at === null ? null : row.terminated_at.getTime(),
     // Validated rather than cast, like every other persisted vocabulary here.
     terminationReason: row.termination_reason === null ? null : oneOf(
@@ -379,7 +380,8 @@ export function createScopedSigningRequestRepository(
       try {
         const claimed = await trx.updateTable("signing_requests")
           .set({ state: "sent", sent_at: new Date(input.sentAt),
-                 updated_at: new Date(input.sentAt) })
+                 updated_at: new Date(input.sentAt),
+                 share_final_copy: input.shareFinalCopy ?? true })
           .where("workspace_id", "=", scope)
           .where("signing_request_id", "=", input.signingRequestId)
           // The whole concurrency control, in one predicate. A second send

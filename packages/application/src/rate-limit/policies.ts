@@ -527,6 +527,20 @@ export const RATE_LIMIT_POLICIES = {
       + "signature, so it fails CLOSED. Chosen here.",
   },
 
+  // 073. A participant downloading their copy of a finished document. A PDF
+  // per call, like the ceremony's document route, and a public credential
+  // redemption like bootstrap: bounded for bandwidth, fail-open.
+  "final-copy.download.ip": {
+    id: "final-copy.download.ip",
+    scopeType: "ip",
+    limit: 30,
+    windowMs: MINUTE,
+    failureMode: "fail-open",
+    source: "073 - not specified by the handoff. Matched to "
+      + "signing-access.bootstrap.ip: a public credential redemption by a party "
+      + "with no account, where several people behind one NAT may download.",
+  },
+
   "signing-access.bootstrap.ip": {
     id: "signing-access.bootstrap.ip",
     scopeType: "ip",

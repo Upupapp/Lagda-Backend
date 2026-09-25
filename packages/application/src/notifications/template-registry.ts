@@ -325,6 +325,20 @@ export const SigningInvitationModelV1 = Type.Object(
  * because most requests do not need one. Frozen like every other field here:
  * display data, never a credential.
  */
+/**
+ * A participant's copy of the finished document is ready (073). Display data
+ * only; the download link itself travels as the sealed secret.
+ */
+export const FinalCopyAvailableModelV1 = Type.Object(
+  {
+    recipientName: DisplayName,
+    documentTitle: BoundedText(300),
+    senderDisplayName: DisplayName,
+    workspaceName: DisplayName,
+  },
+  { additionalProperties: false },
+);
+
 export const DocumentUploadRequestedModelV1 = Type.Object(
   {
     /** The ASSIGNEE's display name. This message is addressed to them. */

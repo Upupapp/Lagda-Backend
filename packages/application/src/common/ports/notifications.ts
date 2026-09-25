@@ -113,6 +113,14 @@ export const NOTIFICATION_TYPES = [
    * would be a credential with a lifetime nothing tracks.
    */
   "DOCUMENT_UPLOAD_REQUESTED",
+  /**
+   * The document is complete; here is YOUR copy (073).
+   *
+   * Carries a credential again, unlike `SIGNING_COMPLETED`: the reader is a
+   * participant who usually has no account, so the email's link is their
+   * only way to the sealed PDF. One per participant, keyed on the grant.
+   */
+  "FINAL_COPY_AVAILABLE",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -220,6 +228,8 @@ export const NOTIFICATION_SOURCE_KINDS = [
    * intent needs no existence check of its own.
    */
   "DOCUMENT_UPLOAD_REQUEST",
+  /** A final-copy download grant (073) — one per participant, one email each. */
+  "FINAL_COPY_GRANT",
 ] as const;
 export type NotificationSourceKind =
   (typeof NOTIFICATION_SOURCE_KINDS)[number];
@@ -344,6 +354,7 @@ export const NOTIFICATION_TEMPLATE_KEYS = [
   "signing-invitation",
   "signing-completed",
   "document-upload-requested",
+  "final-copy-available",
 ] as const;
 export type NotificationTemplateKey =
   (typeof NOTIFICATION_TEMPLATE_KEYS)[number];

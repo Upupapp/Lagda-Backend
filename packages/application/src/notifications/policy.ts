@@ -173,6 +173,18 @@ export const NOTIFICATION_POLICIES: Record<NotificationType, NotificationPolicy>
     // is an account holder.
     scopeKind: "WORKSPACE",
   },
+  FINAL_COPY_AVAILABLE: {
+    notificationType: "FINAL_COPY_AVAILABLE",
+    templateKey: "final-copy-available",
+    channel: "EMAIL",
+    // The GRANT: one per participant, so one email per participant, and the
+    // logical-key index refuses a second for a re-driven completion.
+    sourceKind: "FINAL_COPY_GRANT",
+    audienceKind: "SIGNING_REQUEST_RECIPIENT",
+    // The download link travels sealed, exactly as a signing link does.
+    secretKind: "SEALED",
+    scopeKind: "WORKSPACE",
+  },
 };
 
 export function policyFor(notificationType: NotificationType): NotificationPolicy {

@@ -81,6 +81,7 @@ const app = await createApp({
     signingSubmission: () => stub("signingSubmission"),
     signingDecline: () => stub("signingDecline"),
     signingSkip: () => stub("signingSkip"),
+    finalCopies: () => stub("finalCopies"),
     workspaces: {
       create: () => stub("workspaces.create"),
       list: () => stub("workspaces.list"),

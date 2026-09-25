@@ -55,6 +55,7 @@ import { registerRecipientRoutes } from "../recipients/recipient-routes.js";
 import { registerSigningRequestRoutes } from "../signing-requests/signing-request-routes.js";
 import { registerSendRoutes } from "../signing-requests/send-routes.js";
 import { registerSigningAccessRoutes } from "../signing-access/signing-access-routes.js";
+import { registerFinalCopyRoutes } from "../final-copies/final-copy-routes.js";
 import { registerSigningCeremonyRoutes } from "../signing-ceremony/signing-ceremony-routes.js";
 import { registerSigningSubmissionRoutes } from "../signing-submission/signing-submission-routes.js";
 import { registerSigningDeclineRoutes } from "../signing-decline/signing-decline-routes.js";
@@ -859,6 +860,14 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
   // accepts anything.
   if (dependencies.providerWebhook !== undefined) {
     registerProviderWebhookRoutes(app, dependencies.providerWebhook());
+  }
+
+  if (dependencies.finalCopies !== undefined) {
+    registerFinalCopyRoutes(app, {
+      finalCopyDependencies: dependencies.finalCopies,
+      ...(dependencies.limiter === undefined
+        ? {} : { rateLimit: { limiter: dependencies.limiter, metrics } }),
+    });
   }
 
   if (dependencies.signingAccess !== undefined) {

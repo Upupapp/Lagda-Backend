@@ -28,6 +28,7 @@ import {
   type CompleteAttemptInput, type ClaimDeliveryInput,
   type NotificationScope,
   type ObjectStorage, type CompletionDependencies, type CompletionStepRunners,
+  type SealedDeliverySecret, type FinalCopyGrantId,
 } from "@lagda/application";
 import { createTransactionManager, createAccountContactRepository } from "@lagda/db";
 import { loadSmtpConfig, createSmtpEmailProvider, EmailConfigError } from "@lagda/email";
@@ -37,6 +38,7 @@ import {
   createArtifactIdGenerator, createSealIdGenerator, createCompletionIdGenerator,
   createEvidenceEventIdGenerator, createVerificationIdGenerator,
   createNotificationIntentIdGenerator, createNotificationDeliveryIdGenerator,
+  createSecretBox, createFinalCopyTokenFactory,
 } from "@lagda/security";
 import {
   createS3ObjectStorage, createStorageKeyStrategy, loadStorageConfig,
@@ -243,6 +245,34 @@ export async function startWorker(): Promise<StartedWorker> {
     accountContacts: createAccountContactRepository(database.db),
   };
 
+  // ── Every participant's copy (073) ────────────────────────────────────────
+  //
+  // Wired ONLY when a delivery key is configured. The producer seals each
+  // download link inside the finalization transaction, and a sealer with no
+  // key throws — which would roll a completion back. Absent the key, final
+  // copies are simply not offered; documents still complete and seal.
+  const deliveryKey = config.signingDeliveryKey;
+  const finalCopies = deliveryKey === null || deliveryKey === "" ? undefined : (() => {
+    const box = createSecretBox({
+      keyBase64: deliveryKey, keyVersion: config.signingDeliveryKeyVersion,
+    });
+    return {
+      tokens: createFinalCopyTokenFactory(),
+      sealer: {
+        keyVersion: box.keyVersion,
+        seal: (plaintext: string) => box.seal(plaintext) as unknown as SealedDeliverySecret,
+      },
+      ids: {
+        nextFinalCopyGrantId: () =>
+          `fcg_${randomUUID().replace(/-/g, "")}` as FinalCopyGrantId,
+        ...createNotificationIntentIdGenerator(),
+        ...createNotificationDeliveryIdGenerator(),
+      },
+      templates,
+      clock,
+    };
+  })();
+
   const completionSteps: CompletionStepRunners | undefined = objectStorage === null
     ? undefined
     : (() => {
@@ -274,6 +304,7 @@ export async function startWorker(): Promise<StartedWorker> {
             },
             storage: objectStorage, keys, sealer: new NodeDocumentSealer(),
             completionNotification,
+            ...(finalCopies === undefined ? {} : { finalCopies }),
           }),
       };
     })();
@@ -395,11 +426,15 @@ export async function startWorker(): Promise<StartedWorker> {
       // the delivery's. A sealed signing credential is always workspace-owned,
       // so a sealed reference under an account scope is a composition error and
       // answers false rather than reaching for a workspace that is not there.
+      // Two kinds of sealed credential, told apart by their grant id: a
+      // final-copy download grant (073, `fcg_`) or a signing grant.
       const validity = {
         isStillUsable: (grantId: string): Promise<boolean> =>
           ref.scope.kind === "WORKSPACE"
             ? transactions.runForWorkspace(ref.scope.workspaceId, uow =>
-              uow.signingAccess.isGrantUsable(grantId, clock.now()))
+              grantId.startsWith("fcg_")
+                ? uow.finalCopies.isGrantUsable(grantId, clock.now())
+                : uow.signingAccess.isGrantUsable(grantId, clock.now()))
             : Promise.resolve(false),
       };
 

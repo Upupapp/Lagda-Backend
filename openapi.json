@@ -28794,13 +28794,18 @@
               "schema": {
                 "title": "SendSigningRequestRequest",
                 "additionalProperties": false,
-                "description": "Deliberately empty. Everything sent is determined by the immutable request snapshot and by routing policy.",
+                "description": "Everything else sent is determined by the immutable request snapshot and by routing policy.",
                 "type": "object",
-                "properties": {}
+                "properties": {
+                  "shareFinalCopy": {
+                    "description": "Email every participant the final signed copy when the document completes. Defaults to true; false for a sensitive document.",
+                    "type": "boolean"
+                  }
+                }
               }
             }
           },
-          "description": "Deliberately empty. Everything sent is determined by the immutable request snapshot and by routing policy."
+          "description": "Everything else sent is determined by the immutable request snapshot and by routing policy."
         },
         "parameters": [
           {
@@ -32143,6 +32148,39 @@
             "required": true
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/final-copies/download": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "FinalCopyDownloadRequest",
+                "additionalProperties": false,
+                "description": "The download credential from the completion email's link.",
+                "type": "object",
+                "required": [
+                  "token"
+                ],
+                "properties": {
+                  "token": {
+                    "minLength": 43,
+                    "maxLength": 43,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "description": "The download credential from the completion email's link."
+        },
         "responses": {
           "200": {
             "description": "Default Response"

@@ -240,6 +240,7 @@ const INPUT_BY_KEY: Record<string, NotificationTemplateInput> = {
   "signing-invitation": signingInput,
   "signing-completed": { recipientName: "Paulo Reyes", documentTitle: "Lease Agreement", workspaceName: "Reyes Legal", signerCount: 2 },
   "document-upload-requested": { recipientName: "Maria Santos", requestTitle: "Signed W-9", requesterDisplayName: "Paulo Reyes", workspaceName: "Reyes Legal" },
+  "final-copy-available": { recipientName: "Maria Santos", documentTitle: "Lease Agreement", senderDisplayName: "Paulo Reyes", workspaceName: "Reyes Legal" },
 };
 
 describe("inline images", () => {

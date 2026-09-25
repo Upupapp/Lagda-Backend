@@ -26,6 +26,7 @@
 // and still not make the two atomic, because object storage cannot enrol in a
 // PostgreSQL transaction.
 
+import { produceFinalCopies, type FinalCopyProducerDependencies } from "../final-copies/final-copies.js";
 import type {
   WorkspaceId, DocumentId, Sha256Digest, VerificationId, TransactionId, UserId,
 } from "@lagda/contracts";
@@ -95,6 +96,12 @@ export interface FinalSealDependencies {
    * never a reason to fail a seal.
    */
   readonly completionNotification?: CompletionNotificationDependencies;
+  /**
+   * 073. Each participant's copy of the finished document, when the
+   * deployment can seal a download link. Absent, like the notification
+   * above, is never a reason to fail a seal.
+   */
+  readonly finalCopies?: FinalCopyProducerDependencies;
 }
 
 export interface FinalSealResult {
@@ -562,6 +569,17 @@ async function finalize(
             // The unit of work IS the transaction handle, as
             // `scheduleIfConfigured` in `workspaces/invitations.ts` passes it.
           }, uow);
+        }
+
+        // ── Every participant's copy (073) ────────────────────────────────
+        //
+        // Same transaction, same reasoning as the sender's message above: an
+        // intent per participant, written only once the request IS completed.
+        if (deps.finalCopies !== undefined) {
+          const completed = await uow.signingRequests.find(input.signingRequestId);
+          if (completed !== null) {
+            await produceFinalCopies(completed, at, uow, deps.finalCopies);
+          }
         }
 
         return at;

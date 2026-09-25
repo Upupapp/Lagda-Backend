@@ -26,6 +26,7 @@ import type {
   InvitationCredentialUnitOfWork, InvitationTokenDigest,
   SigningCredentialUnitOfWork, RecipientWorkspaceUnitOfWork,
   RecipientSessionUnitOfWork, SigningAccessDigest, RecipientSessionDigest,
+  FinalCopyDigest, FinalCopyCredentialUnitOfWork, FinalCopyWorkspaceUnitOfWork,
 } from "@lagda/application";
 import type { Database } from "../schema/index.js";
 import {
@@ -38,6 +39,9 @@ import {
   createFinalizationRepository,
 } from "../repositories/evidence.js";
 import { createUploadRepository } from "../repositories/uploads.js";
+import {
+  createScopedFinalCopyRepository, createFinalCopyLookupRepository,
+} from "../repositories/final-copies.js";
 import { createSigningAccountLinkRepository } from "../repositories/signing-account-links.js";
 import { createPreparedSignatureRepository } from "../repositories/prepared-signatures.js";
 import {
@@ -96,6 +100,8 @@ const USER_SETTING = "lagda.user_id";
 const INVITATION_DIGEST_SETTING = "lagda.invitation_digest";
 /** BACKEND-34. A signing bootstrap credential, resolving its own workspace. */
 const SIGNING_ACCESS_DIGEST_SETTING = "lagda.signing_access_digest";
+/** 073. The final-copy download realm's own setting (migration 073). */
+const FINAL_COPY_DIGEST_SETTING = "lagda.final_copy_digest";
 /** BACKEND-34. An established recipient session cookie. A THIRD realm. */
 const RECIPIENT_SESSION_DIGEST_SETTING = "lagda.recipient_session_digest";
 
@@ -130,6 +136,7 @@ function buildUnitOfWork(
     recipients: createScopedRecipientRepository(trx, workspaceId),
     signingRequests: createScopedSigningRequestRepository(trx, workspaceId),
     signingAccess: createScopedSigningAccessRepository(trx, workspaceId),
+    finalCopies: createScopedFinalCopyRepository(trx, workspaceId),
     // Unscoped at construction: each row carries its own scope discriminant,
     // and RLS enforces it from the transaction context.
     // One column from `users`, for the sentence an invitation email opens
@@ -269,6 +276,37 @@ export function createTransactionManager(db: Kysely<Database>): TransactionManag
             await sql`select set_config(${WORKSPACE_SETTING}, ${workspaceId}, true)`
               .execute(trx);
             return inner(buildUnitOfWork(trx, workspaceId));
+          },
+        });
+      });
+    },
+
+    async runForFinalCopyCredential<T>(
+      credentialDigest: FinalCopyDigest,
+      operation: (uow: FinalCopyCredentialUnitOfWork) => Promise<T>,
+    ): Promise<T> {
+      return db.transaction().execute(async trx => {
+        // A FOURTH realm, with its own setting: the `final_copy_credential_read`
+        // policy shows exactly the one grant whose digest is set here, and no
+        // signing grant, session or invitation resolves through it.
+        await sql`select set_config(${FINAL_COPY_DIGEST_SETTING}, ${credentialDigest}, true)`
+          .execute(trx);
+        return operation({
+          lookup: createFinalCopyLookupRepository(trx),
+          // The workspace comes from the RESOLVED grant, never a parameter a
+          // request could reach — and what is handed over only READS: the
+          // request, its finalization, the artifact.
+          async enterWorkspace<R>(
+            workspaceId: WorkspaceId,
+            inner: (uow: FinalCopyWorkspaceUnitOfWork) => Promise<R>,
+          ): Promise<R> {
+            await sql`select set_config(${WORKSPACE_SETTING}, ${workspaceId}, true)`
+              .execute(trx);
+            return inner({
+              signingRequests: createScopedSigningRequestRepository(trx, workspaceId),
+              finalizations: createFinalizationRepository(trx, workspaceId),
+              artifacts: createArtifactRepository(trx, workspaceId),
+            });
           },
         });
       });

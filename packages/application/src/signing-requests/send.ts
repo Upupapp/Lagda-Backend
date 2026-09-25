@@ -186,6 +186,11 @@ export interface SendSigningRequestInput {
   readonly signingRequestId: string;
   /** Required at the route. A retry must not re-invite anyone. */
   readonly idempotencyKey?: IdempotencyKey;
+  /**
+   * 073. Email every participant the final signed copy on completion.
+   * Absent means yes — the sender opts OUT, for a sensitive document.
+   */
+  readonly shareFinalCopy?: boolean;
 }
 
 // ── The use case ─────────────────────────────────────────────────────────────
@@ -261,7 +266,11 @@ export async function sendSigningRequest(
       // subject or message to include. If BACKEND-46 adds one, it belongs
       // here, because sending the same request with a different message is a
       // different logical request.
-      request: { signingRequestId },
+      // `shareFinalCopy` joins the fingerprint only when it departs from the
+      // default, so every key recorded before it existed still matches.
+      request: input.shareFinalCopy === false
+        ? { signingRequestId, shareFinalCopy: false }
+        : { signingRequestId },
       execute: write,
     });
 
@@ -356,7 +365,7 @@ async function performSend(
   // concurrent send under a different key matches zero rows rather than
   // sending twice.
   const transitioned = await uow.signingRequests.markSentIfSendable({
-    signingRequestId, sentAt: now,
+    signingRequestId, sentAt: now, shareFinalCopy: input.shareFinalCopy ?? true,
   });
   if (!transitioned) {
     // Another send committed between the read at the top and here. Rolling

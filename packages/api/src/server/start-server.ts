@@ -20,6 +20,7 @@ import { createRateLimitScopeDigester } from "../security/rate-limit-plugin.js";
 import { createInvitationTokenFactory } from "../security/invitation-token.js";
 import { createInvitationLinkBuilder } from "../workspaces/invitation-link.js";
 import { createSigningAccessTokenFactory } from "../security/signing-access-token.js";
+import { createFinalCopyTokenFactory } from "@lagda/security";
 import { createRecipientSessionTokenFactory } from "../security/recipient-session-token.js";
 import { createPublicVerificationLookup } from "@lagda/db";
 import { createSignatureImageValidator } from "../security/signature-image.js";
@@ -314,6 +315,13 @@ export async function createProductionDependencies(
       ...(completionScheduler === undefined ? {} : { completionScheduler }),
     }),
     ...buildProviderWebhook(database),
+    // 073. Only with object storage: the download streams the sealed PDF.
+    ...(objectStorage === null ? {} : {
+      finalCopies: () => ({
+        transactions, clock, storage: objectStorage,
+        tokens: createFinalCopyTokenFactory(),
+      }),
+    }),
   };
 }
 
