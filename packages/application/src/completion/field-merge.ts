@@ -475,15 +475,59 @@ async function buildPlan(
     step => step.step === "field-merge" && step.state === "succeeded");
 
   const records = await uow.completionInputs.listRenderableFieldValues(signingRequestId);
+  const outcomes = await approverOutcomeLabels(uow, signingRequestId, records);
 
   return {
     documentId: request.documentId,
     sourceArtifactId: source.artifactId,
     sourceRef: { zone: "artifacts", key: source.storageReference },
     sourceDigest: source.digest,
-    fields: records.map(toMergeableField),
+    fields: [...records.map(toMergeableField), ...outcomes],
     alreadyAcceptedArtifactId: accepted?.outputArtifactId ?? null,
   };
+}
+
+/**
+ * An approver's empty fields, drawn as what the approver actually did (069).
+ *
+ * An approver approves or skips; their fields are optional, so a signature
+ * box placed for them is usually left empty. Leaving it blank on the final
+ * document would read as a missing signature. Instead it states the outcome
+ * and its date: `APPROVED 2026-09-25 (UTC)` or `SKIPPED 2026-09-25 (UTC)`.
+ * A field the approver DID fill keeps its value.
+ */
+async function approverOutcomeLabels(
+  uow: WorkspaceUnitOfWork,
+  signingRequestId: SigningRequestId,
+  records: readonly RenderableFieldRecord[],
+): Promise<MergeableField[]> {
+  const recipients = await uow.signingWorkflow.listRecipientStates(signingRequestId);
+  const labelByRecipient = new Map<string, string>();
+  for (const r of recipients) {
+    if (r.type !== "approver") continue;
+    if (r.state === "approved" && r.approvedAt !== null) {
+      labelByRecipient.set(String(r.recipientId), `APPROVED ${renderInstant(r.approvedAt)}`);
+    } else if (r.state === "skipped" && r.skippedAt !== null) {
+      labelByRecipient.set(String(r.recipientId), `SKIPPED ${renderInstant(r.skippedAt)}`);
+    }
+  }
+  if (labelByRecipient.size === 0) return [];
+
+  const filled = new Set(records.map(record => record.fieldId));
+  const fields = await uow.signingRequests.listFields(signingRequestId);
+  const labels: MergeableField[] = [];
+  for (const field of fields) {
+    if (field.recipientId === null || filled.has(String(field.fieldId))) continue;
+    const text = labelByRecipient.get(String(field.recipientId));
+    if (text === undefined) continue;
+    labels.push({
+      fieldId: String(field.fieldId),
+      pageNumber: field.pageNumber,
+      rect: { x: field.x, y: field.y, width: field.width, height: field.height },
+      value: { kind: "text", text },
+    });
+  }
+  return labels;
 }
 
 /** A read-phase failure that already knows its bounded code. */

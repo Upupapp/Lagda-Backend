@@ -239,7 +239,7 @@ interface FieldSpec {
 
 function seed(h: Harness, fields: readonly FieldSpec[], over: {
   state?: "sent" | "cancelled";
-  type?: "signer" | "viewer";
+  type?: "signer" | "viewer" | "approver";
 } = {}): void {
   h.store.signingRequests.push({
     signingRequestId: REQUEST, workspaceId: WS,
@@ -482,6 +482,18 @@ describe("required coverage", () => {
       .rejects.toBeInstanceOf(SigningSubmissionInvalidError);
     // NO partial values. §83, §136.
     expect(h.store.submissions).toHaveLength(0);
+  });
+
+  it("lets an approver approve with their required fields left empty (069)", async () => {
+    const h = harness();
+    seed(h, [
+      { id: "f_sig", type: "signature" },
+      { id: "f_txt", type: "text" },
+    ], { type: "approver" });
+    const token = await signerSession(h);
+    await submit(h, token, []);
+    expect(h.store.submissions).toHaveLength(1);
+    expect(h.store.submissions[0]?.values ?? []).toHaveLength(0);
   });
 
   it("accepts an omitted optional field and writes no row for it", async () => {
