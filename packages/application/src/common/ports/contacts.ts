@@ -37,6 +37,17 @@ import type { ContactEmailKey } from "@lagda/core";
  * backend, because a client that received it would eventually compare it to
  * something.
  */
+export const CONTACT_SCOPES = ["personal", "workspace"] as const;
+export type ContactScope = (typeof CONTACT_SCOPES)[number];
+
+/** Mirrors the frontend's `SYSTEM_CONTACT_TAGS` ids exactly (074's CHECK). */
+export const CONTACT_TAG_IDS = [
+  "tag-client", "tag-vendor", "tag-internal", "tag-legal", "tag-hr",
+  "tag-finance", "tag-approver", "tag-reviewer", "tag-signer", "tag-ack",
+  "tag-procurement",
+] as const;
+export type ContactTagId = (typeof CONTACT_TAG_IDS)[number];
+
 export interface ContactRecord {
   readonly contactId: ContactId;
   readonly workspaceId: WorkspaceId;
@@ -49,6 +60,21 @@ export interface ContactRecord {
   readonly createdAt: number;
   readonly updatedAt: number;
   readonly archivedAt: number | null;
+  /**
+   * 074. Optional so every pre-074 test fixture across the codebase — most of
+   * which build a `ContactRecord` purely as unrelated supporting data (a
+   * recipient's source contact, say) — keeps compiling unmodified. The real
+   * repository never omits these; only a hand-built literal in a test does,
+   * and `scope: "workspace"` is the correct read of "this field was not
+   * mentioned" for every one of those.
+   */
+  readonly scope?: ContactScope;
+  /** 074. Set exactly when `scope` is `personal`. */
+  readonly ownerUserId?: string | null;
+  /** 074. An internal note — never shown to the contact themselves. */
+  readonly note?: string | null;
+  /** 074. The product's fixed tag ids this contact carries. */
+  readonly tagIds?: readonly ContactTagId[];
 }
 
 export interface NewContact {
@@ -61,6 +87,12 @@ export interface NewContact {
   readonly organization: string | null;
   readonly title: string | null;
   readonly createdAt: number;
+  /** 074. Optional — see the same note on `ContactRecord`. Defaults to
+   *  `"workspace"` / no owner / no note / no tags when omitted. */
+  readonly scope?: ContactScope;
+  readonly ownerUserId?: string | null;
+  readonly note?: string | null;
+  readonly tagIds?: readonly ContactTagId[];
 }
 
 /**
@@ -83,6 +115,15 @@ export interface ContactUpdate {
   readonly phone?: string | null;
   readonly organization?: string | null;
   readonly title?: string | null;
+  /**
+   * Changing scope after creation is deliberately NOT here. Moving a contact
+   * between "only I see this" and "the whole workspace sees this" is a
+   * one-way-feeling decision a product owner never asked for a form to make
+   * casually. Re-adding it with the desired scope is the supported path.
+   */
+  readonly note?: string | null;
+  /** Absent means "leave unchanged"; present REPLACES the whole set. */
+  readonly tagIds?: readonly ContactTagId[];
 }
 
 /**
@@ -99,6 +140,17 @@ export interface ContactListQuery {
   readonly direction: "asc" | "desc";
   readonly offset: number;
   readonly limit: number;
+  /**
+   * 074. Every workspace-scoped contact, plus the personal ones owned by
+   * THIS caller — never another member's. See the migration header for why
+   * this is a query parameter and not an RLS policy.
+   *
+   * Optional for the same reason as `ContactRecord`'s new fields: every
+   * pre-074 call site keeps compiling, and omitting it means "workspace-scoped
+   * rows only" — exactly the pre-074 behaviour, and the correct reading of "no
+   * caller was named."
+   */
+  readonly callerUserId?: string;
 }
 
 export interface ContactPage {
@@ -122,6 +174,16 @@ export interface ContactPage {
 export interface ScopedContactRepository {
   /** @throws if the record's workspace differs from the bound scope. */
   insert(contact: NewContact): Promise<void>;
+
+  /**
+   * Replaces a contact's tag set. Called from within the same update as the
+   * rest of the patch, never on its own — a contact's tags are part of its
+   * record, not a separate resource with its own lifecycle.
+   */
+  setTags(input: {
+    readonly contactId: ContactId;
+    readonly tagIds: readonly ContactTagId[];
+  }): Promise<void>;
 
   /**
    * One contact by id, or null.

@@ -677,3 +677,119 @@ describe("transaction behaviour", () => {
     expect(h.transactions.started - before).toBe(1);
   });
 });
+
+// ── Scope, note and tags (074) ────────────────────────────────────────────────
+
+describe("personal contacts (074)", () => {
+  it("hides a personal contact from every other member, in list and by id", async () => {
+    const h = await harness();
+    const created = await createContact(actor(ADMIN), h.workspaceId, {
+      ...VALID, scope: "personal",
+    }, h.deps);
+    expect(created.contact.scope).toBe("personal");
+    expect(created.contact.ownerUserId).toBe(ADMIN);
+
+    // The owner sees it.
+    const own = await listContacts(actor(ADMIN), h.workspaceId, {}, h.deps);
+    expect(own.items.map(c => c.contactId)).toContain(created.contact.contactId);
+    await expect(getContact(actor(ADMIN), h.workspaceId, created.contact.contactId, h.deps))
+      .resolves.toMatchObject({ contactId: created.contact.contactId });
+
+    // Nobody else does — not in the list, and not by direct id.
+    const others = await listContacts(actor(SENDER), h.workspaceId, {}, h.deps);
+    expect(others.items.map(c => c.contactId)).not.toContain(created.contact.contactId);
+    await expect(getContact(actor(SENDER), h.workspaceId, created.contact.contactId, h.deps))
+      .rejects.toBeInstanceOf(ResourceNotFoundError);
+  });
+
+  it("refuses another member's update, archive and restore on a personal contact", async () => {
+    const h = await harness();
+    const created = await createContact(actor(ADMIN), h.workspaceId, {
+      ...VALID, scope: "personal",
+    }, h.deps);
+    const id = created.contact.contactId;
+
+    await expect(updateContact(actor(SENDER), h.workspaceId, id, VALID, h.deps))
+      .rejects.toBeInstanceOf(ResourceNotFoundError);
+    await expect(archiveContact(actor(SENDER), h.workspaceId, id, h.deps))
+      .rejects.toBeInstanceOf(ResourceNotFoundError);
+    await expect(restoreContact(actor(SENDER), h.workspaceId, id, h.deps))
+      .rejects.toBeInstanceOf(ResourceNotFoundError);
+
+    // The owner can, though.
+    await expect(updateContact(actor(ADMIN), h.workspaceId, id,
+      { ...VALID, name: "Maria Santos-Cruz" }, h.deps)).resolves.toMatchObject({
+      contact: { name: "Maria Santos-Cruz" },
+    });
+  });
+
+  it("a workspace contact is visible to and editable by any member", async () => {
+    const h = await harness();
+    const created = await createContact(actor(ADMIN), h.workspaceId, VALID, h.deps);
+    expect(created.contact.scope).toBe("workspace");
+    expect(created.contact.ownerUserId).toBeNull();
+
+    await expect(getContact(actor(SENDER), h.workspaceId, created.contact.contactId, h.deps))
+      .resolves.toMatchObject({ contactId: created.contact.contactId });
+    await expect(updateContact(actor(ADMIN), h.workspaceId, created.contact.contactId,
+      { ...VALID, title: "Managing Partner" }, h.deps)).resolves.toMatchObject({
+      contact: { title: "Managing Partner" },
+    });
+  });
+
+  it("defaults to workspace scope when none is given", async () => {
+    const h = await harness();
+    const created = await createContact(actor(ADMIN), h.workspaceId, VALID, h.deps);
+    expect(created.contact.scope).toBe("workspace");
+  });
+});
+
+describe("note and tags (074)", () => {
+  it("saves and returns a note", async () => {
+    const h = await harness();
+    const created = await createContact(actor(ADMIN), h.workspaceId, {
+      ...VALID, note: "Primary contact for the Ayala Land engagement.",
+    }, h.deps);
+    expect(created.contact.note).toBe("Primary contact for the Ayala Land engagement.");
+  });
+
+  it("clears a note when the form omits it, matching phone/organization/title", async () => {
+    const h = await harness();
+    const created = await createContact(actor(ADMIN), h.workspaceId,
+      { ...VALID, note: "temporary" }, h.deps);
+    const updated = await updateContact(actor(ADMIN), h.workspaceId,
+      created.contact.contactId, VALID, h.deps);
+    expect(updated.contact.note).toBeNull();
+  });
+
+  it("saves, replaces and clears tags", async () => {
+    const h = await harness();
+    const created = await createContact(actor(ADMIN), h.workspaceId, {
+      ...VALID, tagIds: ["tag-legal", "tag-signer", "tag-legal"],
+    }, h.deps);
+    // De-duplicated.
+    expect([...created.contact.tagIds].sort()).toEqual(["tag-legal", "tag-signer"]);
+
+    const replaced = await updateContact(actor(ADMIN), h.workspaceId,
+      created.contact.contactId, { ...VALID, tagIds: ["tag-hr"] }, h.deps);
+    expect(replaced.contact.tagIds).toEqual(["tag-hr"]);
+
+    const cleared = await updateContact(actor(ADMIN), h.workspaceId,
+      created.contact.contactId, VALID, h.deps);
+    expect(cleared.contact.tagIds).toEqual([]);
+  });
+
+  it("refuses a tag id outside the product's fixed set", async () => {
+    const h = await harness();
+    await expect(createContact(actor(ADMIN), h.workspaceId, {
+      ...VALID, tagIds: ["tag-not-a-real-tag"],
+    }, h.deps)).rejects.toBeInstanceOf(ApplicationValidationError);
+  });
+
+  it("refuses a note past the length bound", async () => {
+    const h = await harness();
+    await expect(createContact(actor(ADMIN), h.workspaceId,
+      { ...VALID, note: "x".repeat(2001) }, h.deps))
+      .rejects.toBeInstanceOf(ApplicationValidationError);
+  });
+});

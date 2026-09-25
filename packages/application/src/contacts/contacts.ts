@@ -20,6 +20,7 @@
 // a window on every mutation in the domain.
 
 import type { ContactId, WorkspaceId, ContactSortField } from "@lagda/contracts";
+import { CONTACT_NOTE_MAX_LENGTH } from "@lagda/core";
 import { DEFAULT_PER_PAGE } from "@lagda/contracts";
 import {
   validateContactName, validateOptionalContactText, validateContactEmail,
@@ -31,7 +32,9 @@ import {
 import type {
   Clock, TransactionManager, WorkspaceUnitOfWork,
   ContactIdGenerator, ContactRecord, ContactUpdate,
+  ContactScope, ContactTagId,
 } from "../common/ports/index.js";
+import { CONTACT_TAG_IDS } from "../common/ports/index.js";
 import type { AuthenticatedActor } from "../common/ports/session.js";
 import {
   ApplicationValidationError, ResourceNotFoundError,
@@ -62,6 +65,11 @@ export interface ContactSummary {
   readonly createdAt: number;
   readonly updatedAt: number;
   readonly archivedAt: number | null;
+  readonly scope: ContactScope;
+  /** Present only when `scope` is `personal`, and only ever the caller's own. */
+  readonly ownerUserId: string | null;
+  readonly note: string | null;
+  readonly tagIds: readonly ContactTagId[];
 }
 
 /**
@@ -90,7 +98,24 @@ function summarize(record: ContactRecord): ContactSummary {
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
     archivedAt: record.archivedAt,
+    // The repository always fills these in; the `?? ` fallbacks exist only
+    // because the port type stays optional for pre-074 test fixtures (see
+    // its own comment) and must still narrow to a concrete `ContactSummary`.
+    scope: record.scope ?? "workspace",
+    ownerUserId: record.ownerUserId ?? null,
+    note: record.note ?? null,
+    tagIds: record.tagIds ?? [],
   };
+}
+
+/**
+ * A personal contact belonging to somebody else is the same "not found" a
+ * cross-tenant read gets — one answer, so an unauthorized probe learns
+ * nothing about whether the id exists at all. Workspace contacts are never
+ * hidden by this: every member may see them.
+ */
+function visibleTo(record: ContactRecord, actorUserId: string): boolean {
+  return (record.scope ?? "workspace") === "workspace" || record.ownerUserId === actorUserId;
 }
 
 const warn = (record: ContactRecord): DuplicateWarning => ({
@@ -143,6 +168,14 @@ export interface ContactInput {
   readonly phone?: string | null;
   readonly organization?: string | null;
   readonly title?: string | null;
+  readonly note?: string | null;
+  /** De-duplicated and validated against the product's fixed tag set. */
+  readonly tagIds?: readonly string[];
+}
+
+/** Create-only: chooses who can see the contact. Absent means `workspace`. */
+export interface CreateContactInput extends ContactInput {
+  readonly scope?: ContactScope;
 }
 
 interface ValidatedContactFields {
@@ -152,6 +185,25 @@ interface ValidatedContactFields {
   readonly phone: string | null;
   readonly organization: string | null;
   readonly title: string | null;
+  readonly note: string | null;
+  readonly tagIds: readonly ContactTagId[];
+}
+
+/**
+ * De-duplicates and checks every id against the product's fixed vocabulary.
+ * An unrecognised id is reported by NAME rather than silently dropped — a
+ * client sending one has a bug, and dropping it would hide that.
+ */
+function validateTagIds(raw: readonly string[] | undefined): {
+  ok: true; value: ContactTagId[];
+} | { ok: false; reason: string } {
+  if (raw === undefined) return { ok: true, value: [] };
+  const known = new Set<string>(CONTACT_TAG_IDS);
+  const unrecognized = raw.filter(id => !known.has(id));
+  if (unrecognized.length > 0) {
+    return { ok: false, reason: `unrecognized: ${unrecognized.join(", ")}` };
+  }
+  return { ok: true, value: [...new Set(raw)] as ContactTagId[] };
 }
 
 /**
@@ -185,6 +237,12 @@ function validateFields(input: ContactInput): ValidatedContactFields {
   const title = validateOptionalContactText(input.title, CONTACT_TITLE_MAX_LENGTH);
   if (!title.ok) issues.push(`title: ${title.reason}`);
 
+  const note = validateOptionalContactText(input.note, CONTACT_NOTE_MAX_LENGTH);
+  if (!note.ok) issues.push(`note: ${note.reason}`);
+
+  const tagIds = validateTagIds(input.tagIds);
+  if (!tagIds.ok) issues.push(`tagIds: ${tagIds.reason}`);
+
   // One condition, doing two jobs: it throws when anything failed, and it is
   // what NARROWS each result to its `ok` branch for the return below.
   //
@@ -192,7 +250,8 @@ function validateFields(input: ContactInput): ValidatedContactFields {
   // `.value` unreachable without a cast — and a cast here would be a cast on
   // exactly the values a validator exists to guarantee. Naming every result
   // instead means a field added without a check is a compile error.
-  if (!name.ok || !email.ok || !phone.ok || !organization.ok || !title.ok) {
+  if (!name.ok || !email.ok || !phone.ok || !organization.ok || !title.ok
+    || !note.ok || !tagIds.ok) {
     throw new ApplicationValidationError("The contact could not be saved.", issues);
   }
 
@@ -203,6 +262,8 @@ function validateFields(input: ContactInput): ValidatedContactFields {
     phone: phone.value,
     organization: organization.value,
     title: title.value,
+    note: note.value,
+    tagIds: tagIds.value,
   };
 }
 
@@ -239,12 +300,13 @@ export interface CreateContactResult {
 export async function createContact(
   actor: AuthenticatedActor,
   workspaceId: WorkspaceId,
-  input: ContactInput,
+  input: CreateContactInput,
   deps: ContactDependencies,
 ): Promise<CreateContactResult> {
   // Validated BEFORE the transaction opens. A malformed submission should not
   // hold a database connection while it is being rejected.
   const fields = validateFields(input);
+  const scope: ContactScope = input.scope ?? "workspace";
 
   return deps.transactions.runForWorkspace(workspaceId, async uow => {
     await authorize(uow, actor, "contact.create");
@@ -270,6 +332,13 @@ export async function createContact(
       organization: fields.organization,
       title: fields.title,
       createdAt: now,
+      scope,
+      // The caller who chose "personal" is who it stays personal FOR — never
+      // a userId supplied by the request, which would let one member create
+      // a contact hidden from everyone but a DIFFERENT member.
+      ownerUserId: scope === "personal" ? actor.userId : null,
+      note: fields.note,
+      tagIds: fields.tagIds,
     });
 
     const created = await uow.contacts.findById(contactId);
@@ -295,7 +364,10 @@ export async function getContact(
     const contact = await uow.contacts.findById(contactId);
     // A contact in another workspace produces the same null as one that does
     // not exist. The repository is scoped and RLS refuses it independently.
-    if (contact === null) throw new ResourceNotFoundError("Contact");
+    // A personal contact owned by somebody else is the SAME answer (074).
+    if (contact === null || !visibleTo(contact, actor.userId)) {
+      throw new ResourceNotFoundError("Contact");
+    }
     return summarize(contact);
   });
 }
@@ -360,6 +432,8 @@ export async function listContacts(
       direction: input.direction ?? "desc",
       offset: (page - 1) * perPage,
       limit: perPage,
+      // 074: workspace-scoped rows plus the caller's own personal ones.
+      callerUserId: actor.userId,
     });
 
     return {
@@ -415,7 +489,11 @@ export async function updateContact(
     await authorize(uow, actor, "contact.update");
 
     const existing = await uow.contacts.findById(contactId);
-    if (existing === null) throw new ResourceNotFoundError("Contact");
+    // A personal contact owned by somebody else is the same "not found" every
+    // other cross-boundary read in this file gives (074).
+    if (existing === null || !visibleTo(existing, actor.userId)) {
+      throw new ResourceNotFoundError("Contact");
+    }
 
     const patch: ContactUpdate = {
       name: fields.name,
@@ -424,6 +502,8 @@ export async function updateContact(
       phone: fields.phone,
       organization: fields.organization,
       title: fields.title,
+      note: fields.note,
+      tagIds: fields.tagIds,
     };
 
     const applied = await uow.contacts.updateIfActive({
@@ -482,6 +562,13 @@ export async function archiveContact(
   return deps.transactions.runForWorkspace(workspaceId, async uow => {
     await authorize(uow, actor, "contact.archive");
 
+    // 074: a personal contact belonging to someone else is invisible to this
+    // actor entirely, archive included.
+    const before = await uow.contacts.findById(contactId);
+    if (before === null || !visibleTo(before, actor.userId)) {
+      throw new ResourceNotFoundError("Contact");
+    }
+
     const applied = await uow.contacts.archiveIfActive({
       contactId, now: deps.clock.now(),
     });
@@ -506,6 +593,11 @@ export async function restoreContact(
 ): Promise<ContactSummary> {
   return deps.transactions.runForWorkspace(workspaceId, async uow => {
     await authorize(uow, actor, "contact.archive");
+
+    const before = await uow.contacts.findById(contactId);
+    if (before === null || !visibleTo(before, actor.userId)) {
+      throw new ResourceNotFoundError("Contact");
+    }
 
     const applied = await uow.contacts.restoreIfArchived({
       contactId, now: deps.clock.now(),

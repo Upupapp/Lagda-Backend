@@ -9,7 +9,9 @@
 
 import type { ProviderWebhookRouteOptions } from "../notifications/provider-webhook-routes.js";
 import type { IdentityDependencies } from "./identity-routes.js";
-import type { PublicVerificationDependencies } from "@lagda/application";
+import type {
+  PublicVerificationDependencies, ParticipantDocumentDependencies,
+} from "@lagda/application";
 import type { UploadRouteOptions } from "../upload/upload-route.js";
 import type {
   SessionService, AbuseLimiter,
@@ -91,6 +93,8 @@ export interface AppDependencies {
    * unprotected.
    */
   readonly publicVerification?: () => PublicVerificationDependencies;
+  /** OD-135. Same optionality reasoning as `publicVerification` above. */
+  readonly publicParticipantAccess?: () => ParticipantDocumentDependencies;
   /**
    * BACKEND-45. The provider callback surface.
    *

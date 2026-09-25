@@ -1,23 +1,26 @@
 // Contact persistence.
 //
-// Two things in here are worth reading closely: how search escapes its pattern,
-// and why every mutation is a conditional UPDATE rather than a read followed by
-// a write.
+// Three things in here are worth reading closely: how search escapes its
+// pattern, why every mutation is a conditional UPDATE rather than a read
+// followed by a write, and how personal-contact visibility (074) is
+// enforced as an explicit WHERE rather than RLS — see the migration's header
+// for why.
 
 import { sql, type Selectable, type Transaction } from "kysely";
 import type { ContactId, WorkspaceId } from "@lagda/contracts";
 import type {
   ScopedContactRepository, ContactRecord, NewContact,
-  ContactListQuery, ContactPage, ContactUpdate,
+  ContactListQuery, ContactPage, ContactUpdate, ContactTagId,
 } from "@lagda/application";
 import type { ContactEmailKey } from "@lagda/core";
 import type { ContactsTable, Database } from "../schema/index.js";
 import { PersistenceMappingError } from "../mapping/index.js";
 import { WorkspaceScopeMismatchError, translatePersistenceError } from "../errors.js";
+import { replaceContactTags } from "./contact-tags.js";
 
 type ContactRow = Selectable<ContactsTable>;
 
-function toRecord(row: ContactRow): ContactRecord {
+function toRecord(row: ContactRow, tagIds: readonly ContactTagId[]): ContactRecord {
   // Re-asserted rather than cast. The column has a CHECK that it is lower case,
   // and this is the boundary that would notice if it somehow were not.
   if (row.normalized_contact_email !== row.normalized_contact_email.toLocaleLowerCase("en-US")) {
@@ -25,6 +28,9 @@ function toRecord(row: ContactRow): ContactRecord {
       "contacts", "normalized_contact_email",
       "stored comparison key is not folded.",
     );
+  }
+  if (row.scope !== "personal" && row.scope !== "workspace") {
+    throw new PersistenceMappingError("contacts", "scope", `"${row.scope}" is not a known scope.`);
   }
   return {
     contactId: row.contact_id as ContactId,
@@ -38,6 +44,10 @@ function toRecord(row: ContactRow): ContactRecord {
     createdAt: row.created_at.getTime(),
     updatedAt: row.updated_at.getTime(),
     archivedAt: row.archived_at === null ? null : row.archived_at.getTime(),
+    scope: row.scope,
+    ownerUserId: row.owner_user_id,
+    note: row.note,
+    tagIds,
   };
 }
 
@@ -71,6 +81,23 @@ export function createScopedContactRepository(
   const scoped = () =>
     trx.selectFrom("contacts").where("workspace_id", "=", scope);
 
+  /** Every tag row for a set of contacts, grouped — one query, not N. */
+  const tagsFor = async (contactIds: readonly string[]): Promise<Map<string, ContactTagId[]>> => {
+    const byContact = new Map<string, ContactTagId[]>();
+    if (contactIds.length === 0) return byContact;
+    const rows = await trx.selectFrom("contact_tags")
+      .select(["contact_id", "tag_id"])
+      .where("workspace_id", "=", scope)
+      .where("contact_id", "in", contactIds)
+      .execute();
+    for (const row of rows) {
+      const list = byContact.get(row.contact_id) ?? [];
+      list.push(row.tag_id as ContactTagId);
+      byContact.set(row.contact_id, list);
+    }
+    return byContact;
+  };
+
   return {
     async insert(contact: NewContact): Promise<void> {
       if (contact.workspaceId !== scope) {
@@ -95,18 +122,28 @@ export function createScopedContactRepository(
           // in an undefined position.
           updated_at: new Date(contact.createdAt),
           archived_at: null,
+          scope: contact.scope ?? "workspace",
+          owner_user_id: contact.ownerUserId ?? null,
+          note: contact.note ?? null,
         }).execute();
       } catch (error) {
         throw translatePersistenceError(error);
       }
+      if (contact.tagIds !== undefined && contact.tagIds.length > 0) {
+        await this.setTags({ contactId: contact.contactId, tagIds: contact.tagIds });
+      }
     },
+
+    setTags: (input) => replaceContactTags(trx, scope, input.contactId, input.tagIds),
 
     async findById(contactId: ContactId) {
       const row = await scoped()
         .selectAll()
         .where("contact_id", "=", contactId)
         .executeTakeFirst();
-      return row === undefined ? null : toRecord(row);
+      if (row === undefined) return null;
+      const tags = await tagsFor([row.contact_id]);
+      return toRecord(row, tags.get(row.contact_id) ?? []);
     },
 
     async list(query: ContactListQuery): Promise<ContactPage> {
@@ -117,6 +154,19 @@ export function createScopedContactRepository(
         let next = query.state === "active"
           ? builder.where("archived_at", "is", null)
           : builder.where("archived_at", "is not", null);
+
+        // 074: every workspace-scoped row, plus the caller's OWN personal
+        // ones. Never another member's personal contact — see the migration
+        // header for why this lives here and not in RLS.
+        //
+        // No caller named: workspace-scoped only. Fail closed — a query that
+        // forgot who is asking must not leak somebody's personal address book.
+        next = query.callerUserId === undefined
+          ? next.where("scope", "=", "workspace")
+          : next.where(eb => eb.or([
+            eb("scope", "=", "workspace"),
+            eb.and([eb("scope", "=", "personal"), eb("owner_user_id", "=", query.callerUserId!)]),
+          ]));
 
         if (query.search !== null) {
           const pattern = `%${escapeLikePattern(query.search)}%`;
@@ -141,7 +191,7 @@ export function createScopedContactRepository(
         // the sort would fill the top of the page with contacts that have no
         // organization, which reads as broken rather than as sorted.
         //
-        // The modifier CALLBACK, not `sql.raw(\`${direction} nulls last\`)`.
+        // The modifier CALLBACK, not `sql.raw(`${direction} nulls last`)`.
         // The raw form is deprecated in Kysely 0.28 and, more to the point,
         // interpolates a direction into SQL — safe here because the value comes
         // from a closed union, and a shape not worth leaving for someone to
@@ -163,7 +213,11 @@ export function createScopedContactRepository(
         .select(eb => eb.fn.countAll<string>().as("total"))
         .executeTakeFirstOrThrow();
 
-      return { items: rows.map(toRecord), total: Number(counted.total) };
+      const tags = await tagsFor(rows.map(row => row.contact_id));
+      return {
+        items: rows.map(row => toRecord(row, tags.get(row.contact_id) ?? [])),
+        total: Number(counted.total),
+      };
     },
 
     async findDuplicateCandidates(input) {
@@ -181,7 +235,8 @@ export function createScopedContactRepository(
         .orderBy("created_at", "asc")
         .orderBy("contact_id", "asc")
         .execute();
-      return rows.map(toRecord);
+      const tags = await tagsFor(rows.map(row => row.contact_id));
+      return rows.map(row => toRecord(row, tags.get(row.contact_id) ?? []));
     },
 
     async updateIfActive(input) {
@@ -200,6 +255,7 @@ export function createScopedContactRepository(
       if (patch.phone !== undefined) values["phone"] = patch.phone;
       if (patch.organization !== undefined) values["organization"] = patch.organization;
       if (patch.title !== undefined) values["title"] = patch.title;
+      if (patch.note !== undefined) values["note"] = patch.note;
 
       try {
         const result = await trx.updateTable("contacts")
@@ -208,7 +264,11 @@ export function createScopedContactRepository(
           .where("contact_id", "=", input.contactId)
           .where("archived_at", "is", null)
           .executeTakeFirst();
-        return Number(result.numUpdatedRows) === 1;
+        const applied = Number(result.numUpdatedRows) === 1;
+        if (applied && patch.tagIds !== undefined) {
+          await this.setTags({ contactId: input.contactId, tagIds: patch.tagIds });
+        }
+        return applied;
       } catch (error) {
         throw translatePersistenceError(error);
       }

@@ -208,9 +208,10 @@ describe("production composition", () => {
     const wired = groups.length - Object.keys(NOT_WIRED_IN_PRODUCTION).length;
     // 6 -> 7 with `signingAccess`, 7 -> 10 with the ceremony, submission and
     // decline, 10 -> 11 with public verification, 11 -> 12 with 069's skip,
-    // and 12 -> 13 with 073's final-copy download. The number moving IS the
-    // record, and it now equals `groups.length`: every surface is reachable.
-    expect(wired).toBe(13);
+    // 12 -> 13 with 073's final-copy download, and 13 -> 14 with OD-135's
+    // email-gated participant access. The number moving IS the record, and
+    // it now equals `groups.length`: every surface is reachable.
+    expect(wired).toBe(14);
     expect(wired, "every group is wired; the register is empty")
       .toBe(groups.length);
 

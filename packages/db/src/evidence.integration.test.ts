@@ -19,7 +19,7 @@ import type { LagdaDatabase } from "./client/index.js";
 import { createTransactionManager } from "./transactions/index.js";
 import { createPublicVerificationLookup } from "./repositories/evidence.js";
 import {
-  createTestDatabase, truncateAll, hasIntegrationDatabase, withRawTenantTransaction,
+  createTestDatabase, createRuntimeRoleDatabase, truncateAll, hasIntegrationDatabase, withRawTenantTransaction,
 } from "./testing/harness.js";
 
 const WS_A = "ws_evidence_a" as WorkspaceId;
@@ -102,14 +102,23 @@ const verification = (over: Partial<VerificationRecord> = {}): VerificationRecor
 
 describe.skipIf(!hasIntegrationDatabase())("evidence persistence on PostgreSQL", () => {
   let database: LagdaDatabase;
+  let runtime: LagdaDatabase;
   let transactions: ReturnType<typeof createTransactionManager>;
 
   beforeAll(async () => {
     database = await createTestDatabase();
+    // The role the running API and worker actually connect as (verified
+    // directly against production: `lagda_app`, no BYPASSRLS, and it OWNS
+    // every table 019/003 force RLS on). The owner-role `database` above
+    // proves nothing about what an anonymous request can read in production
+    // — 075's header explains why, and this is the connection that would
+    // have caught it.
+    runtime = await createRuntimeRoleDatabase(database);
     transactions = createTransactionManager(database.db);
   }, 60_000);
 
   afterAll(async () => {
+    await runtime?.close();
     await database?.close();
   });
 
@@ -767,6 +776,38 @@ describe.skipIf(!hasIntegrationDatabase())("evidence persistence on PostgreSQL",
       expect(found?.participantCount).toBe(2);
       expect(found?.signedDocumentHash).toBe(HASH_B);
       expect(found?.sealScheme).toBe("hash-evidence");
+    });
+
+    it("resolves under the RUNTIME role, not only the table owner (075)", async () => {
+      // The regression this guards: `lookup()` above runs on the OWNER
+      // connection, which trivially works and proved nothing about
+      // production — see 075's header. `lagda_app` owns these tables and
+      // they FORCE row level security, so the owner is bound by RLS too;
+      // only `anonymous_verification_read`'s extra policy makes this findable
+      // with no workspace context set, which is exactly what an anonymous
+      // caller has.
+      await finalize();
+      const runtimeLookup = createPublicVerificationLookup(
+        operation => runtime.db.transaction().execute(operation));
+      const found = await runtimeLookup.findByVerificationId(
+        "LAGDA-VER-2026-7F3A2C" as VerificationId);
+
+      expect(found?.verificationId).toBe("LAGDA-VER-2026-7F3A2C");
+      expect(found?.participantCount).toBe(2);
+    });
+
+    it("never widens a DIFFERENT no-workspace realm (075's own regression)", async () => {
+      // The exact bug 075's first draft shipped, caught here rather than by
+      // the signing-access suite alone: a transaction that never called the
+      // public lookup — and so never set `lagda.public_verification_active`
+      // — must see NOTHING on these tables, even though it also runs with
+      // no `lagda.current_workspace` set. Asserted directly against the
+      // table the earlier draft leaked, not inferred from another suite.
+      await finalize();
+      const bare = await runtime.db.transaction().execute(async trx => {
+        return trx.selectFrom("verification_records").selectAll().execute();
+      });
+      expect(bare).toHaveLength(0);
     });
 
     it("returns null for an unknown verification ID", async () => {

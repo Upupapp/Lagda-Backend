@@ -36,9 +36,11 @@ import {
 } from "@lagda/application";
 import {
   ContactSchema, ContactStateSchema, ContactSortFieldSchema,
+  ContactScopeSchema, ContactTagIdSchema,
   CONTACT_NAME_MAX_LENGTH, CONTACT_EMAIL_MAX_LENGTH, CONTACT_PHONE_MAX_LENGTH,
   CONTACT_ORGANIZATION_MAX_LENGTH, CONTACT_TITLE_MAX_LENGTH,
-  CONTACT_SEARCH_MAX_LENGTH, MAX_PER_PAGE, DEFAULT_PER_PAGE,
+  CONTACT_SEARCH_MAX_LENGTH, CONTACT_NOTE_MAX_LENGTH,
+  MAX_PER_PAGE, DEFAULT_PER_PAGE,
   type ContactId, type WorkspaceId,
 } from "@lagda/contracts";
 import type { MetricsRecorder } from "../observability/metrics.js";
@@ -91,9 +93,32 @@ const ContactBodySchema = Type.Object({
   title: Type.Optional(Type.Union([
     Type.String({ maxLength: CONTACT_TITLE_MAX_LENGTH }), Type.Null(),
   ])),
+  note: Type.Optional(Type.Union([
+    Type.String({ maxLength: CONTACT_NOTE_MAX_LENGTH }), Type.Null(),
+  ])),
+  tagIds: Type.Optional(Type.Array(ContactTagIdSchema)),
+  /**
+   * CREATE-only. Rejected on PUT by `additionalProperties: false` on the
+   * dedicated create schema below — a contact's scope is chosen once; see
+   * `ContactUpdate`'s own comment on why it is not an editable field.
+   */
+  scope: Type.Optional(ContactScopeSchema),
 }, { additionalProperties: false });
 
 export type ContactBody = Static<typeof ContactBodySchema>;
+
+/** PUT's body: everything ContactBody has, minus `scope` (create-only). */
+const ContactReplaceBodySchema = Type.Object({
+  name: ContactBodySchema.properties.name,
+  email: ContactBodySchema.properties.email,
+  phone: ContactBodySchema.properties.phone,
+  organization: ContactBodySchema.properties.organization,
+  title: ContactBodySchema.properties.title,
+  note: ContactBodySchema.properties.note,
+  tagIds: ContactBodySchema.properties.tagIds,
+}, { additionalProperties: false });
+
+export type ContactReplaceBody = Static<typeof ContactReplaceBodySchema>;
 
 const ContactListQuerySchema = Type.Object({
   search: Type.Optional(Type.String({ maxLength: CONTACT_SEARCH_MAX_LENGTH })),
@@ -175,6 +200,10 @@ interface ContactLike {
   readonly createdAt: number;
   readonly updatedAt: number;
   readonly archivedAt: number | null;
+  readonly scope: "personal" | "workspace";
+  readonly ownerUserId: string | null;
+  readonly note: string | null;
+  readonly tagIds: readonly string[];
 }
 
 const present = (contact: ContactLike) => ({
@@ -188,6 +217,10 @@ const present = (contact: ContactLike) => ({
   createdAt: iso(contact.createdAt),
   updatedAt: iso(contact.updatedAt),
   archivedAt: contact.archivedAt === null ? null : iso(contact.archivedAt),
+  scope: contact.scope,
+  ownerUserId: contact.ownerUserId,
+  note: contact.note,
+  tagIds: contact.tagIds,
 });
 
 export function registerContactRoutes(
@@ -344,7 +377,7 @@ export function registerContactRoutes(
   app.put("/workspaces/:workspaceId/contacts/:contactId", {
     schema: {
       params: ContactParamsSchema,
-      body: ContactBodySchema,
+      body: ContactReplaceBodySchema,
       response: { 200: ContactWriteResponseSchema },
     },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
@@ -353,7 +386,7 @@ export function registerContactRoutes(
     if (actor === null) return unauthenticated(reply);
 
     const { workspaceId, contactId } = request.params as Static<typeof ContactParamsSchema>;
-    const body = request.body as ContactBody;
+    const body = request.body as ContactReplaceBody;
 
     const result = await updateContact(
       actor, workspaceId as WorkspaceId, contactId as ContactId, body,

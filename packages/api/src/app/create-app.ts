@@ -64,6 +64,9 @@ import { registerCancelRoutes } from "../signing-requests/cancel-routes.js";
 import {
   registerPublicVerificationRoutes,
 } from "../verification/public-verification-routes.js";
+import {
+  registerPublicParticipantRoutes,
+} from "../verification/public-participant-routes.js";
 import { registerAuditRoutes } from "../audit/audit-routes.js";
 import { registerDocumentFeedRoutes } from "../notifications/document-feed-routes.js";
 import {
@@ -800,6 +803,22 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
       // Spread rather than `rateLimit: undefined`, so "no limiter configured"
       // is an ABSENT key under `exactOptionalPropertyTypes` rather than a
       // present one holding undefined.
+      ...(publicLimiter === undefined
+        ? {}
+        : { rateLimit: { limiter: publicLimiter, metrics } }),
+    });
+  }
+
+  // OD-135: the email-gated document view. A SEPARATE dependency and a
+  // SEPARATE registration from the plain lookup above — see
+  // `public-participant-routes.ts`'s own header for why this is its own
+  // surface rather than two more routes bolted onto that one.
+  if (dependencies.publicParticipantAccess !== undefined) {
+    const publicParticipantAccess = dependencies.publicParticipantAccess;
+    const publicLimiter = dependencies.limiter;
+    registerPublicParticipantRoutes(app, {
+      deps: publicParticipantAccess,
+      metrics,
       ...(publicLimiter === undefined
         ? {}
         : { rateLimit: { limiter: publicLimiter, metrics } }),

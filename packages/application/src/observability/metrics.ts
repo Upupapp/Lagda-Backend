@@ -76,6 +76,8 @@ export const METRIC_NAMES = [
   // and would turn a counter into a per-document index (§112, §253).
   "public_verification_requests_total",
   "public_verification_file_checks_total",
+  // The email-gated view (OD-135).
+  "public_verification_access_total",
 
   // Email delivery (BACKEND-45). Recorded by the WORKER, which is why the
   // catalog lives in this package rather than in the HTTP one.
@@ -235,6 +237,7 @@ export const METRIC_LABELS = {
   authorization_denials_total: ["capability", "processRole"],
   public_verification_requests_total: ["result", "mode"],
   public_verification_file_checks_total: ["result", "mode"],
+  public_verification_access_total: ["result", "mode"],
   // BACKEND-45. Every label is a closed union in code.
   //
   // Deliberately NOT, and this is the list that matters most in this file:

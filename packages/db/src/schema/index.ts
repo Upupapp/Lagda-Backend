@@ -1495,6 +1495,20 @@ export interface ContactsTable {
   updated_at: Timestamptz;
   /** NULL means active. The product archives and restores; it never deletes. */
   archived_at: ColumnType<Date | null, Date | null, Date | null>;
+  /** 074. 'personal' or 'workspace'. */
+  scope: string;
+  /** 074. Set exactly when scope = 'personal'. */
+  owner_user_id: ColumnType<string | null, string | null, string | null>;
+  /** 074. */
+  note: ColumnType<string | null, string | null, string | null>;
+}
+
+/** 074. One row per tag a contact carries, from the product's fixed set. */
+export interface ContactTagsTable {
+  workspace_id: string;
+  contact_id: string;
+  tag_id: string;
+  created_at: Timestamptz;
 }
 
 /**
@@ -1601,6 +1615,7 @@ export interface Database {
   workspace_memberships: WorkspaceMembershipsTable;
   workspace_invitations: WorkspaceInvitationsTable;
   contacts: ContactsTable;
+  contact_tags: ContactTagsTable;
   documents: DocumentsTable;
   document_preparations: DocumentPreparationsTable;
   preparation_fields: PreparationFieldsTable;

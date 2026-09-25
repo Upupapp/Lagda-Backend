@@ -2146,7 +2146,11 @@
                           "state",
                           "createdAt",
                           "updatedAt",
-                          "archivedAt"
+                          "archivedAt",
+                          "scope",
+                          "ownerUserId",
+                          "note",
+                          "tagIds"
                         ],
                         "properties": {
                           "contactId": {
@@ -2229,6 +2233,119 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "scope": {
+                            "title": "ContactScope",
+                            "description": "'personal': visible only to the member who added it. 'workspace': visible to every member.",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "personal"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "workspace"
+                                ]
+                              }
+                            ]
+                          },
+                          "ownerUserId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "note": {
+                            "anyOf": [
+                              {
+                                "maxLength": 2000,
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "tagIds": {
+                            "type": "array",
+                            "items": {
+                              "title": "ContactTagId",
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "tag-client"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "tag-vendor"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "tag-internal"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "tag-legal"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "tag-hr"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "tag-finance"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "tag-approver"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "tag-reviewer"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "tag-signer"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "tag-ack"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "tag-procurement"
+                                  ]
+                                }
+                              ]
+                            }
                           }
                         }
                       }
@@ -2310,6 +2427,109 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "note": {
+                    "anyOf": [
+                      {
+                        "maxLength": 2000,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "tagIds": {
+                    "type": "array",
+                    "items": {
+                      "title": "ContactTagId",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "tag-client"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "tag-vendor"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "tag-internal"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "tag-legal"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "tag-hr"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "tag-finance"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "tag-approver"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "tag-reviewer"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "tag-signer"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "tag-ack"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "tag-procurement"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "scope": {
+                    "title": "ContactScope",
+                    "description": "'personal': visible only to the member who added it. 'workspace': visible to every member.",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "personal"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "workspace"
+                        ]
+                      }
+                    ]
                   }
                 }
               }
@@ -2356,7 +2576,11 @@
                         "state",
                         "createdAt",
                         "updatedAt",
-                        "archivedAt"
+                        "archivedAt",
+                        "scope",
+                        "ownerUserId",
+                        "note",
+                        "tagIds"
                       ],
                       "properties": {
                         "contactId": {
@@ -2439,6 +2663,119 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "scope": {
+                          "title": "ContactScope",
+                          "description": "'personal': visible only to the member who added it. 'workspace': visible to every member.",
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "personal"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "workspace"
+                              ]
+                            }
+                          ]
+                        },
+                        "ownerUserId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "note": {
+                          "anyOf": [
+                            {
+                              "maxLength": 2000,
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "tagIds": {
+                          "type": "array",
+                          "items": {
+                            "title": "ContactTagId",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "tag-client"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "tag-vendor"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "tag-internal"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "tag-legal"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "tag-hr"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "tag-finance"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "tag-approver"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "tag-reviewer"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "tag-signer"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "tag-ack"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "tag-procurement"
+                                ]
+                              }
+                            ]
+                          }
                         }
                       }
                     },
@@ -2524,7 +2861,11 @@
                     "state",
                     "createdAt",
                     "updatedAt",
-                    "archivedAt"
+                    "archivedAt",
+                    "scope",
+                    "ownerUserId",
+                    "note",
+                    "tagIds"
                   ],
                   "properties": {
                     "contactId": {
@@ -2607,6 +2948,119 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "scope": {
+                      "title": "ContactScope",
+                      "description": "'personal': visible only to the member who added it. 'workspace': visible to every member.",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "personal"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "workspace"
+                          ]
+                        }
+                      ]
+                    },
+                    "ownerUserId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "note": {
+                      "anyOf": [
+                        {
+                          "maxLength": 2000,
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "tagIds": {
+                      "type": "array",
+                      "items": {
+                        "title": "ContactTagId",
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-client"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-vendor"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-internal"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-legal"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-hr"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-finance"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-approver"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-reviewer"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-signer"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-ack"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-procurement"
+                            ]
+                          }
+                        ]
+                      }
                     }
                   }
                 }
@@ -2670,6 +3124,91 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "note": {
+                    "anyOf": [
+                      {
+                        "maxLength": 2000,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "tagIds": {
+                    "type": "array",
+                    "items": {
+                      "title": "ContactTagId",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "tag-client"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "tag-vendor"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "tag-internal"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "tag-legal"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "tag-hr"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "tag-finance"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "tag-approver"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "tag-reviewer"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "tag-signer"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "tag-ack"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "tag-procurement"
+                          ]
+                        }
+                      ]
+                    }
                   }
                 }
               }
@@ -2726,7 +3265,11 @@
                         "state",
                         "createdAt",
                         "updatedAt",
-                        "archivedAt"
+                        "archivedAt",
+                        "scope",
+                        "ownerUserId",
+                        "note",
+                        "tagIds"
                       ],
                       "properties": {
                         "contactId": {
@@ -2809,6 +3352,119 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "scope": {
+                          "title": "ContactScope",
+                          "description": "'personal': visible only to the member who added it. 'workspace': visible to every member.",
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "personal"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "workspace"
+                              ]
+                            }
+                          ]
+                        },
+                        "ownerUserId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "note": {
+                          "anyOf": [
+                            {
+                              "maxLength": 2000,
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "tagIds": {
+                          "type": "array",
+                          "items": {
+                            "title": "ContactTagId",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "tag-client"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "tag-vendor"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "tag-internal"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "tag-legal"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "tag-hr"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "tag-finance"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "tag-approver"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "tag-reviewer"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "tag-signer"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "tag-ack"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "tag-procurement"
+                                ]
+                              }
+                            ]
+                          }
                         }
                       }
                     },
@@ -2894,7 +3550,11 @@
                     "state",
                     "createdAt",
                     "updatedAt",
-                    "archivedAt"
+                    "archivedAt",
+                    "scope",
+                    "ownerUserId",
+                    "note",
+                    "tagIds"
                   ],
                   "properties": {
                     "contactId": {
@@ -2977,6 +3637,119 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "scope": {
+                      "title": "ContactScope",
+                      "description": "'personal': visible only to the member who added it. 'workspace': visible to every member.",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "personal"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "workspace"
+                          ]
+                        }
+                      ]
+                    },
+                    "ownerUserId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "note": {
+                      "anyOf": [
+                        {
+                          "maxLength": 2000,
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "tagIds": {
+                      "type": "array",
+                      "items": {
+                        "title": "ContactTagId",
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-client"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-vendor"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-internal"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-legal"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-hr"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-finance"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-approver"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-reviewer"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-signer"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-ack"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-procurement"
+                            ]
+                          }
+                        ]
+                      }
                     }
                   }
                 }
@@ -3030,7 +3803,11 @@
                     "state",
                     "createdAt",
                     "updatedAt",
-                    "archivedAt"
+                    "archivedAt",
+                    "scope",
+                    "ownerUserId",
+                    "note",
+                    "tagIds"
                   ],
                   "properties": {
                     "contactId": {
@@ -3113,6 +3890,119 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "scope": {
+                      "title": "ContactScope",
+                      "description": "'personal': visible only to the member who added it. 'workspace': visible to every member.",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "personal"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "workspace"
+                          ]
+                        }
+                      ]
+                    },
+                    "ownerUserId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "note": {
+                      "anyOf": [
+                        {
+                          "maxLength": 2000,
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "tagIds": {
+                      "type": "array",
+                      "items": {
+                        "title": "ContactTagId",
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-client"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-vendor"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-internal"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-legal"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-hr"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-finance"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-approver"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-reviewer"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-signer"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-ack"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "tag-procurement"
+                            ]
+                          }
+                        ]
+                      }
                     }
                   }
                 }

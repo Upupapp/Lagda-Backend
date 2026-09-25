@@ -211,7 +211,7 @@ suite("contacts (RLS, runtime role)", () => {
             contact_id: "con_blank", workspace_id: WS_A,
             name: bad.name ?? "Name", email: bad.email ?? "e@example.com",
             normalized_contact_email: "e@example.com",
-            created_at: new Date(AT), updated_at: new Date(AT), archived_at: null,
+            created_at: new Date(AT), updated_at: new Date(AT), archived_at: null, scope: "workspace",
           }).execute();
         })).rejects.toThrow(/violates check constraint/i);
       }
@@ -226,7 +226,7 @@ suite("contacts (RLS, runtime role)", () => {
           contact_id: "con_case", workspace_id: WS_A,
           name: "Case", email: "Case@Example.com",
           normalized_contact_email: "Case@Example.com",
-          created_at: new Date(AT), updated_at: new Date(AT), archived_at: null,
+          created_at: new Date(AT), updated_at: new Date(AT), archived_at: null, scope: "workspace",
         }).execute();
       })).rejects.toThrow(/chk_contacts_email_normalized/i);
     });
@@ -246,7 +246,7 @@ suite("contacts (RLS, runtime role)", () => {
           contact_id: "con_ghost", workspace_id: "ws_ghost",
           name: "Ghost", email: "g@example.com",
           normalized_contact_email: "g@example.com",
-          created_at: new Date(AT), updated_at: new Date(AT), archived_at: null,
+          created_at: new Date(AT), updated_at: new Date(AT), archived_at: null, scope: "workspace",
         }).execute();
       })).rejects.toThrow(/foreign key/i);
     });
@@ -406,5 +406,137 @@ suite("contacts (RLS, runtime role)", () => {
     const found = await tx.runForWorkspace(WS_A,
       uow => uow.contacts.findById("con_rollback" as ContactId));
     expect(found).toBeNull();
+  });
+
+  // ── Personal contacts (074) ─────────────────────────────────────────────
+
+  describe("scope, ownership, note and tags", () => {
+    const OTHER_USER = "usr_contacts_other" as UserId;
+
+    beforeEach(async () => {
+      await seedUser(owner, OTHER_USER);
+      await owner.db.insertInto("workspace_memberships").values({
+        member_id: "mem_ca_other", workspace_id: WS_A,
+        user_id: OTHER_USER, role: "owner", created_at: new Date(AT),
+      }).execute();
+    });
+
+    it("hides a personal contact from a member who is not its owner", async () => {
+      const tx = createTransactionManager(app.db);
+      await tx.runForWorkspace(WS_A, uow => uow.contacts.insert({
+        contactId: "con_personal" as ContactId, workspaceId: WS_A,
+        name: "Personal", email: "p@example.com", emailKey: key("p@example.com"),
+        phone: null, organization: null, title: null, createdAt: AT,
+        scope: "personal", ownerUserId: USER, note: null, tagIds: [],
+      }));
+
+      const asOwner = await tx.runForWorkspace(WS_A, uow => uow.contacts.list({
+        search: null, state: "active", sort: "updatedAt", direction: "desc",
+        offset: 0, limit: 50, callerUserId: USER,
+      }));
+      expect(asOwner.items.map(c => c.contactId)).toEqual(["con_personal"]);
+
+      const asOther = await tx.runForWorkspace(WS_A, uow => uow.contacts.list({
+        search: null, state: "active", sort: "updatedAt", direction: "desc",
+        offset: 0, limit: 50, callerUserId: OTHER_USER,
+      }));
+      expect(asOther.items).toHaveLength(0);
+
+      // findById is workspace-scoped only, matching the pre-074 method — the
+      // application layer is what applies the ownership check on top of it.
+      const byId = await tx.runForWorkspace(WS_A,
+        uow => uow.contacts.findById("con_personal" as ContactId));
+      expect(byId?.scope).toBe("personal");
+      expect(byId?.ownerUserId).toBe(USER);
+    });
+
+    it("omitting callerUserId shows workspace-scoped contacts only", async () => {
+      const tx = createTransactionManager(app.db);
+      await tx.runForWorkspace(WS_A, uow => uow.contacts.insert({
+        contactId: "con_shared" as ContactId, workspaceId: WS_A,
+        name: "Shared", email: "s@example.com", emailKey: key("s@example.com"),
+        phone: null, organization: null, title: null, createdAt: AT,
+      }));
+      await tx.runForWorkspace(WS_A, uow => uow.contacts.insert({
+        contactId: "con_priv" as ContactId, workspaceId: WS_A,
+        name: "Private", email: "pr@example.com", emailKey: key("pr@example.com"),
+        phone: null, organization: null, title: null, createdAt: AT,
+        scope: "personal", ownerUserId: USER, note: null, tagIds: [],
+      }));
+
+      const result = await tx.runForWorkspace(WS_A, uow => uow.contacts.list({
+        search: null, state: "active", sort: "updatedAt", direction: "desc",
+        offset: 0, limit: 50,
+      }));
+      expect(result.items.map(c => c.contactId)).toEqual(["con_shared"]);
+    });
+
+    it("saves a note and a tag set, and setTags replaces it wholesale", async () => {
+      const tx = createTransactionManager(app.db);
+      await tx.runForWorkspace(WS_A, uow => uow.contacts.insert({
+        contactId: "con_tagged" as ContactId, workspaceId: WS_A,
+        name: "Tagged", email: "t@example.com", emailKey: key("t@example.com"),
+        phone: null, organization: null, title: null, createdAt: AT,
+        note: "Handles renewals.", tagIds: ["tag-legal", "tag-signer"],
+      }));
+
+      const found = await tx.runForWorkspace(WS_A,
+        uow => uow.contacts.findById("con_tagged" as ContactId));
+      expect(found?.note).toBe("Handles renewals.");
+      expect([...(found?.tagIds ?? [])].sort()).toEqual(["tag-legal", "tag-signer"]);
+
+      await tx.runForWorkspace(WS_A, uow => uow.contacts.setTags({
+        contactId: "con_tagged" as ContactId, tagIds: ["tag-hr"],
+      }));
+      const replaced = await tx.runForWorkspace(WS_A,
+        uow => uow.contacts.findById("con_tagged" as ContactId));
+      expect(replaced?.tagIds).toEqual(["tag-hr"]);
+
+      await tx.runForWorkspace(WS_A, uow => uow.contacts.setTags({
+        contactId: "con_tagged" as ContactId, tagIds: [],
+      }));
+      const cleared = await tx.runForWorkspace(WS_A,
+        uow => uow.contacts.findById("con_tagged" as ContactId));
+      expect(cleared?.tagIds).toEqual([]);
+    });
+
+    it("refuses a tag id outside the fixed vocabulary, at the database", async () => {
+      await expect(app.db.transaction().execute(async trx => {
+        await sql`select set_config('lagda.workspace_id', ${WS_A}, true)`.execute(trx);
+        await trx.insertInto("contact_tags").values({
+          workspace_id: WS_A, contact_id: "con_ghost_tag", tag_id: "tag-nonsense",
+          created_at: new Date(AT),
+        }).execute();
+      })).rejects.toThrow(/chk_contact_tags_tag_id/i);
+    });
+
+    it("refuses a scope/owner pairing that does not match", async () => {
+      await expect(app.db.transaction().execute(async trx => {
+        await sql`select set_config('lagda.workspace_id', ${WS_A}, true)`.execute(trx);
+        await trx.insertInto("contacts").values({
+          contact_id: "con_bad_pairing", workspace_id: WS_A,
+          name: "Bad", email: "bad@example.com", normalized_contact_email: "bad@example.com",
+          created_at: new Date(AT), updated_at: new Date(AT), archived_at: null,
+          scope: "personal", owner_user_id: null,
+        }).execute();
+      })).rejects.toThrow(/chk_contacts_scope_owner_pairing/i);
+    });
+
+    it("removing a contact's tags when the contact is removed is CASCADE (schema check)", async () => {
+      // Contacts have no delete path in application code, so this proves the
+      // FK's ON DELETE clause directly rather than through a use case that
+      // does not exist.
+      const tx = createTransactionManager(app.db);
+      await tx.runForWorkspace(WS_A, uow => uow.contacts.insert({
+        contactId: "con_cascade" as ContactId, workspaceId: WS_A,
+        name: "Cascade", email: "c@example.com", emailKey: key("c@example.com"),
+        phone: null, organization: null, title: null, createdAt: AT,
+        tagIds: ["tag-hr"],
+      }));
+      await owner.db.deleteFrom("contacts").where("contact_id", "=", "con_cascade").execute();
+      const remaining = await owner.db.selectFrom("contact_tags")
+        .selectAll().where("contact_id", "=", "con_cascade").execute();
+      expect(remaining).toHaveLength(0);
+    });
   });
 });

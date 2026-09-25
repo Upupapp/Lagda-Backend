@@ -62,6 +62,8 @@ export const CONTACT_PHONE_MAX_LENGTH = 50;
 
 export const CONTACT_ORGANIZATION_MAX_LENGTH = 200;
 export const CONTACT_TITLE_MAX_LENGTH = 200;
+/** 074. An internal note. Never shown to the contact themselves. */
+export const CONTACT_NOTE_MAX_LENGTH = 2000;
 
 // ── State ────────────────────────────────────────────────────────────────────
 
@@ -87,6 +89,31 @@ export const ContactStateSchema = Type.Union(
     title: "ContactState",
     description: "Whether the contact is in the active address book.",
   },
+);
+
+// ── Scope and tags (074) ────────────────────────────────────────────────────
+
+export const CONTACT_SCOPES = ["personal", "workspace"] as const;
+export type ContactScope = (typeof CONTACT_SCOPES)[number];
+export const ContactScopeSchema = Type.Union(
+  CONTACT_SCOPES.map(v => Type.Literal(v)),
+  {
+    title: "ContactScope",
+    description: "'personal': visible only to the member who added it. "
+      + "'workspace': visible to every member.",
+  },
+);
+
+/** Mirrors the frontend's `SYSTEM_CONTACT_TAGS` ids exactly. */
+export const CONTACT_TAG_IDS = [
+  "tag-client", "tag-vendor", "tag-internal", "tag-legal", "tag-hr",
+  "tag-finance", "tag-approver", "tag-reviewer", "tag-signer", "tag-ack",
+  "tag-procurement",
+] as const;
+export type ContactTagId = (typeof CONTACT_TAG_IDS)[number];
+export const ContactTagIdSchema = Type.Union(
+  CONTACT_TAG_IDS.map(v => Type.Literal(v)),
+  { title: "ContactTagId" },
 );
 
 // ── Sorting ──────────────────────────────────────────────────────────────────
@@ -144,6 +171,11 @@ export const ContactSchema = Type.Object(
     createdAt: Type.String({ format: "date-time" }),
     updatedAt: Type.String({ format: "date-time" }),
     archivedAt: Type.Union([Type.String({ format: "date-time" }), Type.Null()]),
+    scope: ContactScopeSchema,
+    /** Present only when `scope` is `personal` — and only ever the caller's own. */
+    ownerUserId: Type.Union([Type.String(), Type.Null()]),
+    note: Type.Union([Type.String({ maxLength: CONTACT_NOTE_MAX_LENGTH }), Type.Null()]),
+    tagIds: Type.Array(ContactTagIdSchema),
   },
   {
     title: "Contact",

@@ -253,8 +253,9 @@ describe("POST /contacts", () => {
     const h = await harness();
     const body = (await createOne(h)).json<{ contact: Record<string, unknown> }>();
     expect(Object.keys(body.contact).sort()).toEqual([
-      "archivedAt", "contactId", "createdAt", "email", "name",
-      "organization", "phone", "state", "title", "updatedAt",
+      "archivedAt", "contactId", "createdAt", "email", "name", "note",
+      "organization", "ownerUserId", "phone", "scope", "state", "tagIds",
+      "title", "updatedAt",
     ]);
   });
 
@@ -292,6 +293,62 @@ describe("POST /contacts", () => {
     expect(body.duplicates).toHaveLength(1);
     expect(body.duplicates[0]?.name).toBe("Legal Desk");
     expect(h.transactions.store.contacts).toHaveLength(2);
+  });
+
+  it("defaults scope to workspace, owner to null, note to null, tags to empty", async () => {
+    const h = await harness();
+    const body = (await createOne(h)).json<{ contact: Record<string, unknown> }>();
+    expect(body.contact["scope"]).toBe("workspace");
+    expect(body.contact["ownerUserId"]).toBeNull();
+    expect(body.contact["note"]).toBeNull();
+    expect(body.contact["tagIds"]).toEqual([]);
+  });
+
+  it("creates a personal contact owned by the caller, with a note and tags", async () => {
+    const h = await harness();
+    const response = await createOne(h, {
+      ...BODY, scope: "personal", note: "Handles renewals.",
+      tagIds: ["tag-legal", "tag-signer"],
+    });
+    const body = response.json<{ contact: Record<string, unknown> }>();
+    expect(body.contact["scope"]).toBe("personal");
+    expect(body.contact["ownerUserId"]).toBe(OWNER);
+    expect(body.contact["note"]).toBe("Handles renewals.");
+    expect(body.contact["tagIds"]).toEqual(["tag-legal", "tag-signer"]);
+  });
+
+  it("rejects an unrecognised tag id", async () => {
+    const h = await harness();
+    const response = await createOne(h, { ...BODY, tagIds: ["tag-does-not-exist"] });
+    expect(response.statusCode).toBe(422);
+  });
+});
+
+describe("PUT /contacts/:contactId", () => {
+  it("rejects scope — it is create-only, not editable", async () => {
+    const h = await harness();
+    await createOne(h);
+    const { cookie, csrf } = await h.signIn(OWNER);
+    const response = await h.app.inject({
+      method: "PUT", url: `${URL}/con_1`,
+      headers: { cookie, [CSRF_TOKEN_HEADER]: csrf },
+      payload: { ...BODY, scope: "personal" },
+    });
+    expect(response.statusCode).toBe(422);
+  });
+
+  it("replaces the note and the tag set", async () => {
+    const h = await harness();
+    await createOne(h, { ...BODY, note: "old note", tagIds: ["tag-hr"] });
+    const { cookie, csrf } = await h.signIn(OWNER);
+    const response = await h.app.inject({
+      method: "PUT", url: `${URL}/con_1`,
+      headers: { cookie, [CSRF_TOKEN_HEADER]: csrf },
+      payload: { ...BODY, tagIds: ["tag-finance"] },
+    });
+    const body = response.json<{ contact: Record<string, unknown> }>();
+    expect(body.contact["note"]).toBeNull();
+    expect(body.contact["tagIds"]).toEqual(["tag-finance"]);
   });
 });
 

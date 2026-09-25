@@ -1355,7 +1355,20 @@ function scopedContacts(store: InMemoryStore, scope: WorkspaceId): ScopedContact
         // Equal to createdAt, exactly as the adapter does it.
         updatedAt: contact.createdAt,
         archivedAt: null,
+        scope: contact.scope ?? "workspace",
+        ownerUserId: contact.ownerUserId ?? null,
+        note: contact.note ?? null,
+        tagIds: contact.tagIds ?? [],
       });
+      return Promise.resolve();
+    },
+
+    setTags: (input) => {
+      const index = store.contacts.findIndex(
+        c => c.workspaceId === scope && c.contactId === input.contactId);
+      if (index !== -1) {
+        store.contacts[index] = { ...store.contacts[index]!, tagIds: input.tagIds };
+      }
       return Promise.resolve();
     },
 
@@ -1366,6 +1379,10 @@ function scopedContacts(store: InMemoryStore, scope: WorkspaceId): ScopedContact
       const term = query.search?.toLocaleLowerCase("en-US") ?? null;
       const matched = inScope()
         .filter(c => query.state === "active" ? c.archivedAt === null : c.archivedAt !== null)
+        // 074: workspace-scoped rows, plus the caller's own personal ones.
+        // No caller named: workspace-scoped only (fail closed).
+        .filter(c => c.scope === "workspace" || (query.callerUserId !== undefined
+          && c.ownerUserId === query.callerUserId))
         .filter(c => term === null || [c.name, c.email, c.organization, c.title]
           .some(field => field !== null && field.toLocaleLowerCase("en-US").includes(term)));
 
@@ -1418,6 +1435,8 @@ function scopedContacts(store: InMemoryStore, scope: WorkspaceId): ScopedContact
         organization: input.patch.organization === undefined
           ? current.organization : input.patch.organization,
         title: input.patch.title === undefined ? current.title : input.patch.title,
+        note: input.patch.note === undefined ? (current.note ?? null) : input.patch.note,
+        tagIds: input.patch.tagIds === undefined ? (current.tagIds ?? []) : [...input.patch.tagIds],
         updatedAt: input.now,
       }))),
 

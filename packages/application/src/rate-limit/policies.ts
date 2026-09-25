@@ -602,6 +602,34 @@ export const RATE_LIMIT_POLICIES = {
       + "SHA-256.",
   },
 
+  // OD-135: the email-gated document view. Each attempt is a guess at which
+  // address is a participant on a specific completed document — the same
+  // guessing shape a password attempt has, so it gets a password-attempt-sized
+  // budget, far tighter than the plain ID lookup above.
+  "public-verification.access.ip": {
+    id: "public-verification.access.ip",
+    scopeType: "ip",
+    limit: 10,
+    windowMs: MINUTE,
+    failureMode: "fail-closed",
+    source: "OD-135 - not specified by the handoff. An email guess against a "
+      + "known verification ID is exactly the enumeration shape "
+      + "public-verification.lookup.ip already defends against for the ID "
+      + "itself; this is the matching budget for the second credential.",
+  },
+
+  "public-verification.document.ip": {
+    id: "public-verification.document.ip",
+    scopeType: "ip",
+    limit: 10,
+    windowMs: MINUTE,
+    failureMode: "fail-closed",
+    source: "OD-135 - not specified by the handoff. Matched to "
+      + "public-verification.access.ip: the document fetch re-proves the same "
+      + "email match, so it is exposed to the same guessing shape and gets the "
+      + "same budget.",
+  },
+
   "workspace.invitation.redeem.ip": {
     id: "workspace.invitation.redeem.ip",
     scopeType: "ip",

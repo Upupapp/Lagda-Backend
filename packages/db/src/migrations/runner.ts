@@ -81,6 +81,8 @@ import * as m070 from "./070_workflow_template_flow_document.js";
 import * as m071 from "./071_document_notification_states.js";
 import * as m072 from "./072_user_avatars.js";
 import * as m073 from "./073_final_copies.js";
+import * as m074 from "./074_contacts_scope_and_tags.js";
+import * as m075 from "./075_public_verify_access.js";
 
 /**
  * Migrations listed explicitly rather than read from disk.
@@ -166,6 +168,8 @@ const MIGRATIONS: Record<string, Migration> = {
   "071_document_notification_states": m071,
   "072_user_avatars": m072,
   "073_final_copies": m073,
+  "074_contacts_scope_and_tags": m074,
+  "075_public_verify_access": m075,
 };
 
 class ExplicitMigrationProvider implements MigrationProvider {

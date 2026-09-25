@@ -23,6 +23,7 @@ import { createSigningAccessTokenFactory } from "../security/signing-access-toke
 import { createFinalCopyTokenFactory } from "@lagda/security";
 import { createRecipientSessionTokenFactory } from "../security/recipient-session-token.js";
 import { createPublicVerificationLookup } from "@lagda/db";
+import { createPublicParticipantLookup } from "@lagda/db";
 import { createSignatureImageValidator } from "../security/signature-image.js";
 import {
   createTypedSignatureRenderability,
@@ -310,6 +311,9 @@ export async function createProductionDependencies(
     ...buildUpload(database, transactions, clock, objectStorage, config),
     ...buildRecipientAccess(transactions, clock, config),
     ...buildPublicVerification(database),
+    // OD-135. Only with object storage: the email-gated view streams the
+    // sealed PDF, exactly like `finalCopies` below.
+    ...(objectStorage === null ? {} : buildPublicParticipantAccess(database, objectStorage)),
     ...buildRecipientCeremony({
       transactions, clock, config, storage: objectStorage, idempotency,
       ...(completionScheduler === undefined ? {} : { completionScheduler }),
@@ -353,6 +357,22 @@ function buildPublicVerification(
   const lookup = createPublicVerificationLookup(
     operation => database.db.transaction().execute(operation));
   return { publicVerification: () => ({ lookup }) };
+}
+
+/**
+ * OD-135. The email-gated view — its own function beside
+ * `buildPublicVerification`, because it needs object storage (to stream the
+ * document) where the plain lookup needs nothing but the database.
+ */
+function buildPublicParticipantAccess(
+  database: LagdaDatabase,
+  objectStorage: ObjectStorage,
+): Pick<AppDependencies, "publicParticipantAccess"> {
+  const participants = createPublicParticipantLookup(
+    operation => database.db.transaction().execute(operation));
+  return {
+    publicParticipantAccess: () => ({ participants, storage: objectStorage }),
+  };
 }
 
 /**

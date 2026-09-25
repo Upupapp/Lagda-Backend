@@ -10,6 +10,8 @@ import type { PublicVerificationProjection } from "../common/ports/index.js";
 import {
   getPublicVerification, compareUploadedFile, parseVerificationId,
   PUBLIC_VERIFICATION_SCHEMA_VERSION,
+  verifyParticipantAccess, resolveParticipantDocument,
+  ParticipantDocumentUnavailableError,
 } from "./public-verification.js";
 
 const ID = "LAGDA-VER-2026-A7bK9mQ2xZ" as VerificationId;
@@ -252,5 +254,130 @@ describe("file comparison", () => {
     await compareUploadedFile(
       { rawVerificationId: "short", uploadedDigest: FINAL_DIGEST }, d);
     expect(d.lookup.findByVerificationId).not.toHaveBeenCalled();
+  });
+});
+
+// ── Email-gated document access (OD-135) ────────────────────────────────────
+
+describe("verifyParticipantAccess", () => {
+  const participantDeps = (
+    match: { documentTitle: string; recipientType: string } | null,
+  ) => ({
+    participants: {
+      findMatch: vi.fn(() => Promise.resolve(match)),
+      findDocumentRef: vi.fn(() => Promise.resolve(null)),
+    },
+  });
+
+  it("grants access when the email matches a participant", async () => {
+    const deps = participantDeps({ documentTitle: "Office Lease", recipientType: "approver" });
+    const result = await verifyParticipantAccess(
+      "LAGDA-VER-2026-A7bK9mQ2xZ", "maria@example.com", deps);
+    expect(result).toEqual({
+      outcome: "granted", documentTitle: "Office Lease", recipientType: "approver",
+    });
+    // The FOLDED key reaches the lookup, never the raw address.
+    expect(deps.participants.findMatch).toHaveBeenCalledWith(ID, "maria@example.com");
+  });
+
+  it("folds the email the same way recipient storage does", async () => {
+    const deps = participantDeps({ documentTitle: "Lease", recipientType: "signer" });
+    await verifyParticipantAccess("LAGDA-VER-2026-A7bK9mQ2xZ", "  Maria@Example.COM  ", deps);
+    expect(deps.participants.findMatch).toHaveBeenCalledWith(ID, "maria@example.com");
+  });
+
+  it("denies a malformed reference before touching the database", async () => {
+    const deps = participantDeps(null);
+    const result = await verifyParticipantAccess("not-a-reference", "maria@example.com", deps);
+    expect(result).toEqual({ outcome: "denied" });
+    expect(deps.participants.findMatch).not.toHaveBeenCalled();
+  });
+
+  it("denies a malformed email before touching the database", async () => {
+    const deps = participantDeps(null);
+    const result = await verifyParticipantAccess("LAGDA-VER-2026-A7bK9mQ2xZ", "not-an-email", deps);
+    expect(result).toEqual({ outcome: "denied" });
+    expect(deps.participants.findMatch).not.toHaveBeenCalled();
+  });
+
+  it("denies a valid reference with no matching participant — indistinguishably", async () => {
+    const deps = participantDeps(null);
+    const result = await verifyParticipantAccess(
+      "LAGDA-VER-2026-A7bK9mQ2xZ", "stranger@example.com", deps);
+    expect(result).toEqual({ outcome: "denied" });
+  });
+});
+
+describe("resolveParticipantDocument", () => {
+  const bytes = new TextEncoder().encode("%PDF-1.7");
+  const objectStorage = (has: boolean) => ({
+    getObject: vi.fn(() => Promise.resolve(has ? {
+      ref: { zone: "artifacts" as const, key: "k" as never },
+      sizeBytes: bytes.byteLength, mediaType: "application/pdf",
+      // eslint-disable-next-line @typescript-eslint/require-await
+      stream: (async function* () { yield bytes; })(),
+    } : null)),
+  });
+
+  const documentDeps = (
+    ref: { storageReference: string; mediaType: string; sizeBytes: number } | null,
+    storageHas = true,
+  ) => {
+    const storage = objectStorage(storageHas);
+    return {
+      participants: {
+        findMatch: vi.fn(() => Promise.resolve(null)),
+        findDocumentRef: vi.fn(() => Promise.resolve(ref)),
+      },
+      storage: storage as never,
+      // Typed access for assertions — `deps.storage` is deliberately `never`
+      // to match the port's real signature at the call site.
+      storageMock: storage,
+    };
+  };
+
+  it("streams the sealed bytes once the email matches", async () => {
+    const deps = documentDeps({
+      storageReference: "ws/doc/art.pdf", mediaType: "application/pdf", sizeBytes: 3,
+    });
+    const result = await resolveParticipantDocument(
+      "LAGDA-VER-2026-A7bK9mQ2xZ", "maria@example.com", deps);
+    expect(result.outcome).toBe("found");
+    if (result.outcome !== "found") throw new Error("unreachable");
+    expect(result.document.mediaType).toBe("application/pdf");
+    expect(deps.storageMock.getObject).toHaveBeenCalledWith({
+      zone: "artifacts", key: "ws/doc/art.pdf",
+    });
+  });
+
+  it("re-derives the match itself — never trusts a prior /access call", async () => {
+    // There is no token or session between the two requests; this asserts the
+    // shape holds, not merely that it is documented.
+    const deps = documentDeps(null);
+    const result = await resolveParticipantDocument(
+      "LAGDA-VER-2026-A7bK9mQ2xZ", "stranger@example.com", deps);
+    expect(result).toEqual({ outcome: "denied" });
+    expect(deps.participants.findDocumentRef).toHaveBeenCalledWith(
+      ID, "stranger@example.com");
+  });
+
+  it("denies a malformed reference or email without a storage call", async () => {
+    const deps = documentDeps({
+      storageReference: "k", mediaType: "application/pdf", sizeBytes: 1,
+    });
+    expect(await resolveParticipantDocument("garbage", "maria@example.com", deps))
+      .toEqual({ outcome: "denied" });
+    expect(await resolveParticipantDocument("LAGDA-VER-2026-A7bK9mQ2xZ", "x", deps))
+      .toEqual({ outcome: "denied" });
+    expect(deps.storageMock.getObject).not.toHaveBeenCalled();
+  });
+
+  it("throws when the matched artifact's bytes are missing from storage", async () => {
+    const deps = documentDeps({
+      storageReference: "missing", mediaType: "application/pdf", sizeBytes: 1,
+    }, false);
+    await expect(resolveParticipantDocument(
+      "LAGDA-VER-2026-A7bK9mQ2xZ", "maria@example.com", deps))
+      .rejects.toBeInstanceOf(ParticipantDocumentUnavailableError);
   });
 });
