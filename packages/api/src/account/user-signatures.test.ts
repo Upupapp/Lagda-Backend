@@ -153,6 +153,15 @@ async function build(options: { authenticated?: boolean; csrfValid?: boolean } =
     config: CONFIG,
     validateCsrf: () => options.csrfValid !== false,
     signatures: () => signatures,
+    avatars: () => {
+      const m = new Map<string, { bytes: Buffer; digest: string }>();
+      return {
+        find: (id: string) => { const a = m.get(id); return Promise.resolve(a === undefined ? null : { mediaType: "image/png" as const, ...a }); },
+        versionOf: (id: string) => Promise.resolve(m.get(id)?.digest ?? null),
+        save: (i: { userId: string; bytes: Buffer; digest: string }) => { m.set(i.userId, { bytes: i.bytes, digest: i.digest }); return Promise.resolve(); },
+        remove: (id: string) => Promise.resolve(m.delete(id)),
+      };
+    },
     notificationFeed: () => ({ listForUser: () => Promise.resolve([]) }),
     claimSigningLink: () => Promise.reject(new Error("not used")),
     listDocumentsToSign: () => Promise.resolve([]),

@@ -40,7 +40,7 @@ import type {
   ListSessionsDependencies, RevokeSessionDependencies,
   RevokeOtherSessionsDependencies,
 } from "@lagda/application";
-import type { UserSignatureRepository, NotificationFeedRepository } from "@lagda/db";
+import type { UserSignatureRepository, UserAvatarRepository, NotificationFeedRepository } from "@lagda/db";
 import type {
   SignatureImageValidator, SigningInboxItemView, SignedDocumentView,
 } from "@lagda/application";
@@ -110,6 +110,8 @@ export interface IdentityDependencies {
   /** Validates double-submit CSRF for an authenticated request. See sign-out. */
   readonly validateCsrf: (request: FastifyRequest) => boolean;
   readonly signatures: () => UserSignatureRepository;
+  /** 072. The account's own profile photo. */
+  readonly avatars: () => UserAvatarRepository;
   /** The caller's own notification feed. See migration 030. */
   readonly notificationFeed: () => NotificationFeedRepository;
   readonly claimSigningLink: (
@@ -240,6 +242,7 @@ export function registerIdentityRoutes(
     // hook never runs here. The saved-signature writes ask for it explicitly.
     validateCsrf: deps.validateCsrf,
     signatures: deps.signatures,
+    avatars: deps.avatars,
     notificationFeed: deps.notificationFeed,
     claimSigningLink: deps.claimSigningLink,
     listDocumentsToSign: deps.listDocumentsToSign,

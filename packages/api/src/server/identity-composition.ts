@@ -53,7 +53,7 @@ import {
   createNotificationIntentIdGenerator, createNotificationDeliveryIdGenerator,
   createRecipientSigningSessionIdGenerator,
 } from "../security/identifiers.js";
-import { createUserSignatureRepository, createNotificationFeedRepository } from "@lagda/db";
+import { createUserSignatureRepository, createNotificationFeedRepository, createUserAvatarRepository } from "@lagda/db";
 import { createSignatureImageValidator } from "../security/signature-image.js";
 import { randomUUID } from "node:crypto";
 import {
@@ -521,6 +521,7 @@ export function buildIdentity(
       }),
 
       signatures: () => createUserSignatureRepository(db),
+      avatars: () => createUserAvatarRepository(db),
       notificationFeed: () => createNotificationFeedRepository(db),
 
       // The workspace half of the account binding. Runs in GLOBAL scope: the

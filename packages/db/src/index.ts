@@ -93,3 +93,7 @@ export {
   type NotificationFeedRepository, type FeedNotification,
   type FeedNotificationType,
 } from "./repositories/notification-feed.js";
+export {
+  createUserAvatarRepository,
+  type UserAvatarRepository, type StoredAvatar, type SaveAvatarInput,
+} from "./repositories/user-avatars.js";

@@ -29831,6 +29831,7 @@
                     "profile",
                     "preferences",
                     "security",
+                    "avatar",
                     "createdAt"
                   ],
                   "properties": {
@@ -30139,6 +30140,25 @@
                         }
                       }
                     },
+                    "avatar": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "version"
+                          ],
+                          "properties": {
+                            "version": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      ]
+                    },
                     "createdAt": {
                       "type": "integer"
                     }
@@ -30146,6 +30166,66 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/me/avatar": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "put": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "image"
+                ],
+                "properties": {
+                  "image": {
+                    "minLength": 1,
+                    "maxLength": 600000,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "version"
+                  ],
+                  "properties": {
+                    "version": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
           }
         }
       }
@@ -30235,6 +30315,7 @@
                     "profile",
                     "preferences",
                     "security",
+                    "avatar",
                     "createdAt"
                   ],
                   "properties": {
@@ -30542,6 +30623,25 @@
                           ]
                         }
                       }
+                    },
+                    "avatar": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "version"
+                          ],
+                          "properties": {
+                            "version": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      ]
                     },
                     "createdAt": {
                       "type": "integer"
@@ -30773,6 +30873,7 @@
                     "profile",
                     "preferences",
                     "security",
+                    "avatar",
                     "createdAt"
                   ],
                   "properties": {
@@ -31080,6 +31181,25 @@
                           ]
                         }
                       }
+                    },
+                    "avatar": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "version"
+                          ],
+                          "properties": {
+                            "version": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      ]
                     },
                     "createdAt": {
                       "type": "integer"

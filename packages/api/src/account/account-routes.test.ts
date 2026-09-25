@@ -27,6 +27,21 @@ const NORMALIZED = "real.user@example.com";
 const SESSION_TOKEN = "S".repeat(43);
 const PASSWORD = "correct horse battery staple";
 
+/** 072. One in-memory photo store; each photo test clears it first. */
+const avatarMap = new Map<string, { bytes: Buffer; digest: string }>();
+const avatarStore = {
+  find: (id: string) => {
+    const a = avatarMap.get(id);
+    return Promise.resolve(a === undefined ? null : { mediaType: "image/png" as const, ...a });
+  },
+  versionOf: (id: string) => Promise.resolve(avatarMap.get(id)?.digest ?? null),
+  save: (i: { userId: string; bytes: Buffer; digest: string }) => {
+    avatarMap.set(i.userId, { bytes: i.bytes, digest: i.digest });
+    return Promise.resolve();
+  },
+  remove: (id: string) => Promise.resolve(avatarMap.delete(id)),
+};
+
 const CONFIG = {
   environment: "production",
   corsOrigins: ["https://app.lagda.example"],
@@ -140,6 +155,7 @@ async function build(options: {
     config: CONFIG,
     validateCsrf: () => options.csrfValid !== false,
     signatures: () => savedSignatures,
+    avatars: () => avatarStore,
     notificationFeed: () => notificationFeed,
     claimSigningLink: () => Promise.reject(new Error("not used")),
     listDocumentsToSign: () => Promise.resolve([]),
@@ -291,7 +307,7 @@ describe("GET /me", () => {
     expect(CurrentUserResponseSchema.additionalProperties).toBe(false);
     expect(Object.keys(CurrentUserResponseSchema.properties).sort())
       .toEqual([
-        "createdAt", "email", "emailVerified", "preferences", "profile",
+        "avatar", "createdAt", "email", "emailVerified", "preferences", "profile",
         "security", "userId",
       ]);
   });
@@ -574,3 +590,65 @@ describe("GET /me/notifications", () => {
     expect(res.body).not.toContain("challengeId");
   });
 });
+
+// ── Profile photo (072) ─────────────────────────────────────────────────────
+
+/** A real 1x1 PNG. The validator reads its header, so it must be genuine. */
+const PNG_1X1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
+describe("profile photo", () => {
+  it("stores a PNG, versions it on /me, and serves it back", async () => {
+    avatarMap.clear();
+    const { app } = await build();
+    const put = await app.inject({ method: "PUT", url: "/me/avatar", payload: { image: PNG_1X1 } });
+    expect(put.statusCode).toBe(200);
+    const { version } = put.json<{ version: string }>();
+    expect(version).toMatch(/^[a-f0-9]{64}$/);
+
+    const me = (await app.inject({ method: "GET", url: "/me" })).json<{ avatar: { version: string } | null }>();
+    expect(me.avatar).toEqual({ version });
+
+    const img = await app.inject({ method: "GET", url: `/me/avatar?v=${version}` });
+    expect(img.statusCode).toBe(200);
+    expect(img.headers["content-type"]).toContain("image/png");
+    expect(img.headers["x-content-type-options"]).toBe("nosniff");
+    expect(img.rawPayload.equals(Buffer.from(PNG_1X1, "base64"))).toBe(true);
+    await app.close();
+  });
+
+  it("refuses anything that is not a PNG — SVG above all", async () => {
+    avatarMap.clear();
+    const { app } = await build();
+    const svg = Buffer.from("<svg xmlns='http://www.w3.org/2000/svg'><script>alert(1)</script></svg>").toString("base64");
+    const res = await app.inject({ method: "PUT", url: "/me/avatar", payload: { image: svg } });
+    expect(res.statusCode).toBe(422);
+    expect(avatarMap.size).toBe(0);
+    await app.close();
+  });
+
+  it("refuses a write without a valid CSRF token", async () => {
+    avatarMap.clear();
+    const { app } = await build({ csrfValid: false });
+    expect((await app.inject({ method: "PUT", url: "/me/avatar", payload: { image: PNG_1X1 } })).statusCode).toBe(403);
+    expect((await app.inject({ method: "DELETE", url: "/me/avatar" })).statusCode).toBe(403);
+    expect(avatarMap.size).toBe(0);
+    await app.close();
+  });
+
+  it("removes the photo, after which /me reports none", async () => {
+    avatarMap.clear();
+    const { app } = await build();
+    await app.inject({ method: "PUT", url: "/me/avatar", payload: { image: PNG_1X1 } });
+    expect((await app.inject({ method: "DELETE", url: "/me/avatar" })).statusCode).toBe(204);
+    expect((await app.inject({ method: "GET", url: "/me/avatar" })).statusCode).toBe(404);
+    expect((await app.inject({ method: "GET", url: "/me" })).json<{ avatar: unknown }>().avatar).toBeNull();
+    await app.close();
+  });
+
+  it("refuses an anonymous caller", async () => {
+    const { app } = await build({ authenticated: false });
+    expect((await app.inject({ method: "GET", url: "/me/avatar" })).statusCode).toBe(401);
+    await app.close();
+  });
+});
+
