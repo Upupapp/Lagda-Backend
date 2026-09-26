@@ -13,8 +13,8 @@ export function createScopedWorkspaceBrandingRepository(
 ): ScopedWorkspaceBrandingRepository {
   const upsert = async (values: Record<string, unknown>, now: number) => {
     await db.insertInto("workspace_branding")
-      .values({ workspace_id: workspaceId, updated_at: new Date(now), ...values } as never)
-      .onConflict(oc => oc.column("workspace_id").doUpdateSet({ updated_at: new Date(now), ...values } as never))
+      .values({ workspace_id: workspaceId, updated_at: new Date(now), ...values })
+      .onConflict(oc => oc.column("workspace_id").doUpdateSet({ updated_at: new Date(now), ...values }))
       .execute();
   };
 
