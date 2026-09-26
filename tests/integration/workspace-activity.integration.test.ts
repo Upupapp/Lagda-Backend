@@ -96,6 +96,36 @@ suite("workspace activity log on PostgreSQL", () => {
     expect(await rows()).toHaveLength(2);
   });
 
+  it("stays append-only when the runtime role OWNS the table, as in production (080)", async () => {
+    // Production migrates as lagda_app, which makes it the owner, and an owner
+    // holds every privilege until one is revoked. Reproduce that, re-apply
+    // 080, and prove the runtime role still cannot edit or delete.
+    const { up } = await import("../../packages/db/src/migrations/080_workspace_activity_append_only.js");
+    const tableOwner = await sql<{ owner: string }>`
+      select tableowner as owner from pg_tables where tablename = 'workspace_activity_events'`.execute(owner.db);
+    const original = tableOwner.rows[0]?.owner ?? "";
+    await sql`alter table workspace_activity_events owner to lagda_app`.execute(owner.db);
+    try {
+      await up(owner.db as never);
+      // Still able to do its job: append and read.
+      await expect(listWorkspaceActivity(actor(OWNER), workspaceId, {},
+        { transactions: createTransactionManager(app.db) })).resolves.toBeTruthy();
+      await expect(app.db.transaction().execute(async trx => {
+        await sql`select set_config('lagda.workspace_id', ${workspaceId}, true)`.execute(trx);
+        await trx.updateTable("workspace_activity_events").set({ action: "workspace.renamed" }).execute();
+      })).rejects.toThrow(/permission denied/);
+      await expect(app.db.transaction().execute(async trx => {
+        await sql`select set_config('lagda.workspace_id', ${workspaceId}, true)`.execute(trx);
+        await trx.deleteFrom("workspace_activity_events").execute();
+      })).rejects.toThrow(/permission denied/);
+    } finally {
+      // Handing ownership back takes the owner's privileges with it; restore
+      // 079's grants so the rest of the suite runs against the normal state.
+      await sql`alter table workspace_activity_events owner to ${sql.id(original)}`.execute(owner.db);
+      await sql`grant select, insert on workspace_activity_events to lagda_app`.execute(owner.db);
+    }
+  });
+
   it("shows one workspace's log to that workspace only", async () => {
     const page = await listWorkspaceActivity(actor(OWNER), workspaceId, {},
       { transactions: createTransactionManager(app.db) });
