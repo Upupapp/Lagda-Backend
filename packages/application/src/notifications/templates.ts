@@ -45,6 +45,7 @@ import {
   SigningInvitationModelV1, SigningCompletedModelV1,
   DocumentUploadRequestedModelV1, FinalCopyAvailableModelV1,
   WorkspaceJoinLinkModelV1, WorkspaceJoinRequestedModelV1, WorkspaceJoinDecidedModelV1,
+  VerificationAccessCodeModelV1,
 } from "./template-registry.js";
 import { escapeHtml } from "./rendering.js";
 import { LAGDA_LOGO_PNG_BASE64 } from "./assets/lagda-logo.js";
@@ -604,6 +605,43 @@ export const workspaceJoinDecidedV1 = defineTemplate({
 });
 
 /**
+ * 083. The six-digit Verify Document code. No link: the reader is already on
+ * the verification page and types the code there.
+ */
+export const verificationAccessCodeV1 = defineTemplate({
+  key: "verification-access-code",
+  version: 1,
+  locale: "en",
+  schema: VerificationAccessCodeModelV1,
+  secretBearing: true,
+  render: (input, context) => {
+    const name = input.recipientName;
+    const title = input.documentTitle;
+    const code = context.secret as string;
+    const line = `Your ${PRODUCT} verification code is ${code}. It expires in 10 minutes. `
+      + `If you did not ask for it, ignore this email.`;
+    return {
+      subject: `Your ${PRODUCT} verification code`,
+      textBody: [
+        `Hello ${name},`,
+        ``,
+        line,
+        ``,
+        `Document: "${title}"`,
+      ].join("\n"),
+      htmlBody: htmlDocument(
+        `Your verification code`,
+        p(`Hello ${escapeHtml(name)},`) +
+          p(`Your ${PRODUCT} verification code is <strong style="font-size:22px;letter-spacing:4px">${escapeHtml(code)}</strong>.`) +
+          p(`It expires in 10 minutes. If you did not ask for it, ignore this email.`) +
+          p(`Document: "${escapeHtml(title)}"`),
+      ),
+      attachments: [LOGO_ATTACHMENT],
+    };
+  },
+});
+
+/**
  * Every template version LAGDA can render.
  *
  * A version is removed from this list only when no pending intent references
@@ -621,6 +659,7 @@ export const ALL_TEMPLATES = [
   workspaceJoinLinkV1,
   workspaceJoinRequestedV1,
   workspaceJoinDecidedV1,
+  verificationAccessCodeV1,
 ] as const;
 
 export type AccountEmailVerificationModel = Static<typeof AccountEmailVerificationModelV1>;

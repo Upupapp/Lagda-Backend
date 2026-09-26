@@ -149,6 +149,14 @@ export const DocumentSchema = Type.Object(
     updatedAt: Type.String({ format: "date-time" }),
     /** Null until the secure upload pipeline has accepted this document's bytes. */
     source: Type.Union([DocumentSourceSchema, Type.Null()]),
+    /**
+     * The public verification ID (`LAGDA-VER-…`) from the record created when
+     * a signing request on this document completed and was sealed — the most
+     * recent one — or null when it has none. Readable by anyone who may view
+     * the document (`document.view`); it is the same reference printed on the
+     * completed PDF, and it unlocks nothing by itself.
+     */
+    verificationId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   },
   {
     title: "Document",

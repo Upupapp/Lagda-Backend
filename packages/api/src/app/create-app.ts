@@ -67,7 +67,7 @@ import {
   registerPublicVerificationRoutes,
 } from "../verification/public-verification-routes.js";
 import {
-  registerPublicParticipantRoutes,
+  registerPublicParticipantRoutes, registerMemberVerificationAccessRoute,
 } from "../verification/public-participant-routes.js";
 import { registerAuditRoutes } from "../audit/audit-routes.js";
 import { registerDocumentFeedRoutes } from "../notifications/document-feed-routes.js";
@@ -448,6 +448,22 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
         // MFA credential is refused by the scope hook before any invitation is
         // looked up.
         registerInvitationRedemptionRoutes(scope, invitationOptions);
+      }
+
+      // 083. The signed-in participant's code-free Verify Document unlock.
+      // Here, not with the public routes, so it gets the session and CSRF
+      // checks by position.
+      if (dependencies.publicParticipantAccess !== undefined) {
+        registerMemberVerificationAccessRoute(scope, {
+          authenticatedUser: (request: FastifyRequest) => Promise.resolve(
+            request.auth.status === "authenticated"
+              ? { userId: request.auth.actor.userId }
+              : null,
+          ),
+          deps: dependencies.publicParticipantAccess,
+          metrics,
+          ...(limiter === undefined ? {} : { rateLimit: { limiter, metrics } }),
+        });
       }
 
       // 078. Join links and requests: every one of these needs a session and
@@ -850,7 +866,7 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
     });
   }
 
-  // OD-135: the email-gated document view. A SEPARATE dependency and a
+  // 083: the code-gated document view (replacing OD-135's email-only one). A SEPARATE dependency and a
   // SEPARATE registration from the plain lookup above — see
   // `public-participant-routes.ts`'s own header for why this is its own
   // surface rather than two more routes bolted onto that one.

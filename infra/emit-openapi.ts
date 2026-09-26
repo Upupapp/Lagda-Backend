@@ -77,6 +77,8 @@ const app = await createApp({
     }),
     signingAccess: () => stub("signingAccess"),
     publicVerification: () => stub("publicVerification"),
+    // 083. The code-gated document view and the signed-in member unlock.
+    publicParticipantAccess: () => stub("publicParticipantAccess"),
     signingCeremony: () => stub("signingCeremony"),
     signingSubmission: () => stub("signingSubmission"),
     signingDecline: () => stub("signingDecline"),

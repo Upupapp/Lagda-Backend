@@ -24,7 +24,8 @@ import { createSigningAccessTokenFactory } from "../security/signing-access-toke
 import { createFinalCopyTokenFactory } from "@lagda/security";
 import { createRecipientSessionTokenFactory } from "../security/recipient-session-token.js";
 import { createPublicVerificationLookup } from "@lagda/db";
-import { createPublicParticipantLookup } from "@lagda/db";
+import { createVerificationAccessStore } from "@lagda/db";
+import { createVerificationAccessCrypto } from "../security/verification-access-token.js";
 import { createSignatureImageValidator } from "../security/signature-image.js";
 import {
   createTypedSignatureRenderability,
@@ -312,9 +313,12 @@ export async function createProductionDependencies(
     ...buildUpload(database, transactions, clock, objectStorage, config),
     ...buildRecipientAccess(transactions, clock, config),
     ...buildPublicVerification(database),
-    // OD-135. Only with object storage: the email-gated view streams the
-    // sealed PDF, exactly like `finalCopies` below.
-    ...(objectStorage === null ? {} : buildPublicParticipantAccess(database, objectStorage)),
+    // 083. Only with object storage (the document route streams the sealed
+    // PDF, exactly like `finalCopies` below) AND the delivery key (the code
+    // is sealed for the worker; without it no code could ever be sent).
+    ...(objectStorage === null || config.signingDeliveryKey === null
+      ? {}
+      : buildPublicParticipantAccess(database, objectStorage, config, clock)),
     ...buildRecipientCeremony({
       transactions, clock, config, storage: objectStorage, idempotency,
       ...(completionScheduler === undefined ? {} : { completionScheduler }),
@@ -361,18 +365,39 @@ function buildPublicVerification(
 }
 
 /**
- * OD-135. The email-gated view — its own function beside
+ * 083. Verify Document access by emailed code — its own function beside
  * `buildPublicVerification`, because it needs object storage (to stream the
- * document) where the plain lookup needs nothing but the database.
+ * document), the delivery key (to seal the code for the worker) and the
+ * notification pipeline, where the plain lookup needs only the database.
  */
 function buildPublicParticipantAccess(
   database: LagdaDatabase,
   objectStorage: ObjectStorage,
+  config: ApiConfig,
+  clock: Clock,
 ): Pick<AppDependencies, "publicParticipantAccess"> {
-  const participants = createPublicParticipantLookup(
-    operation => database.db.transaction().execute(operation));
+  const store = createVerificationAccessStore(database.db);
+  const crypto = createVerificationAccessCrypto(
+    config.signingDeliveryKey, config.signingDeliveryKeyVersion);
+  const templates = createTemplateRegistry(ALL_TEMPLATES);
+  const ids = {
+    ...createNotificationIntentIdGenerator(),
+    ...createNotificationDeliveryIdGenerator(),
+  };
+  // The account's CURRENT address and whether it is verified, read from the
+  // account itself — a session carries no email claim.
+  const currentAccount = async (userId: string) => {
+    const row = await database.db.selectFrom("users")
+      .select(["normalized_email", "email_verified_at"])
+      .where("user_id", "=", userId).executeTakeFirst();
+    return row === undefined ? null : {
+      normalizedEmail: row.normalized_email, emailVerified: row.email_verified_at !== null,
+    };
+  };
   return {
-    publicParticipantAccess: () => ({ participants, storage: objectStorage }),
+    publicParticipantAccess: () => ({
+      store, crypto, clock, templates, ids, storage: objectStorage, currentAccount,
+    }),
   };
 }
 

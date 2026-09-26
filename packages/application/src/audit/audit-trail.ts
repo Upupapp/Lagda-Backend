@@ -178,6 +178,14 @@ const DESCRIPTIONS: Readonly<Record<EvidenceEventType, string>> = Object.freeze(
 });
 
 /**
+ * The presenter's wording for one event type — shared with the Verify
+ * Document details summary (083), so one phrase exists per event.
+ */
+export function describeEvidenceEvent(type: EvidenceEventType): string {
+  return DESCRIPTIONS[type];
+}
+
+/**
  * The version this presenter understands for each type.
  *
  * §179, §259: an event written under a LATER version than this build knows must

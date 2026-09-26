@@ -334,6 +334,13 @@ describe("hashing is confined to the sealing adapter", () => {
     //                              so a join ticket can never resolve an
     //                              invitation or a signing link, and the reverse.
     //
+    //   security/verification-access-token — VERIFY DOCUMENT access code and
+    //                              grant digests (083). A fifteenth and a
+    //                              sixteenth domain, `lagda.verification-access-code:`
+    //                              and `lagda.verification-access-grant:`, so a code
+    //                              can never resolve a grant, and neither resolves
+    //                              any other credential.
+    //
     // Each addition is a deliberate entry with a named domain. A caller that
     // appears without one still fails, which is what keeps this from becoming a
     // list that grows whenever it is inconvenient.
@@ -348,6 +355,7 @@ describe("hashing is confined to the sealing adapter", () => {
       "packages/api/src/security/reset-token.ts",
       "packages/api/src/security/signature-image.ts",
       "packages/api/src/security/signing-access-token.ts",
+      "packages/api/src/security/verification-access-token.ts",
       "packages/api/src/security/verification-token.ts",
       "packages/api/src/verification/verification-file.ts",
       "packages/sealing/src/internal/digest.ts",

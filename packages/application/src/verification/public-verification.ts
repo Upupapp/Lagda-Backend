@@ -21,13 +21,7 @@
 // caller already holds workspace authorization.
 
 import type { Sha256Digest, VerificationId } from "@lagda/contracts";
-import type {
-  PublicVerificationLookup, PublicParticipantLookup,
-} from "../common/ports/index.js";
-import { validateRecipientEmail } from "@lagda/core";
-import type { ObjectStorage } from "../common/ports/storage.js";
-import { toStorageObjectKey } from "../common/ports/storage.js";
-import { ResourceConflictError } from "../common/errors/index.js";
+import type { PublicVerificationLookup } from "../common/ports/index.js";
 
 /**
  * The version of the PUBLIC contract, not of the seal or the pipeline.
@@ -234,106 +228,5 @@ export async function compareUploadedFile(
     digestAlgorithm: record.digestAlgorithm,
     authoritativeDigest: record.signedDocumentHash,
     uploadedDigest: input.uploadedDigest,
-  };
-}
-
-// ── Email-gated document access (OD-135) ────────────────────────────────────
-
-export interface ParticipantAccessDependencies {
-  readonly participants: PublicParticipantLookup;
-}
-
-export type ParticipantAccessResult =
-  | { readonly outcome: "granted"; readonly documentTitle: string; readonly recipientType: string }
-  /**
-   * Absent, malformed reference, malformed email, not completed, or no
-   * participant at that address — ALL of them, one answer. Distinguishing
-   * any pair here is an oracle: for which references exist, or for which
-   * addresses are on a document the caller already knows the ID of.
-   */
-  | { readonly outcome: "denied" };
-
-/**
- * Whether this email belongs to a participant of the completed document a
- * verification ID names — every role, by design (069/073's "every
- * participant" is who this asks about; there is no role filter to narrow
- * it, deliberately).
- *
- * Read-only, exactly like `getPublicVerification`: no row written, no
- * evidence event, no signing-viewed fact. Checking access is not acting on
- * the document.
- */
-export async function verifyParticipantAccess(
-  rawVerificationId: string,
-  rawEmail: string,
-  deps: ParticipantAccessDependencies,
-): Promise<ParticipantAccessResult> {
-  const verificationId = parseVerificationId(rawVerificationId);
-  if (verificationId === null) return { outcome: "denied" };
-
-  // Refused before the database is touched, exactly as a malformed reference
-  // is above. A syntactically invalid address cannot belong to anyone.
-  const email = validateRecipientEmail(rawEmail);
-  if (!email.ok) return { outcome: "denied" };
-
-  const match = await deps.participants.findMatch(verificationId, email.key);
-  if (match === null) return { outcome: "denied" };
-
-  return {
-    outcome: "granted",
-    documentTitle: match.documentTitle,
-    recipientType: match.recipientType,
-  };
-}
-
-export interface ParticipantDocumentDependencies extends ParticipantAccessDependencies {
-  readonly storage: ObjectStorage;
-}
-
-export interface ParticipantDocumentStream {
-  readonly mediaType: string;
-  readonly sizeBytes: number;
-  readonly stream: AsyncIterable<Uint8Array>;
-}
-
-export type ParticipantDocumentResult =
-  | { readonly outcome: "found"; readonly document: ParticipantDocumentStream }
-  | { readonly outcome: "denied" };
-
-/** Storage named the object; the object was not there. Not a client error. */
-export class ParticipantDocumentUnavailableError extends ResourceConflictError {
-  constructor() {
-    super("The completed document's stored bytes could not be read.");
-  }
-}
-
-/**
- * The sealed document's bytes, gated on the SAME proof `verifyParticipantAccess`
- * checks — re-verified here, never trusted from an earlier call. There is no
- * session and no token between the two requests; the email is resubmitted
- * and rechecked.
- */
-export async function resolveParticipantDocument(
-  rawVerificationId: string,
-  rawEmail: string,
-  deps: ParticipantDocumentDependencies,
-): Promise<ParticipantDocumentResult> {
-  const verificationId = parseVerificationId(rawVerificationId);
-  if (verificationId === null) return { outcome: "denied" };
-
-  const email = validateRecipientEmail(rawEmail);
-  if (!email.ok) return { outcome: "denied" };
-
-  const ref = await deps.participants.findDocumentRef(verificationId, email.key);
-  if (ref === null) return { outcome: "denied" };
-
-  const content = await deps.storage.getObject({
-    zone: "artifacts", key: toStorageObjectKey(ref.storageReference),
-  });
-  if (content === null) throw new ParticipantDocumentUnavailableError();
-
-  return {
-    outcome: "found",
-    document: { mediaType: ref.mediaType, sizeBytes: ref.sizeBytes, stream: content.stream },
   };
 }

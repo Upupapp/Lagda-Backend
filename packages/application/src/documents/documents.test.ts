@@ -598,3 +598,54 @@ describe("filing a document in a folder", () => {
   });
 
 });
+
+// ── 083: the verification ID ────────────────────────────────────────────────
+
+describe("the document's verification ID", () => {
+  const record = (h: Harness, documentId: string, verificationId: string, completedAt: number) =>
+    h.store.verifications.push({
+      verificationId: verificationId as never, workspaceId: h.workspaceId,
+      signingRequestId: `txn_${verificationId}` as never, documentId: documentId as DocumentId,
+      sealId: `seal_${verificationId}` as never, completedAt, participantCount: 1,
+    });
+
+  it("is null until a completion was sealed, then the most recent record's", async () => {
+    const h = await harness();
+    const done = await createDocument(actor(OWNER), h.workspaceId, { title: "Done" }, h.deps);
+    const open = await createDocument(actor(OWNER), h.workspaceId, { title: "Open" }, h.deps);
+    expect(done.verificationId).toBeNull();
+    record(h, done.documentId, "LAGDA-VER-2026-AAAAAAAAAA", AT + 1);
+    record(h, done.documentId, "LAGDA-VER-2026-BBBBBBBBBB", AT + 2);
+
+    const listed = await listDocuments(actor(OWNER), h.workspaceId, {}, h.deps);
+    const byId = new Map(listed.items.map(item => [item.documentId, item.verificationId]));
+    expect(byId.get(done.documentId)).toBe("LAGDA-VER-2026-BBBBBBBBBB");
+    expect(byId.get(open.documentId)).toBeNull();
+
+    expect((await getDocument(actor(OWNER), h.workspaceId, done.documentId, h.deps)).verificationId)
+      .toBe("LAGDA-VER-2026-BBBBBBBBBB");
+  });
+
+  it("is readable by every role that may view the document", async () => {
+    const h = await harness();
+    const done = await createDocument(actor(OWNER), h.workspaceId, { title: "Done" }, h.deps);
+    record(h, done.documentId, "LAGDA-VER-2026-AAAAAAAAAA", AT + 1);
+    for (const who of [REVIEWER, AUDITOR]) {
+      expect((await getDocument(actor(who), h.workspaceId, done.documentId, h.deps)).verificationId)
+        .toBe("LAGDA-VER-2026-AAAAAAAAAA");
+    }
+  });
+
+  it("never crosses tenants", async () => {
+    const h = await harness();
+    const done = await createDocument(actor(OWNER), h.workspaceId, { title: "Done" }, h.deps);
+    // A record naming this document id, filed under ANOTHER workspace.
+    h.store.verifications.push({
+      verificationId: "LAGDA-VER-2026-ZZZZZZZZZZ" as never, workspaceId: "ws_elsewhere" as WorkspaceId,
+      signingRequestId: "txn_x" as never, documentId: done.documentId,
+      sealId: "seal_x" as never, completedAt: AT, participantCount: 1,
+    });
+    expect((await getDocument(actor(OWNER), h.workspaceId, done.documentId, h.deps)).verificationId)
+      .toBeNull();
+  });
+});

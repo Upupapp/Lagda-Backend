@@ -10,7 +10,7 @@
 import type { ProviderWebhookRouteOptions } from "../notifications/provider-webhook-routes.js";
 import type { IdentityDependencies } from "./identity-routes.js";
 import type {
-  PublicVerificationDependencies, ParticipantDocumentDependencies,
+  PublicVerificationDependencies, VerificationAccessDependencies,
 } from "@lagda/application";
 import type { UploadRouteOptions } from "../upload/upload-route.js";
 import type {
@@ -94,8 +94,12 @@ export interface AppDependencies {
    * unprotected.
    */
   readonly publicVerification?: () => PublicVerificationDependencies;
-  /** OD-135. Same optionality reasoning as `publicVerification` above. */
-  readonly publicParticipantAccess?: () => ParticipantDocumentDependencies;
+  /**
+   * 083 (replacing OD-135's email-only unlock). Verify Document access by
+   * emailed code, plus the signed-in participant's code-free path. Same
+   * optionality reasoning as `publicVerification` above.
+   */
+  readonly publicParticipantAccess?: () => VerificationAccessDependencies;
   /**
    * BACKEND-45. The provider callback surface.
    *

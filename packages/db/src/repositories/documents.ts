@@ -77,6 +77,21 @@ export function createScopedDocumentRepository(
       }
     },
 
+    async verificationIdsFor(documentIds: readonly DocumentId[]) {
+      const found = new Map<DocumentId, string>();
+      if (documentIds.length === 0) return found;
+      // Scoped by workspace AND by RLS. Oldest first, so the most recent
+      // completion of a document overwrites any earlier one.
+      const rows = await trx.selectFrom("verification_records")
+        .where("workspace_id", "=", scope)
+        .where("document_id", "in", [...documentIds])
+        .select(["document_id", "verification_id"])
+        .orderBy("completed_at").orderBy("verification_id")
+        .execute();
+      for (const row of rows) found.set(row.document_id as DocumentId, row.verification_id);
+      return found;
+    },
+
     async findById(documentId: DocumentId) {
       const row = await scoped()
         .selectAll()

@@ -242,6 +242,7 @@ const INPUT_BY_KEY: Record<string, NotificationTemplateInput> = {
   "document-upload-requested": { recipientName: "Maria Santos", requestTitle: "Signed W-9", requesterDisplayName: "Paulo Reyes", workspaceName: "Reyes Legal" },
   "final-copy-available": { recipientName: "Maria Santos", documentTitle: "Lease Agreement", senderDisplayName: "Paulo Reyes", workspaceName: "Reyes Legal" },
   "workspace-join-link": { workspaceName: "Reyes Legal", senderDisplayName: "Paulo Reyes" },
+  "verification-access-code": { recipientName: "Maria Santos", documentTitle: "Office Lease" },
   "workspace-join-requested": { recipientName: "Paulo Reyes", requesterName: "Maria Santos", requesterEmail: "maria@example.com", workspaceName: "Reyes Legal", reason: "New associate" },
   "workspace-join-decided": { recipientName: "Maria Santos", workspaceName: "Reyes Legal", approved: true },
 };

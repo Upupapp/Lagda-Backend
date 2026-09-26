@@ -1543,6 +1543,16 @@ function scopedDocuments(store: InMemoryStore, scope: WorkspaceId): ScopedDocume
     findById: (documentId: DocumentId) =>
       Promise.resolve(inScope().find(d => d.documentId === documentId) ?? null),
 
+    verificationIdsFor: (documentIds: readonly DocumentId[]) => {
+      // Most recent completion wins, exactly as the adapter orders it.
+      const found = new Map<DocumentId, string>();
+      const records = store.verifications
+        .filter(v => v.workspaceId === scope && documentIds.includes(v.documentId))
+        .sort((a, b) => a.completedAt - b.completedAt);
+      for (const record of records) found.set(record.documentId, record.verificationId);
+      return Promise.resolve(found);
+    },
+
     list: (query) => {
       // Filtered BEFORE sorting and counting, exactly as the real one does --
       // a fake that ignored `search` would let a search test pass while the

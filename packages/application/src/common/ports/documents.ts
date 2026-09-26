@@ -117,6 +117,14 @@ export interface ScopedDocumentRepository {
   list(query: DocumentListQuery): Promise<DocumentPage>;
 
   /**
+   * The public verification ID of each document that has one — the record
+   * created when a signing request on it completed and was sealed. A document
+   * with several completions maps to its MOST RECENT. Absent documents are
+   * simply missing from the map.
+   */
+  verificationIdsFor(documentIds: readonly DocumentId[]): Promise<ReadonlyMap<DocumentId, string>>;
+
+  /**
    * Files the document in a folder, or at the workspace root.
    *
    * `file`, not `update(patch)`, for the same reason `rename` is — see below.

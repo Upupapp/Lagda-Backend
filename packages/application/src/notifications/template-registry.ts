@@ -339,6 +339,18 @@ export const FinalCopyAvailableModelV1 = Type.Object(
   { additionalProperties: false },
 );
 
+/**
+ * 083. A Verify Document access code. Display data only: the code itself is
+ * the CHALLENGE secret, resolved at send time and never frozen here.
+ */
+export const VerificationAccessCodeModelV1 = Type.Object(
+  {
+    recipientName: DisplayName,
+    documentTitle: BoundedText(300),
+  },
+  { additionalProperties: false },
+);
+
 /** 078. The join link, emailed to the address a ticket was made for. */
 export const WorkspaceJoinLinkModelV1 = Type.Object(
   {

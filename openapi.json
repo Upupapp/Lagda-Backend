@@ -1363,6 +1363,189 @@
         }
       }
     },
+    "/verifications/{verificationId}/member-access": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "verificationId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "VerificationAccessGranted",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "outcome",
+                    "accessToken",
+                    "expiresAt",
+                    "documentTitle",
+                    "recipientType",
+                    "details"
+                  ],
+                  "properties": {
+                    "outcome": {
+                      "type": "string",
+                      "enum": [
+                        "granted"
+                      ]
+                    },
+                    "accessToken": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "number"
+                    },
+                    "documentTitle": {
+                      "type": "string"
+                    },
+                    "recipientType": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "title": "VerificationAccessDetails",
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "documentTitle",
+                        "completedAt",
+                        "sealedDigest",
+                        "participants",
+                        "events"
+                      ],
+                      "properties": {
+                        "documentTitle": {
+                          "type": "string"
+                        },
+                        "completedAt": {
+                          "type": "number"
+                        },
+                        "sealedDigest": {
+                          "type": "string"
+                        },
+                        "participants": {
+                          "type": "array",
+                          "items": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "required": [
+                              "name",
+                              "maskedEmail",
+                              "recipientType",
+                              "status",
+                              "actedAt",
+                              "routingOrder"
+                            ],
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "maskedEmail": {
+                                "type": "string"
+                              },
+                              "recipientType": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "signed"
+                                    ]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "approved"
+                                    ]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "declined"
+                                    ]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "skipped"
+                                    ]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "viewed"
+                                    ]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "no-action"
+                                    ]
+                                  }
+                                ]
+                              },
+                              "actedAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "routingOrder": {
+                                "type": "integer"
+                              }
+                            }
+                          }
+                        },
+                        "events": {
+                          "type": "array",
+                          "items": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "required": [
+                              "type",
+                              "label",
+                              "at"
+                            ],
+                            "properties": {
+                              "type": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "at": {
+                                "type": "number"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/workspaces/{workspaceId}/join-tickets": {
       "get": {
         "parameters": [
@@ -27156,6 +27339,16 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "verificationId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   }
                 }
@@ -27376,6 +27569,16 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "verificationId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         }
                       }
@@ -27525,6 +27728,16 @@
                               "type": "string"
                             }
                           }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "verificationId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
                         },
                         {
                           "type": "null"
@@ -27691,6 +27904,16 @@
                               "type": "string"
                             }
                           }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "verificationId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
                         },
                         {
                           "type": "null"
@@ -33194,6 +33417,517 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/public/verifications/{verificationId}/access-code": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "VerificationAccessCodeRequest",
+                "additionalProperties": false,
+                "description": "Asks for a six-digit code for this completed document. The answer is identical whether or not the address is a participant.",
+                "type": "object",
+                "required": [
+                  "email"
+                ],
+                "properties": {
+                  "email": {
+                    "minLength": 1,
+                    "maxLength": 254,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "description": "Asks for a six-digit code for this completed document. The answer is identical whether or not the address is a participant."
+        },
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "verificationId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "VerificationAccessCodeSent",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "sent",
+                    "expiresInSeconds"
+                  ],
+                  "properties": {
+                    "sent": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "expiresInSeconds": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/public/verifications/{verificationId}/access": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "VerificationAccessRequest",
+                "additionalProperties": false,
+                "description": "The emailed code and the address it was sent to.",
+                "type": "object",
+                "required": [
+                  "email",
+                  "code"
+                ],
+                "properties": {
+                  "email": {
+                    "minLength": 1,
+                    "maxLength": 254,
+                    "type": "string"
+                  },
+                  "code": {
+                    "minLength": 1,
+                    "maxLength": 16,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "description": "The emailed code and the address it was sent to."
+        },
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "verificationId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "VerificationAccessGranted",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "outcome",
+                    "accessToken",
+                    "expiresAt",
+                    "documentTitle",
+                    "recipientType",
+                    "details"
+                  ],
+                  "properties": {
+                    "outcome": {
+                      "type": "string",
+                      "enum": [
+                        "granted"
+                      ]
+                    },
+                    "accessToken": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "number"
+                    },
+                    "documentTitle": {
+                      "type": "string"
+                    },
+                    "recipientType": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "title": "VerificationAccessDetails",
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "documentTitle",
+                        "completedAt",
+                        "sealedDigest",
+                        "participants",
+                        "events"
+                      ],
+                      "properties": {
+                        "documentTitle": {
+                          "type": "string"
+                        },
+                        "completedAt": {
+                          "type": "number"
+                        },
+                        "sealedDigest": {
+                          "type": "string"
+                        },
+                        "participants": {
+                          "type": "array",
+                          "items": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "required": [
+                              "name",
+                              "maskedEmail",
+                              "recipientType",
+                              "status",
+                              "actedAt",
+                              "routingOrder"
+                            ],
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "maskedEmail": {
+                                "type": "string"
+                              },
+                              "recipientType": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "signed"
+                                    ]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "approved"
+                                    ]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "declined"
+                                    ]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "skipped"
+                                    ]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "viewed"
+                                    ]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "no-action"
+                                    ]
+                                  }
+                                ]
+                              },
+                              "actedAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "routingOrder": {
+                                "type": "integer"
+                              }
+                            }
+                          }
+                        },
+                        "events": {
+                          "type": "array",
+                          "items": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "required": [
+                              "type",
+                              "label",
+                              "at"
+                            ],
+                            "properties": {
+                              "type": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "at": {
+                                "type": "number"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/public/verifications/{verificationId}/details": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "VerificationAccessGrantRequest",
+                "additionalProperties": false,
+                "description": "An access token from a granted /access or /member-access call.",
+                "type": "object",
+                "required": [
+                  "accessToken"
+                ],
+                "properties": {
+                  "accessToken": {
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "description": "An access token from a granted /access or /member-access call."
+        },
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "verificationId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "VerificationAccessDetailsResponse",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "details"
+                  ],
+                  "properties": {
+                    "details": {
+                      "title": "VerificationAccessDetails",
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "documentTitle",
+                        "completedAt",
+                        "sealedDigest",
+                        "participants",
+                        "events"
+                      ],
+                      "properties": {
+                        "documentTitle": {
+                          "type": "string"
+                        },
+                        "completedAt": {
+                          "type": "number"
+                        },
+                        "sealedDigest": {
+                          "type": "string"
+                        },
+                        "participants": {
+                          "type": "array",
+                          "items": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "required": [
+                              "name",
+                              "maskedEmail",
+                              "recipientType",
+                              "status",
+                              "actedAt",
+                              "routingOrder"
+                            ],
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "maskedEmail": {
+                                "type": "string"
+                              },
+                              "recipientType": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "signed"
+                                    ]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "approved"
+                                    ]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "declined"
+                                    ]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "skipped"
+                                    ]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "viewed"
+                                    ]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "no-action"
+                                    ]
+                                  }
+                                ]
+                              },
+                              "actedAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "routingOrder": {
+                                "type": "integer"
+                              }
+                            }
+                          }
+                        },
+                        "events": {
+                          "type": "array",
+                          "items": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "required": [
+                              "type",
+                              "label",
+                              "at"
+                            ],
+                            "properties": {
+                              "type": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "at": {
+                                "type": "number"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/public/verifications/{verificationId}/document": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "VerificationAccessGrantRequest",
+                "additionalProperties": false,
+                "description": "An access token from a granted /access or /member-access call.",
+                "type": "object",
+                "required": [
+                  "accessToken"
+                ],
+                "properties": {
+                  "accessToken": {
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "description": "An access token from a granted /access or /member-access call."
+        },
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "verificationId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
           }
         }
       }

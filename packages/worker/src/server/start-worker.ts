@@ -29,8 +29,11 @@ import {
   type NotificationScope,
   type ObjectStorage, type CompletionDependencies, type CompletionStepRunners,
   type SealedDeliverySecret, type FinalCopyGrantId,
+  VERIFICATION_CODE_MAX_ATTEMPTS,
 } from "@lagda/application";
-import { createTransactionManager, createAccountContactRepository } from "@lagda/db";
+import {
+  createTransactionManager, createAccountContactRepository, findSealedVerificationAccessCode,
+} from "@lagda/db";
 import { loadSmtpConfig, createSmtpEmailProvider, EmailConfigError } from "@lagda/email";
 import {
   createSealedSecretResolver, createChallengeSecretResolver,
@@ -399,6 +402,16 @@ export async function startWorker(): Promise<StartedWorker> {
                 }))
               // An invitation credential under an account scope is a
               // composition error, not a runtime condition.
+              : Promise.resolve(null),
+        },
+        // 083. A Verify Document access code, read inside the delivery's own
+        // workspace. Consumed, superseded, expired or exhausted suppresses.
+        VERIFICATION_ACCESS_CHALLENGE: {
+          findSealedIfActive: (sourceId: string, now: number) =>
+            deliveryScope.kind === "WORKSPACE"
+              ? findSealedVerificationAccessCode(
+                database.db, deliveryScope.workspaceId, sourceId, now,
+                VERIFICATION_CODE_MAX_ATTEMPTS)
               : Promise.resolve(null),
         },
       },

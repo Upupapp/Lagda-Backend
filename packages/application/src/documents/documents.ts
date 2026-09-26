@@ -71,6 +71,11 @@ export interface DocumentSummary {
   readonly updatedAt: number;
   /** Null until the secure upload pipeline has accepted this document's bytes. */
   readonly source: DocumentSourceView | null;
+  /**
+   * The public verification ID from the document's most recent completion
+   * (the record written when it was sealed), or null when it has none.
+   */
+  readonly verificationId: string | null;
 }
 
 /**
@@ -92,6 +97,7 @@ function toSource(artifact: ArtifactRecord | undefined): DocumentSourceView | nu
 const summarize = (
   record: DocumentRecord,
   original: ArtifactRecord | undefined,
+  verificationId: string | null = null,
 ): DocumentSummary => ({
   documentId: record.documentId,
   title: record.title,
@@ -101,6 +107,7 @@ const summarize = (
   createdAt: record.createdAt,
   updatedAt: record.updatedAt,
   source: toSource(original),
+  verificationId,
 });
 
 export interface DocumentDependencies {
@@ -146,6 +153,15 @@ async function originalArtifact(
 ): Promise<ArtifactRecord | undefined> {
   const artifacts = await uow.artifacts.listForDocument(documentId);
   return artifacts.find(artifact => artifact.artifactType === "original");
+}
+
+/** The document's verification ID, or null. Same scoped unit of work. */
+async function verificationIdOf(
+  uow: WorkspaceUnitOfWork,
+  documentId: DocumentId,
+): Promise<string | null> {
+  const ids = await uow.documents.verificationIdsFor([documentId]);
+  return ids.get(documentId) ?? null;
 }
 
 // ── Create ───────────────────────────────────────────────────────────────────
@@ -252,7 +268,8 @@ export async function getDocument(
     // A document in another workspace produces the same null as one that does
     // not exist. The repository is scoped and RLS refuses it independently.
     if (document === null) throw new ResourceNotFoundError("Document");
-    return summarize(document, await originalArtifact(uow, documentId));
+    return summarize(document, await originalArtifact(uow, documentId),
+      await verificationIdOf(uow, documentId));
   });
 }
 
@@ -319,9 +336,13 @@ export async function listDocuments(
     // per row would be better and needs a repository method that does not exist
     // yet; with `perPage` bounded at 100 this is bounded work, and the
     // alternative — omitting the fields — would make the list unable to render.
+    // One query for the whole page.
+    const verificationIds = await uow.documents.verificationIdsFor(
+      result.items.map(record => record.documentId));
     const items: DocumentSummary[] = [];
     for (const record of result.items) {
-      items.push(summarize(record, await originalArtifact(uow, record.documentId)));
+      items.push(summarize(record, await originalArtifact(uow, record.documentId),
+        verificationIds.get(record.documentId) ?? null));
     }
 
     return {
@@ -417,7 +438,8 @@ export async function fileDocument(
 
     const filed = await uow.documents.findById(documentId);
     if (filed === null) throw new ResourceNotFoundError("Document");
-    return summarize(filed, await originalArtifact(uow, documentId));
+    return summarize(filed, await originalArtifact(uow, documentId),
+      await verificationIdOf(uow, documentId));
   });
 }
 
@@ -441,7 +463,8 @@ export async function renameDocument(
 
     const renamed = await uow.documents.findById(documentId);
     if (renamed === null) throw new ResourceNotFoundError("Document");
-    return summarize(renamed, await originalArtifact(uow, documentId));
+    return summarize(renamed, await originalArtifact(uow, documentId),
+      await verificationIdOf(uow, documentId));
   });
 }
 

@@ -206,6 +206,7 @@ const present = (document: DocumentSummary) => ({
     pageCount: document.source.pageCount,
     uploadedAt: iso(document.source.uploadedAt),
   },
+  verificationId: document.verificationId,
 });
 
 export function registerDocumentRoutes(

@@ -16,7 +16,6 @@ import type {
   EvidenceEventInput, EvidenceEventRecord, EvidenceActor, EvidenceEventType,
   EvidenceEventId, ArtifactId, ArtifactRecord, ArtifactType, SealId, SealRecord,
   FinalizationInput, SigningRequestRecipientId,
-  PublicParticipantLookup,
 } from "@lagda/application";
 import { toStorageObjectKey } from "@lagda/application";
 import type { Database, DocumentArtifactsTable } from "../schema/index.js";
@@ -442,110 +441,6 @@ export function createPublicVerificationLookup(
           digestAlgorithm: row.digest_algorithm as "sha-256",
           sealScheme: row.seal_scheme as "hash-evidence",
           sealVersion: row.seal_version,
-        };
-      });
-    },
-  };
-}
-
-// ── Public participant access (OD-135, 075) ─────────────────────────────────
-
-/**
- * The email-gated document view. Same anonymous, no-tenant shape as
- * `createPublicVerificationLookup`, and reachable for the same reason: 075's
- * `anonymous_verification_read` policy on these six tables.
- */
-export function createPublicParticipantLookup(
-  runGlobal: <T>(operation: (trx: Trx) => Promise<T>) => Promise<T>,
-): PublicParticipantLookup {
-  /**
-   * The completed request's identity, or null for absent/restricted/
-   * not-completed — the same collapsed answer `createPublicVerificationLookup`
-   * gives, and required here for the identical reason.
-   */
-  const completedRequest = (trx: Trx, verificationId: VerificationId) =>
-    trx
-      .selectFrom("verification_records")
-      .innerJoin("signing_request_completions", join => join
-        .onRef("signing_request_completions.signing_request_id", "=",
-          "verification_records.signing_request_id")
-        .onRef("signing_request_completions.workspace_id", "=",
-          "verification_records.workspace_id"))
-      .innerJoin("signing_requests", join => join
-        .onRef("signing_requests.signing_request_id", "=",
-          "verification_records.signing_request_id")
-        .onRef("signing_requests.workspace_id", "=",
-          "verification_records.workspace_id"))
-      .where("signing_requests.state", "=", "completed")
-      .where("verification_records.verification_id", "=", verificationId)
-      .select([
-        "verification_records.workspace_id", "verification_records.signing_request_id",
-        "verification_records.seal_id", "signing_requests.document_title",
-      ])
-      .executeTakeFirst();
-
-  return {
-    async findMatch(verificationId, normalizedEmail) {
-      return runGlobal(async trx => {
-        // 075: local to THIS transaction only — see findByVerificationId's
-        // identical comment above.
-        await sql`select set_config(${PUBLIC_VERIFICATION_SETTING}, 'true', true)`
-          .execute(trx);
-        const request = await completedRequest(trx, verificationId);
-        if (!request) return null;
-
-        const recipient = await trx
-          .selectFrom("signing_request_recipients")
-          .where("workspace_id", "=", request.workspace_id)
-          .where("signing_request_id", "=", request.signing_request_id)
-          .where("normalized_email", "=", normalizedEmail)
-          .select(["recipient_type"])
-          .executeTakeFirst();
-        if (!recipient) return null;
-
-        return {
-          documentTitle: request.document_title,
-          recipientType: recipient.recipient_type,
-        };
-      });
-    },
-
-    async findDocumentRef(verificationId, normalizedEmail) {
-      return runGlobal(async trx => {
-        await sql`select set_config(${PUBLIC_VERIFICATION_SETTING}, 'true', true)`
-          .execute(trx);
-        const request = await completedRequest(trx, verificationId);
-        if (!request) return null;
-
-        const recipient = await trx
-          .selectFrom("signing_request_recipients")
-          .where("workspace_id", "=", request.workspace_id)
-          .where("signing_request_id", "=", request.signing_request_id)
-          .where("normalized_email", "=", normalizedEmail)
-          .select(["request_recipient_id"])
-          .executeTakeFirst();
-        if (!recipient) return null;
-
-        const seal = await trx
-          .selectFrom("document_seals")
-          .where("workspace_id", "=", request.workspace_id)
-          .where("seal_id", "=", request.seal_id)
-          .select(["sealed_artifact_id"])
-          .executeTakeFirst();
-        if (!seal) return null;
-
-        const artifact = await trx
-          .selectFrom("document_artifacts")
-          .where("workspace_id", "=", request.workspace_id)
-          .where("artifact_id", "=", seal.sealed_artifact_id)
-          .select(["storage_reference", "media_type", "size_bytes"])
-          .executeTakeFirst();
-        if (!artifact) return null;
-
-        return {
-          storageReference: artifact.storage_reference,
-          mediaType: artifact.media_type,
-          sizeBytes: toNumber(artifact.size_bytes),
         };
       });
     },

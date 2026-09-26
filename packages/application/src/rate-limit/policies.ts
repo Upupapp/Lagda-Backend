@@ -630,6 +630,43 @@ export const RATE_LIMIT_POLICIES = {
       + "same budget.",
   },
 
+  // 083. Requesting a Verify Document access code. Each request may send an
+  // email, so it is budgeted per connection AND per address-on-document.
+  "public-verification.access-code.ip": {
+    id: "public-verification.access-code.ip",
+    scopeType: "ip",
+    limit: 20,
+    windowMs: 60 * MINUTE,
+    failureMode: "fail-closed",
+    source: "083 - not specified by the handoff. A person asks for a code once "
+      + "or twice; twenty an hour from one connection bounds how much mail a "
+      + "stranger can make LAGDA send.",
+  },
+
+  "public-verification.access-code.participant": {
+    id: "public-verification.access-code.participant",
+    // A self-declared (verification ID, email) pair, digested — an abuse
+    // bucket, never identity.
+    scopeType: "account",
+    limit: 5,
+    windowMs: 15 * MINUTE,
+    failureMode: "fail-closed",
+    source: "083 - not specified by the handoff. Five codes per address per "
+      + "document per quarter hour: enough for a slow inbox, too few to flood "
+      + "one participant's mailbox.",
+  },
+
+  // 083. A signed-in participant's code-free unlock.
+  "verification.member-access.user": {
+    id: "verification.member-access.user",
+    scopeType: "user",
+    limit: 20,
+    windowMs: MINUTE,
+    failureMode: "fail-closed",
+    source: "083 - not specified by the handoff. Matched to the public access "
+      + "budget; a signed-in caller learns the same granted/denied answer.",
+  },
+
   // 078. The public join-link check: anyone holding a link, before sign-in.
   "workspace.join.preview.ip": {
     id: "workspace.join.preview.ip",

@@ -214,6 +214,21 @@ export const NOTIFICATION_POLICIES: Record<NotificationType, NotificationPolicy>
     audienceKind: "USER",
     scopeKind: "WORKSPACE",
   },
+  VERIFICATION_ACCESS_CODE: {
+    notificationType: "VERIFICATION_ACCESS_CODE",
+    templateKey: "verification-access-code",
+    channel: "EMAIL",
+    // The CHALLENGE: a resend is a new challenge, so a new email, and the
+    // logical key refuses a duplicate for one challenge.
+    sourceKind: "VERIFICATION_ACCESS_CHALLENGE",
+    // The participant row that matched — the address is its snapshot.
+    audienceKind: "SIGNING_REQUEST_RECIPIENT",
+    // A pointer to the challenge, which holds the sealed code while it is
+    // live; a consumed, superseded or expired challenge suppresses the send.
+    secretKind: "CHALLENGE",
+    // The completed document is the workspace's record.
+    scopeKind: "WORKSPACE",
+  },
 };
 
 export function policyFor(notificationType: NotificationType): NotificationPolicy {

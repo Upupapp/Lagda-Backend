@@ -127,6 +127,11 @@ export const NOTIFICATION_TYPES = [
   "WORKSPACE_JOIN_REQUESTED",
   /** 078. The requester told their request was approved or declined. */
   "WORKSPACE_JOIN_DECIDED",
+  /**
+   * 083. A six-digit code that unlocks a completed document on Verify
+   * Document, sent to the participant address that asked for it.
+   */
+  "VERIFICATION_ACCESS_CODE",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -243,6 +248,8 @@ export const NOTIFICATION_SOURCE_KINDS = [
   "WORKSPACE_JOIN_TICKET",
   /** 078. A join request, or one admin's notice about it. */
   "WORKSPACE_JOIN_REQUEST",
+  /** 083. One emailed verification access code — each resend is its own challenge. */
+  "VERIFICATION_ACCESS_CHALLENGE",
 ] as const;
 export type NotificationSourceKind =
   (typeof NOTIFICATION_SOURCE_KINDS)[number];
@@ -371,6 +378,7 @@ export const NOTIFICATION_TEMPLATE_KEYS = [
   "workspace-join-link",
   "workspace-join-requested",
   "workspace-join-decided",
+  "verification-access-code",
 ] as const;
 export type NotificationTemplateKey =
   (typeof NOTIFICATION_TEMPLATE_KEYS)[number];

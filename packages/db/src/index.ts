@@ -52,7 +52,8 @@ export {
 // takes a transaction RUNNER rather than a pool, so an independently
 // constructed instance cannot hold a connection -- which is the risk the note
 // at the top of this file is about.
-export { createPublicVerificationLookup, createPublicParticipantLookup } from "./repositories/evidence.js";
+export { createPublicVerificationLookup } from "./repositories/evidence.js";
+export { createVerificationAccessStore, findSealedVerificationAccessCode } from "./repositories/verification-access.js";
 export {
   createVerificationRepository, createVerifiableUserRepository,
 } from "./repositories/verification.js";

@@ -249,7 +249,7 @@ describe("POST /documents", () => {
     // judgement someone has to make, not one a projection makes silently.
     expect(Object.keys(body).sort()).toEqual([
       "createdAt", "createdByUserId", "documentId", "folderId",
-      "originalFilename", "source", "title", "updatedAt",
+      "originalFilename", "source", "title", "updatedAt", "verificationId",
     ]);
   });
 
@@ -291,6 +291,26 @@ describe("GET and PATCH", () => {
     });
     expect(response.statusCode).toBe(200);
     expect(response.json<{ title: string }>().title).toBe(SENSITIVE_TITLE);
+  });
+
+  it("carries the verification ID of a completed document on GET and on the list (083)", async () => {
+    const h = await harness();
+    await createOne(h);
+    const { cookie } = await h.signIn(OWNER);
+    const before = await h.app.inject({ method: "GET", url: `${URL}/doc_1`, headers: { cookie } });
+    expect(before.json<{ verificationId: string | null }>().verificationId).toBeNull();
+
+    h.transactions.store.verifications.push({
+      verificationId: "LAGDA-VER-2026-AAAAAAAAAA" as never, workspaceId: WORKSPACE,
+      signingRequestId: "txn_1" as never, documentId: "doc_1" as never,
+      sealId: "seal_1" as never, completedAt: 1, participantCount: 1,
+    });
+    const one = await h.app.inject({ method: "GET", url: `${URL}/doc_1`, headers: { cookie } });
+    expect(one.json<{ verificationId: string | null }>().verificationId)
+      .toBe("LAGDA-VER-2026-AAAAAAAAAA");
+    const list = await h.app.inject({ method: "GET", url: URL, headers: { cookie } });
+    expect(list.json<{ items: { verificationId: string | null }[] }>().items[0]?.verificationId)
+      .toBe("LAGDA-VER-2026-AAAAAAAAAA");
   });
 
   it("renames, changing only the title and updatedAt", async () => {

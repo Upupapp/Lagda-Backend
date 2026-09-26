@@ -90,6 +90,39 @@ export interface WorkspaceJoinTicketsTable {
   updated_at: Date;
 }
 
+/** 083. One emailed verification access code (digest + sealed copy while live). */
+export interface VerificationAccessChallengesTable {
+  challenge_id: string;
+  workspace_id: string;
+  verification_id: string;
+  signing_request_id: string;
+  request_recipient_id: string;
+  normalized_email: string;
+  code_digest: string;
+  sealed_code: string | null;
+  sealed_key_version: string | null;
+  attempts: ColumnType<number, number | undefined, number>;
+  expires_at: Timestamptz;
+  consumed_at: Date | null;
+  superseded_at: Date | null;
+  created_at: Timestamptz;
+}
+
+/** 083. One verification access grant; only the token digest is stored. */
+export interface VerificationAccessGrantsTable {
+  grant_id: string;
+  workspace_id: string;
+  verification_id: string;
+  signing_request_id: string;
+  request_recipient_id: string;
+  token_digest: string;
+  origin: string;
+  challenge_id: string | null;
+  user_id: string | null;
+  expires_at: Timestamptz;
+  created_at: Timestamptz;
+}
+
 /** 082. A workspace's branding; the logo columns move together. */
 export interface WorkspaceBrandingTable {
   workspace_id: string;
@@ -1742,6 +1775,8 @@ export interface Database {
   user_avatars: UserAvatarsTable;
   document_seals: DocumentSealsTable;
   verification_records: VerificationRecordsTable;
+  verification_access_challenges: VerificationAccessChallengesTable;
+  verification_access_grants: VerificationAccessGrantsTable;
   user_sessions: UserSessionsTable;
   idempotency_records: IdempotencyRecordsTable;
   rate_limit_counters: RateLimitCountersTable;

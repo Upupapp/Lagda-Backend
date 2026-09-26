@@ -90,6 +90,7 @@ import * as m079 from "./079_workspace_activity.js";
 import * as m080 from "./080_workspace_activity_append_only.js";
 import * as m081 from "./081_outcome_block_fields.js";
 import * as m082 from "./082_workspace_branding.js";
+import * as m083 from "./083_verification_access_codes.js";
 
 /**
  * Migrations listed explicitly rather than read from disk.
@@ -184,6 +185,7 @@ const MIGRATIONS: Record<string, Migration> = {
   "080_workspace_activity_append_only": m080,
   "081_outcome_block_fields": m081,
   "082_workspace_branding": m082,
+  "083_verification_access_codes": m083,
 };
 
 class ExplicitMigrationProvider implements MigrationProvider {
