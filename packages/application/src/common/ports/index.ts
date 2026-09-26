@@ -509,6 +509,8 @@ export interface WorkspaceUnitOfWork {
   readonly activity: ScopedWorkspaceActivityRepository;
   /** 082. This workspace's branding row, absent until first saved. */
   readonly branding: ScopedWorkspaceBrandingRepository;
+  /** Read-only counts for the usage summary. */
+  readonly usage: ScopedWorkspaceUsageRepository;
 }
 
 /**
@@ -838,6 +840,8 @@ export * from "./workspace-activity.js";
 import type { ScopedWorkspaceActivityRepository } from "./workspace-activity.js";
 export * from "./workspace-branding.js";
 import type { ScopedWorkspaceBrandingRepository } from "./workspace-branding.js";
+export * from "./workspace-usage.js";
+import type { ScopedWorkspaceUsageRepository } from "./workspace-usage.js";
 
 export * from "./signing-access.js";
 
@@ -850,6 +854,7 @@ export * from "./completion.js";
 export * from "./completion-certificate.js";
 
 export * from "./notifications.js";
+export * from "./notification-preferences.js";
 export * from "./verification-access.js";
 import type { SigningAccountLinkRepository } from "./signing-account-link.js";
 import type { PreparedSignatureRepository } from "./prepared-signatures.js";

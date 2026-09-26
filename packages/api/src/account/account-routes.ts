@@ -11,6 +11,8 @@
 //   DELETE /me/signatures/:purpose  remove one
 //   POST   /me/signing-links        claim a signing handoff code
 //   GET    /me/notifications        messages addressed to this account
+//   GET    /me/notification-preferences   which optional emails it wants (084)
+//   PATCH  /me/notification-preferences   change any subset of them
 //
 // ── There is no user id in any path ────────────────────────────────────────
 //
@@ -41,6 +43,8 @@ import {
   SigningLinkAddressedElsewhereError,
   InAppSigningPasswordError, InAppSigningUnverifiedError, InAppSigningUnavailableError,
   type SigningInboxItemView, type SignedDocumentView,
+  getNotificationPreferences, updateNotificationPreferences,
+  type NotificationPreferenceRepository, type NotificationPreferencesView,
 } from "@lagda/application";
 import type { ApiConfig } from "../config/index.js";
 import type {
@@ -318,6 +322,34 @@ const NotificationFeedResponseSchema = Type.Object({
   notifications: Type.Array(FeedNotificationSchema),
 }, { title: "NotificationFeed", additionalProperties: false });
 
+// ── Notification preferences (084) ─────────────────────────────────────────
+
+/**
+ * The five switches, all present on every read. `updatedAt` is null until the
+ * account first changes one; an untouched account reads as everything on.
+ */
+export const NotificationPreferencesSchema = Type.Object({
+  signerActivity: Type.Boolean(),
+  requestCompleted: Type.Boolean(),
+  actionReminders: Type.Boolean(),
+  workspaceRequests: Type.Boolean(),
+  invitations: Type.Boolean(),
+  /** Epoch ms of the last change, or null when nothing was ever changed. */
+  updatedAt: Type.Union([Type.Integer(), Type.Null()]),
+}, { title: "NotificationPreferences", additionalProperties: false });
+
+/**
+ * Any subset. Closed, so `{"passwordReset": false}` is a 400 rather than a
+ * silently ignored key — security mail has no switch to send.
+ */
+export const UpdateNotificationPreferencesRequestSchema = Type.Object({
+  signerActivity: Type.Optional(Type.Boolean()),
+  requestCompleted: Type.Optional(Type.Boolean()),
+  actionReminders: Type.Optional(Type.Boolean()),
+  workspaceRequests: Type.Optional(Type.Boolean()),
+  invitations: Type.Optional(Type.Boolean()),
+}, { title: "UpdateNotificationPreferencesRequest", additionalProperties: false });
+
 export interface AccountRouteOptions {
   readonly config: ApiConfig;
   /**
@@ -358,6 +390,8 @@ export interface AccountRouteOptions {
   ) => Promise<{ code: string; expiresAt: number }>;
   /** The caller's own in-app notification feed. See migration 030. */
   readonly notificationFeed: () => NotificationFeedRepository;
+  /** 084. The account's own notification preferences. */
+  readonly notificationPreferences: () => NotificationPreferenceRepository;
   readonly now: () => Date;
   readonly currentUserDependencies: () => GetCurrentUserDependencies;
   readonly updateProfileDependencies: () => UpdateProfileDependencies;
@@ -864,6 +898,50 @@ export function registerAccountRoutes(
         createdAt: row.createdAt.toISOString(),
       })),
     });
+  });
+
+  // ── Notification preferences (084) ──────────────────────────────────────
+  //
+  // The account's OWN switches, by the session's user id. Security and
+  // transactional mail has no switch here, so nothing this route accepts can
+  // stop a password reset or a signing invitation.
+  const projectPreferences = (view: NotificationPreferencesView) => ({
+    signerActivity: view.signerActivity,
+    requestCompleted: view.requestCompleted,
+    actionReminders: view.actionReminders,
+    workspaceRequests: view.workspaceRequests,
+    invitations: view.invitations,
+    updatedAt: view.updatedAt,
+  });
+
+  app.get("/me/notification-preferences", {
+    schema: { response: { 200: NotificationPreferencesSchema } },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await options.authenticatedUser(request);
+    if (actor === null) return unauthenticated(reply);
+    const view = await getNotificationPreferences(
+      actor.userId, { preferences: options.notificationPreferences() });
+    return reply.status(200).send(projectPreferences(view));
+  });
+
+  app.patch("/me/notification-preferences", {
+    schema: {
+      body: UpdateNotificationPreferencesRequestSchema,
+      response: { 200: NotificationPreferencesSchema },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await options.authenticatedUser(request);
+    if (actor === null) return unauthenticated(reply);
+    if (!options.validateCsrf(request)) return csrfFailed(reply);
+
+    const body = request.body as Static<typeof UpdateNotificationPreferencesRequestSchema>;
+    const view = await updateNotificationPreferences(actor.userId, body, {
+      preferences: options.notificationPreferences(),
+      clock: { now: () => options.now().getTime() },
+    });
+    return reply.status(200).send(projectPreferences(view));
   });
 
   // ── Password ────────────────────────────────────────────────────────────

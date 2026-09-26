@@ -98,3 +98,6 @@ export {
   createUserAvatarRepository,
   type UserAvatarRepository, type StoredAvatar, type SaveAvatarInput,
 } from "./repositories/user-avatars.js";
+export {
+  createNotificationPreferenceRepository, isNotificationCategoryMuted,
+} from "./repositories/notification-preferences.js";

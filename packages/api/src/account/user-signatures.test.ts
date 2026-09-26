@@ -23,6 +23,7 @@ import type {
 import type { UserSignatureRepository, SavedSignature } from "@lagda/db";
 import type { ApiConfig } from "../config/index.js";
 import { registerAccountRoutes } from "./account-routes.js";
+import { fakeNotificationPreferences } from "@lagda/application/test-support";
 import { createSignatureImageValidator } from "../security/signature-image.js";
 
 const CONFIG = {
@@ -163,6 +164,7 @@ async function build(options: { authenticated?: boolean; csrfValid?: boolean } =
       };
     },
     notificationFeed: () => ({ listForUser: () => Promise.resolve([]) }),
+    notificationPreferences: () => fakeNotificationPreferences(),
     claimSigningLink: () => Promise.reject(new Error("not used")),
     listDocumentsToSign: () => Promise.resolve([]),
     listSignedDocuments: () => Promise.resolve([]),

@@ -44,6 +44,7 @@ import type {
 } from "@lagda/contracts";
 import type { SigningRequestRecipientId } from "./signing-requests.js";
 import type { SealedDeliverySecret } from "./signing-access.js";
+import type { NotificationPreferenceCategory } from "./notification-preferences.js";
 
 // ── Identity ─────────────────────────────────────────────────────────────────
 //
@@ -344,6 +345,12 @@ export const NOTIFICATION_FAILURE_CODES = [
   "SECRET_REVOKED",
   "SOURCE_CANCELLED",
   "DESTINATION_INVALID",
+  /**
+   * 084. The account audience switched this optional category off. Recorded
+   * against a delivery stopped at creation; never used for security or
+   * transactional mail, which has no category to switch off.
+   */
+  "RECIPIENT_PREFERENCE",
 ] as const;
 export type NotificationFailureCode =
   (typeof NOTIFICATION_FAILURE_CODES)[number];
@@ -620,6 +627,20 @@ export interface NotificationRepository {
     notificationDeliveryId: NotificationDeliveryId,
     state: "CANCELLED" | "SUPPRESSED",
     failureCode: NotificationFailureCode,
+    transaction: unknown,
+  ): Promise<boolean>;
+
+  /**
+   * 084. Whether this ACCOUNT switched the optional category off.
+   *
+   * On this repository rather than a separate port because it must be read in
+   * the PRODUCER's transaction — the one the intent is written in — and every
+   * producer already holds this repository for that transaction. False when
+   * the account has no preference row: absence means everything on.
+   */
+  isCategoryMutedBy(
+    userId: UserId,
+    category: NotificationPreferenceCategory,
     transaction: unknown,
   ): Promise<boolean>;
 }

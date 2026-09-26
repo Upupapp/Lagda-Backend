@@ -1720,6 +1720,20 @@ export interface UserAvatarsTable {
   updated_at: Timestamptz;
 }
 
+/**
+ * 084. Which optional emails an account wants. One row per account, absent
+ * until the first change; every column defaults to TRUE.
+ */
+export interface UserNotificationPreferencesTable {
+  user_id: string;
+  signer_activity: ColumnType<boolean, boolean | undefined, boolean>;
+  request_completed: ColumnType<boolean, boolean | undefined, boolean>;
+  action_reminders: ColumnType<boolean, boolean | undefined, boolean>;
+  workspace_requests: ColumnType<boolean, boolean | undefined, boolean>;
+  invitations: ColumnType<boolean, boolean | undefined, boolean>;
+  updated_at: Timestamptz;
+}
+
 export interface Database {
   workspaces: WorkspacesTable;
   workspace_memberships: WorkspaceMembershipsTable;
@@ -1773,6 +1787,7 @@ export interface Database {
   evidence_events: EvidenceEventsTable;
   document_notification_states: DocumentNotificationStatesTable;
   user_avatars: UserAvatarsTable;
+  user_notification_preferences: UserNotificationPreferencesTable;
   document_seals: DocumentSealsTable;
   verification_records: VerificationRecordsTable;
   verification_access_challenges: VerificationAccessChallengesTable;

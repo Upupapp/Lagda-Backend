@@ -170,6 +170,9 @@ const REQUIRED_PATHS = [
   "/workspaces/{workspaceId}/documents/{documentId}/content",
   "/workspaces/{workspaceId}/signing-requests/{signingRequestId}/completed-document",
   "/workspaces/{workspaceId}/signing-requests/stats",
+  // Settings: usage (member group) and notification preferences (identity).
+  "/workspaces/{workspaceId}/usage",
+  "/me/notification-preferences",
 ];
 
 const missingRequired = REQUIRED_PATHS.filter(path => !paths.includes(path));

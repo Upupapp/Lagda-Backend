@@ -16,6 +16,7 @@ import type {
 import type { ApiConfig } from "../config/index.js";
 import type { UserSignatureRepository, SavedSignature } from "@lagda/db";
 import { createSignatureImageValidator } from "../security/signature-image.js";
+import { fakeNotificationPreferences } from "@lagda/application/test-support";
 import {
   registerAccountRoutes, CurrentUserResponseSchema,
   UpdateProfileRequestSchema, ChangePasswordRequestSchema,
@@ -74,6 +75,7 @@ interface Built {
   readonly profileWrites: unknown[];
   readonly revoked: string[];
   readonly feedQueries: { userId: string; limit: number }[];
+  readonly preferences: ReturnType<typeof fakeNotificationPreferences>;
 }
 
 async function build(options: {
@@ -101,6 +103,7 @@ async function build(options: {
   const profileWrites: unknown[] = [];
   const feedQueries: { userId: string; limit: number }[] = [];
   const revoked: string[] = [];
+  const preferences = fakeNotificationPreferences();
 
   // An in-memory stand-in for the saved-signature table, honouring the one
   // property the real one enforces with a UNIQUE constraint: at most one per
@@ -157,6 +160,7 @@ async function build(options: {
     signatures: () => savedSignatures,
     avatars: () => avatarStore,
     notificationFeed: () => notificationFeed,
+    notificationPreferences: () => preferences,
     claimSigningLink: () => Promise.reject(new Error("not used")),
     listDocumentsToSign: () => Promise.resolve([]),
     listSignedDocuments: () => Promise.resolve([]),
@@ -230,7 +234,7 @@ async function build(options: {
     }),
   });
   await app.ready();
-  return { app, profileWrites, revoked, feedQueries };
+  return { app, profileWrites, revoked, feedQueries, preferences };
 }
 
 const patch = (app: FastifyInstance, url: string, payload: unknown) =>
@@ -652,3 +656,72 @@ describe("profile photo", () => {
   });
 });
 
+
+// ── Notification preferences (084) ─────────────────────────────────────────
+
+describe("/me/notification-preferences", () => {
+  const ALL_ON = {
+    signerActivity: true, requestCompleted: true, actionReminders: true,
+    workspaceRequests: true, invitations: true,
+  };
+
+  it("reads as everything on, never changed, for an account with no row", async () => {
+    const { app } = await build();
+    const response = await app.inject({ method: "GET", url: "/me/notification-preferences" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ ...ALL_ON, updatedAt: null });
+    expect(response.headers["cache-control"]).toBe("no-store");
+    await app.close();
+  });
+
+  it("changes only the named switches and returns the full set", async () => {
+    const { app, preferences } = await build();
+    const response = await patch(app, "/me/notification-preferences", { requestCompleted: false });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ ...ALL_ON, requestCompleted: false, updatedAt: 1_700_000_000_000 });
+    // The SESSION's account, and only the key that was sent.
+    expect(preferences.writes).toEqual([{ userId: "usr_1", patch: { requestCompleted: false } }]);
+
+    const second = await patch(app, "/me/notification-preferences", { workspaceRequests: false });
+    expect(second.json()).toMatchObject({ requestCompleted: false, workspaceRequests: false, invitations: true });
+    const read = await app.inject({ method: "GET", url: "/me/notification-preferences" });
+    expect(read.json()).toMatchObject({ requestCompleted: false, workspaceRequests: false });
+    await app.close();
+  });
+
+  it("an empty change writes nothing", async () => {
+    const { app, preferences } = await build();
+    const response = await patch(app, "/me/notification-preferences", {});
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ ...ALL_ON, updatedAt: null });
+    expect(preferences.writes).toHaveLength(0);
+    await app.close();
+  });
+
+  it("refuses a key that is not a switch — security mail has none", async () => {
+    const { app, preferences } = await build();
+    for (const payload of [
+      { passwordReset: false }, { signingInvitation: false }, { userId: "usr_2", invitations: false },
+    ]) {
+      expect((await patch(app, "/me/notification-preferences", payload)).statusCode).toBe(400);
+    }
+    expect((await patch(app, "/me/notification-preferences", { invitations: "nope" })).statusCode).toBe(400);
+    expect(preferences.writes).toHaveLength(0);
+    await app.close();
+  });
+
+  it("refuses a change without a valid CSRF token", async () => {
+    const { app, preferences } = await build({ csrfValid: false });
+    const response = await patch(app, "/me/notification-preferences", { invitations: false });
+    expect(response.statusCode).toBe(403);
+    expect(preferences.writes).toHaveLength(0);
+    await app.close();
+  });
+
+  it("refuses an anonymous caller", async () => {
+    const { app } = await build({ authenticated: false });
+    expect((await app.inject({ method: "GET", url: "/me/notification-preferences" })).statusCode).toBe(401);
+    expect((await patch(app, "/me/notification-preferences", { invitations: false })).statusCode).toBe(401);
+    await app.close();
+  });
+});

@@ -29,6 +29,7 @@ import type {
 } from "../schema/index.js";
 import { translatePersistenceError } from "../errors.js";
 import { PersistenceMappingError } from "../mapping/index.js";
+import { isNotificationCategoryMuted } from "./notification-preferences.js";
 
 type Trx = Transaction<Database>;
 
@@ -327,6 +328,12 @@ export function createNotificationRepository(trx: Trx): NotificationRepository {
         .where("state", "=", "PENDING")
         .executeTakeFirst();
       return Number(result.numUpdatedRows ?? 0n) === 1;
+    },
+
+    async isCategoryMutedBy(userId, category) {
+      // On the producer's own transaction. The table carries no RLS, so a
+      // workspace-scoped transaction reads the account's row (084's header).
+      return isNotificationCategoryMuted(trx, userId, category);
     },
   };
 }
