@@ -158,7 +158,7 @@ function seed(
     recipientId?: SigningRequestRecipientId;
     state?: "draft" | "sent" | "cancelled" | "completed";
     activation?: "active" | "waiting" | "none";
-    type?: "signer" | "viewer";
+    type?: "signer" | "viewer" | "reviewer" | "approver";
     sourceArtifactId?: ArtifactId;
     withArtifact?: boolean;
     fields?: readonly { id: string; page: number; y: number; x: number }[];
@@ -507,6 +507,29 @@ describe("fields", () => {
     expect(date?.valueAuthority).toBe("SERVER_DERIVED");
     const signature = view.fields.find(f => f.type === "signature");
     expect(signature?.valueAuthority).toBe("RECIPIENT_SUPPLIED");
+  });
+
+  it.each([
+    ["reviewer", "review-block", "date", true],
+    ["approver", "approval-block", "none", false],
+  ] as const)("delivers a %s's %s read-only: server-derived, %s, required=%s (081)", async (
+    type, fieldType, valueKind, required,
+  ) => {
+    const h = harness();
+    seed(h, { type });
+    h.store.signingRequestFields.push({
+      fieldId: "srf_block" as SigningRequestFieldId,
+      sourcePreparationFieldId: null, type: fieldType,
+      pageNumber: 1, x: 0.5, y: 0.8, width: 0.3, height: 0.08,
+      required, label: "Block", layer: 1, recipientId: RECIPIENT,
+      staticValue: null,
+    });
+    h.store.snapshotOwners.set("srf_block", REQUEST);
+
+    const view = await getSigningCeremony(await consented(h), h.deps);
+    expect(view.fields.find(f => f.type === fieldType)).toMatchObject({
+      fieldId: "srf_block", valueAuthority: "SERVER_DERIVED", valueKind, required, maxLength: null,
+    });
   });
 });
 

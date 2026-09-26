@@ -35,7 +35,8 @@
 import type { ContactId, DocumentId, WorkspaceId, RecipientType } from "@lagda/contracts";
 import {
   validateRecipientName, validateRecipientOrganization, validateRecipientEmail,
-  canHoldFields, normalizeOrder, isValidRoutingOrder,
+  canHoldFields, mayHoldFieldType, reservedHolderFor, describeReservedHolder,
+  PREPARATION_FIELD_TYPES, normalizeOrder, isValidRoutingOrder,
   isPreparationEditable, MAX_RECIPIENTS_PER_PREPARATION,
   type RecipientEmailKey, type WorkspaceCapability,
 } from "@lagda/core";
@@ -722,6 +723,26 @@ export async function updateRecipient(
           recipientId: current.recipientId,
         });
         if (assigned > 0) throw new RecipientHasFieldsError(assigned);
+      } else {
+        // An outcome block (081) belongs to one role. A reviewer holding a
+        // `review-block` cannot become a signer without it printing a review
+        // nobody performed — refused, naming the type, not the field.
+        const newType = input.type;
+        const reserved = PREPARATION_FIELD_TYPES.filter(fieldType =>
+          reservedHolderFor(fieldType) !== null && !mayHoldFieldType(newType, fieldType));
+        for (const fieldType of reserved) {
+          const held = await uow.recipients.countAssignedFields({
+            preparationId: preparation.preparationId,
+            recipientId: current.recipientId,
+            fieldTypes: [fieldType],
+          });
+          if (held > 0) {
+            throw new ApplicationValidationError(
+              "That recipient could not be saved.",
+              [`type: this recipient holds ${String(held)} "${fieldType}" field(s); `
+                + describeReservedHolder(fieldType)]);
+          }
+        }
       }
       patch.type = input.type;
     }

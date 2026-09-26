@@ -508,6 +508,85 @@ describe("field assignment", () => {
   });
 });
 
+// ── Outcome blocks (081) ─────────────────────────────────────────────────────
+
+describe("outcome-block eligibility (081)", () => {
+  const blockField = (type: "review-block" | "approval-block", recipientId: string) => ({
+    type, pageNumber: 1,
+    rect: { x: 0.1, y: 0.2, width: 0.3, height: 0.08 },
+    required: false, label: "Block", layer: 0, recipientId,
+  });
+
+  it.each([
+    ["review-block", "reviewer"],
+    ["approval-block", "approver"],
+  ] as const)("lets a %s be held by a %s", async (fieldType, recipientType) => {
+    const h = await harness();
+    const holder = await addRecipient(
+      actor(OWNER), h.workspaceId, DOC, manual({ type: recipientType }), h.deps);
+    const view = await saveDocumentPreparation(
+      actor(OWNER), h.workspaceId, DOC,
+      { expectedRevision: 1, fields: [blockField(fieldType, holder.recipientId)] }, h.prep);
+    expect(view.fields[0]).toMatchObject({ type: fieldType, recipientId: holder.recipientId });
+    // A reviewer's block is required whatever was asked; an approver's is not.
+    expect(view.fields[0]?.required).toBe(fieldType === "review-block");
+  });
+
+  it.each([
+    ["review-block", "signer", "reviewer"],
+    ["review-block", "approver", "reviewer"],
+    ["approval-block", "signer", "approver"],
+    ["approval-block", "reviewer", "approver"],
+    ["approval-block", "acknowledgment-recipient", "approver"],
+  ] as const)("refuses a %s on a %s, naming the one role that may hold it", async (
+    fieldType, recipientType, holder,
+  ) => {
+    const h = await harness();
+    const wrong = await addRecipient(
+      actor(OWNER), h.workspaceId, DOC, manual({ type: recipientType }), h.deps);
+    const failure = await saveDocumentPreparation(
+      actor(OWNER), h.workspaceId, DOC,
+      { expectedRevision: 1, fields: [blockField(fieldType, wrong.recipientId)] }, h.prep,
+    ).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(ApplicationValidationError);
+    expect((failure as ApplicationValidationError).issues).toEqual([
+      `fields[0].recipientId: "${fieldType}" fields may be held only by a recipient of type "${holder}"`,
+    ]);
+    expect(h.store.preparationFields).toHaveLength(0);
+  });
+
+  it("refuses changing a reviewer who holds a review block into a signer", async () => {
+    const h = await harness();
+    const reviewer = await addRecipient(
+      actor(OWNER), h.workspaceId, DOC, manual({ type: "reviewer" }), h.deps);
+    await saveDocumentPreparation(
+      actor(OWNER), h.workspaceId, DOC,
+      { expectedRevision: 1, fields: [blockField("review-block", reviewer.recipientId)] }, h.prep);
+
+    const failure = await updateRecipient(
+      actor(OWNER), h.workspaceId, DOC, reviewer.recipientId, { type: "signer" }, h.deps,
+    ).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(ApplicationValidationError);
+    expect((failure as ApplicationValidationError).issues[0]).toMatch(/"review-block".*"reviewer"/);
+    const [still] = await listRecipients(actor(OWNER), h.workspaceId, DOC, h.deps);
+    expect(still?.type).toBe("reviewer");
+  });
+
+  it("still lets a reviewer holding only ordinary fields change type", async () => {
+    const h = await harness();
+    const reviewer = await addRecipient(
+      actor(OWNER), h.workspaceId, DOC, manual({ type: "reviewer" }), h.deps);
+    await saveDocumentPreparation(
+      actor(OWNER), h.workspaceId, DOC, {
+        expectedRevision: 1,
+        fields: [{ ...blockField("review-block", reviewer.recipientId), type: "text" as const }],
+      }, h.prep);
+    const updated = await updateRecipient(
+      actor(OWNER), h.workspaceId, DOC, reviewer.recipientId, { type: "signer" }, h.deps);
+    expect(updated.type).toBe("signer");
+  });
+});
+
 // ── Delete ───────────────────────────────────────────────────────────────────
 
 describe("removeRecipient", () => {

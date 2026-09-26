@@ -3717,6 +3717,663 @@
         }
       }
     },
+    "/workspaces/{workspaceId}/branding": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "WorkspaceBranding",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "displayName",
+                    "senderDisplayName",
+                    "footerTagline",
+                    "primaryColor",
+                    "logo",
+                    "updatedAt",
+                    "canEdit"
+                  ],
+                  "properties": {
+                    "displayName": {
+                      "type": "string"
+                    },
+                    "senderDisplayName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "footerTagline": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "primaryColor": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "logo": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "version",
+                            "width",
+                            "height"
+                          ],
+                          "properties": {
+                            "version": {
+                              "type": "string"
+                            },
+                            "width": {
+                              "type": "integer"
+                            },
+                            "height": {
+                              "type": "integer"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "updatedAt": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "canEdit": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "displayName": {
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "type": "string"
+                  },
+                  "senderDisplayName": {
+                    "anyOf": [
+                      {
+                        "maxLength": 120,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "footerTagline": {
+                    "anyOf": [
+                      {
+                        "maxLength": 160,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "primaryColor": {
+                    "anyOf": [
+                      {
+                        "maxLength": 7,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "WorkspaceBranding",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "displayName",
+                    "senderDisplayName",
+                    "footerTagline",
+                    "primaryColor",
+                    "logo",
+                    "updatedAt",
+                    "canEdit"
+                  ],
+                  "properties": {
+                    "displayName": {
+                      "type": "string"
+                    },
+                    "senderDisplayName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "footerTagline": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "primaryColor": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "logo": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "version",
+                            "width",
+                            "height"
+                          ],
+                          "properties": {
+                            "version": {
+                              "type": "string"
+                            },
+                            "width": {
+                              "type": "integer"
+                            },
+                            "height": {
+                              "type": "integer"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "updatedAt": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "canEdit": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/branding/logo": {
+      "put": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "image"
+                ],
+                "properties": {
+                  "image": {
+                    "minLength": 1,
+                    "maxLength": 699179,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "WorkspaceBranding",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "displayName",
+                    "senderDisplayName",
+                    "footerTagline",
+                    "primaryColor",
+                    "logo",
+                    "updatedAt",
+                    "canEdit"
+                  ],
+                  "properties": {
+                    "displayName": {
+                      "type": "string"
+                    },
+                    "senderDisplayName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "footerTagline": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "primaryColor": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "logo": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "version",
+                            "width",
+                            "height"
+                          ],
+                          "properties": {
+                            "version": {
+                              "type": "string"
+                            },
+                            "width": {
+                              "type": "integer"
+                            },
+                            "height": {
+                              "type": "integer"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "updatedAt": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "canEdit": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "WorkspaceBranding",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "displayName",
+                    "senderDisplayName",
+                    "footerTagline",
+                    "primaryColor",
+                    "logo",
+                    "updatedAt",
+                    "canEdit"
+                  ],
+                  "properties": {
+                    "displayName": {
+                      "type": "string"
+                    },
+                    "senderDisplayName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "footerTagline": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "primaryColor": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "logo": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "version",
+                            "width",
+                            "height"
+                          ],
+                          "properties": {
+                            "version": {
+                              "type": "string"
+                            },
+                            "width": {
+                              "type": "integer"
+                            },
+                            "height": {
+                              "type": "integer"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "updatedAt": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "canEdit": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/branding/reset": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "WorkspaceBranding",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "displayName",
+                    "senderDisplayName",
+                    "footerTagline",
+                    "primaryColor",
+                    "logo",
+                    "updatedAt",
+                    "canEdit"
+                  ],
+                  "properties": {
+                    "displayName": {
+                      "type": "string"
+                    },
+                    "senderDisplayName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "footerTagline": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "primaryColor": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "logo": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "version",
+                            "width",
+                            "height"
+                          ],
+                          "properties": {
+                            "version": {
+                              "type": "string"
+                            },
+                            "width": {
+                              "type": "integer"
+                            },
+                            "height": {
+                              "type": "integer"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "updatedAt": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "canEdit": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/workspaces/{workspaceId}/contacts": {
       "get": {
         "parameters": [
@@ -7076,6 +7733,18 @@
                                                         "enum": [
                                                           "signature-block"
                                                         ]
+                                                      },
+                                                      {
+                                                        "type": "string",
+                                                        "enum": [
+                                                          "review-block"
+                                                        ]
+                                                      },
+                                                      {
+                                                        "type": "string",
+                                                        "enum": [
+                                                          "approval-block"
+                                                        ]
                                                       }
                                                     ]
                                                   },
@@ -7432,6 +8101,18 @@
                                                         "type": "string",
                                                         "enum": [
                                                           "signature-block"
+                                                        ]
+                                                      },
+                                                      {
+                                                        "type": "string",
+                                                        "enum": [
+                                                          "review-block"
+                                                        ]
+                                                      },
+                                                      {
+                                                        "type": "string",
+                                                        "enum": [
+                                                          "approval-block"
                                                         ]
                                                       }
                                                     ]
@@ -7806,6 +8487,18 @@
                                                                         "enum": [
                                                                           "signature-block"
                                                                         ]
+                                                                      },
+                                                                      {
+                                                                        "type": "string",
+                                                                        "enum": [
+                                                                          "review-block"
+                                                                        ]
+                                                                      },
+                                                                      {
+                                                                        "type": "string",
+                                                                        "enum": [
+                                                                          "approval-block"
+                                                                        ]
                                                                       }
                                                                     ]
                                                                   },
@@ -8179,6 +8872,18 @@
                                                                                         "enum": [
                                                                                           "signature-block"
                                                                                         ]
+                                                                                      },
+                                                                                      {
+                                                                                        "type": "string",
+                                                                                        "enum": [
+                                                                                          "review-block"
+                                                                                        ]
+                                                                                      },
+                                                                                      {
+                                                                                        "type": "string",
+                                                                                        "enum": [
+                                                                                          "approval-block"
+                                                                                        ]
                                                                                       }
                                                                                     ]
                                                                                   },
@@ -8549,6 +9254,18 @@
                                                                                                     "type": "string",
                                                                                                     "enum": [
                                                                                                       "signature-block"
+                                                                                                    ]
+                                                                                                  },
+                                                                                                  {
+                                                                                                    "type": "string",
+                                                                                                    "enum": [
+                                                                                                      "review-block"
+                                                                                                    ]
+                                                                                                  },
+                                                                                                  {
+                                                                                                    "type": "string",
+                                                                                                    "enum": [
+                                                                                                      "approval-block"
                                                                                                     ]
                                                                                                   }
                                                                                                 ]
@@ -9574,6 +10291,18 @@
                                                   "enum": [
                                                     "signature-block"
                                                   ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "review-block"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "approval-block"
+                                                  ]
                                                 }
                                               ]
                                             },
@@ -9930,6 +10659,18 @@
                                                   "type": "string",
                                                   "enum": [
                                                     "signature-block"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "review-block"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "approval-block"
                                                   ]
                                                 }
                                               ]
@@ -10304,6 +11045,18 @@
                                                                   "enum": [
                                                                     "signature-block"
                                                                   ]
+                                                                },
+                                                                {
+                                                                  "type": "string",
+                                                                  "enum": [
+                                                                    "review-block"
+                                                                  ]
+                                                                },
+                                                                {
+                                                                  "type": "string",
+                                                                  "enum": [
+                                                                    "approval-block"
+                                                                  ]
                                                                 }
                                                               ]
                                                             },
@@ -10677,6 +11430,18 @@
                                                                                   "enum": [
                                                                                     "signature-block"
                                                                                   ]
+                                                                                },
+                                                                                {
+                                                                                  "type": "string",
+                                                                                  "enum": [
+                                                                                    "review-block"
+                                                                                  ]
+                                                                                },
+                                                                                {
+                                                                                  "type": "string",
+                                                                                  "enum": [
+                                                                                    "approval-block"
+                                                                                  ]
                                                                                 }
                                                                               ]
                                                                             },
@@ -11047,6 +11812,18 @@
                                                                                               "type": "string",
                                                                                               "enum": [
                                                                                                 "signature-block"
+                                                                                              ]
+                                                                                            },
+                                                                                            {
+                                                                                              "type": "string",
+                                                                                              "enum": [
+                                                                                                "review-block"
+                                                                                              ]
+                                                                                            },
+                                                                                            {
+                                                                                              "type": "string",
+                                                                                              "enum": [
+                                                                                                "approval-block"
                                                                                               ]
                                                                                             }
                                                                                           ]
@@ -11802,6 +12579,18 @@
                                                   "enum": [
                                                     "signature-block"
                                                   ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "review-block"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "approval-block"
+                                                  ]
                                                 }
                                               ]
                                             },
@@ -12158,6 +12947,18 @@
                                                   "type": "string",
                                                   "enum": [
                                                     "signature-block"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "review-block"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "approval-block"
                                                   ]
                                                 }
                                               ]
@@ -12532,6 +13333,18 @@
                                                                   "enum": [
                                                                     "signature-block"
                                                                   ]
+                                                                },
+                                                                {
+                                                                  "type": "string",
+                                                                  "enum": [
+                                                                    "review-block"
+                                                                  ]
+                                                                },
+                                                                {
+                                                                  "type": "string",
+                                                                  "enum": [
+                                                                    "approval-block"
+                                                                  ]
                                                                 }
                                                               ]
                                                             },
@@ -12905,6 +13718,18 @@
                                                                                   "enum": [
                                                                                     "signature-block"
                                                                                   ]
+                                                                                },
+                                                                                {
+                                                                                  "type": "string",
+                                                                                  "enum": [
+                                                                                    "review-block"
+                                                                                  ]
+                                                                                },
+                                                                                {
+                                                                                  "type": "string",
+                                                                                  "enum": [
+                                                                                    "approval-block"
+                                                                                  ]
                                                                                 }
                                                                               ]
                                                                             },
@@ -13275,6 +14100,18 @@
                                                                                               "type": "string",
                                                                                               "enum": [
                                                                                                 "signature-block"
+                                                                                              ]
+                                                                                            },
+                                                                                            {
+                                                                                              "type": "string",
+                                                                                              "enum": [
+                                                                                                "review-block"
+                                                                                              ]
+                                                                                            },
+                                                                                            {
+                                                                                              "type": "string",
+                                                                                              "enum": [
+                                                                                                "approval-block"
                                                                                               ]
                                                                                             }
                                                                                           ]
@@ -14307,6 +15144,18 @@
                                                   "enum": [
                                                     "signature-block"
                                                   ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "review-block"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "approval-block"
+                                                  ]
                                                 }
                                               ]
                                             },
@@ -14663,6 +15512,18 @@
                                                   "type": "string",
                                                   "enum": [
                                                     "signature-block"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "review-block"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "approval-block"
                                                   ]
                                                 }
                                               ]
@@ -15037,6 +15898,18 @@
                                                                   "enum": [
                                                                     "signature-block"
                                                                   ]
+                                                                },
+                                                                {
+                                                                  "type": "string",
+                                                                  "enum": [
+                                                                    "review-block"
+                                                                  ]
+                                                                },
+                                                                {
+                                                                  "type": "string",
+                                                                  "enum": [
+                                                                    "approval-block"
+                                                                  ]
                                                                 }
                                                               ]
                                                             },
@@ -15410,6 +16283,18 @@
                                                                                   "enum": [
                                                                                     "signature-block"
                                                                                   ]
+                                                                                },
+                                                                                {
+                                                                                  "type": "string",
+                                                                                  "enum": [
+                                                                                    "review-block"
+                                                                                  ]
+                                                                                },
+                                                                                {
+                                                                                  "type": "string",
+                                                                                  "enum": [
+                                                                                    "approval-block"
+                                                                                  ]
                                                                                 }
                                                                               ]
                                                                             },
@@ -15780,6 +16665,18 @@
                                                                                               "type": "string",
                                                                                               "enum": [
                                                                                                 "signature-block"
+                                                                                              ]
+                                                                                            },
+                                                                                            {
+                                                                                              "type": "string",
+                                                                                              "enum": [
+                                                                                                "review-block"
+                                                                                              ]
+                                                                                            },
+                                                                                            {
+                                                                                              "type": "string",
+                                                                                              "enum": [
+                                                                                                "approval-block"
                                                                                               ]
                                                                                             }
                                                                                           ]
@@ -16592,6 +17489,18 @@
                                                   "enum": [
                                                     "signature-block"
                                                   ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "review-block"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "approval-block"
+                                                  ]
                                                 }
                                               ]
                                             },
@@ -16948,6 +17857,18 @@
                                                   "type": "string",
                                                   "enum": [
                                                     "signature-block"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "review-block"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "approval-block"
                                                   ]
                                                 }
                                               ]
@@ -17322,6 +18243,18 @@
                                                                   "enum": [
                                                                     "signature-block"
                                                                   ]
+                                                                },
+                                                                {
+                                                                  "type": "string",
+                                                                  "enum": [
+                                                                    "review-block"
+                                                                  ]
+                                                                },
+                                                                {
+                                                                  "type": "string",
+                                                                  "enum": [
+                                                                    "approval-block"
+                                                                  ]
                                                                 }
                                                               ]
                                                             },
@@ -17695,6 +18628,18 @@
                                                                                   "enum": [
                                                                                     "signature-block"
                                                                                   ]
+                                                                                },
+                                                                                {
+                                                                                  "type": "string",
+                                                                                  "enum": [
+                                                                                    "review-block"
+                                                                                  ]
+                                                                                },
+                                                                                {
+                                                                                  "type": "string",
+                                                                                  "enum": [
+                                                                                    "approval-block"
+                                                                                  ]
                                                                                 }
                                                                               ]
                                                                             },
@@ -18065,6 +19010,18 @@
                                                                                               "type": "string",
                                                                                               "enum": [
                                                                                                 "signature-block"
+                                                                                              ]
+                                                                                            },
+                                                                                            {
+                                                                                              "type": "string",
+                                                                                              "enum": [
+                                                                                                "review-block"
+                                                                                              ]
+                                                                                            },
+                                                                                            {
+                                                                                              "type": "string",
+                                                                                              "enum": [
+                                                                                                "approval-block"
                                                                                               ]
                                                                                             }
                                                                                           ]
@@ -18818,6 +19775,18 @@
                                                   "enum": [
                                                     "signature-block"
                                                   ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "review-block"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "approval-block"
+                                                  ]
                                                 }
                                               ]
                                             },
@@ -19174,6 +20143,18 @@
                                                   "type": "string",
                                                   "enum": [
                                                     "signature-block"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "review-block"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "approval-block"
                                                   ]
                                                 }
                                               ]
@@ -19548,6 +20529,18 @@
                                                                   "enum": [
                                                                     "signature-block"
                                                                   ]
+                                                                },
+                                                                {
+                                                                  "type": "string",
+                                                                  "enum": [
+                                                                    "review-block"
+                                                                  ]
+                                                                },
+                                                                {
+                                                                  "type": "string",
+                                                                  "enum": [
+                                                                    "approval-block"
+                                                                  ]
                                                                 }
                                                               ]
                                                             },
@@ -19921,6 +20914,18 @@
                                                                                   "enum": [
                                                                                     "signature-block"
                                                                                   ]
+                                                                                },
+                                                                                {
+                                                                                  "type": "string",
+                                                                                  "enum": [
+                                                                                    "review-block"
+                                                                                  ]
+                                                                                },
+                                                                                {
+                                                                                  "type": "string",
+                                                                                  "enum": [
+                                                                                    "approval-block"
+                                                                                  ]
                                                                                 }
                                                                               ]
                                                                             },
@@ -20291,6 +21296,18 @@
                                                                                               "type": "string",
                                                                                               "enum": [
                                                                                                 "signature-block"
+                                                                                              ]
+                                                                                            },
+                                                                                            {
+                                                                                              "type": "string",
+                                                                                              "enum": [
+                                                                                                "review-block"
+                                                                                              ]
+                                                                                            },
+                                                                                            {
+                                                                                              "type": "string",
+                                                                                              "enum": [
+                                                                                                "approval-block"
                                                                                               ]
                                                                                             }
                                                                                           ]
@@ -20723,6 +21740,18 @@
                                                 "enum": [
                                                   "signature-block"
                                                 ]
+                                              },
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "review-block"
+                                                ]
+                                              },
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "approval-block"
+                                                ]
                                               }
                                             ]
                                           },
@@ -21079,6 +22108,18 @@
                                                 "type": "string",
                                                 "enum": [
                                                   "signature-block"
+                                                ]
+                                              },
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "review-block"
+                                                ]
+                                              },
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "approval-block"
                                                 ]
                                               }
                                             ]
@@ -21453,6 +22494,18 @@
                                                                 "enum": [
                                                                   "signature-block"
                                                                 ]
+                                                              },
+                                                              {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                  "review-block"
+                                                                ]
+                                                              },
+                                                              {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                  "approval-block"
+                                                                ]
                                                               }
                                                             ]
                                                           },
@@ -21826,6 +22879,18 @@
                                                                                 "enum": [
                                                                                   "signature-block"
                                                                                 ]
+                                                                              },
+                                                                              {
+                                                                                "type": "string",
+                                                                                "enum": [
+                                                                                  "review-block"
+                                                                                ]
+                                                                              },
+                                                                              {
+                                                                                "type": "string",
+                                                                                "enum": [
+                                                                                  "approval-block"
+                                                                                ]
                                                                               }
                                                                             ]
                                                                           },
@@ -22196,6 +23261,18 @@
                                                                                             "type": "string",
                                                                                             "enum": [
                                                                                               "signature-block"
+                                                                                            ]
+                                                                                          },
+                                                                                          {
+                                                                                            "type": "string",
+                                                                                            "enum": [
+                                                                                              "review-block"
+                                                                                            ]
+                                                                                          },
+                                                                                          {
+                                                                                            "type": "string",
+                                                                                            "enum": [
+                                                                                              "approval-block"
                                                                                             ]
                                                                                           }
                                                                                         ]
@@ -22943,6 +24020,18 @@
                                                       "enum": [
                                                         "signature-block"
                                                       ]
+                                                    },
+                                                    {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "review-block"
+                                                      ]
+                                                    },
+                                                    {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "approval-block"
+                                                      ]
                                                     }
                                                   ]
                                                 },
@@ -23299,6 +24388,18 @@
                                                       "type": "string",
                                                       "enum": [
                                                         "signature-block"
+                                                      ]
+                                                    },
+                                                    {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "review-block"
+                                                      ]
+                                                    },
+                                                    {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "approval-block"
                                                       ]
                                                     }
                                                   ]
@@ -23673,6 +24774,18 @@
                                                                       "enum": [
                                                                         "signature-block"
                                                                       ]
+                                                                    },
+                                                                    {
+                                                                      "type": "string",
+                                                                      "enum": [
+                                                                        "review-block"
+                                                                      ]
+                                                                    },
+                                                                    {
+                                                                      "type": "string",
+                                                                      "enum": [
+                                                                        "approval-block"
+                                                                      ]
                                                                     }
                                                                   ]
                                                                 },
@@ -24046,6 +25159,18 @@
                                                                                       "enum": [
                                                                                         "signature-block"
                                                                                       ]
+                                                                                    },
+                                                                                    {
+                                                                                      "type": "string",
+                                                                                      "enum": [
+                                                                                        "review-block"
+                                                                                      ]
+                                                                                    },
+                                                                                    {
+                                                                                      "type": "string",
+                                                                                      "enum": [
+                                                                                        "approval-block"
+                                                                                      ]
                                                                                     }
                                                                                   ]
                                                                                 },
@@ -24417,6 +25542,18 @@
                                                                                                   "enum": [
                                                                                                     "signature-block"
                                                                                                   ]
+                                                                                                },
+                                                                                                {
+                                                                                                  "type": "string",
+                                                                                                  "enum": [
+                                                                                                    "review-block"
+                                                                                                  ]
+                                                                                                },
+                                                                                                {
+                                                                                                  "type": "string",
+                                                                                                  "enum": [
+                                                                                                    "approval-block"
+                                                                                                  ]
                                                                                                 }
                                                                                               ]
                                                                                             },
@@ -24579,6 +25716,18 @@
                                 "type": "string",
                                 "enum": [
                                   "signature-block"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "review-block"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "approval-block"
                                 ]
                               }
                             ]
@@ -24796,6 +25945,18 @@
                                 "enum": [
                                   "signature-block"
                                 ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "review-block"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "approval-block"
+                                ]
                               }
                             ]
                           },
@@ -24963,6 +26124,18 @@
                               "type": "string",
                               "enum": [
                                 "signature-block"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "review-block"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "approval-block"
                               ]
                             }
                           ]
@@ -25167,6 +26340,18 @@
                                 "type": "string",
                                 "enum": [
                                   "signature-block"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "review-block"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "approval-block"
                                 ]
                               }
                             ]
@@ -25693,6 +26878,18 @@
                                 "type": "string",
                                 "enum": [
                                   "signature-block"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "review-block"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "approval-block"
                                 ]
                               }
                             ]
@@ -27017,6 +28214,18 @@
                                 "enum": [
                                   "signature-block"
                                 ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "review-block"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "approval-block"
+                                ]
                               }
                             ]
                           },
@@ -27208,6 +28417,18 @@
                               "type": "string",
                               "enum": [
                                 "signature-block"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "review-block"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "approval-block"
                               ]
                             }
                           ]
@@ -27455,6 +28676,18 @@
                                 "type": "string",
                                 "enum": [
                                   "signature-block"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "review-block"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "approval-block"
                                 ]
                               }
                             ]
@@ -29672,6 +30905,18 @@
                                 "type": "string",
                                 "enum": [
                                   "signature-block"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "review-block"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "approval-block"
                                 ]
                               }
                             ]

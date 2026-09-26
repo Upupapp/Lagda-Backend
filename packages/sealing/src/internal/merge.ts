@@ -48,6 +48,8 @@ const BLOCK_NAME_SIZE = 11;
 /** The share of the box height below the rule, where the name sits. */
 const BLOCK_NAME_ZONE = 0.34;
 const BLOCK_RULE_THICKNESS = 0.75;
+/** An outcome block's label ("REVIEWED 2026-09-26 (UTC)") at most this size. */
+const BLOCK_LABEL_MAX_SIZE = 11;
 
 /** Ink colour for rendered values. Near-black, not pure black, matching print. */
 const INK = rgb(0.07, 0.09, 0.13);
@@ -80,6 +82,10 @@ function textOf(value: MergeableFieldValue): string | null {
   switch (value.kind) {
     case "text":
       return value.text;
+    // The label, in the regular face. The name is checked against the serif
+    // separately — see `assertMergeable`.
+    case "outcomeBlock":
+      return value.label;
     case "checkbox":
       // Drawn as strokes, never as a glyph — see `drawCheckbox`.
       return null;
@@ -228,23 +234,90 @@ async function drawSignatureBlock(
   faces: EmbeddedFaces,
   documentFonts: EmbeddedDocumentFonts,
 ): Promise<void> {
+  const layout = blockLayout(box);
+
+  const representation = value.representation;
+  if (representation.kind === "typed") {
+    drawCentredText(page, representation.text, await faces.face(SIGNATURE_FACE), layout.markBox);
+  } else {
+    await drawRaster(pdf, page, representation, layout.markBox, label);
+  }
+
+  await drawRuleAndName(page, box, layout, value.name, documentFonts);
+}
+
+/**
+ * Outcome over name (081): the recipient's outcome and its date —
+ * `REVIEWED 2026-09-26 (UTC)` — in the regular face, set just above the rule,
+ * and the name beneath it exactly as a signature block prints it. The label
+ * is capped at `BLOCK_LABEL_MAX_SIZE` so a tall box does not blow it up into
+ * a headline, and shrinks to fit a narrow one.
+ */
+async function drawOutcomeBlock(
+  page: PDFPage,
+  value: Extract<MergeableFieldValue, { kind: "outcomeBlock" }>,
+  box: PdfRect,
+  faces: EmbeddedFaces,
+  documentFonts: EmbeddedDocumentFonts,
+): Promise<void> {
+  const layout = blockLayout(box);
+  const { markBox } = layout;
+
+  const font = await faces.face("regular");
+  const size = Math.min(
+    BLOCK_LABEL_MAX_SIZE, fitFontSize(value.label, font, markBox.width, markBox.height));
+  const width = font.widthOfTextAtSize(value.label, size);
+  // On the rule, not floating in the middle of the box: a small descent
+  // allowance above it, and never above the box's own top edge.
+  const top = markBox.y + markBox.height;
+  const y = Math.min(markBox.y + size * 0.25, top - size);
+  page.drawText(value.label, {
+    x: markBox.x + Math.max(0, (markBox.width - width) / 2),
+    y: Math.max(markBox.y, y),
+    size, font, color: INK,
+  });
+
+  await drawRuleAndName(page, box, layout, value.name, documentFonts);
+}
+
+/** Where a block's parts go: the zone above the rule, the rule, the name. */
+interface BlockLayout {
+  readonly nameZone: number;
+  readonly ruleY: number;
+  readonly gap: number;
+  readonly inset: number;
+  /** Above the rule: the mark, or the outcome label. */
+  readonly markBox: PdfRect;
+}
+
+function blockLayout(box: PdfRect): BlockLayout {
   const nameZone = box.height * BLOCK_NAME_ZONE;
   const ruleY = box.y + nameZone;
   const gap = Math.min(3, box.height * 0.04);
   // The mark never runs wider than the rule it sits on.
   const inset = box.width * 0.06;
-  const markBox: PdfRect = {
-    x: box.x + inset, y: ruleY + gap,
-    width: box.width - inset * 2, height: Math.max(0, box.y + box.height - ruleY - gap),
+  return {
+    nameZone, ruleY, gap, inset,
+    markBox: {
+      x: box.x + inset, y: ruleY + gap,
+      width: box.width - inset * 2, height: Math.max(0, box.y + box.height - ruleY - gap),
+    },
   };
+}
 
-  const representation = value.representation;
-  if (representation.kind === "typed") {
-    drawCentredText(page, representation.text, await faces.face(SIGNATURE_FACE), markBox);
-  } else {
-    await drawRaster(pdf, page, representation, markBox, label);
-  }
-
+/**
+ * The rule, and the name centred beneath it in the formal serif. The name is
+ * never stretched: it is drawn at `BLOCK_NAME_SIZE`, reduced only as far as
+ * the box width or height requires.
+ */
+async function drawRuleAndName(
+  page: PDFPage,
+  box: PdfRect,
+  layout: BlockLayout,
+  name: string,
+  documentFonts: EmbeddedDocumentFonts,
+): Promise<void> {
+  const { nameZone, ruleY, gap, inset } = layout;
   page.drawLine({
     start: { x: box.x + inset, y: ruleY },
     end: { x: box.x + box.width - inset, y: ruleY },
@@ -252,10 +325,10 @@ async function drawSignatureBlock(
   });
 
   const font = await documentFonts.face(BLOCK_NAME_FAMILY, false, false);
-  const byWidth = (box.width - inset * 2) / Math.max(font.widthOfTextAtSize(value.name, 1), 0.0001);
+  const byWidth = (box.width - inset * 2) / Math.max(font.widthOfTextAtSize(name, 1), 0.0001);
   const size = Math.max(MIN_FONT_SIZE, Math.min(BLOCK_NAME_SIZE, byWidth, (nameZone - gap) * 0.9));
-  const width = font.widthOfTextAtSize(value.name, size);
-  page.drawText(value.name, {
+  const width = font.widthOfTextAtSize(name, size);
+  page.drawText(name, {
     x: box.x + Math.max(0, (box.width - width) / 2),
     y: ruleY - gap - size,
     size, font, color: INK,
@@ -279,13 +352,19 @@ function assertMergeable(
   assertPlaceable(field.rect, field.pageNumber, pageCount, label);
 
   const value = field.value;
-  if (value.kind === "signatureBlock") {
+  if (value.kind === "signatureBlock" || value.kind === "outcomeBlock") {
     if (value.name.trim().length === 0) {
       throw new UnsupportedRepresentationError(
-        `Field ${label} is a signature block with no name to print.`,
+        `Field ${label} is a ${value.kind === "signatureBlock" ? "signature" : "outcome"} `
+          + "block with no name to print.",
       );
     }
     assertDocumentTextRenderable(value.name, BLOCK_NAME_FAMILY, false, false);
+  }
+  if (value.kind === "outcomeBlock" && value.label.trim().length === 0) {
+    throw new UnsupportedRepresentationError(
+      `Field ${label} is an outcome block with no outcome to print.`,
+    );
   }
   if (value.kind === "signature" || value.kind === "signatureBlock") {
     const representation = value.representation;
@@ -392,6 +471,10 @@ export async function mergeFields(
 
       case "signatureBlock":
         await drawSignatureBlock(pdf, page, value, box, field.fieldId, faces, documentFonts);
+        break;
+
+      case "outcomeBlock":
+        await drawOutcomeBlock(page, value, box, faces, documentFonts);
         break;
     }
   }

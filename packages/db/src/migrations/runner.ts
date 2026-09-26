@@ -88,6 +88,7 @@ import * as m077 from "./077_signing_inbox_recipient_type.js";
 import * as m078 from "./078_workspace_join_tickets.js";
 import * as m079 from "./079_workspace_activity.js";
 import * as m080 from "./080_workspace_activity_append_only.js";
+import * as m081 from "./081_outcome_block_fields.js";
 import * as m082 from "./082_workspace_branding.js";
 
 /**
@@ -181,6 +182,7 @@ const MIGRATIONS: Record<string, Migration> = {
   "078_workspace_join_tickets": m078,
   "079_workspace_activity": m079,
   "080_workspace_activity_append_only": m080,
+  "081_outcome_block_fields": m081,
   "082_workspace_branding": m082,
 };
 

@@ -6,8 +6,9 @@
 // makes sense for that type, so "a checkbox arrived as the string yes" is a
 // schema failure rather than something a validator has to notice.
 //
-// The three SERVER_DERIVED types - `date-signed`, `full-name`, `email` - have
-// NO member at all. A client cannot express a value for them, which is stronger
+// The SERVER_DERIVED types - `date-signed`, `full-name`, `email`, and the
+// outcome blocks `review-block` and `approval-block` (081) - have NO member at
+// all. A client cannot express a value for them, which is stronger
 // than rejecting one (§70, §71, §72).
 
 import { Type, type Static } from "@sinclair/typebox";

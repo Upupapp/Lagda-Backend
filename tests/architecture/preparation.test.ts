@@ -32,6 +32,8 @@ const MIGRATION = path.join(
   PACKAGES, "db", "src", "migrations", "017_document_preparation.ts");
 const SIGNATURE_BLOCK_MIGRATION = path.join(
   PACKAGES, "db", "src", "migrations", "076_signature_block_field.ts");
+const OUTCOME_BLOCK_MIGRATION = path.join(
+  PACKAGES, "db", "src", "migrations", "081_outcome_block_fields.ts");
 const ROUTES = path.join(PACKAGES, "api", "src", "preparation", "preparation-routes.ts");
 const CORE = path.join(PACKAGES, "core", "src", "preparation", "index.ts");
 const CONTRACTS = path.join(PACKAGES, "contracts", "src", "preparation", "index.ts");
@@ -223,15 +225,25 @@ describe("field types are the product's, and all renderable", () => {
 
   it("constrains the type at the database too", () => {
     // 017 closed the original vocabulary; 076 widened all three closed lists
-    // by `signature-block`. Every contract type must be in one of them.
+    // by `signature-block`, and 081 by `review-block` and `approval-block`.
+    // Every contract type must be in one of them.
     const migration = code(MIGRATION);
-    const widening = code(SIGNATURE_BLOCK_MIGRATION);
+    const widenings = [code(SIGNATURE_BLOCK_MIGRATION), code(OUTCOME_BLOCK_MIGRATION)];
     for (const type of PREPARATION_FIELD_TYPES) {
-      expect(migration + widening, `no migration admits ${type}`).toContain(`"${type}"`);
+      expect([migration, ...widenings].join("\n"), `no migration admits ${type}`)
+        .toContain(`"${type}"`);
     }
     expect(migration).toContain("field_type in (");
-    for (const table of ["preparation_fields", "signing_request_fields", "workflow_template_fields"]) {
-      expect(widening, `076 does not widen ${table}`).toContain(`"${table}"`);
+    for (const [index, widening] of widenings.entries()) {
+      for (const table of ["preparation_fields", "signing_request_fields", "workflow_template_fields"]) {
+        expect(widening, `widening ${String(index)} does not widen ${table}`).toContain(`"${table}"`);
+      }
+    }
+    // The latest widening restates the WHOLE vocabulary, so every contract
+    // type appears in it — the live CHECK is exactly that list.
+    const latest = widenings[widenings.length - 1] ?? "";
+    for (const type of PREPARATION_FIELD_TYPES) {
+      expect(latest, `081 omits ${type}`).toContain(`"${type}"`);
     }
   });
 

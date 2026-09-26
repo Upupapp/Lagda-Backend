@@ -206,14 +206,30 @@ export function toMergeableField(record: RenderableFieldRecord): MergeableField 
 }
 
 function toMergeableValue(record: RenderableFieldRecord): MergeableFieldValue {
+  // Reviewed over Name (081): the stored value is the instant the review was
+  // accepted, drawn as the outcome over the reviewer's name.
+  if (record.fieldType === "review-block" && record.value.kind === "instant") {
+    return {
+      kind: "outcomeBlock",
+      label: `REVIEWED ${renderInstant(record.value.at)}`,
+      name: requireRecipientName(record, "Review block"),
+    };
+  }
   const base = toBaseValue(record);
   if (record.fieldType !== "signature-block" || base.kind !== "signature") return base;
+  return {
+    kind: "signatureBlock", representation: base.representation,
+    name: requireRecipientName(record, "Signature block"),
+  };
+}
+
+function requireRecipientName(record: RenderableFieldRecord, what: string): string {
   if (record.recipientName === null) {
     // Every submitted value names its recipient; a block without one is a
     // query that lost its join, and printing no name would hide that.
-    throw new Error(`Signature block ${record.fieldId} has no recipient name.`);
+    throw new Error(`${what} ${record.fieldId} has no recipient name.`);
   }
-  return { kind: "signatureBlock", representation: base.representation, name: record.recipientName };
+  return record.recipientName;
 }
 
 function toBaseValue(record: RenderableFieldRecord): MergeableFieldValue {
@@ -506,6 +522,10 @@ async function buildPlan(
  * document would read as a missing signature. Instead it states the outcome
  * and its date: `APPROVED 2026-09-25 (UTC)` or `SKIPPED 2026-09-25 (UTC)`.
  * A field the approver DID fill keeps its value.
+ *
+ * An `approval-block` (081) is never filled — it stores nothing — and is drawn
+ * as the same outcome set over a rule with the approver's name beneath it,
+ * the name read from the recipient snapshot exactly as a signature block's is.
  */
 async function approverOutcomeLabels(
   uow: WorkspaceUnitOfWork,
@@ -526,16 +546,34 @@ async function approverOutcomeLabels(
 
   const filled = new Set(records.map(record => record.fieldId));
   const fields = await uow.signingRequests.listFields(signingRequestId);
+  // Read only when a block needs a name — most requests hold none.
+  let names: ReadonlyMap<string, string> | null = null;
+  const nameOf = async (recipientId: string, fieldId: string): Promise<string> => {
+    names ??= new Map((await uow.signingRequests.listRecipients(signingRequestId))
+      .map(recipient => [String(recipient.recipientId), recipient.name]));
+    const name = names.get(recipientId);
+    // The assignment's own recipient, missing from the snapshot: a join that
+    // lost a row, and printing no name would hide it.
+    if (name === undefined) throw new Error(`Approval block ${fieldId} has no recipient name.`);
+    return name;
+  };
+
   const labels: MergeableField[] = [];
   for (const field of fields) {
     if (field.recipientId === null || filled.has(String(field.fieldId))) continue;
     const text = labelByRecipient.get(String(field.recipientId));
     if (text === undefined) continue;
+    const value: MergeableFieldValue = field.type === "approval-block"
+      ? {
+        kind: "outcomeBlock", label: text,
+        name: await nameOf(String(field.recipientId), String(field.fieldId)),
+      }
+      : { kind: "text", text };
     labels.push({
       fieldId: String(field.fieldId),
       pageNumber: field.pageNumber,
       rect: { x: field.x, y: field.y, width: field.width, height: field.height },
-      value: { kind: "text", text },
+      value,
     });
   }
   return labels;

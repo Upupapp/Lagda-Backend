@@ -64,6 +64,15 @@ export const PREPARATION_FIELD_TYPES = [
   // A signature with the signer's name printed beneath it. The signer signs;
   // the name is the recipient snapshot, the same value `full-name` draws.
   "signature-block",
+  // Reviewed over Name (081). A REVIEWER's field, and only a reviewer's. The
+  // reviewer supplies nothing: completing the review stamps the instant, and
+  // the sealed page prints "REVIEWED <date> (UTC)" over a rule, the name
+  // beneath it.
+  "review-block",
+  // Approved over Name (081). An APPROVER's field, and only an approver's.
+  // Optional, and never submitted: the sealed page prints the approver's
+  // outcome, "APPROVED <date> (UTC)" or "SKIPPED <date> (UTC)", over a rule.
+  "approval-block",
 ] as const;
 
 export type PreparationFieldType = (typeof PREPARATION_FIELD_TYPES)[number];

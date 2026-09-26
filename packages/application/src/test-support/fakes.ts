@@ -2998,7 +2998,12 @@ function scopedRecipients(
     },
 
     countAssignedFields: (input) => Promise.resolve(
-      assignedCount(input.preparationId, input.recipientId)),
+      input.fieldTypes === undefined
+        ? assignedCount(input.preparationId, input.recipientId)
+        : store.preparationFields.filter(f =>
+          preparationOf(store, f) === input.preparationId
+          && f.recipientId === input.recipientId
+          && input.fieldTypes?.includes(f.type) === true).length),
 
     // Mutates the SAME records the real UPDATE would, and only within the one
     // preparation — so a test cannot pass by moving fields across documents

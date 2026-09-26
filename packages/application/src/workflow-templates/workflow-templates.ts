@@ -29,7 +29,7 @@
 
 import type {
   WorkspaceId, DocumentId, UserId, PreparationFieldType, PreparationRect,
-  Sha256Digest, FlowDocument,
+  Sha256Digest, FlowDocument, RecipientType,
 } from "@lagda/contracts";
 import {
   WORKFLOW_ROUTING_MODES, WORKFLOW_SLOT_AUTH_METHODS, RECIPIENT_TYPES,
@@ -42,7 +42,8 @@ import {
 import { Value } from "@sinclair/typebox/value";
 import {
   validateRect, roundRect, isValidPageNumber, canPlaceFields, validateFieldLabel,
-  effectiveRequired, type WorkspaceCapability,
+  effectiveRequired, reservedHolderFor, mayHoldFieldType, describeReservedHolder,
+  type WorkspaceCapability,
 } from "@lagda/core";
 import {
   assertCapability, type WorkspaceAccessContext, privilegesOf,
@@ -1233,7 +1234,8 @@ async function resolvePageCount(
  *  problems at once — see `WorkflowTemplateFieldValidationError`. */
 function validateTemplateFields(
   inputs: readonly WorkflowTemplateFieldWriteInput[],
-  roleSlotIds: ReadonlySet<string>,
+  /** Each of the template's role slots, to the recipient type it stands for. */
+  roleSlotIds: ReadonlyMap<string, RecipientType>,
   variableKeys: ReadonlySet<string>,
   pageCount: number,
   existingFieldIds: ReadonlySet<string>,
@@ -1264,6 +1266,19 @@ function validateTemplateFields(
     } else if (input.variableKey !== undefined && !variableKeys.has(input.variableKey)) {
       issues.push(`${at}.variableKey: does not name a variable on this template`);
       targetOk = false;
+    }
+
+    // 081. An outcome block belongs to one role, and prints what that role did.
+    // A sender-filled variable did nothing, so it can hold neither; a slot
+    // must stand for the one recipient type the block is reserved for.
+    const holder = reservedHolderFor(input.type);
+    if (targetOk && holder !== null) {
+      const role = input.slotId === undefined ? undefined : roleSlotIds.get(input.slotId);
+      if (role === undefined || !mayHoldFieldType(role, input.type)) {
+        issues.push(`${at}.${input.slotId === undefined ? "variableKey" : "slotId"}: `
+          + describeReservedHolder(input.type));
+        targetOk = false;
+      }
     }
 
     if (!isValidPageNumber(input.pageNumber, pageCount)) {
@@ -1373,7 +1388,7 @@ export async function saveWorkflowTemplateFields(
     }
     const pageCount = await resolvePageCount(uow, template.sourceArtifactId);
 
-    const roleSlotIds = new Set(template.roleSlots.map(slot => slot.slotId));
+    const roleSlotIds = new Map(template.roleSlots.map(slot => [slot.slotId, slot.role]));
     // 064. A field may target a VARIABLE instead of a role, and it is checked
     // against the template's CURRENT declarations in the same transaction that
     // writes the row — the same guarantee `slotId` has, for the same reason.

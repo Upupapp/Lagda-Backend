@@ -198,6 +198,10 @@ export function resolveSubmission(input: {
         problems.push({ code: "field-server-owned", fieldId: field.fieldId });
         continue;
       }
+      // Derived from somewhere other than this act: an `approval-block`'s
+      // outcome is the workflow row's (approved or skipped, 069), so this
+      // submission writes NO row for it.
+      if (policy.valueKind === "none") continue;
       const derived = deriveServerValue(field.type, input);
       if (derived === null) {
         problems.push({ code: "field-value-invalid", fieldId: field.fieldId });
@@ -254,7 +258,10 @@ function deriveServerValue(
   switch (type) {
     // The submission instant itself. One act, one time — never a browser's
     // idea of today, and never a second clock reading (§68, §69, §169).
+    // A review block too: completing the review IS the reviewer's act, and
+    // the block records when (081).
     case "date-signed":
+    case "review-block":
       return { kind: "instant", at: input.acceptedAt };
     // The IMMUTABLE snapshot, not the current contact and not an account.
     case "full-name":
@@ -302,6 +309,8 @@ function resolveOne(
     case "date-signed":
     case "full-name":
     case "email":
+    case "review-block":
+    case "approval-block":
       return null;
   }
 }

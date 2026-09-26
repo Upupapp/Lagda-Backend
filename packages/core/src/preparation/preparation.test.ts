@@ -175,8 +175,8 @@ describe("rotation", () => {
 });
 
 describe("field types", () => {
-  it("has ten, and every one has a render type", () => {
-    expect(PREPARATION_FIELD_TYPES).toHaveLength(10);
+  it("has twelve, and every one has a render type", () => {
+    expect(PREPARATION_FIELD_TYPES).toHaveLength(12);
     for (const type of PREPARATION_FIELD_TYPES) {
       expect(renderTypeFor(type)).toBeTruthy();
     }
@@ -198,10 +198,16 @@ describe("field types", () => {
     expect(renderTypeFor("date-signed")).toBe("date");
   });
 
-  it("renders onto only the six types the sealer knows", () => {
+  it("renders onto only the seven types the sealer knows", () => {
     const rendered = new Set(PREPARATION_FIELD_TYPES.map(renderTypeFor));
-    expect([...rendered].sort())
-      .toEqual(["checkbox", "date", "initials", "signature", "signature-block", "text"]);
+    expect([...rendered].sort()).toEqual([
+      "checkbox", "date", "initials", "outcome-block", "signature", "signature-block", "text",
+    ]);
+  });
+
+  it("draws both outcome blocks with the one outcome-over-name layout (081)", () => {
+    expect(renderTypeFor("review-block")).toBe("outcome-block");
+    expect(renderTypeFor("approval-block")).toBe("outcome-block");
   });
 
   it("excludes the types with no renderer", () => {
@@ -221,6 +227,16 @@ describe("requiredness", () => {
     expect(effectiveRequired("initials", false)).toBe(true);
     expect(isInherentlyRequired("signature")).toBe(true);
     expect(effectiveRequired("signature-block", false)).toBe(true);
+  });
+
+  it("forces a review block to be required, and leaves an approval block optional (081)", () => {
+    // Completing the review is the act the block records; an approver's
+    // fields are optional (069), and one who skips still completes.
+    expect(isInherentlyRequired("review-block")).toBe(true);
+    expect(effectiveRequired("review-block", false)).toBe(true);
+    expect(isInherentlyRequired("approval-block")).toBe(false);
+    expect(effectiveRequired("approval-block", false)).toBe(false);
+    expect(effectiveRequired("approval-block", true)).toBe(true);
   });
 
   it("honours the flag for every other type", () => {

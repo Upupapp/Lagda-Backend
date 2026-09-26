@@ -232,14 +232,14 @@ function harness(): Harness {
 interface FieldSpec {
   readonly id: string;
   readonly type: "signature" | "initials" | "text" | "checkbox"
-    | "date-signed" | "full-name" | "email";
+    | "date-signed" | "full-name" | "email" | "review-block" | "approval-block";
   readonly required?: boolean;
   readonly recipientId?: SigningRequestRecipientId;
 }
 
 function seed(h: Harness, fields: readonly FieldSpec[], over: {
   state?: "sent" | "cancelled";
-  type?: "signer" | "viewer" | "approver";
+  type?: "signer" | "viewer" | "approver" | "reviewer";
 } = {}): void {
   h.store.signingRequests.push({
     signingRequestId: REQUEST, workspaceId: WS,
@@ -416,6 +416,59 @@ describe("server-owned fields", () => {
     // the value is derived regardless.
     await expect(submit(h, token, [
       { fieldId: "f_date", kind: "text", text: "1999-01-01" },
+    ])).rejects.toBeInstanceOf(SigningSubmissionInvalidError);
+    expect(h.store.submissions).toHaveLength(0);
+  });
+});
+
+// ── Outcome blocks (081) ─────────────────────────────────────────────────────
+
+describe("outcome blocks (081)", () => {
+  it("stamps a reviewer's required review block with the acceptance instant", async () => {
+    const h = harness();
+    seed(h, [{ id: "f_review", type: "review-block" }], { type: "reviewer" });
+    const token = await signerSession(h);
+    const result = await submit(h, token, []);
+
+    expect(result.acceptedFieldCount).toBe(1);
+    const value = h.store.submissions[0]?.values[0];
+    expect(value).toMatchObject({
+      fieldId: "f_review", fieldType: "review-block", valueKind: "instant",
+      valueSource: "SERVER_DERIVED", instantValue: AT,
+    });
+    expect(h.store.activations[0]?.state).toBe("signed");
+  });
+
+  it("refuses a reviewer's value for the review block", async () => {
+    const h = harness();
+    seed(h, [{ id: "f_review", type: "review-block" }], { type: "reviewer" });
+    const token = await signerSession(h);
+    const failure = await submit(h, token, [
+      { fieldId: "f_review", kind: "text", text: "REVIEWED 1999-01-01" },
+    ]).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(SigningSubmissionInvalidError);
+    expect((failure as SigningSubmissionInvalidError).problems)
+      .toEqual([{ code: "field-server-owned", fieldId: "f_review" }]);
+    expect(h.store.submissions).toHaveLength(0);
+  });
+
+  it("approves an approver holding an approval block, writing no value for it", async () => {
+    const h = harness();
+    seed(h, [{ id: "f_approval", type: "approval-block", required: false }], { type: "approver" });
+    const token = await signerSession(h);
+    const result = await submit(h, token, []);
+
+    expect(result.acceptedFieldCount).toBe(0);
+    expect(h.store.submissions[0]?.values ?? []).toHaveLength(0);
+    expect(h.store.activations[0]?.state).toBe("approved");
+  });
+
+  it("refuses an approver's value for the approval block", async () => {
+    const h = harness();
+    seed(h, [{ id: "f_approval", type: "approval-block", required: false }], { type: "approver" });
+    const token = await signerSession(h);
+    await expect(submit(h, token, [
+      { fieldId: "f_approval", kind: "checkbox", checked: true },
     ])).rejects.toBeInstanceOf(SigningSubmissionInvalidError);
     expect(h.store.submissions).toHaveLength(0);
   });
