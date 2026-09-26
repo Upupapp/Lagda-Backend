@@ -30,6 +30,8 @@ const PORTS = path.join(PACKAGES, "application", "src", "common", "ports", "prep
 const REPOSITORY = path.join(PACKAGES, "db", "src", "repositories", "preparation.ts");
 const MIGRATION = path.join(
   PACKAGES, "db", "src", "migrations", "017_document_preparation.ts");
+const SIGNATURE_BLOCK_MIGRATION = path.join(
+  PACKAGES, "db", "src", "migrations", "076_signature_block_field.ts");
 const ROUTES = path.join(PACKAGES, "api", "src", "preparation", "preparation-routes.ts");
 const CORE = path.join(PACKAGES, "core", "src", "preparation", "index.ts");
 const CONTRACTS = path.join(PACKAGES, "contracts", "src", "preparation", "index.ts");
@@ -220,11 +222,17 @@ describe("field types are the product's, and all renderable", () => {
   });
 
   it("constrains the type at the database too", () => {
+    // 017 closed the original vocabulary; 076 widened all three closed lists
+    // by `signature-block`. Every contract type must be in one of them.
     const migration = code(MIGRATION);
+    const widening = code(SIGNATURE_BLOCK_MIGRATION);
     for (const type of PREPARATION_FIELD_TYPES) {
-      expect(migration, `migration omits ${type}`).toContain(`"${type}"`);
+      expect(migration + widening, `no migration admits ${type}`).toContain(`"${type}"`);
     }
     expect(migration).toContain("field_type in (");
+    for (const table of ["preparation_fields", "signing_request_fields", "workflow_template_fields"]) {
+      expect(widening, `076 does not widen ${table}`).toContain(`"${table}"`);
+    }
   });
 
   it("uses no generic configuration bag", () => {

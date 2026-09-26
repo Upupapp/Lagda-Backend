@@ -382,7 +382,7 @@ describe("mapping the renderer's failures", () => {
 
 describe("projecting stored values", () => {
   const base = {
-    fieldId: "f1", recipientId: "r1", fieldType: "signature",
+    fieldId: "f1", recipientId: "r1", recipientName: "Ana Reyes", fieldType: "signature",
     pageNumber: 2, x: 0.1, y: 0.2, width: 0.3, height: 0.04,
   };
 
@@ -443,6 +443,34 @@ describe("projecting stored values", () => {
       value: { kind: "instant", at: Date.parse("2026-01-01T00:00:00.000Z") },
     });
     expect((field.value as { text: string }).text).toMatch(/\(UTC\)$/);
+  });
+
+  it("maps a signature-block to the mark with the recipient's name beneath it", () => {
+    const field = toMergeableField({
+      ...base, fieldType: "signature-block",
+      value: { kind: "typed-signature", text: "Ana", styleIndex: 0 },
+    });
+    expect(field.value).toEqual({
+      kind: "signatureBlock",
+      representation: { kind: "typed", text: "Ana", styleIndex: 0 },
+      name: "Ana Reyes",
+    });
+  });
+
+  it("keeps a drawn signature-block as a raster with the name", () => {
+    const bytes = new Uint8Array([1]);
+    const field = toMergeableField({
+      ...base, fieldType: "signature-block",
+      value: { kind: "raster-signature", bytes, mediaType: "image/png", width: 2, height: 1 },
+    });
+    expect(field.value).toMatchObject({ kind: "signatureBlock", name: "Ana Reyes", representation: { kind: "raster" } });
+  });
+
+  it("refuses a signature-block whose recipient name was not joined", () => {
+    expect(() => toMergeableField({
+      ...base, fieldType: "signature-block", recipientName: null,
+      value: { kind: "typed-signature", text: "Ana", styleIndex: 0 },
+    })).toThrow(/no recipient name/);
   });
 
   it("maps a checkbox to a boolean, not a string", () => {

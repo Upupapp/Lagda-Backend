@@ -225,6 +225,15 @@ suite("listRenderableFieldValues (real PostgreSQL)", () => {
       [F_CHECK, F_DRAWN, F_STATIC, F_TEXT, F_TYPED].map(String).sort());
   });
 
+  it("carries the recipient snapshot's name for submitted values, and none for a static one", async () => {
+    // A signature block prints it; the join must use the full request-scoped key.
+    const rows = await read();
+    for (const row of rows.filter(r => r.fieldId !== String(F_STATIC))) {
+      expect(row.recipientName).toBe("Juan");
+    }
+    expect(rows.find(r => r.fieldId === String(F_STATIC))?.recipientName).toBeNull();
+  });
+
   it("carries the request's own frozen geometry", async () => {
     const rows = await read();
     const text = rows.find(row => row.fieldId === String(F_TEXT));

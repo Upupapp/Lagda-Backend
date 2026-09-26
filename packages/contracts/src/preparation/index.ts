@@ -61,6 +61,9 @@ export const PREPARATION_FIELD_TYPES = [
   "email",
   "title",
   "company",
+  // A signature with the signer's name printed beneath it. The signer signs;
+  // the name is the recipient snapshot, the same value `full-name` draws.
+  "signature-block",
 ] as const;
 
 export type PreparationFieldType = (typeof PREPARATION_FIELD_TYPES)[number];

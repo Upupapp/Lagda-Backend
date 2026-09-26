@@ -428,8 +428,14 @@ export function createCompletionInputRepository(
         .leftJoin("signing_representations as r", join => join
           .onRef("r.representation_id", "=", "v.representation_id")
           .onRef("r.workspace_id", "=", "v.workspace_id"))
+        // The immutable recipient snapshot, for the name a signature block
+        // prints. Same three-column key as every other join here.
+        .leftJoin("signing_request_recipients as rr", join => join
+          .onRef("rr.request_recipient_id", "=", "v.request_recipient_id")
+          .onRef("rr.workspace_id", "=", "v.workspace_id")
+          .onRef("rr.signing_request_id", "=", "v.signing_request_id"))
         .select([
-          "v.request_field_id", "v.request_recipient_id", "v.value_kind",
+          "v.request_field_id", "v.request_recipient_id", "v.value_kind", "rr.name as recipient_name",
           "v.text_value", "v.boolean_value", "v.instant_value",
           "f.field_type", "f.page_number", "f.x", "f.y", "f.width", "f.height",
           "r.representation_type", "r.typed_text", "r.typed_style_index",
@@ -444,6 +450,7 @@ export function createCompletionInputRepository(
       const submitted = rows.map(row => ({
         fieldId: row.request_field_id,
         recipientId: row.request_recipient_id,
+        recipientName: row.recipient_name,
         fieldType: row.field_type,
         pageNumber: row.page_number,
         x: row.x, y: row.y, width: row.width, height: row.height,
@@ -474,6 +481,7 @@ export function createCompletionInputRepository(
         return {
           fieldId: row.request_field_id,
           recipientId: null,
+          recipientName: null,
           fieldType: row.field_type,
           pageNumber: row.page_number,
           x: row.x, y: row.y, width: row.width, height: row.height,

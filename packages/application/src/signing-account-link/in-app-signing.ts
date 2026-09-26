@@ -121,6 +121,12 @@ export async function beginInAppSigning(
 
   const entry = await deps.findOpenEntry(userId, input.signingRequestId, input.recipientId, now);
   if (entry === null) throw new InAppSigningUnavailableError();
+  // A viewer is listed under "Others" but is never bound to an account: their
+  // read-only access is the emailed link alone (058).
+  if (entry.recipientType === "viewer") throw new InAppSigningUnavailableError();
+  // A copy recipient's entry has no credential to open a ceremony with.
+  const grantCredentialDigest = entry.grantCredentialDigest;
+  if (grantCredentialDigest === null) throw new InAppSigningUnavailableError();
 
   if (!await deps.verifyPassword(userId, input.password)) throw new InAppSigningPasswordError();
 
@@ -169,7 +175,7 @@ export async function beginInAppSigning(
     userId,
     signingRequestId: entry.signingRequestId,
     recipientId: entry.recipientId,
-    grantCredentialDigest: entry.grantCredentialDigest,
+    grantCredentialDigest,
     signingSessionId,
     createdAt: now,
     expiresAt,
@@ -183,6 +189,8 @@ export interface SigningInboxItemView {
   readonly signingRequestId: string;
   readonly recipientId: string;
   readonly documentTitle: string;
+  /** Null only for a pre-077 entry; read as a signer's. */
+  readonly recipientType: string | null;
   readonly senderName: string | null;
   readonly senderEmail: string | null;
   readonly workspaceName: string | null;
@@ -195,6 +203,7 @@ export function presentInboxItem(entry: UserSigningInboxRecord): SigningInboxIte
     signingRequestId: entry.signingRequestId,
     recipientId: entry.recipientId,
     documentTitle: entry.documentTitle,
+    recipientType: entry.recipientType,
     senderName: entry.senderName,
     senderEmail: entry.senderEmail,
     workspaceName: entry.workspaceName,

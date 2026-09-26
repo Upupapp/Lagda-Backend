@@ -5350,6 +5350,12 @@
                                                         "enum": [
                                                           "company"
                                                         ]
+                                                      },
+                                                      {
+                                                        "type": "string",
+                                                        "enum": [
+                                                          "signature-block"
+                                                        ]
                                                       }
                                                     ]
                                                   },
@@ -5700,6 +5706,12 @@
                                                         "type": "string",
                                                         "enum": [
                                                           "company"
+                                                        ]
+                                                      },
+                                                      {
+                                                        "type": "string",
+                                                        "enum": [
+                                                          "signature-block"
                                                         ]
                                                       }
                                                     ]
@@ -6068,6 +6080,12 @@
                                                                         "enum": [
                                                                           "company"
                                                                         ]
+                                                                      },
+                                                                      {
+                                                                        "type": "string",
+                                                                        "enum": [
+                                                                          "signature-block"
+                                                                        ]
                                                                       }
                                                                     ]
                                                                   },
@@ -6435,6 +6453,12 @@
                                                                                         "enum": [
                                                                                           "company"
                                                                                         ]
+                                                                                      },
+                                                                                      {
+                                                                                        "type": "string",
+                                                                                        "enum": [
+                                                                                          "signature-block"
+                                                                                        ]
                                                                                       }
                                                                                     ]
                                                                                   },
@@ -6799,6 +6823,12 @@
                                                                                                     "type": "string",
                                                                                                     "enum": [
                                                                                                       "company"
+                                                                                                    ]
+                                                                                                  },
+                                                                                                  {
+                                                                                                    "type": "string",
+                                                                                                    "enum": [
+                                                                                                      "signature-block"
                                                                                                     ]
                                                                                                   }
                                                                                                 ]
@@ -7818,6 +7848,12 @@
                                                   "enum": [
                                                     "company"
                                                   ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "signature-block"
+                                                  ]
                                                 }
                                               ]
                                             },
@@ -8168,6 +8204,12 @@
                                                   "type": "string",
                                                   "enum": [
                                                     "company"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "signature-block"
                                                   ]
                                                 }
                                               ]
@@ -8536,6 +8578,12 @@
                                                                   "enum": [
                                                                     "company"
                                                                   ]
+                                                                },
+                                                                {
+                                                                  "type": "string",
+                                                                  "enum": [
+                                                                    "signature-block"
+                                                                  ]
                                                                 }
                                                               ]
                                                             },
@@ -8903,6 +8951,12 @@
                                                                                   "enum": [
                                                                                     "company"
                                                                                   ]
+                                                                                },
+                                                                                {
+                                                                                  "type": "string",
+                                                                                  "enum": [
+                                                                                    "signature-block"
+                                                                                  ]
                                                                                 }
                                                                               ]
                                                                             },
@@ -9267,6 +9321,12 @@
                                                                                               "type": "string",
                                                                                               "enum": [
                                                                                                 "company"
+                                                                                              ]
+                                                                                            },
+                                                                                            {
+                                                                                              "type": "string",
+                                                                                              "enum": [
+                                                                                                "signature-block"
                                                                                               ]
                                                                                             }
                                                                                           ]
@@ -10016,6 +10076,12 @@
                                                   "enum": [
                                                     "company"
                                                   ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "signature-block"
+                                                  ]
                                                 }
                                               ]
                                             },
@@ -10366,6 +10432,12 @@
                                                   "type": "string",
                                                   "enum": [
                                                     "company"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "signature-block"
                                                   ]
                                                 }
                                               ]
@@ -10734,6 +10806,12 @@
                                                                   "enum": [
                                                                     "company"
                                                                   ]
+                                                                },
+                                                                {
+                                                                  "type": "string",
+                                                                  "enum": [
+                                                                    "signature-block"
+                                                                  ]
                                                                 }
                                                               ]
                                                             },
@@ -11101,6 +11179,12 @@
                                                                                   "enum": [
                                                                                     "company"
                                                                                   ]
+                                                                                },
+                                                                                {
+                                                                                  "type": "string",
+                                                                                  "enum": [
+                                                                                    "signature-block"
+                                                                                  ]
                                                                                 }
                                                                               ]
                                                                             },
@@ -11465,6 +11549,12 @@
                                                                                               "type": "string",
                                                                                               "enum": [
                                                                                                 "company"
+                                                                                              ]
+                                                                                            },
+                                                                                            {
+                                                                                              "type": "string",
+                                                                                              "enum": [
+                                                                                                "signature-block"
                                                                                               ]
                                                                                             }
                                                                                           ]
@@ -12491,6 +12581,12 @@
                                                   "enum": [
                                                     "company"
                                                   ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "signature-block"
+                                                  ]
                                                 }
                                               ]
                                             },
@@ -12841,6 +12937,12 @@
                                                   "type": "string",
                                                   "enum": [
                                                     "company"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "signature-block"
                                                   ]
                                                 }
                                               ]
@@ -13209,6 +13311,12 @@
                                                                   "enum": [
                                                                     "company"
                                                                   ]
+                                                                },
+                                                                {
+                                                                  "type": "string",
+                                                                  "enum": [
+                                                                    "signature-block"
+                                                                  ]
                                                                 }
                                                               ]
                                                             },
@@ -13576,6 +13684,12 @@
                                                                                   "enum": [
                                                                                     "company"
                                                                                   ]
+                                                                                },
+                                                                                {
+                                                                                  "type": "string",
+                                                                                  "enum": [
+                                                                                    "signature-block"
+                                                                                  ]
                                                                                 }
                                                                               ]
                                                                             },
@@ -13940,6 +14054,12 @@
                                                                                               "type": "string",
                                                                                               "enum": [
                                                                                                 "company"
+                                                                                              ]
+                                                                                            },
+                                                                                            {
+                                                                                              "type": "string",
+                                                                                              "enum": [
+                                                                                                "signature-block"
                                                                                               ]
                                                                                             }
                                                                                           ]
@@ -14746,6 +14866,12 @@
                                                   "enum": [
                                                     "company"
                                                   ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "signature-block"
+                                                  ]
                                                 }
                                               ]
                                             },
@@ -15096,6 +15222,12 @@
                                                   "type": "string",
                                                   "enum": [
                                                     "company"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "signature-block"
                                                   ]
                                                 }
                                               ]
@@ -15464,6 +15596,12 @@
                                                                   "enum": [
                                                                     "company"
                                                                   ]
+                                                                },
+                                                                {
+                                                                  "type": "string",
+                                                                  "enum": [
+                                                                    "signature-block"
+                                                                  ]
                                                                 }
                                                               ]
                                                             },
@@ -15831,6 +15969,12 @@
                                                                                   "enum": [
                                                                                     "company"
                                                                                   ]
+                                                                                },
+                                                                                {
+                                                                                  "type": "string",
+                                                                                  "enum": [
+                                                                                    "signature-block"
+                                                                                  ]
                                                                                 }
                                                                               ]
                                                                             },
@@ -16195,6 +16339,12 @@
                                                                                               "type": "string",
                                                                                               "enum": [
                                                                                                 "company"
+                                                                                              ]
+                                                                                            },
+                                                                                            {
+                                                                                              "type": "string",
+                                                                                              "enum": [
+                                                                                                "signature-block"
                                                                                               ]
                                                                                             }
                                                                                           ]
@@ -16942,6 +17092,12 @@
                                                   "enum": [
                                                     "company"
                                                   ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "signature-block"
+                                                  ]
                                                 }
                                               ]
                                             },
@@ -17292,6 +17448,12 @@
                                                   "type": "string",
                                                   "enum": [
                                                     "company"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "signature-block"
                                                   ]
                                                 }
                                               ]
@@ -17660,6 +17822,12 @@
                                                                   "enum": [
                                                                     "company"
                                                                   ]
+                                                                },
+                                                                {
+                                                                  "type": "string",
+                                                                  "enum": [
+                                                                    "signature-block"
+                                                                  ]
                                                                 }
                                                               ]
                                                             },
@@ -18027,6 +18195,12 @@
                                                                                   "enum": [
                                                                                     "company"
                                                                                   ]
+                                                                                },
+                                                                                {
+                                                                                  "type": "string",
+                                                                                  "enum": [
+                                                                                    "signature-block"
+                                                                                  ]
                                                                                 }
                                                                               ]
                                                                             },
@@ -18391,6 +18565,12 @@
                                                                                               "type": "string",
                                                                                               "enum": [
                                                                                                 "company"
+                                                                                              ]
+                                                                                            },
+                                                                                            {
+                                                                                              "type": "string",
+                                                                                              "enum": [
+                                                                                                "signature-block"
                                                                                               ]
                                                                                             }
                                                                                           ]
@@ -18817,6 +18997,12 @@
                                                 "enum": [
                                                   "company"
                                                 ]
+                                              },
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "signature-block"
+                                                ]
                                               }
                                             ]
                                           },
@@ -19167,6 +19353,12 @@
                                                 "type": "string",
                                                 "enum": [
                                                   "company"
+                                                ]
+                                              },
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "signature-block"
                                                 ]
                                               }
                                             ]
@@ -19535,6 +19727,12 @@
                                                                 "enum": [
                                                                   "company"
                                                                 ]
+                                                              },
+                                                              {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                  "signature-block"
+                                                                ]
                                                               }
                                                             ]
                                                           },
@@ -19902,6 +20100,12 @@
                                                                                 "enum": [
                                                                                   "company"
                                                                                 ]
+                                                                              },
+                                                                              {
+                                                                                "type": "string",
+                                                                                "enum": [
+                                                                                  "signature-block"
+                                                                                ]
                                                                               }
                                                                             ]
                                                                           },
@@ -20266,6 +20470,12 @@
                                                                                             "type": "string",
                                                                                             "enum": [
                                                                                               "company"
+                                                                                            ]
+                                                                                          },
+                                                                                          {
+                                                                                            "type": "string",
+                                                                                            "enum": [
+                                                                                              "signature-block"
                                                                                             ]
                                                                                           }
                                                                                         ]
@@ -21007,6 +21217,12 @@
                                                       "enum": [
                                                         "company"
                                                       ]
+                                                    },
+                                                    {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "signature-block"
+                                                      ]
                                                     }
                                                   ]
                                                 },
@@ -21357,6 +21573,12 @@
                                                       "type": "string",
                                                       "enum": [
                                                         "company"
+                                                      ]
+                                                    },
+                                                    {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "signature-block"
                                                       ]
                                                     }
                                                   ]
@@ -21725,6 +21947,12 @@
                                                                       "enum": [
                                                                         "company"
                                                                       ]
+                                                                    },
+                                                                    {
+                                                                      "type": "string",
+                                                                      "enum": [
+                                                                        "signature-block"
+                                                                      ]
                                                                     }
                                                                   ]
                                                                 },
@@ -22092,6 +22320,12 @@
                                                                                       "enum": [
                                                                                         "company"
                                                                                       ]
+                                                                                    },
+                                                                                    {
+                                                                                      "type": "string",
+                                                                                      "enum": [
+                                                                                        "signature-block"
+                                                                                      ]
                                                                                     }
                                                                                   ]
                                                                                 },
@@ -22457,6 +22691,12 @@
                                                                                                   "enum": [
                                                                                                     "company"
                                                                                                   ]
+                                                                                                },
+                                                                                                {
+                                                                                                  "type": "string",
+                                                                                                  "enum": [
+                                                                                                    "signature-block"
+                                                                                                  ]
                                                                                                 }
                                                                                               ]
                                                                                             },
@@ -22613,6 +22853,12 @@
                                 "type": "string",
                                 "enum": [
                                   "company"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "signature-block"
                                 ]
                               }
                             ]
@@ -22824,6 +23070,12 @@
                                 "enum": [
                                   "company"
                                 ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "signature-block"
+                                ]
                               }
                             ]
                           },
@@ -22985,6 +23237,12 @@
                               "type": "string",
                               "enum": [
                                 "company"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "signature-block"
                               ]
                             }
                           ]
@@ -23183,6 +23441,12 @@
                                 "type": "string",
                                 "enum": [
                                   "company"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "signature-block"
                                 ]
                               }
                             ]
@@ -23703,6 +23967,12 @@
                                 "type": "string",
                                 "enum": [
                                   "company"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "signature-block"
                                 ]
                               }
                             ]
@@ -25021,6 +25291,12 @@
                                 "enum": [
                                   "company"
                                 ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "signature-block"
+                                ]
                               }
                             ]
                           },
@@ -25206,6 +25482,12 @@
                               "type": "string",
                               "enum": [
                                 "company"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "signature-block"
                               ]
                             }
                           ]
@@ -25447,6 +25729,12 @@
                                 "type": "string",
                                 "enum": [
                                   "company"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "signature-block"
                                 ]
                               }
                             ]
@@ -27658,6 +27946,12 @@
                                 "type": "string",
                                 "enum": [
                                   "company"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "signature-block"
                                 ]
                               }
                             ]
@@ -32589,6 +32883,7 @@
                           "signingRequestId",
                           "recipientId",
                           "documentTitle",
+                          "recipientType",
                           "senderName",
                           "senderEmail",
                           "workspaceName",
@@ -32604,6 +32899,16 @@
                           },
                           "documentTitle": {
                             "type": "string"
+                          },
+                          "recipientType": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "senderName": {
                             "anyOf": [

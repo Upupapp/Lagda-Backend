@@ -23,7 +23,7 @@ const USER = "usr_signer";
 const ENTRY: UserSigningInboxRecord = {
   userId: USER, signingRequestId: "sr_1", recipientId: "srr_1", workspaceId: "ws_sender",
   recipientNormalizedEmail: "signer@example.com", grantCredentialDigest: "a".repeat(64),
-  documentTitle: "Employment Agreement", senderName: "Paul", senderEmail: "paul@example.com",
+  recipientType: "signer", documentTitle: "Employment Agreement", senderName: "Paul", senderEmail: "paul@example.com",
   workspaceName: "Acme", invitedAt: NOW - 1000, expiresAt: NOW + 86_400_000,
   closedAt: null, closedReason: null,
 };
@@ -83,6 +83,26 @@ describe("beginInAppSigning", () => {
       .rejects.toBeInstanceOf(InAppSigningUnavailableError);
     expect(h.intents).toHaveLength(0);
     expect(h.created).toHaveLength(0);
+  });
+
+  it.each([
+    ["a viewer, whose access stays the emailed link", { recipientType: "viewer" }],
+    ["a copy recipient, who holds no credential", { recipientType: "carbon-copy", grantCredentialDigest: null }],
+  ])("refuses %s, writing nothing", async (_label, over) => {
+    const h = harness({
+      findOpenEntry: () => Promise.resolve({ ...ENTRY, ...over }),
+    });
+    await expect(beginInAppSigning(USER, input(), h.deps))
+      .rejects.toBeInstanceOf(InAppSigningUnavailableError);
+    expect(h.intents).toHaveLength(0);
+    expect(h.created).toHaveLength(0);
+  });
+
+  it("still lets an approver continue", async () => {
+    const h = harness({ findOpenEntry: () => Promise.resolve({ ...ENTRY, recipientType: "approver" }) });
+    const begun = await beginInAppSigning(USER, input(), h.deps);
+    expect(begun.code.length).toBeGreaterThan(0);
+    expect(h.intents).toHaveLength(1);
   });
 
   it("refuses a wrong password, writing nothing", async () => {

@@ -34,6 +34,20 @@ import { assertPlaceable, toPdfRect, type PdfRect } from "./geometry.js";
 import {
   embedFaces, SIGNATURE_FACE, type EmbeddedFaces, type FaceName,
 } from "./fonts.js";
+import {
+  assertDocumentTextRenderable, embedDocumentFonts, type EmbeddedDocumentFonts,
+} from "./document-fonts.js";
+
+/**
+ * A signature block's printed name: Times-metric Tinos, the formal face the
+ * authored documents already use, at a fixed 11pt — smaller only when the name
+ * would not otherwise fit the box.
+ */
+const BLOCK_NAME_FAMILY = "times" as const;
+const BLOCK_NAME_SIZE = 11;
+/** The share of the box height below the rule, where the name sits. */
+const BLOCK_NAME_ZONE = 0.34;
+const BLOCK_RULE_THICKNESS = 0.75;
 
 /** Ink colour for rendered values. Near-black, not pure black, matching print. */
 const INK = rgb(0.07, 0.09, 0.13);
@@ -58,7 +72,7 @@ function faceFor(value: MergeableFieldValue): FaceName {
   // `SIGNATURE_FACE` rather than the literal `"italic"`, so the pre-flight
   // coverage check exposed to submission and the face actually drawn here are
   // ONE value. A second literal is how the two silently diverge.
-  return value.kind === "signature" ? SIGNATURE_FACE : "regular";
+  return value.kind === "signature" || value.kind === "signatureBlock" ? SIGNATURE_FACE : "regular";
 }
 
 /** The text a value draws, or `null` when it draws no text at all. */
@@ -70,6 +84,7 @@ function textOf(value: MergeableFieldValue): string | null {
       // Drawn as strokes, never as a glyph — see `drawCheckbox`.
       return null;
     case "signature":
+    case "signatureBlock":
       return value.representation.kind === "typed" ? value.representation.text : null;
   }
 }
@@ -187,6 +202,66 @@ async function drawRaster(
   });
 }
 
+/** Text centred horizontally and vertically in `box`, fitted like `drawText`. */
+function drawCentredText(page: PDFPage, text: string, font: PDFFont, box: PdfRect): void {
+  const size = fitFontSize(text, font, box.width, box.height);
+  const width = font.widthOfTextAtSize(text, size);
+  page.drawText(text, {
+    x: box.x + Math.max(0, (box.width - width) / 2),
+    y: box.y + (box.height - size) / 2,
+    size, font, color: INK,
+  });
+}
+
+/**
+ * Signature over name: the mark centred in the upper part of the box, a thin
+ * rule, and the signer's name centred beneath it — the layout of a signature
+ * line on a formal instrument. The name is never stretched: it is drawn at
+ * `BLOCK_NAME_SIZE`, reduced only as far as the box width or height requires.
+ */
+async function drawSignatureBlock(
+  pdf: PDFDocument,
+  page: PDFPage,
+  value: Extract<MergeableFieldValue, { kind: "signatureBlock" }>,
+  box: PdfRect,
+  label: string,
+  faces: EmbeddedFaces,
+  documentFonts: EmbeddedDocumentFonts,
+): Promise<void> {
+  const nameZone = box.height * BLOCK_NAME_ZONE;
+  const ruleY = box.y + nameZone;
+  const gap = Math.min(3, box.height * 0.04);
+  // The mark never runs wider than the rule it sits on.
+  const inset = box.width * 0.06;
+  const markBox: PdfRect = {
+    x: box.x + inset, y: ruleY + gap,
+    width: box.width - inset * 2, height: Math.max(0, box.y + box.height - ruleY - gap),
+  };
+
+  const representation = value.representation;
+  if (representation.kind === "typed") {
+    drawCentredText(page, representation.text, await faces.face(SIGNATURE_FACE), markBox);
+  } else {
+    await drawRaster(pdf, page, representation, markBox, label);
+  }
+
+  page.drawLine({
+    start: { x: box.x + inset, y: ruleY },
+    end: { x: box.x + box.width - inset, y: ruleY },
+    thickness: BLOCK_RULE_THICKNESS, color: INK,
+  });
+
+  const font = await documentFonts.face(BLOCK_NAME_FAMILY, false, false);
+  const byWidth = (box.width - inset * 2) / Math.max(font.widthOfTextAtSize(value.name, 1), 0.0001);
+  const size = Math.max(MIN_FONT_SIZE, Math.min(BLOCK_NAME_SIZE, byWidth, (nameZone - gap) * 0.9));
+  const width = font.widthOfTextAtSize(value.name, size);
+  page.drawText(value.name, {
+    x: box.x + Math.max(0, (box.width - width) / 2),
+    y: ruleY - gap - size,
+    size, font, color: INK,
+  });
+}
+
 /**
  * Everything that can be decided before a single byte is drawn.
  *
@@ -204,7 +279,15 @@ function assertMergeable(
   assertPlaceable(field.rect, field.pageNumber, pageCount, label);
 
   const value = field.value;
-  if (value.kind === "signature") {
+  if (value.kind === "signatureBlock") {
+    if (value.name.trim().length === 0) {
+      throw new UnsupportedRepresentationError(
+        `Field ${label} is a signature block with no name to print.`,
+      );
+    }
+    assertDocumentTextRenderable(value.name, BLOCK_NAME_FAMILY, false, false);
+  }
+  if (value.kind === "signature" || value.kind === "signatureBlock") {
     const representation = value.representation;
     if (representation.kind === "typed") {
       if (
@@ -255,6 +338,7 @@ export async function mergeFields(
 
   const pages = pdf.getPages();
   const faces = embedFaces(pdf);
+  const documentFonts = embedDocumentFonts(pdf);
 
   const ordered = [...fields].sort(
     (a, b) =>
@@ -304,6 +388,10 @@ export async function mergeFields(
         } else {
           await drawRaster(pdf, page, value.representation, box, field.fieldId);
         }
+        break;
+
+      case "signatureBlock":
+        await drawSignatureBlock(pdf, page, value, box, field.fieldId, faces, documentFonts);
         break;
     }
   }

@@ -41,7 +41,7 @@ export type DocumentBytes = Uint8Array;
  * untested code that looks supported.
  */
 export const SEALABLE_FIELD_TYPES = [
-  "signature", "initials", "text", "date", "checkbox",
+  "signature", "initials", "text", "date", "checkbox", "signature-block",
 ] as const;
 export type SealableFieldType = (typeof SEALABLE_FIELD_TYPES)[number];
 
@@ -324,7 +324,16 @@ export type SignatureRepresentation =
 export type MergeableFieldValue =
   | { readonly kind: "text"; readonly text: string }
   | { readonly kind: "checkbox"; readonly checked: boolean }
-  | { readonly kind: "signature"; readonly representation: SignatureRepresentation };
+  | { readonly kind: "signature"; readonly representation: SignatureRepresentation }
+  /**
+   * The mark with the signer's name set beneath it on a rule. `name` is the
+   * recipient snapshot — what the sender entered, frozen at request creation.
+   */
+  | {
+    readonly kind: "signatureBlock";
+    readonly representation: SignatureRepresentation;
+    readonly name: string;
+  };
 
 export interface MergeableField {
   /**

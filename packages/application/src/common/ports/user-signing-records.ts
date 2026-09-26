@@ -35,8 +35,16 @@ export interface UserSigningInboxRecord extends SenderSnapshot {
   /** For reference only. Never a filter. */
   readonly workspaceId: string;
   readonly recipientNormalizedEmail: string;
-  /** Never projected to a client. See migration 056. */
-  readonly grantCredentialDigest: string;
+  /**
+   * Never projected to a client. See migration 056. Null for a copy
+   * recipient, who is issued no signing credential (077).
+   */
+  readonly grantCredentialDigest: string | null;
+  /**
+   * 077. The recipient's role on the request. Splits the account's list:
+   * signers in "I must sign", every other role in "Others".
+   */
+  readonly recipientType: string | null;
   readonly documentTitle: string;
   readonly invitedAt: number;
   readonly expiresAt: number;

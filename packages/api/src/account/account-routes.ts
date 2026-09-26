@@ -136,6 +136,8 @@ const DocumentsToSignResponseSchema = Type.Object({
     signingRequestId: Type.String(),
     recipientId: Type.String(),
     documentTitle: Type.String(),
+    /** The role on the request; null only for an entry written before 077. */
+    recipientType: Type.Union([Type.String(), Type.Null()]),
     ...SenderFields,
     invitedAt: Type.String({ format: "date-time" }),
     expiresAt: Type.String({ format: "date-time" }),

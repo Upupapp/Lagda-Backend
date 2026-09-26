@@ -175,8 +175,8 @@ describe("rotation", () => {
 });
 
 describe("field types", () => {
-  it("has nine, and every one has a render type", () => {
-    expect(PREPARATION_FIELD_TYPES).toHaveLength(9);
+  it("has ten, and every one has a render type", () => {
+    expect(PREPARATION_FIELD_TYPES).toHaveLength(10);
     for (const type of PREPARATION_FIELD_TYPES) {
       expect(renderTypeFor(type)).toBeTruthy();
     }
@@ -198,10 +198,10 @@ describe("field types", () => {
     expect(renderTypeFor("date-signed")).toBe("date");
   });
 
-  it("renders onto only the five types the sealer knows", () => {
+  it("renders onto only the six types the sealer knows", () => {
     const rendered = new Set(PREPARATION_FIELD_TYPES.map(renderTypeFor));
     expect([...rendered].sort())
-      .toEqual(["checkbox", "date", "initials", "signature", "text"]);
+      .toEqual(["checkbox", "date", "initials", "signature", "signature-block", "text"]);
   });
 
   it("excludes the types with no renderer", () => {
@@ -220,6 +220,7 @@ describe("requiredness", () => {
     expect(effectiveRequired("signature", false)).toBe(true);
     expect(effectiveRequired("initials", false)).toBe(true);
     expect(isInherentlyRequired("signature")).toBe(true);
+    expect(effectiveRequired("signature-block", false)).toBe(true);
   });
 
   it("honours the flag for every other type", () => {

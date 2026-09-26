@@ -534,8 +534,10 @@ export interface UserSigningInboxTable {
   /** For reference only. Never a filter. */
   workspace_id: string;
   recipient_normalized_email: string;
-  /** Never projected to a client. */
-  grant_credential_digest: string;
+  /** Never projected to a client. Null for a copy recipient's entry (077). */
+  grant_credential_digest: ColumnType<string | null, string | null, string | null>;
+  /** 077. The role the entry was written for; null only for a pre-077 row the backfill could not match. */
+  recipient_type: ColumnType<string | null, string | null, string | null>;
   document_title: string;
   sender_name: ColumnType<string | null, string | null, string | null>;
   sender_email: ColumnType<string | null, string | null, string | null>;

@@ -50,6 +50,8 @@ const RENDER_TYPES = {
   email: "text",
   title: "text",
   company: "text",
+  // Its own layout: the mark, a rule, and the name set beneath it.
+  "signature-block": "signature-block",
 } as const satisfies Record<PreparationFieldType, string>;
 
 export type PreparationRenderType = (typeof RENDER_TYPES)[PreparationFieldType];
@@ -71,7 +73,7 @@ export function renderTypeFor(type: PreparationFieldType): PreparationRenderType
  * "is this field mandatory" has one answer.
  */
 export function isInherentlyRequired(type: PreparationFieldType): boolean {
-  return type === "signature" || type === "initials";
+  return type === "signature" || type === "initials" || type === "signature-block";
 }
 
 /** The effective requiredness, after the inherent rule. */

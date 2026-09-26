@@ -83,6 +83,8 @@ import * as m072 from "./072_user_avatars.js";
 import * as m073 from "./073_final_copies.js";
 import * as m074 from "./074_contacts_scope_and_tags.js";
 import * as m075 from "./075_public_verify_access.js";
+import * as m076 from "./076_signature_block_field.js";
+import * as m077 from "./077_signing_inbox_recipient_type.js";
 
 /**
  * Migrations listed explicitly rather than read from disk.
@@ -170,6 +172,8 @@ const MIGRATIONS: Record<string, Migration> = {
   "073_final_copies": m073,
   "074_contacts_scope_and_tags": m074,
   "075_public_verify_access": m075,
+  "076_signature_block_field": m076,
+  "077_signing_inbox_recipient_type": m077,
 };
 
 class ExplicitMigrationProvider implements MigrationProvider {

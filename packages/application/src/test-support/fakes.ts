@@ -2490,6 +2490,8 @@ function completionInputs(
             return [{
               fieldId: String(value.fieldId),
               recipientId: row.recipientId,
+              recipientName: store.signingRequestRecipients.find(candidate =>
+                String(candidate.recipientId) === String(row.recipientId))?.name ?? null,
               fieldType: String(field.type),
               pageNumber: field.pageNumber,
               x: field.x, y: field.y, width: field.width, height: field.height,
@@ -2506,6 +2508,7 @@ function completionInputs(
           .map(field => ({
             fieldId: String(field.fieldId),
             recipientId: null as string | null,
+            recipientName: null as string | null,
             fieldType: String(field.type),
             pageNumber: field.pageNumber,
             x: field.x, y: field.y, width: field.width, height: field.height,

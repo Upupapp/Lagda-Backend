@@ -206,6 +206,17 @@ export function toMergeableField(record: RenderableFieldRecord): MergeableField 
 }
 
 function toMergeableValue(record: RenderableFieldRecord): MergeableFieldValue {
+  const base = toBaseValue(record);
+  if (record.fieldType !== "signature-block" || base.kind !== "signature") return base;
+  if (record.recipientName === null) {
+    // Every submitted value names its recipient; a block without one is a
+    // query that lost its join, and printing no name would hide that.
+    throw new Error(`Signature block ${record.fieldId} has no recipient name.`);
+  }
+  return { kind: "signatureBlock", representation: base.representation, name: record.recipientName };
+}
+
+function toBaseValue(record: RenderableFieldRecord): MergeableFieldValue {
   const value = record.value;
   switch (value.kind) {
     case "text":

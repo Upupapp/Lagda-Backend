@@ -82,6 +82,15 @@ export const CEREMONY_SHORT_TEXT_MAX_LENGTH = 200;
  * would let a new type arrive with no decision made about who owns its value.
  */
 export const FIELD_INPUT_POLICY: Record<PreparationFieldType, FieldInputPolicy> = {
+  "signature-block": {
+    authority: "RECIPIENT_SUPPLIED",
+    valueKind: "signature-representation",
+    maxLength: null,
+    hasRecipientRenderer: true,
+    note: "The signer supplies only the signature, exactly as for `signature`. "
+      + "The name beneath it is `signing_request_recipients.name`, the same "
+      + "frozen snapshot `full-name` draws, read at sealing time.",
+  },
   signature: {
     authority: "RECIPIENT_SUPPLIED",
     valueKind: "signature-representation",

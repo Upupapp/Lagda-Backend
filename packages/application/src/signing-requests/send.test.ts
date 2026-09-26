@@ -420,11 +420,14 @@ describe("routing activation", () => {
     expect(h.store.signingAccessGrants).toHaveLength(2);
     const deliveries = [...h.store.notificationDeliveries.values()];
     expect(deliveries.map(d => d.destination).sort()).toEqual(["signer@x.com", "watcher@x.com"]);
-    // Nothing is asked of a viewer, so nothing is added to a "must sign" list.
-    const inbox = [...fakeSigningInbox.values()].map(e => e.recipientNormalizedEmail);
-    expect(inbox).toContain("signer@x.com");
-    expect(inbox).not.toContain("watcher@x.com");
-    expect(inbox).not.toContain("cc@x.com");
+    // Every role is listed for its account (077), each entry saying which
+    // role it is: the signer under "I must sign", the viewer and the copy
+    // recipient under "Others". The copy recipient's carries no credential.
+    const inbox = new Map([...fakeSigningInbox.values()].map(e => [e.recipientNormalizedEmail, e]));
+    expect(inbox.get("signer@x.com")?.recipientType).toBe("signer");
+    expect(inbox.get("watcher@x.com")?.recipientType).toBe("viewer");
+    expect(inbox.get("cc@x.com")).toMatchObject({ recipientType: "carbon-copy", grantCredentialDigest: null });
+    expect(inbox.get("signer@x.com")?.grantCredentialDigest).not.toBeNull();
   });
 });
 

@@ -431,6 +431,11 @@ export interface RenderableFieldRecord {
    * nobody submitted it, the sender already knew it.
    */
   readonly recipientId: string | null;
+  /**
+   * The recipient snapshot's name, or null for a static-value field. Read
+   * only by a `signature-block`, which prints it beneath the mark.
+   */
+  readonly recipientName: string | null;
   /** The preparation field type, for provenance. The VALUE decides rendering. */
   readonly fieldType: string;
   /** 1-based, matching the product. */

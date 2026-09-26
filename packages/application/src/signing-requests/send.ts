@@ -357,6 +357,17 @@ async function performSend(
     await provisionSigningRecipientAccess(uow, { request, recipient, now }, deps);
   }
 
+  // A copy recipient is issued nothing to act with, but the document is
+  // theirs to know about: listed under "Others" (077), with no credential.
+  for (const recipient of recipients) {
+    if (recipient.type !== "carbon-copy") continue;
+    await openSigningInboxEntry(uow, {
+      request, recipient, now,
+      grantCredentialDigest: null,
+      expiresAt: now + deps.policy.bootstrapLifetimeMs,
+    });
+  }
+
   // ── The transition ────────────────────────────────────────────────────────
   //
   // LAST, and conditional. Everything a recipient needs is already durable, so
@@ -519,15 +530,15 @@ export async function provisionSigningRecipientAccess(
   // for one to claim it. Either way it tells that inbox exactly what the
   // email does, and nobody else.
   //
-  // Not for a viewer: nothing is asked of them, so nothing belongs in a
-  // "must sign" list — their access is the emailed link alone.
-  if (recipient.type !== "viewer") {
-    await openSigningInboxEntry(uow, {
-      request, recipient, now,
-      grantCredentialDigest: credential.digest,
-      expiresAt: now + deps.policy.bootstrapLifetimeMs,
-    });
-  }
+  // Every role, viewers included (077): the entry carries the role, and the
+  // account's list shows signers under "I must sign" and everyone else under
+  // "Others". A viewer's access is still the emailed link alone — the in-app
+  // continue refuses a viewer's entry (`beginInAppSigning`).
+  await openSigningInboxEntry(uow, {
+    request, recipient, now,
+    grantCredentialDigest: credential.digest,
+    expiresAt: now + deps.policy.bootstrapLifetimeMs,
+  });
 
   // The link is NOT built here and NOT stored. `deps.links` exists so the
   // renderer can build it from the sealed token; building it now would mean
@@ -547,7 +558,7 @@ async function openSigningInboxEntry(
     readonly request: SigningRequestRecord;
     readonly recipient: SigningRequestRecipientRecord;
     readonly now: number;
-    readonly grantCredentialDigest: string;
+    readonly grantCredentialDigest: string | null;
     readonly expiresAt: number;
   },
 ): Promise<void> {
@@ -564,6 +575,7 @@ async function openSigningInboxEntry(
     workspaceId: String(request.workspaceId),
     recipientNormalizedEmail: recipient.normalizedEmail,
     grantCredentialDigest: input.grantCredentialDigest,
+    recipientType: recipient.type,
     documentTitle: request.documentTitle,
     senderName: sender?.name ?? null,
     senderEmail: sender?.email ?? null,

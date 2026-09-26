@@ -273,6 +273,7 @@ function resolveOne(
 ): ResolvedValue | null | "invalid" {
   switch (field.type) {
     case "signature":
+    case "signature-block":
       return submitted.kind === "signature"
         ? { kind: "representation", purpose: "signature" } : null;
     case "initials":
