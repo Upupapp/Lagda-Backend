@@ -90,6 +90,21 @@ export interface WorkspaceJoinTicketsTable {
   updated_at: Date;
 }
 
+/** 082. A workspace's branding; the logo columns move together. */
+export interface WorkspaceBrandingTable {
+  workspace_id: string;
+  sender_display_name: string | null;
+  footer_tagline: string | null;
+  primary_color: string | null;
+  logo_media_type: string | null;
+  logo_bytes: Buffer | null;
+  logo_width: number | null;
+  logo_height: number | null;
+  logo_digest: string | null;
+  logo_updated_at: Date | null;
+  updated_at: Timestamptz;
+}
+
 /** 079. One entry in the append-only workspace activity log. */
 export interface WorkspaceActivityEventsTable {
   event_id: string;
@@ -1678,6 +1693,7 @@ export interface Database {
   workspace_join_tickets: WorkspaceJoinTicketsTable;
   workspace_join_requests: WorkspaceJoinRequestsTable;
   workspace_activity_events: WorkspaceActivityEventsTable;
+  workspace_branding: WorkspaceBrandingTable;
   workspace_invitations: WorkspaceInvitationsTable;
   contacts: ContactsTable;
   contact_tags: ContactTagsTable;

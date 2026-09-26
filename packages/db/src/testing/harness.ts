@@ -234,6 +234,8 @@ export async function truncateAll(database: LagdaDatabase): Promise<void> {
   await database.db.deleteFrom("workspace_join_requests").execute();
   // 079. Append-only for the runtime role; the harness owns the table.
   await database.db.deleteFrom("workspace_activity_events").execute();
+  // 082. No runtime DELETE; the harness owns the table.
+  await database.db.deleteFrom("workspace_branding").execute();
   await database.db.deleteFrom("workspace_join_tickets").execute();
 
   await database.db.deleteFrom("document_uploads").execute();

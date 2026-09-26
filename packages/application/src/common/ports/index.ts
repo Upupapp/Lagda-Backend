@@ -507,6 +507,8 @@ export interface WorkspaceUnitOfWork {
   readonly joinRequests: ScopedJoinRequestRepository;
   /** 079. The append-only activity log, written in the change's own transaction. */
   readonly activity: ScopedWorkspaceActivityRepository;
+  /** 082. This workspace's branding row, absent until first saved. */
+  readonly branding: ScopedWorkspaceBrandingRepository;
 }
 
 /**
@@ -834,6 +836,8 @@ export * from "./upload-requests.js";
 export * from "./workspace-join.js";
 export * from "./workspace-activity.js";
 import type { ScopedWorkspaceActivityRepository } from "./workspace-activity.js";
+export * from "./workspace-branding.js";
+import type { ScopedWorkspaceBrandingRepository } from "./workspace-branding.js";
 
 export * from "./signing-access.js";
 

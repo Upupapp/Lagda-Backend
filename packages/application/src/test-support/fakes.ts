@@ -133,6 +133,9 @@ import type {
   NotificationTransportRepository,
 } from "../common/ports/notifications.js";
 import type { WorkspaceActivityRecord, ScopedWorkspaceActivityRepository } from "../common/ports/workspace-activity.js";
+import type {
+  ScopedWorkspaceBrandingRepository, WorkspaceBrandingSettings, WorkspaceLogoImage,
+} from "../common/ports/workspace-branding.js";
 import { createTemplateRegistry } from "../notifications/template-registry.js";
 import { ALL_TEMPLATES } from "../notifications/templates.js";
 
@@ -438,6 +441,7 @@ interface StoreSnapshot {
   readonly joinTickets: JoinTicketRecord[];
   readonly joinRequests: JoinRequestRecord[];
   readonly activity: WorkspaceActivityRecord[];
+  readonly branding: Map<string, FakeBrandingRow>;
   readonly joinTicketDigests: Map<string, string>;
   readonly workflowTemplateFields: WorkflowTemplateFieldRecord[];
   readonly notificationStates: NotificationStateRow[];
@@ -493,6 +497,7 @@ export class InMemoryStore {
   joinTickets: JoinTicketRecord[] = [];
   joinRequests: JoinRequestRecord[] = [];
   activity: WorkspaceActivityRecord[] = [];
+  branding = new Map<string, FakeBrandingRow>();
   /** Digest to ticket id — the fake of 078's credential policy. */
   joinTicketDigests = new Map<string, string>();
   workflowTemplateFields: WorkflowTemplateFieldRecord[] = [];
@@ -552,6 +557,7 @@ export class InMemoryStore {
       joinTickets: [...this.joinTickets],
       joinRequests: [...this.joinRequests],
       activity: [...this.activity],
+      branding: new Map(this.branding),
       joinTicketDigests: new Map(this.joinTicketDigests),
       workflowTemplateFields: [...this.workflowTemplateFields],
       notificationStates: this.notificationStates.map(row => ({ ...row })),
@@ -621,6 +627,7 @@ export class InMemoryStore {
     this.joinTickets = [...snapshot.joinTickets];
     this.joinRequests = [...snapshot.joinRequests];
     this.activity = [...snapshot.activity];
+    this.branding = new Map(snapshot.branding);
     this.joinTicketDigests = new Map(snapshot.joinTicketDigests);
     this.workflowTemplateFields = [...snapshot.workflowTemplateFields];
     this.notificationStates = [...snapshot.notificationStates];
@@ -3222,6 +3229,7 @@ export class FakeTransactionManager implements TransactionManager {
         joinTickets: scopedJoinTickets(this.store, workspaceId),
         joinRequests: scopedJoinRequests(this.store, workspaceId),
         activity: scopedActivity(this.store, workspaceId),
+        branding: scopedBranding(this.store, workspaceId),
         workflowTemplateFields: scopedWorkflowTemplateFields(this.store, workspaceId),
         notificationStates: scopedNotificationStates(this.store, workspaceId),
         organizationUnits: scopedOrganizationUnits(this.store, workspaceId),
@@ -3330,6 +3338,7 @@ export class FakeTransactionManager implements TransactionManager {
             joinTickets: scopedJoinTickets(store, workspaceId),
             joinRequests: scopedJoinRequests(store, workspaceId),
             activity: scopedActivity(store, workspaceId),
+            branding: scopedBranding(store, workspaceId),
             workflowTemplateFields: scopedWorkflowTemplateFields(store, workspaceId),
             notificationStates: scopedNotificationStates(store, workspaceId),
             actorProfiles: { displayNameOf: () => Promise.resolve(null) },
@@ -3951,6 +3960,47 @@ export function fakeNotificationTransport(): NotificationTransportRepository {
   };
 }
 
+
+// ── 082: branding ────────────────────────────────────────────────────────────
+
+interface FakeBrandingRow extends WorkspaceBrandingSettings {
+  readonly logo: (WorkspaceLogoImage & { readonly updatedAt: number }) | null;
+  readonly updatedAt: number;
+}
+
+function scopedBranding(store: InMemoryStore, scope: WorkspaceId): ScopedWorkspaceBrandingRepository {
+  const empty: FakeBrandingRow = { senderDisplayName: null, footerTagline: null, primaryColor: null, logo: null, updatedAt: 0 };
+  const row = () => store.branding.get(scope);
+  return {
+    find: () => {
+      const r = row();
+      return Promise.resolve(r === undefined ? null : {
+        senderDisplayName: r.senderDisplayName, footerTagline: r.footerTagline, primaryColor: r.primaryColor,
+        logo: r.logo === null ? null : { digest: r.logo.digest, width: r.logo.width, height: r.logo.height, updatedAt: r.logo.updatedAt },
+        updatedAt: r.updatedAt,
+      });
+    },
+    findLogo: () => {
+      const logo = row()?.logo ?? null;
+      return Promise.resolve(logo === null ? null : {
+        bytes: logo.bytes, width: logo.width, height: logo.height, digest: logo.digest, mediaType: "image/png" as const,
+      });
+    },
+    saveSettings: (settings, now) => {
+      store.branding.set(scope, { ...(row() ?? empty), ...settings, updatedAt: now });
+      return Promise.resolve();
+    },
+    saveLogo: (logo, now) => {
+      store.branding.set(scope, { ...(row() ?? empty), logo: { ...logo, updatedAt: now }, updatedAt: now });
+      return Promise.resolve();
+    },
+    clearLogo: now => {
+      const r = row();
+      if (r !== undefined) store.branding.set(scope, { ...r, logo: null, updatedAt: now });
+      return Promise.resolve();
+    },
+  };
+}
 
 // ── 079: the activity log ────────────────────────────────────────────────────
 

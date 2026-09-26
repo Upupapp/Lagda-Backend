@@ -97,6 +97,8 @@ export function describeActivity(record: Pick<WorkspaceActivityRecord, "action" 
   switch (record.action) {
     case "workspace.created":
       return { summary: `${who} created the workspace ${q(text(d, "name"))}`, subjectLabel: text(d, "name") || null };
+    case "workspace.branding_changed":
+      return { summary: `${who} updated the workspace branding: ${text(d, "changed", "settings")}`, subjectLabel: null };
     case "workspace.renamed":
       return { summary: `${who} renamed the workspace from ${q(text(d, "from"))} to ${q(text(d, "to"))}`, subjectLabel: text(d, "to") || null };
     case "member.role_changed":

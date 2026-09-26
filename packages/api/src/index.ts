@@ -5,6 +5,7 @@
 // import from binding a port during a test run.
 
 export { registerJoinRoutes, registerJoinPreviewRoute } from "./workspaces/join-routes.js";
+export { registerBrandingRoutes } from "./workspaces/branding-routes.js";
 export { createApp, type CreateAppOptions } from "./app/create-app.js";
 export type {
   AppDependencies, DatabaseHealth, WorkspaceDependencies,

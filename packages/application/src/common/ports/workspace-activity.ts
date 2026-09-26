@@ -17,6 +17,7 @@ export type WorkspaceActivityCategory = (typeof WORKSPACE_ACTIVITY_CATEGORIES)[n
 export const WORKSPACE_ACTIVITY_ACTIONS = Object.freeze({
   "workspace.created": "workspace",
   "workspace.renamed": "workspace",
+  "workspace.branding_changed": "workspace",
   "member.role_changed": "access",
   "member.access_changed": "access",
   "member.removed": "people",
