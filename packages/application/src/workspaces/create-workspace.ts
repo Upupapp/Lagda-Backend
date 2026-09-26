@@ -18,6 +18,7 @@
 // rollback. There is no product requirement for any of them, so the correct
 // amount of machinery is none.
 
+import { recordActivity } from "./activity.js";
 import type { WorkspaceId, IdempotencyKey } from "@lagda/contracts";
 import { assertExactlyOneOwner, validateWorkspaceName, type MembershipView } from "@lagda/core";
 import type {
@@ -136,6 +137,10 @@ export class CreateWorkspace {
         // rollback that was supposed to discard it.
         await uow.workspaces.insert(workspace);
         await uow.memberships.insert(ownerMembership);
+        await recordActivity(uow, {
+          action: "workspace.created", actorUserId: input.actor.userId, occurredAt: createdAt,
+          details: { name },
+        });
         return { statusCode: 201, body: result };
       };
 

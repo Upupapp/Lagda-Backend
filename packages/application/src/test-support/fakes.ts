@@ -132,6 +132,7 @@ import type {
   NotificationIntentIdGenerator, NotificationDeliveryIdGenerator,
   NotificationTransportRepository,
 } from "../common/ports/notifications.js";
+import type { WorkspaceActivityRecord, ScopedWorkspaceActivityRepository } from "../common/ports/workspace-activity.js";
 import { createTemplateRegistry } from "../notifications/template-registry.js";
 import { ALL_TEMPLATES } from "../notifications/templates.js";
 
@@ -436,6 +437,7 @@ interface StoreSnapshot {
   readonly uploadRequests: UploadRequestRecord[];
   readonly joinTickets: JoinTicketRecord[];
   readonly joinRequests: JoinRequestRecord[];
+  readonly activity: WorkspaceActivityRecord[];
   readonly joinTicketDigests: Map<string, string>;
   readonly workflowTemplateFields: WorkflowTemplateFieldRecord[];
   readonly notificationStates: NotificationStateRow[];
@@ -490,6 +492,7 @@ export class InMemoryStore {
   /** 078. */
   joinTickets: JoinTicketRecord[] = [];
   joinRequests: JoinRequestRecord[] = [];
+  activity: WorkspaceActivityRecord[] = [];
   /** Digest to ticket id — the fake of 078's credential policy. */
   joinTicketDigests = new Map<string, string>();
   workflowTemplateFields: WorkflowTemplateFieldRecord[] = [];
@@ -548,6 +551,7 @@ export class InMemoryStore {
       uploadRequests: [...this.uploadRequests],
       joinTickets: [...this.joinTickets],
       joinRequests: [...this.joinRequests],
+      activity: [...this.activity],
       joinTicketDigests: new Map(this.joinTicketDigests),
       workflowTemplateFields: [...this.workflowTemplateFields],
       notificationStates: this.notificationStates.map(row => ({ ...row })),
@@ -616,6 +620,7 @@ export class InMemoryStore {
     this.uploadRequests = [...snapshot.uploadRequests];
     this.joinTickets = [...snapshot.joinTickets];
     this.joinRequests = [...snapshot.joinRequests];
+    this.activity = [...snapshot.activity];
     this.joinTicketDigests = new Map(snapshot.joinTicketDigests);
     this.workflowTemplateFields = [...snapshot.workflowTemplateFields];
     this.notificationStates = [...snapshot.notificationStates];
@@ -3216,6 +3221,7 @@ export class FakeTransactionManager implements TransactionManager {
         uploadRequests: scopedUploadRequests(this.store, workspaceId),
         joinTickets: scopedJoinTickets(this.store, workspaceId),
         joinRequests: scopedJoinRequests(this.store, workspaceId),
+        activity: scopedActivity(this.store, workspaceId),
         workflowTemplateFields: scopedWorkflowTemplateFields(this.store, workspaceId),
         notificationStates: scopedNotificationStates(this.store, workspaceId),
         organizationUnits: scopedOrganizationUnits(this.store, workspaceId),
@@ -3323,6 +3329,7 @@ export class FakeTransactionManager implements TransactionManager {
             uploadRequests: scopedUploadRequests(store, workspaceId),
             joinTickets: scopedJoinTickets(store, workspaceId),
             joinRequests: scopedJoinRequests(store, workspaceId),
+            activity: scopedActivity(store, workspaceId),
             workflowTemplateFields: scopedWorkflowTemplateFields(store, workspaceId),
             notificationStates: scopedNotificationStates(store, workspaceId),
             actorProfiles: { displayNameOf: () => Promise.resolve(null) },
@@ -3944,6 +3951,28 @@ export function fakeNotificationTransport(): NotificationTransportRepository {
   };
 }
 
+
+// ── 079: the activity log ────────────────────────────────────────────────────
+
+let activitySequence = 0;
+function scopedActivity(store: InMemoryStore, scope: WorkspaceId): ScopedWorkspaceActivityRepository {
+  return {
+    append: entry => {
+      store.activity.push({ ...entry, eventId: `act_${String(++activitySequence).padStart(6, "0")}`, workspaceId: scope });
+      return Promise.resolve();
+    },
+    list: input => {
+      const newestFirst = store.activity
+        .filter(a => a.workspaceId === scope)
+        .filter(a => input.actions === null || input.actions.includes(a.action))
+        .filter(a => input.before === null
+          || a.occurredAt < input.before.occurredAt
+          || (a.occurredAt === input.before.occurredAt && a.eventId < input.before.eventId))
+        .sort((a, b) => b.occurredAt - a.occurredAt || (a.eventId < b.eventId ? 1 : -1));
+      return Promise.resolve(newestFirst.slice(0, input.limit));
+    },
+  };
+}
 
 // ── 078: join tickets and requests ───────────────────────────────────────────
 

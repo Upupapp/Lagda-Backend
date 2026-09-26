@@ -9,6 +9,7 @@
 // approves it — giving the person the role "member" (shown as New Comer),
 // optionally a typed role title and the two privileges — or declines it.
 
+import { recordActivity } from "./activity.js";
 import type { UserId, WorkspaceId, WorkspaceMemberId } from "@lagda/contracts";
 import { hasCapability, type WorkspaceCapability } from "@lagda/core";
 import type { AuthenticatedActor } from "../common/ports/session.js";
@@ -216,6 +217,9 @@ export async function createJoinTicket(
       createdByUserId: actor.userId, createdAt: now, updatedAt: now,
     };
     await uow.joinTickets.insert(ticket);
+    await recordActivity(uow, {
+      action: "join_link.created", actorUserId: actor.userId, occurredAt: now, details: { label },
+    });
     return toTicketView(ticket, deps.secrets, []);
   });
 }
@@ -285,6 +289,15 @@ export async function sendJoinTicket(
       }, uow);
     }
 
+    await recordActivity(uow, {
+      action: "join_link.sent", actorUserId: actor.userId, occurredAt: now,
+      details: {
+        label: existing.label,
+        again: existing.state === "withdrawn",
+        emailedTo: input.email ? existing.recipientEmail : null,
+      },
+    });
+
     const ticket = await uow.joinTickets.find(existing.ticketId);
     if (ticket === null) throw new ResourceNotFoundError("Join link");
     return toTicketView(ticket, deps.secrets, []);
@@ -304,6 +317,10 @@ export async function withdrawJoinTicket(
     if (!withdrawn) throw new ResourceConflictError("This join link can't be withdrawn.");
     const ticket = await uow.joinTickets.find(ticketId as JoinTicketId);
     if (ticket === null) throw new ResourceNotFoundError("Join link");
+    await recordActivity(uow, {
+      action: "join_link.withdrawn", actorUserId: actor.userId, occurredAt: deps.clock.now(),
+      details: { label: ticket.label },
+    });
     return toTicketView(ticket, deps.secrets, []);
   });
 }
@@ -399,6 +416,11 @@ export async function submitJoinRequest(
         requestedRole: "member", state: "pending", decidedByUserId: null, decidedAt: null, createdAt: now,
       };
       await uow.joinRequests.insert(request);
+      // Not a member yet: the name is the one they typed on the join page.
+      await recordActivity(uow, {
+        action: "join_request.submitted", actorUserId: actor.userId, actorName: fullName, occurredAt: now,
+        details: { email: account.email, label: ticket.label },
+      });
       const workspaceName = ticket.workspaceName ?? (await uow.workspaces.find())?.name ?? "LAGDA";
       await notifyAdminsOfRequest(uow, deps, request, workspaceName);
       return { requestId: request.requestId, workspaceName, state: "pending" };
@@ -516,6 +538,14 @@ export async function approveJoinRequest(
         role: request.requestedRole, createdAt: now, ...access,
       });
     }
+    await recordActivity(uow, {
+      action: "join_request.approved", actorUserId: actor.userId, occurredAt: now,
+      details: {
+        targetName: request.fullName, targetEmail: request.email, role: request.requestedRole,
+        roleTitle: access.roleTitle, canRequestDocuments: access.canRequestDocuments,
+        canAssignSigners: access.canAssignSigners,
+      },
+    });
     await notifyDecision(uow, deps, request, true);
     return { memberId };
   });
@@ -533,6 +563,10 @@ export async function declineJoinRequest(
       requestId: request.requestId, state: "declined", decidedByUserId: actor.userId, now: deps.clock.now(),
     });
     if (!decided) throw new ResourceConflictError("This request was already decided.");
+    await recordActivity(uow, {
+      action: "join_request.declined", actorUserId: actor.userId, occurredAt: deps.clock.now(),
+      details: { targetName: request.fullName, targetEmail: request.email },
+    });
     await notifyDecision(uow, deps, request, false);
     return { declined: true };
   });
@@ -548,6 +582,15 @@ export async function updateMemberAccess(
     await authorize(uow, actor, "membership.role.change");
     const updated = await uow.memberships.updateAccess({ memberId: memberId as WorkspaceMemberId, ...access });
     if (!updated) throw new ResourceNotFoundError("Workspace member");
+    const target = (await uow.memberships.listWithAccounts()).find(m => m.memberId === memberId);
+    await recordActivity(uow, {
+      action: "member.access_changed", actorUserId: actor.userId,
+      details: {
+        targetName: target?.displayName ?? null, targetEmail: target?.email ?? null,
+        roleTitle: access.roleTitle, canRequestDocuments: access.canRequestDocuments,
+        canAssignSigners: access.canAssignSigners,
+      },
+    });
     return { updated: true };
   });
 }

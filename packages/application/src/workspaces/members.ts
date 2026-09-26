@@ -24,6 +24,7 @@
 // One transaction. The authority the write commits under is the authority the
 // database held when it committed.
 
+import { recordActivity } from "./activity.js";
 import type {
   UserId, WorkspaceId, WorkspaceMemberId, WorkspaceRole,
 } from "@lagda/contracts";
@@ -245,10 +246,12 @@ export async function changeWorkspaceMemberRole(
     // fresh state rather than being told what it lost to.
     if (!applied) throw new ResourceNotFoundError("Member");
 
-    return {
-      outcome: "changed" as const,
-      member: await summarize(uow, target.memberId, actor.userId),
-    };
+    const member = await summarize(uow, target.memberId, actor.userId);
+    await recordActivity(uow, {
+      action: "member.role_changed", actorUserId: actor.userId, occurredAt: deps.clock.now(),
+      details: { targetName: member.displayName, targetEmail: member.email, fromRole: target.role, toRole: newRole },
+    });
+    return { outcome: "changed" as const, member };
   });
 }
 
@@ -313,6 +316,9 @@ export async function removeWorkspaceMember(
       throw new LastOwnerViolationError();
     }
 
+    // Read BEFORE the row goes, so the log can name who was removed.
+    const removedMember = (await uow.memberships.listWithAccounts())
+      .find(m => m.memberId === target.memberId);
     const removed = await uow.memberships.removeIfRole({
       memberId: target.memberId,
       expectedRole: target.role,
@@ -320,6 +326,14 @@ export async function removeWorkspaceMember(
     // Lost a race with a concurrent role change or removal.
     if (!removed) throw new ResourceNotFoundError("Member");
 
+    await recordActivity(uow, {
+      action: "member.removed", actorUserId: actor.userId, occurredAt: deps.clock.now(),
+      details: {
+        targetName: removedMember?.displayName ?? null,
+        targetEmail: removedMember?.email ?? null,
+        role: target.role,
+      },
+    });
     return { removed: true as const, userId: target.userId };
   });
 }

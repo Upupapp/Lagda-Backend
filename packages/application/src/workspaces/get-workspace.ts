@@ -5,9 +5,10 @@
 // authorization, and an endpoint that answers differently for "real workspace,
 // not yours" than for "no such workspace" is an enumeration oracle (§48–§50).
 
+import { recordActivity } from "./activity.js";
 import type { UserId, WorkspaceId, WorkspaceRole } from "@lagda/contracts";
 import { validateWorkspaceName } from "@lagda/core";
-import type { TransactionManager } from "../common/ports/index.js";
+import type { Clock, TransactionManager } from "../common/ports/index.js";
 import { ResourceNotFoundError } from "../common/errors/index.js";
 import {
   requireWorkspaceAccess, requireCapability,
@@ -37,6 +38,8 @@ export interface WorkspaceDetail {
 
 export interface GetWorkspaceDependencies extends WorkspaceAccessDependencies {
   readonly transactions: TransactionManager;
+  /** 079. When the activity log timestamps a rename; the wall clock when absent. */
+  readonly clock?: Clock;
 }
 
 export async function getWorkspace(
@@ -112,8 +115,15 @@ export async function updateWorkspace(
   const updated = await deps.transactions.runForWorkspace(
     access.workspaceId,
     async uow => {
+      const before = await uow.workspaces.find();
       const applied = await uow.workspaces.updateName(validated.value);
       if (!applied) return null;
+      if (before !== null && before.name !== validated.value) {
+        await recordActivity(uow, {
+          action: "workspace.renamed", actorUserId: userId, occurredAt: deps.clock?.now() ?? Date.now(),
+          details: { from: before.name, to: validated.value },
+        });
+      }
       return uow.workspaces.find();
     },
   );

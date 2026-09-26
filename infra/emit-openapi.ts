@@ -127,6 +127,13 @@ const app = await createApp({
       // optional group left out here registers no routes, and the emitted
       // document silently loses them.
       uploadRequests: () => stub("workspaces.uploadRequests"),
+      // 078. Join links and join requests — missing from the emitted document
+      // when they shipped, for the reason recorded above.
+      joins: {
+        tickets: () => stub("workspaces.joins.tickets"),
+        requests: () => stub("workspaces.joins.requests"),
+        linkUrl: () => stub("workspaces.joins.linkUrl"),
+      },
     },
   },
 });

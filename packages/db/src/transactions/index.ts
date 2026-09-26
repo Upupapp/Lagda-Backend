@@ -32,6 +32,7 @@ import type {
 import {
   createScopedJoinTicketRepository, createScopedJoinRequestRepository, createJoinTicketCredentialLookup,
 } from "../repositories/workspace-join.js";
+import { createScopedWorkspaceActivityRepository } from "../repositories/workspace-activity.js";
 import type { Database } from "../schema/index.js";
 import {
   createScopedWorkspaceRepository, createScopedMembershipRepository,
@@ -175,6 +176,7 @@ function buildUnitOfWork(
     uploadRequests: createScopedUploadRequestRepository(trx, workspaceId),
     joinTickets: createScopedJoinTicketRepository(trx, workspaceId),
     joinRequests: createScopedJoinRequestRepository(trx, workspaceId),
+    activity: createScopedWorkspaceActivityRepository(trx, workspaceId),
     workflowTemplateFields: createScopedWorkflowTemplateFieldRepository(trx, workspaceId),
     // 071. The reader's own read/dismissed state on the document feed.
     notificationStates: createScopedDocumentNotificationStateRepository(trx, workspaceId),

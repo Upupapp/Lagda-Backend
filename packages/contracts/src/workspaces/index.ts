@@ -147,6 +147,7 @@ export const WORKSPACE_CAPABILITY_NAMES = [
   "invitation.create",
   "invitation.resend",
   "invitation.revoke",
+  "activity.view",
   "contact.view",
   "contact.create",
   "contact.update",

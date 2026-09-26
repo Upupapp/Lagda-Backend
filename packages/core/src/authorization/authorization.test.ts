@@ -72,6 +72,8 @@ const ADMIN_CAPABILITIES: readonly WorkspaceCapability[] = [
   "workspace.view", "workspace.update",
   "membership.view", "membership.role.change", "membership.remove",
   "invitation.view", "invitation.create", "invitation.resend", "invitation.revoke",
+  // 079. The activity log, read by those who make the changes it records.
+  "activity.view",
 ];
 
 /**
@@ -144,7 +146,7 @@ const EXPECTED: Readonly<Record<WorkspaceRole, readonly WorkspaceCapability[]>> 
   // `prepare_documents`. A reviewer reads documents for a living and creates
   // none; an auditor cannot review what happened without reading it.
   reviewer: ["workspace.view", ...DOCUMENT_READ],
-  auditor: ["workspace.view", ...DOCUMENT_READ],
+  auditor: ["workspace.view", ...DOCUMENT_READ, "activity.view"],
 };
 
 describe("the role model", () => {
@@ -181,7 +183,7 @@ describe("role to capability matrix", () => {
     // EXPECTED table not updated, this fails rather than the matrix silently
     // testing fewer combinations.
     expect(Object.keys(EXPECTED).sort()).toEqual([...WORKSPACE_ROLES].sort());
-    expect(WORKSPACE_CAPABILITIES.length).toBe(32);
+    expect(WORKSPACE_CAPABILITIES.length).toBe(33);
   });
 });
 

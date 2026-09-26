@@ -11,6 +11,7 @@
 // access. A forwarded link is useless to whoever receives it, and that is the
 // single most valuable property in the design.
 
+import { recordActivity } from "./activity.js";
 import { fileInvitationJoinRequest, type JoinNotifyDependencies } from "./workspace-join.js";
 import type {
   UserId, WorkspaceId, WorkspaceInvitationId, InvitableWorkspaceRole,
@@ -308,6 +309,11 @@ export async function createWorkspaceInvitation(
         expiresAt,
       });
 
+      await recordActivity(uow, {
+        action: "invitation.sent", actorUserId: input.actor.userId, occurredAt: now,
+        details: { targetEmail: normalized.display, role: input.role },
+      });
+
       const summary: InvitationSummary = {
         invitationId, email: normalized.display, role: input.role,
         state: "pending", createdAt: now, expiresAt,
@@ -488,6 +494,11 @@ export async function resendWorkspaceInvitation(
         expiresAt,
       });
 
+      await recordActivity(uow, {
+        action: "invitation.resent", actorUserId: input.actor.userId, occurredAt: now,
+        details: { targetEmail: existing.inviteeEmail, role: existing.requestedRole },
+      });
+
       const summary: InvitationSummary = {
         invitationId: existing.invitationId,
         email: existing.inviteeEmail,
@@ -541,7 +552,13 @@ export async function revokeWorkspaceInvitation(
     if (existing === null) throw new ResourceNotFoundError("Invitation");
 
     const applied = await uow.invitations.revokeIfLive({ invitationId, now });
-    if (applied) return { outcome: "revoked" as const };
+    if (applied) {
+      await recordActivity(uow, {
+        action: "invitation.revoked", actorUserId: actor.userId, occurredAt: now,
+        details: { targetEmail: existing.inviteeEmail },
+      });
+      return { outcome: "revoked" as const };
+    }
 
     // Not an error. Revoking an already-accepted invitation cannot undo the
     // membership — removing a member is a different operation that does not
@@ -716,13 +733,19 @@ export async function acceptWorkspaceInvitation(
 
       // 078: no direct join. The invitation is consumed and a pending request
       // carrying the invited role goes to the owners and administrators.
+      const fullName = await ws.actorProfiles.displayNameOf(actor.userId) ?? callerEmail;
       await fileInvitationJoinRequest(ws, deps.joinRequests, {
         invitationId: String(invitation.invitationId),
         userId: actor.userId,
-        fullName: await ws.actorProfiles.displayNameOf(actor.userId) ?? callerEmail,
+        fullName,
         email: callerEmail,
         requestedRole: invitation.requestedRole,
         workspaceName: workspace.name,
+      });
+      // The invitee is not a member, so their name comes from the account.
+      await recordActivity(ws, {
+        action: "invitation.accepted", actorUserId: actor.userId, actorName: fullName, occurredAt: now,
+        details: { email: callerEmail, role: invitation.requestedRole },
       });
 
       return {
@@ -773,8 +796,17 @@ export async function declineWorkspaceInvitation(
       throw new InvitationAccountMismatchError();
     }
 
-    const applied = await uow.enterWorkspace(invitation.workspaceId, ws =>
-      ws.invitations.declineIfLive({ invitationId: invitation.invitationId, now }));
+    const applied = await uow.enterWorkspace(invitation.workspaceId, async ws => {
+      const declined = await ws.invitations.declineIfLive({ invitationId: invitation.invitationId, now });
+      if (declined) {
+        await recordActivity(ws, {
+          action: "invitation.declined", actorUserId: actor.userId, occurredAt: now,
+          actorName: await ws.actorProfiles.displayNameOf(actor.userId) ?? invitation.inviteeEmail,
+          details: { email: invitation.inviteeEmail },
+        });
+      }
+      return declined;
+    });
     if (!applied) throw new InvitationInvalidError();
 
     return { declined: true as const };

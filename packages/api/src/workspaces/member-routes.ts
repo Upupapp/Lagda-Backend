@@ -15,6 +15,9 @@
 // That is BACKEND-27's central rule, and it is checkable: a static audit greps
 // this directory for `=== "owner"` and finds nothing.
 
+import {
+  listWorkspaceActivity, ACTIVITY_PAGE_MAX, ACTIVITY_PAGE_DEFAULT, WORKSPACE_ACTIVITY_CATEGORIES,
+} from "@lagda/application";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { Type, type Static } from "@sinclair/typebox";
 import {
@@ -103,9 +106,37 @@ export const WorkspaceAccessResponseSchema = Type.Object({
   membershipId: Type.String(),
   role: WorkspaceRoleSchema,
   capabilities: Type.Array(WorkspaceCapabilitySchema),
+  /** 079. The caller's OWN typed title (null: the role's name, New Comer for member). */
+  roleTitle: Type.Union([Type.String(), Type.Null()]),
 }, { additionalProperties: false });
 
 export type ChangeMemberRoleRequest = Static<typeof ChangeMemberRoleRequestSchema>;
+
+// ── 079: the activity log ───────────────────────────────────────────────────
+
+const ActivityCategorySchema = Type.Union(
+  WORKSPACE_ACTIVITY_CATEGORIES.map(category => Type.Literal(category)));
+
+const ActivityQuerySchema = Type.Object({
+  limit: Type.Optional(Type.Integer({ minimum: 1, maximum: ACTIVITY_PAGE_MAX })),
+  before: Type.Optional(Type.String({ minLength: 1, maxLength: 200 })),
+  category: Type.Optional(ActivityCategorySchema),
+}, { additionalProperties: false });
+
+export const WorkspaceActivityEventSchema = Type.Object({
+  eventId: Type.String(),
+  occurredAt: Type.Integer(),
+  category: ActivityCategorySchema,
+  action: Type.String(),
+  actorName: Type.Union([Type.String(), Type.Null()]),
+  summary: Type.String(),
+  subjectLabel: Type.Union([Type.String(), Type.Null()]),
+}, { title: "WorkspaceActivityEvent", additionalProperties: false });
+
+const ActivityPageSchema = Type.Object({
+  events: Type.Array(WorkspaceActivityEventSchema),
+  nextCursor: Type.Union([Type.String(), Type.Null()]),
+}, { additionalProperties: false });
 
 // ── Options ─────────────────────────────────────────────────────────────────
 
@@ -191,7 +222,34 @@ export function registerMemberRoutes(
       membershipId: access.membershipId,
       role: access.role,
       capabilities: accessCapabilities(access),
+      roleTitle: access.roleTitle ?? null,
     });
+  });
+
+  // ── 079: the activity log ───────────────────────────────────────────────
+  //
+  // Owners, administrators and auditors (`activity.view`); everyone else gets
+  // the same hidden 404 as any workspace read they may not make.
+  app.get("/workspaces/:workspaceId/activity", {
+    schema: {
+      params: WorkspaceParamsSchema,
+      querystring: ActivityQuerySchema,
+      response: { 200: ActivityPageSchema },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await options.authenticatedUser(request);
+    if (actor === null) return unauthenticated(reply);
+
+    const { workspaceId } = request.params as Static<typeof WorkspaceParamsSchema>;
+    const query = request.query as Static<typeof ActivityQuerySchema>;
+    const page = await listWorkspaceActivity(
+      { actorType: "user", userId: actor.userId, sessionId: actor.sessionId },
+      workspaceId as WorkspaceId,
+      { limit: query.limit ?? ACTIVITY_PAGE_DEFAULT, cursor: query.before ?? null, category: query.category ?? null },
+      options.memberDependencies(),
+    );
+    return reply.status(200).send(page);
   });
 
   // ── List members ────────────────────────────────────────────────────────

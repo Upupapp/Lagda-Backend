@@ -13,6 +13,7 @@
 // to, which office a document is filed under, how a report groups. Authorization
 // stays with roles and capabilities, where it can be reviewed in one place.
 
+import { recordActivity, memberNameOf } from "../workspaces/activity.js";
 import {
   checkUnitPlacement, isOrganizationUnitKind, UNIT_NAME_MAX_LENGTH,
   type OrganizationUnitKind, type UnitNode,
@@ -187,6 +188,10 @@ export async function createOrganizationUnit(
       archivedAt: null,
     };
     await uow.organizationUnits.insert(unit);
+    await recordActivity(uow, {
+      action: "team.created", actorUserId: input.actor.userId, occurredAt: unit.createdAt,
+      details: { teamName: name, kind },
+    });
     return unit;
   });
 }
@@ -237,6 +242,13 @@ export async function updateOrganizationUnit(
     });
     if (!applied) throw new ResourceNotFoundError("OrganizationUnit");
 
+    // A move alone is not a rename; only a changed name is recorded.
+    if (current.name !== name) {
+      await recordActivity(uow, {
+        action: "team.renamed", actorUserId: input.actor.userId, occurredAt: deps.clock.now(),
+        details: { teamName: name, from: current.name },
+      });
+    }
     return { ...current, name, parentUnitId };
   });
 }
@@ -276,6 +288,10 @@ export async function archiveOrganizationUnit(
       unitId, now: deps.clock.now(),
     });
     if (!applied) throw new ResourceNotFoundError("OrganizationUnit");
+    await recordActivity(uow, {
+      action: "team.archived", actorUserId: input.actor.userId, occurredAt: deps.clock.now(),
+      details: { teamName: existing.find(unit => unit.unitId === unitId)?.name ?? null },
+    });
   });
 }
 
@@ -331,6 +347,8 @@ export async function addUnitMember(
     if (unit === null || unit.archivedAt !== null) {
       throw new ResourceNotFoundError("OrganizationUnit");
     }
+    const alreadyIn = (await uow.organizationUnits.listMembers(unit.unitId))
+      .some(member => member.userId === input.userId);
     await uow.organizationUnits.addMember({
       unitId: unit.unitId,
       userId: input.userId as UserId,
@@ -340,6 +358,13 @@ export async function addUnitMember(
       // holding `undefined` — a different thing the port does not accept.
       ...(title === undefined ? {} : { title }),
     });
+    // Adding somebody twice is a no-op, so it is not recorded twice either.
+    if (!alreadyIn) {
+      await recordActivity(uow, {
+        action: "team.member_added", actorUserId: input.actor.userId, occurredAt: deps.clock.now(),
+        details: { teamName: unit.name, targetName: await memberNameOf(uow, input.userId as UserId) },
+      });
+    }
   });
 }
 
@@ -374,6 +399,14 @@ export async function setUnitMemberTitle(
       title,
     });
     if (!applied) throw new ResourceNotFoundError("OrganizationUnitMember");
+    const unit = await uow.organizationUnits.findById(input.unitId as OrganizationUnitId);
+    await recordActivity(uow, {
+      action: "team.member_updated", actorUserId: input.actor.userId, occurredAt: deps.clock.now(),
+      details: {
+        teamName: unit?.name ?? null, title,
+        targetName: await memberNameOf(uow, input.userId as UserId),
+      },
+    });
   });
 }
 
@@ -437,10 +470,17 @@ export async function removeUnitMember(
   await deps.transactions.runForWorkspace(input.workspaceId, async uow => {
     // Not an error when they are already out. That is the state the caller
     // asked for, and reporting it would make a retry look like a failure.
-    await uow.organizationUnits.removeMember({
+    const removed = await uow.organizationUnits.removeMember({
       unitId: input.unitId as OrganizationUnitId,
       userId: input.userId as UserId,
     });
+    if (removed) {
+      const unit = await uow.organizationUnits.findById(input.unitId as OrganizationUnitId);
+      await recordActivity(uow, {
+        action: "team.member_removed", actorUserId: input.actor.userId, occurredAt: deps.clock.now(),
+        details: { teamName: unit?.name ?? null, targetName: await memberNameOf(uow, input.userId as UserId) },
+      });
+    }
   });
 }
 

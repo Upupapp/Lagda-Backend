@@ -43,6 +43,8 @@ export interface WorkspaceAccessContext {
   readonly role: WorkspaceRole;
   /** 078. Granted on top of the role by an owner or administrator. */
   readonly privileges?: MemberPrivileges;
+  /** 079. The caller's own typed title, so their own view can show it. */
+  readonly roleTitle?: string | null;
 }
 
 /** The two grants a membership record carries, as the access check reads them. */
@@ -97,6 +99,7 @@ export async function resolveWorkspaceAccess(
     membershipId: membership.memberId,
     role: membership.role,
     privileges: privilegesOf(membership),
+    roleTitle: membership.roleTitle ?? null,
   };
 }
 

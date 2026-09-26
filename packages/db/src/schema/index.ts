@@ -90,6 +90,18 @@ export interface WorkspaceJoinTicketsTable {
   updated_at: Date;
 }
 
+/** 079. One entry in the append-only workspace activity log. */
+export interface WorkspaceActivityEventsTable {
+  event_id: string;
+  workspace_id: string;
+  action: string;
+  actor_user_id: string | null;
+  occurred_at: Timestamptz;
+  /** jsonb: read as the parsed object, written as its JSON text. */
+  details: ColumnType<unknown, string, never>;
+  recorded_at: GeneratedTimestamptz;
+}
+
 /** 078. A pending, approved or declined request to join. */
 export interface WorkspaceJoinRequestsTable {
   request_id: string;
@@ -1665,6 +1677,7 @@ export interface Database {
   workspace_memberships: WorkspaceMembershipsTable;
   workspace_join_tickets: WorkspaceJoinTicketsTable;
   workspace_join_requests: WorkspaceJoinRequestsTable;
+  workspace_activity_events: WorkspaceActivityEventsTable;
   workspace_invitations: WorkspaceInvitationsTable;
   contacts: ContactsTable;
   contact_tags: ContactTagsTable;

@@ -224,7 +224,7 @@ export async function createProductionDependencies(
     workspaces: {
       create: () => ({ transactions, clock, workspaceIds, memberIds, idempotency }),
       list: () => ({ transactions }),
-      workspace: () => ({ transactions }),
+      workspace: () => ({ transactions, clock }),
       contacts: () => ({ transactions, clock, ids: contactIds }),
       // 067. Needs strictly more than `contacts` does: creating a request
       // also creates the notification that tells the assignee about it, so

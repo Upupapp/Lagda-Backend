@@ -505,6 +505,8 @@ export interface WorkspaceUnitOfWork {
   readonly uploadRequests: ScopedUploadRequestRepository;
   readonly joinTickets: ScopedJoinTicketRepository;
   readonly joinRequests: ScopedJoinRequestRepository;
+  /** 079. The append-only activity log, written in the change's own transaction. */
+  readonly activity: ScopedWorkspaceActivityRepository;
 }
 
 /**
@@ -830,6 +832,8 @@ export * from "./document-notification-states.js";
 export * from "./flow-document.js";
 export * from "./upload-requests.js";
 export * from "./workspace-join.js";
+export * from "./workspace-activity.js";
+import type { ScopedWorkspaceActivityRepository } from "./workspace-activity.js";
 
 export * from "./signing-access.js";
 

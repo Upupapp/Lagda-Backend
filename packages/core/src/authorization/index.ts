@@ -73,6 +73,12 @@ export const WORKSPACE_CAPABILITIES = [
   "invitation.resend",
   /** Withdraw a pending invitation. */
   "invitation.revoke",
+  /**
+   * Read the workspace activity log (079): who changed members, invitations,
+   * join links, teams and the name. Owners and administrators, who make those
+   * changes, and auditors, whose job is reviewing them.
+   */
+  "activity.view",
 
   /**
    * ── Contacts ─────────────────────────────────────────────────────────────
@@ -328,6 +334,7 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "invitation.create",
       "invitation.resend",
       "invitation.revoke",
+      "activity.view",
       "contact.view",
       "contact.create",
       "contact.update",
@@ -370,6 +377,7 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "invitation.create",
       "invitation.resend",
       "invitation.revoke",
+      "activity.view",
       "contact.view",
       "contact.create",
       "contact.update",
@@ -510,7 +518,7 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
      * it happened to.
      */
     auditor: Object.freeze([
-      "workspace.view", "document.view", "signing-request.view",
+      "workspace.view", "document.view", "signing-request.view", "activity.view",
     ] as const),
   });
 
