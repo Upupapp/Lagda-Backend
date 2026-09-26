@@ -30,8 +30,12 @@ import { createSecretBox, SecretBoxError } from "./secret-box.js";
  * retried into the same refusal.
  */
 export interface CredentialValidityCheck {
-  /** Asked of the domain that minted the credential, identified by `kind`. */
-  isStillUsable(sourceId: string, kind: string): Promise<boolean>;
+  /**
+   * Asked of the domain that minted the credential, identified by `kind`.
+   * `sealed` is the credential as carried, for a domain whose source id does
+   * not name the credential itself (a join link's per-send notice id).
+   */
+  isStillUsable(sourceId: string, kind: string, sealed: string): Promise<boolean>;
 }
 
 /**
@@ -100,7 +104,7 @@ export function createSealedSecretResolver(
       // a question about the grant that issued it; the sealed blob is only how
       // transport carries the value, and a domain asked to look one up by
       // ciphertext can only answer no.
-      if (!(await validity.isStillUsable(source.sourceId, source.kind))) {
+      if (!(await validity.isStillUsable(source.sourceId, source.kind, secretRef.sealed))) {
         return { status: "UNUSABLE", reason: "SECRET_REVOKED" };
       }
 

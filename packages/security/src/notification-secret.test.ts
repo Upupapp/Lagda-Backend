@@ -157,6 +157,19 @@ describe("which sealed sources are deliverable", () => {
     });
   }
 
+  it("hands the domain the sealed credential it carries", async () => {
+    const seen: string[] = [];
+    const sealed = box.seal("link");
+    const resolver = createSealedSecretResolver(KEY, VERSION, {
+      isStillUsable: (_id: string, _k: string, s: string) => { seen.push(s); return Promise.resolve(false); },
+    });
+    const resolution = await resolver.resolve(
+      { kind: "SEALED", sealed: sealed as never, keyVersion: VERSION },
+      { kind: "WORKSPACE_JOIN_TICKET", sourceId: "jnt_1" } as never);
+    expect(seen).toEqual([sealed]);
+    expect(resolution.status).toBe("UNUSABLE");
+  });
+
   it("still refuses a sealed credential under any other source", async () => {
     const resolver = createSealedSecretResolver(KEY, VERSION, { isStillUsable: () => Promise.resolve(true) });
     const resolution = await resolver.resolve(
