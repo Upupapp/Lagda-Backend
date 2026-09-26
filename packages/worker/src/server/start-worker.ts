@@ -442,13 +442,25 @@ export async function startWorker(): Promise<StartedWorker> {
       // Two kinds of sealed credential, told apart by their grant id: a
       // final-copy download grant (073, `fcg_`) or a signing grant.
       const validity = {
-        isStillUsable: (grantId: string): Promise<boolean> =>
-          ref.scope.kind === "WORKSPACE"
-            ? transactions.runForWorkspace(ref.scope.workspaceId, uow =>
-              grantId.startsWith("fcg_")
-                ? uow.finalCopies.isGrantUsable(grantId, clock.now())
-                : uow.signingAccess.isGrantUsable(grantId, clock.now()))
-            : Promise.resolve(false),
+        isStillUsable: (sourceId: string, kind: string): Promise<boolean> => {
+          if (ref.scope.kind !== "WORKSPACE") return Promise.resolve(false);
+          const workspaceId = ref.scope.workspaceId;
+          switch (kind) {
+            case "FINAL_COPY_GRANT":
+              return transactions.runForWorkspace(workspaceId, uow =>
+                uow.finalCopies.isGrantUsable(sourceId, clock.now()));
+            case "SIGNING_ACCESS_GRANT":
+              return transactions.runForWorkspace(workspaceId, uow =>
+                uow.signingAccess.isGrantUsable(sourceId, clock.now()));
+            // 078. The source is a per-send notice id, not the ticket; the link
+            // itself is single-use and re-checked the moment it is opened, so a
+            // join link is always deliverable.
+            case "WORKSPACE_JOIN_TICKET":
+              return Promise.resolve(true);
+            default:
+              return Promise.resolve(false);
+          }
+        },
       };
 
       return {

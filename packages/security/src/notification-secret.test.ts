@@ -140,6 +140,32 @@ describe("signing credentials", () => {
   });
 });
 
+describe("which sealed sources are deliverable", () => {
+  // Before this, only SIGNING_ACCESS_GRANT was accepted, and every final-copy
+  // and join-link email was silently suppressed in production.
+  for (const kind of ["SIGNING_ACCESS_GRANT", "FINAL_COPY_GRANT", "WORKSPACE_JOIN_TICKET"]) {
+    it(`opens a sealed ${kind} credential, asking validity with its kind`, async () => {
+      const asked: string[] = [];
+      const resolver = createSealedSecretResolver(KEY, VERSION, {
+        isStillUsable: (_id: string, k: string) => { asked.push(k); return Promise.resolve(true); },
+      });
+      const resolution = await resolver.resolve(
+        { kind: "SEALED", sealed: box.seal("link") as never, keyVersion: VERSION },
+        { kind, sourceId: "src_1" } as never);
+      expect(resolution).toEqual({ status: "AVAILABLE", secret: "link" });
+      expect(asked).toEqual([kind]);
+    });
+  }
+
+  it("still refuses a sealed credential under any other source", async () => {
+    const resolver = createSealedSecretResolver(KEY, VERSION, { isStillUsable: () => Promise.resolve(true) });
+    const resolution = await resolver.resolve(
+      { kind: "SEALED", sealed: box.seal("link") as never, keyVersion: VERSION },
+      { kind: "WORKSPACE_INVITATION", sourceId: "inv_1" } as never);
+    expect(resolution.status).toBe("UNUSABLE");
+  });
+});
+
 describe("dispatch by owning domain", () => {
   it("asks the domain the source names, not every domain in turn", async () => {
     // A resolver that tried each lookup would ask the reset table about an

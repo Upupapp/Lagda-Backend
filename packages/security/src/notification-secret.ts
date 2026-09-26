@@ -30,7 +30,8 @@ import { createSecretBox, SecretBoxError } from "./secret-box.js";
  * retried into the same refusal.
  */
 export interface CredentialValidityCheck {
-  isStillUsable(sourceId: string): Promise<boolean>;
+  /** Asked of the domain that minted the credential, identified by `kind`. */
+  isStillUsable(sourceId: string, kind: string): Promise<boolean>;
 }
 
 /**
@@ -41,7 +42,13 @@ export interface CredentialValidityCheck {
  * a runtime condition — and answering it would mean asking the wrong domain
  * whether its credential is still good.
  */
-const SEALED_SOURCE_KIND = "SIGNING_ACCESS_GRANT";
+// Signing links (the original), final-copy download grants (073) and join
+// links (078). Each is minted sealed; any other source arriving with a SEALED
+// reference is still a composition error. Before this list existed only the
+// first was accepted, and every final-copy and join-link email was suppressed.
+const SEALED_SOURCE_KINDS: ReadonlySet<string> = new Set([
+  "SIGNING_ACCESS_GRANT", "FINAL_COPY_GRANT", "WORKSPACE_JOIN_TICKET",
+]);
 
 /**
  * Resolves SEALED references by decrypting them.
@@ -85,7 +92,7 @@ export function createSealedSecretResolver(
         return { status: "UNUSABLE", reason: "SECRET_REVOKED" };
       }
 
-      if (source.kind !== SEALED_SOURCE_KIND) {
+      if (!SEALED_SOURCE_KINDS.has(source.kind)) {
         return { status: "UNUSABLE", reason: "SECRET_REVOKED" };
       }
 
@@ -93,7 +100,7 @@ export function createSealedSecretResolver(
       // a question about the grant that issued it; the sealed blob is only how
       // transport carries the value, and a domain asked to look one up by
       // ciphertext can only answer no.
-      if (!(await validity.isStillUsable(source.sourceId))) {
+      if (!(await validity.isStillUsable(source.sourceId, source.kind))) {
         return { status: "UNUSABLE", reason: "SECRET_REVOKED" };
       }
 
