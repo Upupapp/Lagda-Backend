@@ -166,6 +166,48 @@ export function canHoldFields(type: RecipientType): boolean {
 }
 
 /**
+ * The field types only ONE recipient type may hold (081).
+ *
+ * An outcome block prints what its holder DID — "REVIEWED", "APPROVED",
+ * "SKIPPED" — so it can only belong to the role that does that. A
+ * `review-block` on a signer would print a review nobody performed. Every
+ * type absent here is open to every type that may hold fields at all.
+ */
+const RESERVED_FIELD_HOLDERS: Partial<Record<PreparationFieldType, RecipientType>> = {
+  "review-block": "reviewer",
+  "approval-block": "approver",
+};
+
+/** The one recipient type allowed to hold this field type, or null for any. */
+export function reservedHolderFor(type: PreparationFieldType): RecipientType | null {
+  return RESERVED_FIELD_HOLDERS[type] ?? null;
+}
+
+/**
+ * Whether a recipient of this type may hold a field of that type: the coarse
+ * `canHoldFields` rule, then the per-type reservation above.
+ */
+export function mayHoldFieldType(
+  recipientType: RecipientType,
+  fieldType: PreparationFieldType,
+): boolean {
+  if (!canHoldFields(recipientType)) return false;
+  const holder = reservedHolderFor(fieldType);
+  return holder === null || holder === recipientType;
+}
+
+/**
+ * The validation message for a field held by the wrong role. Names the TYPES
+ * only, never a recipient's name or a field's label.
+ */
+export function describeReservedHolder(fieldType: PreparationFieldType): string {
+  const holder = reservedHolderFor(fieldType);
+  return holder === null
+    ? `"${fieldType}" fields may be held by any recipient who can hold fields`
+    : `"${fieldType}" fields may be held only by a recipient of type "${holder}"`;
+}
+
+/**
  * Whether this participant is sent a personal link when their turn comes.
  *
  * Everyone who can act — and a VIEWER, whose link opens the document

@@ -42,6 +42,7 @@ export type DocumentBytes = Uint8Array;
  */
 export const SEALABLE_FIELD_TYPES = [
   "signature", "initials", "text", "date", "checkbox", "signature-block",
+  "outcome-block",
 ] as const;
 export type SealableFieldType = (typeof SEALABLE_FIELD_TYPES)[number];
 
@@ -332,6 +333,16 @@ export type MergeableFieldValue =
   | {
     readonly kind: "signatureBlock";
     readonly representation: SignatureRepresentation;
+    readonly name: string;
+  }
+  /**
+   * A recipient's outcome over their name (081). `label` is the outcome and
+   * its date — `REVIEWED 2026-09-26 (UTC)`, `APPROVED …`, `SKIPPED …` — set
+   * above a rule; `name`, the recipient snapshot, is centred beneath it.
+   */
+  | {
+    readonly kind: "outcomeBlock";
+    readonly label: string;
     readonly name: string;
   };
 

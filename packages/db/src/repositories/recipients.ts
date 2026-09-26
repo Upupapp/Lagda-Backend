@@ -154,12 +154,17 @@ export function createScopedRecipientRepository(
     },
 
     async countAssignedFields(input) {
-      const counted = await trx.selectFrom("preparation_fields")
+      let query = trx.selectFrom("preparation_fields")
         .select(eb => eb.fn.countAll<string>().as("total"))
         .where("workspace_id", "=", scope)
         .where("preparation_id", "=", input.preparationId)
-        .where("recipient_id", "=", input.recipientId)
-        .executeTakeFirstOrThrow();
+        .where("recipient_id", "=", input.recipientId);
+      if (input.fieldTypes !== undefined) {
+        // An empty list counts nothing, rather than `in ()`, which is invalid SQL.
+        if (input.fieldTypes.length === 0) return 0;
+        query = query.where("field_type", "in", [...input.fieldTypes]);
+      }
+      const counted = await query.executeTakeFirstOrThrow();
       return Number(counted.total);
     },
 

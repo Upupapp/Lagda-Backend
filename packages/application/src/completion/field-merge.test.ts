@@ -473,6 +473,24 @@ describe("projecting stored values", () => {
     })).toThrow(/no recipient name/);
   });
 
+  it("maps a review-block to REVIEWED and its date over the reviewer's name (081)", () => {
+    const field = toMergeableField({
+      ...base, fieldType: "review-block",
+      value: { kind: "instant", at: Date.parse("2026-09-26T03:00:00.000Z") },
+    });
+    expect(field).toMatchObject({ fieldId: "f1", pageNumber: 2 });
+    expect(field.value).toEqual({
+      kind: "outcomeBlock", label: "REVIEWED 2026-09-26 (UTC)", name: "Ana Reyes",
+    });
+  });
+
+  it("refuses a review-block whose recipient name was not joined", () => {
+    expect(() => toMergeableField({
+      ...base, fieldType: "review-block", recipientName: null,
+      value: { kind: "instant", at: AT },
+    })).toThrow(/no recipient name/);
+  });
+
   it("maps a checkbox to a boolean, not a string", () => {
     expect(toMergeableField({ ...base, value: { kind: "checkbox", checked: false } })
       .value).toEqual({ kind: "checkbox", checked: false });
@@ -525,10 +543,15 @@ describe("evidence (BACKEND-43)", () => {
 });
 
 describe("approver outcome labels (069)", () => {
-  function approverWithField(state: "approved" | "skipped" | "active") {
+  function approverWithField(
+    state: "approved" | "skipped" | "active",
+    fieldType: "signature" | "approval-block" = "signature",
+  ) {
     h.store.signingRequestRecipients.push({
       recipientId: "rr_a", type: "approver", isRequired: true, routingOrder: 1,
+      name: "Lorna Villanueva", orderIndex: 0,
     } as never);
+    h.store.snapshotOwners.set("rr_a", REQUEST);
     h.store.activations.push({
       signingRequestId: String(REQUEST), recipientId: "rr_a", state,
       activatedAt: AT, signedAt: null, submissionId: null,
@@ -537,9 +560,9 @@ describe("approver outcome labels (069)", () => {
       declinedAt: null, declineReason: null,
     } as never);
     h.store.signingRequestFields.push({
-      fieldId: "srf_a", sourcePreparationFieldId: null, type: "signature",
+      fieldId: "srf_a", sourcePreparationFieldId: null, type: fieldType,
       pageNumber: 1, x: 0.1, y: 0.1, width: 0.2, height: 0.05,
-      required: true, label: "Signature", layer: 0,
+      required: fieldType === "signature", label: "Signature", layer: 0,
       recipientId: "rr_a", staticValue: null,
     } as never);
     h.store.snapshotOwners.set("srf_a", REQUEST);
@@ -560,5 +583,48 @@ describe("approver outcome labels (069)", () => {
     approverWithField("active");
     await run(h);
     expect(drawn()).toEqual([]);
+  });
+
+  it.each([["approved", "APPROVED"], ["skipped", "SKIPPED"]] as const)(
+    "draws an %s approver's approval block as the outcome over their name (081)",
+    async (state, word) => {
+      approverWithField(state, "approval-block");
+      expect((await run(h)).outcome).toBe("merged");
+      expect(drawn()).toEqual([expect.objectContaining({
+        fieldId: "srf_a", pageNumber: 1,
+        rect: { x: 0.1, y: 0.1, width: 0.2, height: 0.05 },
+        value: {
+          kind: "outcomeBlock",
+          label: `${word} ${new Date(AT).toISOString().slice(0, 10)} (UTC)`,
+          name: "Lorna Villanueva",
+        },
+      })]);
+    });
+
+  it("draws nothing on an approval block whose approver has not acted", async () => {
+    approverWithField("active", "approval-block");
+    await run(h);
+    expect(drawn()).toEqual([]);
+  });
+
+  it("keeps an approver's plain empty field a text label beside an approval block", async () => {
+    approverWithField("approved", "approval-block");
+    h.store.signingRequestFields.push({
+      fieldId: "srf_b", sourcePreparationFieldId: null, type: "signature",
+      pageNumber: 1, x: 0.5, y: 0.1, width: 0.2, height: 0.05,
+      required: false, label: "Signature", layer: 0,
+      recipientId: "rr_a", staticValue: null,
+    } as never);
+    h.store.snapshotOwners.set("srf_b", REQUEST);
+    await run(h);
+    const kinds = new Map(drawn().map(field => [field.fieldId, field.value.kind]));
+    expect(kinds).toEqual(new Map([["srf_a", "outcomeBlock"], ["srf_b", "text"]]));
+  });
+
+  it("fails the plan, rather than printing no name, when the approver's snapshot is missing", async () => {
+    approverWithField("approved", "approval-block");
+    h.store.snapshotOwners.delete("rr_a");
+    const result = await run(h);
+    expect(result).toMatchObject({ outcome: "failed", failureCode: "input-inconsistent" });
   });
 });

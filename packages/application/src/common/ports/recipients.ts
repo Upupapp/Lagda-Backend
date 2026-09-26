@@ -12,7 +12,9 @@
 //   markVerified / issueToken / recordSignature
 //                            authentication and ceremony state. BACKEND-34/37.
 
-import type { ContactId, WorkspaceId, RecipientType } from "@lagda/contracts";
+import type {
+  ContactId, WorkspaceId, RecipientType, PreparationFieldType,
+} from "@lagda/contracts";
 import type { RecipientEmailKey } from "@lagda/core";
 import type { PreparationId } from "./preparation.js";
 
@@ -129,10 +131,16 @@ export interface ScopedRecipientRepository {
     readonly recipientId: RecipientId;
   }): Promise<boolean>;
 
-  /** How many fields are assigned to this recipient. For the delete check. */
+  /**
+   * How many fields are assigned to this recipient. For the delete check, and
+   * — narrowed by `fieldTypes` — for the role-reserved types a type change
+   * must not strand (081).
+   */
   countAssignedFields(input: {
     readonly preparationId: PreparationId;
     readonly recipientId: RecipientId;
+    /** Only fields of these types. Omitted: every field. */
+    readonly fieldTypes?: readonly PreparationFieldType[];
   }): Promise<number>;
 
   /**

@@ -25,7 +25,7 @@ export type { PreparationFieldType, PreparationRect, PreparationState };
 /**
  * How each preparation field type will be RENDERED onto the final PDF.
  *
- * Nine preparation types, five render types. The mapping exists in exactly one
+ * Twelve preparation types, seven render types. The mapping exists in exactly one
  * place so the sealer and the editor cannot disagree about what a `full-name`
  * field becomes.
  *
@@ -52,6 +52,10 @@ const RENDER_TYPES = {
   company: "text",
   // Its own layout: the mark, a rule, and the name set beneath it.
   "signature-block": "signature-block",
+  // A recipient's OUTCOME over their name (081): "REVIEWED <date> (UTC)" or
+  // "APPROVED/SKIPPED <date> (UTC)" above a rule, the name beneath it.
+  "review-block": "outcome-block",
+  "approval-block": "outcome-block",
 } as const satisfies Record<PreparationFieldType, string>;
 
 export type PreparationRenderType = (typeof RENDER_TYPES)[PreparationFieldType];
@@ -73,7 +77,11 @@ export function renderTypeFor(type: PreparationFieldType): PreparationRenderType
  * "is this field mandatory" has one answer.
  */
 export function isInherentlyRequired(type: PreparationFieldType): boolean {
-  return type === "signature" || type === "initials" || type === "signature-block";
+  // `review-block` too: completing the review IS the act it records, so a
+  // reviewer's block is never optional. `approval-block` is not: an approver's
+  // fields are optional (069), and an approver who skips still completes.
+  return type === "signature" || type === "initials" || type === "signature-block"
+    || type === "review-block";
 }
 
 /** The effective requiredness, after the inherent rule. */

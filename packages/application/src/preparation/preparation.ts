@@ -25,7 +25,7 @@ import type {
 import {
   validateRect, roundRect, isValidPageNumber, canPlaceFields,
   validateFieldLabel, effectiveRequired, derivePreparationState,
-  canHoldFields, PREPARATION_MAX_FIELDS,
+  canHoldFields, mayHoldFieldType, describeReservedHolder, PREPARATION_MAX_FIELDS,
   type PreparationState, type WorkspaceCapability,
 } from "@lagda/core";
 import type {
@@ -524,6 +524,11 @@ function validateFields(
         // dropped: a sender who placed a signature on the wrong party must be
         // told, not quietly given an unassigned field.
         issues.push(`${at}.recipientId: this recipient cannot be assigned fields`);
+        assignmentInvalid = true;
+      } else if (!mayHoldFieldType(type, input.type)) {
+        // An outcome block (081) prints what its holder did — REVIEWED,
+        // APPROVED, SKIPPED — so only the role that does that may hold it.
+        issues.push(`${at}.recipientId: ${describeReservedHolder(input.type)}`);
         assignmentInvalid = true;
       }
     }

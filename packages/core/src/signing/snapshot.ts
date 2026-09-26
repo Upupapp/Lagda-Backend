@@ -9,7 +9,9 @@
 // database is a gate that can be tested exhaustively and reasoned about
 // without a transaction open.
 
-import { canHoldFields, type RecipientType } from "../recipients/index.js";
+import {
+  canHoldFields, describeReservedHolder, mayHoldFieldType, type RecipientType,
+} from "../recipients/index.js";
 import { isApproverType } from "./workflow-state.js";
 import type { PreparationFieldType, SigningRequestState } from "@lagda/contracts";
 
@@ -63,6 +65,19 @@ export type SnapshotBlocker =
    * demotion. Same reasoning.
    */
   | { readonly kind: "ineligible-assignee"; readonly fieldIndex: number }
+  /**
+   * An outcome block held by the wrong role (081): a `review-block` on anyone
+   * but a reviewer, an `approval-block` on anyone but an approver.
+   *
+   * The layout save refuses the assignment; this catches what reached the
+   * preparation another way — a recipient whose type changed, or fields
+   * handed to a replacement recipient on a re-send.
+   */
+  | {
+    readonly kind: "reserved-field-type";
+    readonly fieldIndex: number;
+    readonly fieldType: PreparationFieldType;
+  }
   /**
    * A recipient who blocks completion but was asked for nothing.
    *
@@ -159,6 +174,10 @@ export function assessSnapshotReadiness(
       blockers.push({ kind: "ineligible-assignee", fieldIndex });
       return;
     }
+    if (!mayHoldFieldType(recipient.type, field.type)) {
+      blockers.push({ kind: "reserved-field-type", fieldIndex, fieldType: field.type });
+      return;
+    }
     assigned.add(field.recipientId);
   });
 
@@ -200,6 +219,8 @@ export function describeBlocker(blocker: SnapshotBlocker): string {
       return `fields[${String(blocker.fieldIndex)}]: assigned to an unknown recipient`;
     case "ineligible-assignee":
       return `fields[${String(blocker.fieldIndex)}]: assigned to a recipient that cannot hold fields`;
+    case "reserved-field-type":
+      return `fields[${String(blocker.fieldIndex)}]: ${describeReservedHolder(blocker.fieldType)}`;
     case "participant-without-field":
       return `recipients[${String(blocker.recipientIndex)}]: has no fields to complete`;
   }

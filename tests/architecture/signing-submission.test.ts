@@ -155,7 +155,17 @@ describe("server-owned values are not client-supplied", () => {
       .filter(([, policy]) => policy.authority === "SERVER_DERIVED")
       .map(([type]) => type)
       .sort();
-    expect(serverOwned).toEqual(["date-signed", "email", "full-name"]);
+    // 081 adds the two outcome blocks: a reviewer's is the acceptance instant,
+    // an approver's is their workflow outcome — neither is the client's.
+    expect(serverOwned).toEqual([
+      "approval-block", "date-signed", "email", "full-name", "review-block",
+    ]);
+  });
+
+  it("derives the review block from the acceptance instant, and stores nothing for an approval block", () => {
+    const core = code(CORE);
+    expect(core).toContain('case "review-block":');
+    expect(core).toContain('policy.valueKind === "none"');
   });
 });
 

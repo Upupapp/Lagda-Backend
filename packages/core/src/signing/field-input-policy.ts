@@ -91,6 +91,24 @@ export const FIELD_INPUT_POLICY: Record<PreparationFieldType, FieldInputPolicy> 
       + "The name beneath it is `signing_request_recipients.name`, the same "
       + "frozen snapshot `full-name` draws, read at sealing time.",
   },
+  "review-block": {
+    authority: "SERVER_DERIVED",
+    valueKind: "date",
+    maxLength: null,
+    hasRecipientRenderer: true,
+    note: "A reviewer's only. The instant the review is accepted, exactly as "
+      + "`date-signed` derives it; the sealed page prints REVIEWED and that "
+      + "date over a rule, the recipient snapshot's name beneath it.",
+  },
+  "approval-block": {
+    authority: "SERVER_DERIVED",
+    valueKind: "none",
+    maxLength: null,
+    hasRecipientRenderer: true,
+    note: "An approver's only. Stores NOTHING: the approver approves or skips, "
+      + "and the outcome and its instant are the workflow row's (069). "
+      + "Completion prints APPROVED or SKIPPED and the date over the name.",
+  },
   signature: {
     authority: "RECIPIENT_SUPPLIED",
     valueKind: "signature-representation",

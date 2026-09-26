@@ -226,6 +226,42 @@ describe("saveWorkflowTemplateFields", () => {
     expect(read).toHaveLength(0);
   });
 
+  it("places an outcome block only on the role it is reserved for (081)", async () => {
+    const h = await harness();
+    const template = await createWorkflowTemplate(actor(OWNER), h.workspaceId, {
+      ...VALID,
+      roleSlots: [
+        { label: "Client", role: "signer", required: true, routingStep: 1, defaultAuthMethod: "none" },
+        { label: "Counsel", role: "reviewer", required: true, routingStep: 1, defaultAuthMethod: "none" },
+        { label: "Partner", role: "approver", required: false, routingStep: 2, defaultAuthMethod: "none" },
+      ],
+    }, h.deps);
+    await attachWorkflowTemplateDocument(
+      actor(OWNER), h.workspaceId, template.workflowTemplateId,
+      { documentId: DOC, artifactId: ART }, h.deps);
+    const [signer, reviewer, approver] = template.roleSlots.map(slot => slot.slotId);
+
+    const saved = await saveWorkflowTemplateFields(
+      actor(OWNER), h.workspaceId, template.workflowTemplateId, [
+        field(reviewer!, { type: "review-block", required: false }),
+        field(approver!, { type: "approval-block", required: false }),
+      ], h.deps);
+    expect(saved.map(f => [f.type, f.required])).toEqual([
+      ["review-block", true], ["approval-block", false],
+    ]);
+
+    const failure = await saveWorkflowTemplateFields(
+      actor(OWNER), h.workspaceId, template.workflowTemplateId, [
+        field(signer!, { type: "review-block" }),
+        field(reviewer!, { type: "approval-block" }),
+      ], h.deps).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(ApplicationValidationError);
+    expect((failure as ApplicationValidationError).issues).toEqual([
+      'fields[0].slotId: "review-block" fields may be held only by a recipient of type "reviewer"',
+      'fields[1].slotId: "approval-block" fields may be held only by a recipient of type "approver"',
+    ]);
+  });
+
   it("refuses a page number beyond the document's real page count", async () => {
     const h = await harness();
     const { template, slotId } = await withDocument(h);
