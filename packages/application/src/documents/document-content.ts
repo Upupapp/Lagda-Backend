@@ -19,7 +19,7 @@ import { ResourceNotFoundError, ResourceConflictError } from "../common/errors/i
 import type { TransactionManager } from "../common/ports/index.js";
 import type { AuthenticatedActor } from "../common/ports/session.js";
 import type { ObjectStorage } from "../common/ports/storage.js";
-import { assertCapability, type WorkspaceAccessContext } from "../workspaces/workspace-access.js";
+import { assertCapability, type WorkspaceAccessContext, privilegesOf } from "../workspaces/workspace-access.js";
 
 export interface DocumentContentDependencies {
   readonly transactions: TransactionManager;
@@ -64,6 +64,7 @@ export async function getDocumentContent(
       userId: membership.userId,
       membershipId: membership.memberId,
       role: membership.role,
+      privileges: privilegesOf(membership),
     };
     assertCapability(access, "document.view");
 

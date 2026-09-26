@@ -37,7 +37,7 @@ import type { AuthenticatedActor } from "../common/ports/session.js";
 import {
   ApplicationValidationError, ResourceNotFoundError, FolderUnavailableError,
 } from "../common/errors/index.js";
-import { assertCapability, type WorkspaceAccessContext } from "../workspaces/workspace-access.js";
+import { assertCapability, type WorkspaceAccessContext, privilegesOf } from "../workspaces/workspace-access.js";
 
 // ── Projections ──────────────────────────────────────────────────────────────
 
@@ -126,6 +126,7 @@ async function authorize(
     userId: membership.userId,
     membershipId: membership.memberId,
     role: membership.role,
+    privileges: privilegesOf(membership),
   };
   assertCapability(access, capability);
   return access;

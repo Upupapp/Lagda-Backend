@@ -54,7 +54,7 @@ import {
 import {
   createIdempotencyService, type IdempotencyDependencies,
 } from "../idempotency/service.js";
-import { assertCapability, type WorkspaceAccessContext } from "../workspaces/workspace-access.js";
+import { assertCapability, type WorkspaceAccessContext, privilegesOf } from "../workspaces/workspace-access.js";
 import type {
   NotificationIntentIdGenerator, NotificationDeliveryIdGenerator,
 } from "../common/ports/notifications.js";
@@ -210,6 +210,7 @@ async function authorize(
     userId: membership.userId,
     membershipId: membership.memberId,
     role: membership.role,
+    privileges: privilegesOf(membership),
   };
   assertCapability(access, capability);
   return access;

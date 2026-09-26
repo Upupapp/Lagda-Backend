@@ -185,6 +185,35 @@ export const NOTIFICATION_POLICIES: Record<NotificationType, NotificationPolicy>
     secretKind: "SEALED",
     scopeKind: "WORKSPACE",
   },
+  WORKSPACE_JOIN_LINK: {
+    notificationType: "WORKSPACE_JOIN_LINK",
+    templateKey: "workspace-join-link",
+    channel: "EMAIL",
+    // One SEND of the ticket, each with its own id, so sending again is a new
+    // email rather than a collision with the first.
+    sourceKind: "WORKSPACE_JOIN_TICKET",
+    audienceKind: "WORKSPACE_JOIN_TICKET",
+    secretKind: "SEALED",
+    scopeKind: "WORKSPACE",
+  },
+  WORKSPACE_JOIN_REQUESTED: {
+    notificationType: "WORKSPACE_JOIN_REQUESTED",
+    templateKey: "workspace-join-requested",
+    channel: "EMAIL",
+    // One notice per owner/administrator, each its own id.
+    sourceKind: "WORKSPACE_JOIN_REQUEST",
+    audienceKind: "USER",
+    scopeKind: "WORKSPACE",
+  },
+  WORKSPACE_JOIN_DECIDED: {
+    notificationType: "WORKSPACE_JOIN_DECIDED",
+    templateKey: "workspace-join-decided",
+    channel: "EMAIL",
+    // The request itself: exactly one decision per request.
+    sourceKind: "WORKSPACE_JOIN_REQUEST",
+    audienceKind: "USER",
+    scopeKind: "WORKSPACE",
+  },
 };
 
 export function policyFor(notificationType: NotificationType): NotificationPolicy {

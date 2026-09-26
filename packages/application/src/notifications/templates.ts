@@ -44,6 +44,7 @@ import {
   AccountEmailVerificationModelV1, PasswordResetModelV1, WorkspaceInvitationModelV1,
   SigningInvitationModelV1, SigningCompletedModelV1,
   DocumentUploadRequestedModelV1, FinalCopyAvailableModelV1,
+  WorkspaceJoinLinkModelV1, WorkspaceJoinRequestedModelV1, WorkspaceJoinDecidedModelV1,
 } from "./template-registry.js";
 import { escapeHtml } from "./rendering.js";
 import { LAGDA_LOGO_PNG_BASE64 } from "./assets/lagda-logo.js";
@@ -496,6 +497,113 @@ export const finalCopyAvailableV1 = defineTemplate({
 });
 
 /**
+ * 078. A single-use join link. `/join/<token>` opens the join page, where the
+ * person signs in and asks to join; an owner or administrator approves.
+ */
+export const workspaceJoinLinkV1 = defineTemplate({
+  key: "workspace-join-link",
+  version: 1,
+  locale: "en",
+  schema: WorkspaceJoinLinkModelV1,
+  secretBearing: true,
+  render: (input, context) => {
+    const workspace = input.workspaceName;
+    const sender = input.senderDisplayName;
+    const url = context.buildLink("/join", context.secret as string);
+    return {
+      subject: `${sender} invited you to join ${workspace} on LAGDA`,
+      textBody: [
+        `Hello,`,
+        ``,
+        `${sender} invited you to join the ${workspace} workspace on LAGDA.`,
+        `Open this link to ask to join:`,
+        url,
+        ``,
+        `An owner or administrator of ${workspace} will review your request.`,
+        `This link works once — do not forward this message.`,
+      ].join("\n"),
+      htmlBody: htmlDocument(
+        `You're invited to join ${escapeHtml(workspace)}`,
+        p(`${escapeHtml(sender)} invited you to join the ${escapeHtml(workspace)} workspace on LAGDA.`) +
+          linkHtml(url, "Ask to join") +
+          p(`An owner or administrator of ${escapeHtml(workspace)} will review your request. ` +
+            `This link works once — do not forward this message.`),
+      ),
+      attachments: [LOGO_ATTACHMENT],
+    };
+  },
+});
+
+const JOIN_REQUESTS_PATH = "/app/workspace/members";
+
+/** 078. An owner or administrator told that someone asked to join. */
+export const workspaceJoinRequestedV1 = defineTemplate({
+  key: "workspace-join-requested",
+  version: 1,
+  locale: "en",
+  schema: WorkspaceJoinRequestedModelV1,
+  secretBearing: false,
+  render: (input, context) => {
+    const name = input.recipientName;
+    const who = input.requesterName;
+    const email = input.requesterEmail;
+    const workspace = input.workspaceName;
+    const reason = input.reason;
+    const url = context.buildPath(JOIN_REQUESTS_PATH);
+    return {
+      subject: `${who} asked to join ${workspace}`,
+      textBody: [
+        `Hello ${name},`,
+        ``,
+        `${who} (${email}) asked to join ${workspace}.`,
+        ...(reason === undefined ? [] : [``, `Their reason: ${reason}`]),
+        ``,
+        `Review the request:`,
+        url,
+      ].join("\n"),
+      htmlBody: htmlDocument(
+        `New request to join ${escapeHtml(workspace)}`,
+        p(`Hello ${escapeHtml(name)},`) +
+          p(`${escapeHtml(who)} (${escapeHtml(email)}) asked to join ${escapeHtml(workspace)}.`) +
+          (reason === undefined ? "" : p(`<em>${escapeHtml(reason)}</em>`)) +
+          linkHtml(url, "Review the request"),
+      ),
+      attachments: [LOGO_ATTACHMENT],
+    };
+  },
+});
+
+/** 078. The requester told whether they were let in. */
+export const workspaceJoinDecidedV1 = defineTemplate({
+  key: "workspace-join-decided",
+  version: 1,
+  locale: "en",
+  schema: WorkspaceJoinDecidedModelV1,
+  secretBearing: false,
+  render: (input, context) => {
+    const name = input.recipientName;
+    const workspace = input.workspaceName;
+    const url = context.buildPath("/app/dashboard");
+    const subject = input.approved
+      ? `You've joined ${workspace} on LAGDA`
+      : `Your request to join ${workspace} was declined`;
+    const line = input.approved
+      ? `Your request to join ${workspace} was approved. You can switch to it from your workspace menu.`
+      : `Your request to join ${workspace} was declined. Contact the workspace owner if you think this is a mistake.`;
+    return {
+      subject,
+      textBody: [`Hello ${name},`, ``, line, ...(input.approved ? [``, url] : [])].join("\n"),
+      htmlBody: htmlDocument(
+        subject,
+        p(`Hello ${escapeHtml(name)},`) + p(escapeHtml(line))
+          + (input.approved ? linkHtml(url, "Open LAGDA") : ""),
+      ),
+      attachments: [LOGO_ATTACHMENT],
+    };
+  },
+});
+
+/**
  * Every template version LAGDA can render.
  *
  * A version is removed from this list only when no pending intent references
@@ -510,6 +618,9 @@ export const ALL_TEMPLATES = [
   signingCompletedV1,
   documentUploadRequestedV1,
   finalCopyAvailableV1,
+  workspaceJoinLinkV1,
+  workspaceJoinRequestedV1,
+  workspaceJoinDecidedV1,
 ] as const;
 
 export type AccountEmailVerificationModel = Static<typeof AccountEmailVerificationModelV1>;

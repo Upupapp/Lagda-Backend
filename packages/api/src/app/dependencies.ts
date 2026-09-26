@@ -17,6 +17,7 @@ import type {
   SessionService, AbuseLimiter,
   CreateWorkspaceDependencies, GetWorkspaceDependencies,
   ListMyWorkspacesDependencies,
+  JoinTicketDependencies, JoinRequestDependencies,
   InvitationDependencies, AcceptInvitationDependencies,
   MemberAdministrationDependencies, WorkspaceAccessDependencies,
   ContactDependencies,
@@ -198,6 +199,15 @@ export interface WorkspaceDependencies {
   readonly invitations?: {
     readonly management: () => InvitationDependencies;
     readonly redemption: () => AcceptInvitationDependencies;
+  };
+  /**
+   * 078. Join links and join requests. Optional as a whole: it needs the app
+   * origin (to build the link) and the delivery key (to seal it).
+   */
+  readonly joins?: {
+    readonly tickets: () => JoinTicketDependencies;
+    readonly requests: () => JoinRequestDependencies;
+    readonly linkUrl: (token: string) => string;
   };
   /**
    * Member administration and the capability projection (BACKEND-27).

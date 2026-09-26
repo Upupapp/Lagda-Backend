@@ -21,6 +21,7 @@ import {
 } from "./invitations.js";
 import { CreateWorkspace } from "./create-workspace.js";
 import { listMyWorkspaces } from "./list-my-workspaces.js";
+import { approveJoinRequest, listJoinRequests } from "./workspace-join.js";
 import { ApplicationValidationError, ResourceNotFoundError } from "../common/errors/index.js";
 import { IdempotencyConflictError } from "../idempotency/service.js";
 import { assertNormalized, type NormalizedEmail } from "../auth/email-identity.js";
@@ -29,6 +30,7 @@ import type {
   InvitationTokenFactory, WorkspaceInvitationIdGenerator,
 } from "../common/ports/invitations.js";
 import {
+  joinNotifyDependencies,
   FixedClock, SequentialWorkspaceIds, SequentialMemberIds,
   FakeTransactionManager, InMemoryStore,
 } from "../test-support/fakes.js";
@@ -157,6 +159,7 @@ async function harness(
     clock: new FixedClock(AT),
     tokens,
     memberIds: new SequentialMemberIds(),
+    joinRequests: joinNotifyDependencies(new FixedClock(AT)),
     currentNormalizedEmail: (userId: UserId) => {
       for (const [email, id] of store.accountEmails) {
         if (id === userId) return Promise.resolve(email as NormalizedEmail);
@@ -570,9 +573,9 @@ describe("revokeWorkspaceInvitation", () => {
     const result = await revokeWorkspaceInvitation(
       actor(OWNER), h.workspaceId, created.invitationId, h.deps);
     expect(result).toEqual({ outcome: "not-pending", state: "accepted" });
-    // Revocation cannot undo a membership. Removing a member is a different
-    // operation and does not exist yet.
-    expect(h.store.memberships).toHaveLength(2);
+    // Revocation cannot undo what acceptance started: the join request it
+    // filed is still the owner's to approve or decline (078).
+    expect(h.store.joinRequests).toHaveLength(1);
   });
 
   it("refuses a non-manager", async () => {
@@ -639,16 +642,28 @@ describe("getWorkspaceInvitationPreview", () => {
 // ── Accept ───────────────────────────────────────────────────────────────────
 
 describe("acceptWorkspaceInvitation", () => {
-  it("creates the membership with the role from the INVITATION", async () => {
+  it("files a PENDING join request — never a membership — with the role from the INVITATION", async () => {
+    // 078. No one joins without an owner or administrator approving, not
+    // even with an invitation addressed to them.
     const h = await harness();
     await invite(h, "invitee@example.com", "sender");
     const result = await acceptWorkspaceInvitation(
       actor(INVITEE), h.tokens.issued[0] ?? "", h.acceptDeps);
 
-    expect(result.joined).toBe(true);
-    expect(result.role).toBe("sender");
-    const membership = h.store.memberships.find(m => m.userId === INVITEE);
-    expect(membership?.role).toBe("sender");
+    expect(result).toMatchObject({ joined: false, pending: true, role: "sender" });
+    expect(h.store.memberships.some(m => m.userId === INVITEE)).toBe(false);
+    const [request] = await listJoinRequests(actor(OWNER), h.workspaceId, "pending", h);
+    expect(request).toMatchObject({ sourceKind: "invitation", requestedRole: "sender", email: "invitee@example.com" });
+  });
+
+  it("approval then creates the membership with the invitation's role", async () => {
+    const h = await harness();
+    await invite(h, "invitee@example.com", "sender");
+    await acceptWorkspaceInvitation(actor(INVITEE), h.tokens.issued[0] ?? "", h.acceptDeps);
+    const [request] = await listJoinRequests(actor(OWNER), h.workspaceId, "pending", h);
+    await approveJoinRequest(actor(OWNER), h.workspaceId, request!.requestId, {},
+      { ...h.acceptDeps.joinRequests, transactions: h.transactions });
+    expect(h.store.memberships.find(m => m.userId === INVITEE)?.role).toBe("sender");
   });
 
   it("consumes the invitation, so the same token cannot be used twice", async () => {
@@ -659,7 +674,7 @@ describe("acceptWorkspaceInvitation", () => {
 
     await expect(acceptWorkspaceInvitation(actor(INVITEE), token, h.acceptDeps))
       .rejects.toBeInstanceOf(InvitationInvalidError);
-    expect(h.store.memberships.filter(m => m.userId === INVITEE)).toHaveLength(1);
+    expect(h.store.joinRequests.filter(r => r.userId === INVITEE)).toHaveLength(1);
   });
 
   it("REFUSES a different signed-in account — a forwarded link is useless", async () => {
@@ -678,7 +693,7 @@ describe("acceptWorkspaceInvitation", () => {
     await invite(h, "Invitee@Example.COM");
     const result = await acceptWorkspaceInvitation(
       actor(INVITEE), h.tokens.issued[0] ?? "", h.acceptDeps);
-    expect(result.joined).toBe(true);
+    expect(result.pending).toBe(true);
   });
 
   it("refuses after the invited account changes its email", async () => {
@@ -728,7 +743,7 @@ describe("acceptWorkspaceInvitation", () => {
     // The fresh one works.
     const result = await acceptWorkspaceInvitation(
       actor(INVITEE), h.tokens.issued[1] ?? "", h.acceptDeps);
-    expect(result.joined).toBe(true);
+    expect(result.pending).toBe(true);
   });
 
   it("converges when the membership already exists", async () => {
@@ -744,12 +759,13 @@ describe("acceptWorkspaceInvitation", () => {
     const result = await acceptWorkspaceInvitation(
       actor(INVITEE), h.tokens.issued[0] ?? "", h.acceptDeps);
 
-    expect(result.joined).toBe(false);
+    expect(result).toMatchObject({ joined: false, pending: false });
     expect(h.store.memberships.filter(m => m.userId === INVITEE)).toHaveLength(1);
+    expect(h.store.joinRequests).toHaveLength(0);
     expect(h.store.invitations[0]?.acceptedAt).toBe(AT);
   });
 
-  it("makes the workspace appear in the invitee's list immediately", async () => {
+  it("makes the workspace appear in the invitee's list once approved, not before", async () => {
     // The cross-feature property: membership is authoritative, so nothing has
     // to be refreshed or re-issued.
     const h = await harness();
@@ -758,6 +774,11 @@ describe("acceptWorkspaceInvitation", () => {
       .toHaveLength(0);
 
     await acceptWorkspaceInvitation(actor(INVITEE), h.tokens.issued[0] ?? "", h.acceptDeps);
+    expect(await listMyWorkspaces(INVITEE, { transactions: h.transactions }))
+      .toHaveLength(0);
+    const [request] = await listJoinRequests(actor(OWNER), h.workspaceId, "pending", h);
+    await approveJoinRequest(actor(OWNER), h.workspaceId, request!.requestId, {},
+      { ...h.acceptDeps.joinRequests, transactions: h.transactions });
 
     const mine = await listMyWorkspaces(INVITEE, { transactions: h.transactions });
     expect(mine).toHaveLength(1);

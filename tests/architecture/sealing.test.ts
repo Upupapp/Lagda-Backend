@@ -329,12 +329,18 @@ describe("hashing is confined to the sealing adapter", () => {
     //                              signing link from opening a download, and
     //                              the reverse.
     //
+    //   security/join-link       — WORKSPACE JOIN LINK digests (078). A
+    //                              fourteenth domain, `lagda.workspace-join-link:`,
+    //                              so a join ticket can never resolve an
+    //                              invitation or a signing link, and the reverse.
+    //
     // Each addition is a deliberate entry with a named domain. A caller that
     // appears without one still fails, which is what keeps this from becoming a
     // list that grows whenever it is inconvenient.
     expect(users.sort()).toEqual([
       "packages/api/src/security/crypto.ts",
       "packages/api/src/security/invitation-token.ts",
+      "packages/api/src/security/join-link.ts",
       "packages/api/src/security/pre-auth-token.ts",
       "packages/api/src/security/rate-limit-plugin.ts",
       "packages/api/src/security/recipient-session-token.ts",

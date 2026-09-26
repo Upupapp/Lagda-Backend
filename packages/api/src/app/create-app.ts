@@ -4,6 +4,7 @@
 // what lets integration tests use `app.inject()` with no TCP port, no free-port
 // races and no cleanup — and it is why importing this package cannot start a
 // server (INV: no listen on import).
+import { registerJoinRoutes, registerJoinPreviewRoute } from "../workspaces/join-routes.js";
 import { randomUUID } from "node:crypto";
 import { createHandoffCodeDigester } from "../security/crypto.js";
 import {
@@ -448,6 +449,23 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
         registerInvitationRedemptionRoutes(scope, invitationOptions);
       }
 
+      // 078. Join links and requests: every one of these needs a session and
+      // CSRF, which is why they live in this scope.
+      if (workspaces.joins !== undefined) {
+        const joins = workspaces.joins;
+        registerJoinRoutes(scope, {
+          authenticatedUser: (request: FastifyRequest) => Promise.resolve(
+            request.auth.status === "authenticated"
+              ? { userId: request.auth.actor.userId, sessionId: request.auth.actor.sessionId }
+              : null,
+          ),
+          tickets: joins.tickets,
+          requests: joins.requests,
+          linkUrl: joins.linkUrl,
+          ...(limiter === undefined ? {} : { rateLimit: { limiter, metrics } }),
+        });
+      }
+
       if (workspaces.members !== undefined) {
         const members = workspaces.members;
         registerMemberRoutes(scope, {
@@ -760,6 +778,18 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
     // It reads one invitation resolved by a credential the caller already
     // holds, creates nothing and consumes nothing. Rate-limited by IP, which is
     // the only scope that exists before authentication.
+    // 078. The join page's preview, before anyone signs in.
+    if (workspaces.joins !== undefined) {
+      const joins = workspaces.joins;
+      registerJoinPreviewRoute(app, {
+        authenticatedUser: () => Promise.resolve(null),
+        tickets: joins.tickets,
+        requests: joins.requests,
+        linkUrl: joins.linkUrl,
+        ...(limiter === undefined ? {} : { rateLimit: { limiter, metrics } }),
+      });
+    }
+
     if (workspaces.invitations !== undefined) {
       const invitations = workspaces.invitations;
       registerInvitationPreviewRoute(app, {

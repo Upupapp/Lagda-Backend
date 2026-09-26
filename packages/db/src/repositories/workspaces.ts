@@ -177,6 +177,9 @@ export function createScopedMembershipRepository(
           "m.user_id as user_id",
           "m.role as role",
           "m.created_at as created_at",
+          "m.role_title as role_title",
+          "m.can_request_documents as can_request_documents",
+          "m.can_assign_signers as can_assign_signers",
         ])
         .executeTakeFirst();
       return row === undefined ? null : toMembershipRecord(row);
@@ -206,6 +209,9 @@ export function createScopedMembershipRepository(
           "m.user_id as user_id",
           "m.role as role",
           "m.created_at as created_at",
+          "m.role_title as role_title",
+          "m.can_request_documents as can_request_documents",
+          "m.can_assign_signers as can_assign_signers",
           // The DISPLAY address, never `normalized_email`, which is an internal
           // identity key and not something a directory should surface.
           "u.email as email",
@@ -228,6 +234,9 @@ export function createScopedMembershipRepository(
         createdAt: row.created_at.getTime(),
         email: row.email,
         displayName: row.display_name,
+        roleTitle: row.role_title,
+        canRequestDocuments: row.can_request_documents,
+        canAssignSigners: row.can_assign_signers,
       }));
     },
 
@@ -288,6 +297,22 @@ export function createScopedMembershipRepository(
 
       // Zero rows is deliberately ambiguous: absent, other tenant, or changed
       // concurrently. The caller reports "could not apply", never which.
+      return Number(result.numUpdatedRows) === 1;
+    },
+
+    async updateAccess(input) {
+      // The two grants and the title move together: one decision by one
+      // owner or administrator, never half-applied.
+      const result = await trx
+        .updateTable("workspace_memberships")
+        .set({
+          role_title: input.roleTitle,
+          can_request_documents: input.canRequestDocuments,
+          can_assign_signers: input.canAssignSigners,
+        })
+        .where("workspace_id", "=", scope)
+        .where("member_id", "=", input.memberId)
+        .executeTakeFirst();
       return Number(result.numUpdatedRows) === 1;
     },
   };

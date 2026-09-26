@@ -23,7 +23,10 @@ import type { WorkspacesTable, WorkspaceMembershipsTable } from "../schema/index
 // accidentally be used as a write mapper.
 type WorkspaceRow = Selectable<WorkspacesTable>;
 type WorkspaceInsert = Insertable<WorkspacesTable>;
-type MembershipRow = Selectable<WorkspaceMembershipsTable>;
+type AccessColumns = "role_title" | "can_request_documents" | "can_assign_signers";
+/** The 078 columns are optional so a narrower SELECT still maps; absent reads as none granted. */
+type MembershipRow = Omit<Selectable<WorkspaceMembershipsTable>, AccessColumns>
+  & Partial<Pick<Selectable<WorkspaceMembershipsTable>, AccessColumns>>;
 type MembershipInsert = Insertable<WorkspaceMembershipsTable>;
 
 /** A persisted value that cannot be interpreted. Never a client's fault. */
@@ -123,6 +126,9 @@ export function toMembershipRecord(row: MembershipRow): WorkspaceMembershipRecor
     userId: row.user_id as UserId,
     role: toRole(row.role),
     createdAt: toInstant("workspace_memberships", "created_at", row.created_at),
+    roleTitle: row.role_title ?? null,
+    canRequestDocuments: row.can_request_documents === true,
+    canAssignSigners: row.can_assign_signers === true,
   };
 }
 
@@ -135,5 +141,8 @@ export function fromMembershipRecord(
     user_id: record.userId,
     role: record.role,
     created_at: new Date(record.createdAt),
+    role_title: record.roleTitle ?? null,
+    can_request_documents: record.canRequestDocuments === true,
+    can_assign_signers: record.canAssignSigners === true,
   };
 }

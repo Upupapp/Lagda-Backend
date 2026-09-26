@@ -224,8 +224,9 @@ describe("production composition", () => {
     // document rather than uploading one — 15 -> 16 with `uploadRequests`
     // (067), asking a member to supply one the workspace does not have, and
     // 16 -> 17 with `documentFeed`, the in-app notification feed projected
-    // from evidence.
-    expect(subWired).toBe(17);
+    // from evidence, and 17 -> 18 with `joins` (078), single-use join links
+    // and the requests an owner or administrator approves.
+    expect(subWired).toBe(18);
   });
 });
 

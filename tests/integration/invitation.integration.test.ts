@@ -15,6 +15,7 @@ import {
   CreateWorkspace, createWorkspaceInvitation, resendWorkspaceInvitation,
   revokeWorkspaceInvitation, acceptWorkspaceInvitation,
   getWorkspaceInvitationPreview, listMyWorkspaces,
+  listJoinRequests, approveJoinRequest,
   InvitationInvalidError, InvitationAccountMismatchError,
   AlreadyWorkspaceMemberError, InvitationAlreadyPendingError,
   assertNormalized,
@@ -23,6 +24,7 @@ import {
   type InvitationTokenFactory, type WorkspaceInvitationIdGenerator,
 } from "@lagda/application";
 import {
+  joinNotifyDependencies,
   FixedClock, SequentialWorkspaceIds, SequentialMemberIds,
   createIdempotencyKeyDigester, createIdempotencyRecordIds,
 } from "@lagda/application/test-support";
@@ -121,6 +123,7 @@ suite("workspace invitations on PostgreSQL", () => {
     clock: new FixedClock(AT),
     tokens,
     memberIds,
+    joinRequests: joinNotifyDependencies(new FixedClock(AT)),
     // Reads the CURRENT canonical address from the account, exactly as
     // production does — not from a fixture map.
     currentNormalizedEmail: async (userId: UserId) => {
@@ -420,55 +423,48 @@ suite("workspace invitations on PostgreSQL", () => {
   // ── Acceptance ────────────────────────────────────────────────────────────
 
   describe("acceptance", () => {
-    it("creates the membership and consumes the invitation ATOMICALLY", async () => {
+    // 078. Acceptance never creates a membership. It consumes the invitation
+    // and files a join request that an owner or administrator decides.
+    const joinRequests = () => withRawGlobalTransaction(owner, trx =>
+      trx.selectFrom("workspace_join_requests").selectAll().execute());
+    const membershipsOf = (userId: UserId) => withRawGlobalTransaction(owner, trx =>
+      trx.selectFrom("workspace_memberships").selectAll().where("user_id", "=", userId).execute());
+
+    it("files a PENDING request and consumes the invitation ATOMICALLY", async () => {
       await invite(INVITEE_EMAIL, "sender");
       const result = await acceptWorkspaceInvitation(
         actor(INVITEE), issued[0] ?? "", acceptDeps());
 
-      expect(result.joined).toBe(true);
-      const state = await withRawGlobalTransaction(owner, async trx => ({
-        invitation: await trx.selectFrom("workspace_invitations").selectAll()
-          .executeTakeFirst(),
-        memberships: await trx.selectFrom("workspace_memberships").selectAll()
-          .where("user_id", "=", INVITEE).execute(),
-      }));
-
-      expect(state.invitation?.accepted_at).not.toBeNull();
-      expect(state.invitation?.accepted_by_user_id).toBe(INVITEE);
-      expect(state.memberships).toHaveLength(1);
-      expect(state.memberships[0]?.role).toBe("sender");
+      expect(result).toMatchObject({ joined: false, pending: true });
+      const invitation = (await rows())[0];
+      expect(invitation?.accepted_at).not.toBeNull();
+      expect(invitation?.accepted_by_user_id).toBe(INVITEE);
+      const [request] = await joinRequests();
+      expect(request).toMatchObject({
+        source_kind: "invitation", requested_role: "sender", state: "pending", user_id: INVITEE,
+      });
+      expect(await membershipsOf(INVITEE)).toHaveLength(0);
     });
 
-    it("leaves NEITHER change when the membership insert fails", async () => {
-      // One transaction. The failure is real — a duplicate member id violates
-      // the primary key inside the same transaction that consumed the
-      // invitation.
+    it("leaves NEITHER change when the request insert fails", async () => {
+      // One transaction. The failure is real — an id longer than the column
+      // fails inside the same transaction that consumed the invitation.
       await invite();
-      const collidingId = await withRawGlobalTransaction(owner, trx =>
-        trx.selectFrom("workspace_memberships").select("member_id")
-          .executeTakeFirstOrThrow());
-
+      const notify = joinNotifyDependencies(new FixedClock(AT));
       await expect(acceptWorkspaceInvitation(
         actor(INVITEE), issued[0] ?? "",
         acceptDeps({
-          memberIds: { nextWorkspaceMemberId: () => collidingId.member_id as never },
+          joinRequests: { ...notify, ids: { ...notify.ids, nextJoinRequestId: () => "x".repeat(200) as never } },
         }),
       )).rejects.toThrow();
 
-      const after = await withRawGlobalTransaction(owner, async trx => ({
-        invitation: await trx.selectFrom("workspace_invitations").selectAll()
-          .executeTakeFirst(),
-        memberships: await trx.selectFrom("workspace_memberships").selectAll()
-          .where("user_id", "=", INVITEE).execute(),
-      }));
-
       // The invitation is still live — the consumption rolled back with the
       // insert, so the invitee can try again.
-      expect(after.invitation?.accepted_at).toBeNull();
-      expect(after.memberships).toHaveLength(0);
+      expect((await rows())[0]?.accepted_at).toBeNull();
+      expect(await joinRequests()).toHaveLength(0);
     });
 
-    it("CONCURRENT acceptance of one token creates exactly one membership", async () => {
+    it("CONCURRENT acceptance of one token files exactly one request", async () => {
       // The conditional UPDATE is the serialization point: of two acceptances,
       // exactly one matches a live row.
       await invite();
@@ -479,11 +475,7 @@ suite("workspace invitations on PostgreSQL", () => {
         acceptWorkspaceInvitation(actor(INVITEE), token, acceptDeps()),
       ]);
 
-      const memberships = await withRawGlobalTransaction(owner, trx =>
-        trx.selectFrom("workspace_memberships").selectAll()
-          .where("user_id", "=", INVITEE).execute());
-
-      expect(memberships).toHaveLength(1);
+      expect(await joinRequests()).toHaveLength(1);
       expect(outcomes.some(o => o.status === "fulfilled")).toBe(true);
     });
 
@@ -492,11 +484,8 @@ suite("workspace invitations on PostgreSQL", () => {
       await expect(acceptWorkspaceInvitation(
         actor(STRANGER), issued[0] ?? "", acceptDeps()))
         .rejects.toBeInstanceOf(InvitationAccountMismatchError);
-
-      const memberships = await withRawGlobalTransaction(owner, trx =>
-        trx.selectFrom("workspace_memberships").selectAll()
-          .where("user_id", "=", STRANGER).execute());
-      expect(memberships).toHaveLength(0);
+      expect(await joinRequests()).toHaveLength(0);
+      expect(await membershipsOf(STRANGER)).toHaveLength(0);
     });
 
     it("does not verify the invitee's email as a side effect", async () => {
@@ -511,19 +500,20 @@ suite("workspace invitations on PostgreSQL", () => {
       expect(account?.email_verified_at).toBeNull();
     });
 
-    it("makes the workspace immediately visible to the new member", async () => {
+    it("makes the workspace visible only once an owner approves", async () => {
       await invite();
-      expect(await listMyWorkspaces(
-        INVITEE, { transactions: createTransactionManager(app.db) })).toHaveLength(0);
-
+      const transactions = createTransactionManager(app.db);
       await acceptWorkspaceInvitation(actor(INVITEE), issued[0] ?? "", acceptDeps());
+      expect(await listMyWorkspaces(INVITEE, { transactions })).toHaveLength(0);
 
-      const mine = await listMyWorkspaces(
-        INVITEE, { transactions: createTransactionManager(app.db) });
+      const [request] = await listJoinRequests(actor(OWNER), workspaceId, "pending", { transactions });
+      await approveJoinRequest(actor(OWNER), workspaceId, request?.requestId ?? "", {},
+        { ...joinNotifyDependencies(new FixedClock(AT)), transactions });
+
+      const mine = await listMyWorkspaces(INVITEE, { transactions });
       expect(mine).toHaveLength(1);
       expect(mine[0]?.name).toBe("Acme Legal");
-      // No session was reissued. Membership is authoritative, so the same
-      // credential now reaches a workspace it could not reach a moment ago.
+      expect((await membershipsOf(INVITEE))[0]?.role).toBe("member");
     });
 
     it("converges when the membership already exists", async () => {
@@ -537,11 +527,9 @@ suite("workspace invitations on PostgreSQL", () => {
       const result = await acceptWorkspaceInvitation(
         actor(INVITEE), issued[0] ?? "", acceptDeps());
 
-      expect(result.joined).toBe(false);
-      const memberships = await withRawGlobalTransaction(owner, trx =>
-        trx.selectFrom("workspace_memberships").selectAll()
-          .where("user_id", "=", INVITEE).execute());
-      expect(memberships).toHaveLength(1);
+      expect(result).toMatchObject({ joined: false, pending: false });
+      expect(await membershipsOf(INVITEE)).toHaveLength(1);
+      expect(await joinRequests()).toHaveLength(0);
       // The invitation is closed, so no live credential dangles for access that
       // already exists.
       const invitation = (await rows())[0];

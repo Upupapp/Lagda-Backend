@@ -74,7 +74,7 @@ import {
   provisionSigningRecipientAccess,
   type SigningAccessProvisioningDependencies,
 } from "../signing-requests/send.js";
-import { assertCapability, type WorkspaceAccessContext } from "../workspaces/workspace-access.js";
+import { assertCapability, type WorkspaceAccessContext, privilegesOf } from "../workspaces/workspace-access.js";
 import {
   resolveRecipientSession,
   type RecipientSigningContext, type SigningAccessDependencies,
@@ -942,6 +942,7 @@ async function authorize(
     userId: membership.userId,
     membershipId: membership.memberId,
     role: membership.role,
+    privileges: privilegesOf(membership),
   };
   assertCapability(access, capability);
   return access;

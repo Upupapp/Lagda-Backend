@@ -77,6 +77,10 @@ export const WorkspaceMemberSchema = Type.Object({
   role: WorkspaceRoleSchema,
   joinedAt: Type.Integer(),
   isCurrentUser: Type.Boolean(),
+  /** 078. */
+  roleTitle: Type.Union([Type.String(), Type.Null()]),
+  canRequestDocuments: Type.Boolean(),
+  canAssignSigners: Type.Boolean(),
 }, { additionalProperties: false });
 
 export const MemberListResponseSchema = Type.Object({

@@ -58,7 +58,7 @@ import {
 import {
   createIdempotencyService, type IdempotencyDependencies,
 } from "../idempotency/service.js";
-import { assertCapability, type WorkspaceAccessContext } from "../workspaces/workspace-access.js";
+import { assertCapability, type WorkspaceAccessContext, privilegesOf } from "../workspaces/workspace-access.js";
 // The same error, the same meaning, one declaration. BACKEND-30 already
 // refuses to place fields on a document with no accepted bytes; refusing to
 // snapshot one is the same refusal at a later moment.
@@ -239,6 +239,7 @@ export async function authorize(
     userId: membership.userId,
     membershipId: membership.memberId,
     role: membership.role,
+    privileges: privilegesOf(membership),
   };
   assertCapability(access, capability);
   return access;

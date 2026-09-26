@@ -12,6 +12,10 @@ import type {
 } from "./user-signing-records.js";
 import type { ScopedWorkflowTemplateRepository } from "./workflow-templates.js";
 import type { ScopedUploadRequestRepository } from "./upload-requests.js";
+import type {
+  ScopedJoinTicketRepository, ScopedJoinRequestRepository,
+  JoinTicketDigest, JoinTicketCredentialUnitOfWork,
+} from "./workspace-join.js";
 import type { ScopedWorkflowTemplateFieldRepository } from "./workflow-template-fields.js";
 import type { ScopedDocumentNotificationStateRepository } from "./document-notification-states.js";
 import type { ScopedUploadRepository } from "./upload.js";
@@ -133,6 +137,12 @@ export interface WorkspaceMembershipRecord {
   readonly userId: UserId;
   readonly role: WorkspaceRole;
   readonly createdAt: number;
+  /** 078. The owner's own wording for this person's role; null shows the role's name. */
+  readonly roleTitle?: string | null;
+  /** 078. "Request documents from others", granted by an owner or administrator. */
+  readonly canRequestDocuments?: boolean;
+  /** 078. "Assign people for document signing", granted by an owner or administrator. */
+  readonly canAssignSigners?: boolean;
 }
 
 /**
@@ -152,6 +162,9 @@ export interface WorkspaceMemberDirectoryRecord {
   /** The DISPLAY address. `normalized_email` is internal and never leaves. */
   readonly email: string;
   readonly displayName: string;
+  readonly roleTitle?: string | null;
+  readonly canRequestDocuments?: boolean;
+  readonly canAssignSigners?: boolean;
 }
 
 // ── Scoped repositories ──────────────────────────────────────────────────────
@@ -272,6 +285,14 @@ export interface ScopedMembershipRepository {
     readonly memberId: WorkspaceMemberId;
     readonly expectedRole: WorkspaceRole;
     readonly nextRole: WorkspaceRole;
+  }): Promise<boolean>;
+
+  /** 078. Sets the typed role title and the two grants; false if no such member. */
+  updateAccess(input: {
+    readonly memberId: WorkspaceMemberId;
+    readonly roleTitle: string | null;
+    readonly canRequestDocuments: boolean;
+    readonly canAssignSigners: boolean;
   }): Promise<boolean>;
 }
 
@@ -482,6 +503,8 @@ export interface WorkspaceUnitOfWork {
    * flow where the workspace does not hold the file yet.
    */
   readonly uploadRequests: ScopedUploadRequestRepository;
+  readonly joinTickets: ScopedJoinTicketRepository;
+  readonly joinRequests: ScopedJoinRequestRepository;
 }
 
 /**
@@ -723,6 +746,16 @@ export interface TransactionManager {
   ): Promise<T>;
 
   /**
+   * A transaction scoped to ONE join link (078): the same shape as
+   * `runForInvitationCredential`, with its own setting so the two realms
+   * cannot see each other's rows.
+   */
+  runForJoinTicketCredential<T>(
+    tokenDigest: JoinTicketDigest,
+    operation: (uow: JoinTicketCredentialUnitOfWork) => Promise<T>,
+  ): Promise<T>;
+
+  /**
    * A transaction bound to a signing BOOTSTRAP credential (BACKEND-34).
    *
    * The recipient realm's entry point. A recipient has no workspace context, so
@@ -796,6 +829,7 @@ export * from "./workflow-template-fields.js";
 export * from "./document-notification-states.js";
 export * from "./flow-document.js";
 export * from "./upload-requests.js";
+export * from "./workspace-join.js";
 
 export * from "./signing-access.js";
 

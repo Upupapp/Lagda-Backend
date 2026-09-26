@@ -33,7 +33,7 @@ import {
 import type { Clock, TransactionManager, WorkspaceUnitOfWork } from "../common/ports/index.js";
 import type { AuthenticatedActor } from "../common/ports/session.js";
 import { ApplicationError, ResourceNotFoundError } from "../common/errors/index.js";
-import { assertCapability, type WorkspaceAccessContext } from "./workspace-access.js";
+import { assertCapability, type WorkspaceAccessContext, privilegesOf } from "./workspace-access.js";
 
 // ── Errors ───────────────────────────────────────────────────────────────────
 
@@ -99,6 +99,10 @@ export interface WorkspaceMemberSummary {
   readonly joinedAt: number;
   /** So a client can mark the current user without comparing ids itself. */
   readonly isCurrentUser: boolean;
+  /** 078. The typed role title, or null to show the role's name (New Comer for "member"). */
+  readonly roleTitle: string | null;
+  readonly canRequestDocuments: boolean;
+  readonly canAssignSigners: boolean;
 }
 
 export interface MemberAdministrationDependencies {
@@ -130,6 +134,7 @@ async function actorAuthorityInTransaction(
     userId: membership.userId,
     membershipId: membership.memberId,
     role: membership.role,
+    privileges: privilegesOf(membership),
   };
   assertCapability(access, capability);
   return access;
@@ -153,6 +158,9 @@ export async function listWorkspaceMembers(
       role: member.role,
       joinedAt: member.createdAt,
       isCurrentUser: member.userId === actor.userId,
+      roleTitle: member.roleTitle ?? null,
+      canRequestDocuments: member.canRequestDocuments === true,
+      canAssignSigners: member.canAssignSigners === true,
     }));
   });
 }
@@ -334,6 +342,9 @@ async function summarize(
     role: member.role,
     joinedAt: member.createdAt,
     isCurrentUser: member.userId === actorUserId,
+    roleTitle: member.roleTitle ?? null,
+    canRequestDocuments: member.canRequestDocuments === true,
+    canAssignSigners: member.canAssignSigners === true,
   };
 }
 

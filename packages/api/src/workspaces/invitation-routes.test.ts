@@ -19,6 +19,7 @@ import {
   type InvitationTokenFactory, type NormalizedEmail,
 } from "@lagda/application";
 import {
+  joinNotifyDependencies,
   FakeTransactionManager, FixedClock, SequentialWorkspaceIds, SequentialMemberIds,
   createIdempotencyKeyDigester, createIdempotencyRecordIds,
 } from "@lagda/application/test-support";
@@ -128,6 +129,7 @@ async function harness(): Promise<Harness> {
     clock: new FixedClock(AT),
     tokens,
     memberIds,
+    joinRequests: joinNotifyDependencies(new FixedClock(AT)),
     currentNormalizedEmail: (userId: UserId) => {
       for (const [email, id] of transactions.store.accountEmails) {
         if (id === userId) return Promise.resolve(email as NormalizedEmail);
@@ -400,7 +402,7 @@ describe("invitation routes — what the schemas refuse", () => {
 // ── Behaviour through HTTP ──────────────────────────────────────────────────
 
 describe("invitation routes — behaviour", () => {
-  it("creates, lists, accepts, and the workspace appears in the new member's list", async () => {
+  it("creates, lists, accepts — and acceptance files a request, never a membership", async () => {
     const h = await harness();
     const owner = await h.signIn(OWNER);
 
@@ -426,16 +428,14 @@ describe("invitation routes — behaviour", () => {
       payload: { token: h.tokens.issued[0] ?? "" },
     });
     expect(accepted.statusCode).toBe(200);
-    expect(accepted.json<{ joined: boolean }>().joined).toBe(true);
+    expect(accepted.json<{ joined: boolean; pending: boolean }>())
+      .toMatchObject({ joined: false, pending: true });
 
-    // SAME session cookie, and the workspace is now reachable. No re-login, no
-    // token rotation — membership is authoritative.
+    // 078. Not reachable until an owner or administrator approves the request.
     const after = await h.app.inject({
       method: "GET", url: "/workspaces", headers: { cookie: invitee.cookie },
     });
-    expect(after.json<{ workspaces: { name: string }[] }>().workspaces).toHaveLength(1);
-    expect(after.json<{ workspaces: { name: string }[] }>().workspaces[0]?.name)
-      .toBe("Acme Legal");
+    expect(after.json<{ workspaces: unknown[] }>().workspaces).toHaveLength(0);
   });
 
   it("refuses the WRONG signed-in account with a distinct code", async () => {

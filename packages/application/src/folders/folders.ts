@@ -22,7 +22,7 @@ import type { WorkspaceId } from "@lagda/contracts";
 import {
   checkFolderPlacement, FOLDER_NAME_MAX_LENGTH, type FolderNode,
 } from "@lagda/core";
-import { assertCapability } from "../workspaces/workspace-access.js";
+import { assertCapability, privilegesOf } from "../workspaces/workspace-access.js";
 import {
   ApplicationError, ApplicationValidationError, ResourceNotFoundError,
   FolderUnavailableError,
@@ -75,6 +75,7 @@ export async function listFolders(
       userId: membership.userId,
       membershipId: membership.memberId,
       role: membership.role,
+      privileges: privilegesOf(membership),
     }, "document.view");
 
     const folders = await uow.folders.list();
@@ -198,6 +199,7 @@ async function authorizeWrite(
     userId: membership.userId,
     membershipId: membership.memberId,
     role: membership.role,
+    privileges: privilegesOf(membership),
   }, "document.update");
   // `document.update`, the capability that files a document -- organising
   // documents is one permission, not two. A role that may re-file a document

@@ -229,6 +229,10 @@ export async function truncateAll(database: LagdaDatabase): Promise<void> {
   await database.db.deleteFrom("notification_dispatch_index").execute();
   await database.db.deleteFrom("notification_deliveries").execute();
   await database.db.deleteFrom("notification_intents").execute();
+  // 078. A request references its ticket or invitation; an intent (above)
+  // references the ticket. Both before either parent.
+  await database.db.deleteFrom("workspace_join_requests").execute();
+  await database.db.deleteFrom("workspace_join_tickets").execute();
 
   await database.db.deleteFrom("document_uploads").execute();
   await database.db.deleteFrom("verification_records").execute();

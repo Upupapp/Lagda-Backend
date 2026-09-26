@@ -119,9 +119,9 @@ export async function createUploadRequest(
   }
 
   return deps.transactions.runForWorkspace(workspaceId, async uow => {
-    // Asking somebody for a document is creating workspace work, so it takes
-    // the same capability as preparing one.
-    await authorize(uow, actor, "document.prepare");
+    // Asking somebody for a document (078): its own capability, so the
+    // "Request documents from others" privilege can grant it on its own.
+    await authorize(uow, actor, "upload-request.create");
 
     const contact = await uow.contacts.findById(input.contactId as ContactId);
     if (contact === null) throw new ResourceNotFoundError("Contact");

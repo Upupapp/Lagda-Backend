@@ -45,7 +45,7 @@ import {
   effectiveRequired, type WorkspaceCapability,
 } from "@lagda/core";
 import {
-  assertCapability, type WorkspaceAccessContext,
+  assertCapability, type WorkspaceAccessContext, privilegesOf,
 } from "../workspaces/workspace-access.js";
 import type { Clock, TransactionManager, WorkspaceUnitOfWork } from "../common/ports/index.js";
 import type {
@@ -150,6 +150,7 @@ async function authorize(
     userId: membership.userId,
     membershipId: membership.memberId,
     role: membership.role,
+    privileges: privilegesOf(membership),
   };
   assertCapability(access, capability);
   return access;

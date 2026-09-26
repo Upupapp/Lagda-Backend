@@ -1248,7 +1248,8 @@
                     "workspaceId",
                     "workspaceName",
                     "role",
-                    "joined"
+                    "joined",
+                    "pending"
                   ],
                   "properties": {
                     "workspaceId": {
@@ -1300,6 +1301,9 @@
                       ]
                     },
                     "joined": {
+                      "type": "boolean"
+                    },
+                    "pending": {
                       "type": "boolean"
                     }
                   }
@@ -1553,6 +1557,12 @@
                           {
                             "type": "string",
                             "enum": [
+                              "upload-request.create"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
                               "signing-request.create"
                             ]
                           },
@@ -1683,7 +1693,10 @@
                           "displayName",
                           "role",
                           "joinedAt",
-                          "isCurrentUser"
+                          "isCurrentUser",
+                          "roleTitle",
+                          "canRequestDocuments",
+                          "canAssignSigners"
                         ],
                         "properties": {
                           "membershipId": {
@@ -1750,6 +1763,22 @@
                             "type": "integer"
                           },
                           "isCurrentUser": {
+                            "type": "boolean"
+                          },
+                          "roleTitle": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "canRequestDocuments": {
+                            "type": "boolean"
+                          },
+                          "canAssignSigners": {
                             "type": "boolean"
                           }
                         }
@@ -1866,7 +1895,10 @@
                     "displayName",
                     "role",
                     "joinedAt",
-                    "isCurrentUser"
+                    "isCurrentUser",
+                    "roleTitle",
+                    "canRequestDocuments",
+                    "canAssignSigners"
                   ],
                   "properties": {
                     "membershipId": {
@@ -1933,6 +1965,22 @@
                       "type": "integer"
                     },
                     "isCurrentUser": {
+                      "type": "boolean"
+                    },
+                    "roleTitle": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "canRequestDocuments": {
+                      "type": "boolean"
+                    },
+                    "canAssignSigners": {
                       "type": "boolean"
                     }
                   }

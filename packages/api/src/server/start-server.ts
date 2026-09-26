@@ -4,6 +4,7 @@
 // open a listener. This is the only place in the package that reads the
 // environment, constructs infrastructure, or binds a port.
 
+import { createJoinTicketTokenFactory, createJoinTicketSecrets } from "../security/join-link.js";
 import {
   createDatabase, loadDatabaseConfig, createTransactionManager,
   createSessionRepository, createRateLimitCounterRepository,
@@ -13,7 +14,7 @@ import {
 } from "@lagda/db";
 import {
   createSessionService, createAbuseLimiter,
-  createTemplateRegistry, ALL_TEMPLATES,
+  createTemplateRegistry, ALL_TEMPLATES, createNotificationLinkBuilder,
   type Clock, type NormalizedEmail, type UserId,
 } from "@lagda/application";
 import { createRateLimitScopeDigester } from "../security/rate-limit-plugin.js";
@@ -47,7 +48,7 @@ import { createPdfInspector, sha256, NodeFlowDocumentGenerator } from "@lagda/se
 import { createArgon2PasswordHasher } from "../security/password-hasher.js";
 import { buildIdentity } from "./identity-composition.js";
 import {
-  createWorkspaceIdGenerator, createWorkspaceMemberIdGenerator,
+  createWorkspaceIdGenerator, createWorkspaceMemberIdGenerator, createJoinIdGenerator,
   createContactIdGenerator, createUploadRequestIdGenerator, createWorkflowTemplateIdGenerator,
   createDocumentIdGenerator, createFolderIdGenerator,
   createPreparationIdGenerator, createRecipientIdGenerator,
@@ -731,12 +732,24 @@ function buildLinkedSurfaces(input: {
   idempotency: IdempotencyComposition;
   memberIds: ReturnType<typeof createWorkspaceMemberIdGenerator>;
   database: LagdaDatabase;
-}): Partial<Pick<WorkspaceDependencies, "invitations" | "sendSigningRequest" | "cancelSigningRequest">> {
+}): Partial<Pick<WorkspaceDependencies, "invitations" | "sendSigningRequest" | "cancelSigningRequest" | "joins">> {
   const { config, transactions, clock, idempotency, memberIds, database } = input;
   const appBaseUrl = config.appBaseUrl;
   if (appBaseUrl === null) return {};
 
   const invitationTokens = createInvitationTokenFactory();
+
+  // 078. What every join path needs to tell owners, admins and requesters.
+  const joinNotify = {
+    clock,
+    templates: createTemplateRegistry(ALL_TEMPLATES),
+    ids: {
+      ...createJoinIdGenerator(),
+      ...createNotificationIntentIdGenerator(),
+      ...createNotificationDeliveryIdGenerator(),
+      ...memberIds,
+    },
+  };
 
   /**
    * The caller's CURRENT canonical address.
@@ -773,10 +786,30 @@ function buildLinkedSurfaces(input: {
     redemption: () => ({
       transactions, clock, tokens: invitationTokens, memberIds,
       currentNormalizedEmail,
+      joinRequests: joinNotify,
     }),
   };
 
   if (config.signingDeliveryKey === null) return { invitations };
+
+  // 078. Join links need the origin (to build the link) and the key (to seal
+  // it for the admin's Copy / QR and for the emailed copy).
+  const joinTokens = createJoinTicketTokenFactory();
+  const joinSecrets = createJoinTicketSecrets(config.signingDeliveryKey, config.signingDeliveryKeyVersion);
+  const joinLinks = createNotificationLinkBuilder(appBaseUrl);
+  const currentAccount = async (userId: UserId) => {
+    const row = await database.db.selectFrom("users")
+      .select(["email", "normalized_email", "email_verified_at"])
+      .where("user_id", "=", userId).executeTakeFirst();
+    return row === undefined ? null : {
+      email: row.email, normalizedEmail: row.normalized_email, emailVerified: row.email_verified_at !== null,
+    };
+  };
+  const joins = {
+    tickets: () => ({ transactions, ...joinNotify, tokens: joinTokens, secrets: joinSecrets }),
+    requests: () => ({ transactions, ...joinNotify, tokens: joinTokens, currentAccount }),
+    linkUrl: (token: string) => joinLinks.build("/join", token),
+  };
 
   // Shared by send AND cancel: both provision/revoke the same kind of
   // recipient access, so both need the same `SigningAccessProvisioningDependencies`
@@ -808,6 +841,7 @@ function buildLinkedSurfaces(input: {
 
   return {
     invitations,
+    joins,
     sendSigningRequest: () => ({
       transactions,
       ...accessDeps,

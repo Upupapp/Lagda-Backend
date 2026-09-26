@@ -11,6 +11,10 @@
 // Not exported from the package entry point. Test support is not public API.
 
 import type {
+  JoinTicketRecord, JoinRequestRecord, JoinTicketDigest, JoinTicketCredentialUnitOfWork,
+  ScopedJoinTicketRepository, ScopedJoinRequestRepository,
+} from "../common/ports/workspace-join.js";
+import type {
   ScopedFinalCopyRepository, NewFinalCopyGrant, FinalCopyDigest, FinalCopyCredentialUnitOfWork,
 } from "../common/ports/final-copies.js";
 import type {
@@ -430,6 +434,9 @@ interface StoreSnapshot {
   readonly contacts: ContactRecord[];
   readonly workflowTemplates: WorkflowTemplateRecord[];
   readonly uploadRequests: UploadRequestRecord[];
+  readonly joinTickets: JoinTicketRecord[];
+  readonly joinRequests: JoinRequestRecord[];
+  readonly joinTicketDigests: Map<string, string>;
   readonly workflowTemplateFields: WorkflowTemplateFieldRecord[];
   readonly notificationStates: NotificationStateRow[];
   readonly documents: DocumentRecord[];
@@ -480,6 +487,11 @@ export class InMemoryStore {
   contacts: ContactRecord[] = [];
   workflowTemplates: WorkflowTemplateRecord[] = [];
   uploadRequests: UploadRequestRecord[] = [];
+  /** 078. */
+  joinTickets: JoinTicketRecord[] = [];
+  joinRequests: JoinRequestRecord[] = [];
+  /** Digest to ticket id — the fake of 078's credential policy. */
+  joinTicketDigests = new Map<string, string>();
   workflowTemplateFields: WorkflowTemplateFieldRecord[] = [];
   /** 071. One reader's read/dismissed state on one feed row. */
   notificationStates: NotificationStateRow[] = [];
@@ -534,6 +546,9 @@ export class InMemoryStore {
     return {
       workflowTemplates: [...this.workflowTemplates],
       uploadRequests: [...this.uploadRequests],
+      joinTickets: [...this.joinTickets],
+      joinRequests: [...this.joinRequests],
+      joinTicketDigests: new Map(this.joinTicketDigests),
       workflowTemplateFields: [...this.workflowTemplateFields],
       notificationStates: this.notificationStates.map(row => ({ ...row })),
       workspaces: new Map(this.workspaces),
@@ -599,6 +614,9 @@ export class InMemoryStore {
     // `workflowTemplateFields` restore just below.
     this.workflowTemplates = [...snapshot.workflowTemplates];
     this.uploadRequests = [...snapshot.uploadRequests];
+    this.joinTickets = [...snapshot.joinTickets];
+    this.joinRequests = [...snapshot.joinRequests];
+    this.joinTicketDigests = new Map(snapshot.joinTicketDigests);
     this.workflowTemplateFields = [...snapshot.workflowTemplateFields];
     this.notificationStates = [...snapshot.notificationStates];
     this.invitations = [...snapshot.invitations];
@@ -761,6 +779,18 @@ function scopedMemberships(store: InMemoryStore, scope: WorkspaceId): ScopedMemb
       const current = index === -1 ? undefined : store.memberships[index];
       if (current === undefined) return Promise.resolve(false);
       store.memberships[index] = { ...current, role: input.nextRole };
+      return Promise.resolve(true);
+    },
+
+    updateAccess: input => {
+      const index = store.memberships.findIndex(
+        m => m.workspaceId === scope && m.memberId === input.memberId);
+      const current = index === -1 ? undefined : store.memberships[index];
+      if (current === undefined) return Promise.resolve(false);
+      store.memberships[index] = {
+        ...current, roleTitle: input.roleTitle,
+        canRequestDocuments: input.canRequestDocuments, canAssignSigners: input.canAssignSigners,
+      };
       return Promise.resolve(true);
     },
   };
@@ -3184,6 +3214,8 @@ export class FakeTransactionManager implements TransactionManager {
         accountLinks: signingAccountLinks(),
         workflowTemplates: scopedWorkflowTemplates(this.store, workspaceId),
         uploadRequests: scopedUploadRequests(this.store, workspaceId),
+        joinTickets: scopedJoinTickets(this.store, workspaceId),
+        joinRequests: scopedJoinRequests(this.store, workspaceId),
         workflowTemplateFields: scopedWorkflowTemplateFields(this.store, workspaceId),
         notificationStates: scopedNotificationStates(this.store, workspaceId),
         organizationUnits: scopedOrganizationUnits(this.store, workspaceId),
@@ -3244,6 +3276,24 @@ export class FakeTransactionManager implements TransactionManager {
     }
   }
 
+  async runForJoinTicketCredential<T>(
+    tokenDigest: JoinTicketDigest,
+    operation: (uow: JoinTicketCredentialUnitOfWork) => Promise<T>,
+  ): Promise<T> {
+    this.scopes.push("join-ticket-credential");
+    const store = this.store;
+    return operation({
+      // At most ONE ticket, by digest, mirroring 078's policy.
+      ticket: {
+        find: () => {
+          const id = store.joinTicketDigests.get(tokenDigest);
+          return Promise.resolve(id === undefined ? null : store.joinTickets.find(t => t.ticketId === id) ?? null);
+        },
+      },
+      enterWorkspace: (workspaceId, inner) => this.runForWorkspace(workspaceId, inner),
+    });
+  }
+
   async runForInvitationCredential<T>(
     tokenDigest: InvitationTokenDigest,
     operation: (uow: InvitationCredentialUnitOfWork) => Promise<T>,
@@ -3271,6 +3321,8 @@ export class FakeTransactionManager implements TransactionManager {
             workspaceId,
             workflowTemplates: scopedWorkflowTemplates(store, workspaceId),
             uploadRequests: scopedUploadRequests(store, workspaceId),
+            joinTickets: scopedJoinTickets(store, workspaceId),
+            joinRequests: scopedJoinRequests(store, workspaceId),
             workflowTemplateFields: scopedWorkflowTemplateFields(store, workspaceId),
             notificationStates: scopedNotificationStates(store, workspaceId),
             actorProfiles: { displayNameOf: () => Promise.resolve(null) },
@@ -3701,6 +3753,13 @@ export class FailingTransactionManager implements TransactionManager {
     return this.fail();
   }
 
+  runForJoinTicketCredential<T>(
+    _tokenDigest: JoinTicketDigest,
+    _operation: (uow: JoinTicketCredentialUnitOfWork) => Promise<T>,
+  ): Promise<T> {
+    return this.fail();
+  }
+
   runGlobal<T>(_operation: (uow: GlobalUnitOfWork) => Promise<T>): Promise<T> {
     return this.fail();
   }
@@ -3882,5 +3941,99 @@ export function fakeNotificationTransport(): NotificationTransportRepository {
     // False, like the claim: nothing moved. A fake that reported a delivery
     // transitioned would let a webhook test pass without a state machine.
     applyConfirmedProviderEvent: () => Promise.resolve(false),
+  };
+}
+
+
+// ── 078: join tickets and requests ───────────────────────────────────────────
+
+function scopedJoinTickets(store: InMemoryStore, scope: WorkspaceId): ScopedJoinTicketRepository {
+  const mine = () => store.joinTickets.filter(t => t.workspaceId === scope);
+  const replace = (ticketId: string, next: (t: JoinTicketRecord) => JoinTicketRecord | null): boolean => {
+    const index = store.joinTickets.findIndex(t => t.workspaceId === scope && t.ticketId === ticketId);
+    const current = index === -1 ? undefined : store.joinTickets[index];
+    if (current === undefined) return false;
+    const updated = next(current);
+    if (updated === null) return false;
+    store.joinTickets[index] = updated;
+    return true;
+  };
+  const dropDigest = (t: JoinTicketRecord) => {
+    if (t.tokenDigest !== null) store.joinTicketDigests.delete(t.tokenDigest);
+  };
+  return {
+    insert: ticket => { store.joinTickets.push(ticket); return Promise.resolve(); },
+    find: ticketId => Promise.resolve(mine().find(t => t.ticketId === ticketId) ?? null),
+    list: () => Promise.resolve([...mine()].sort((a, b) => b.createdAt - a.createdAt)),
+    updateDraft: input => Promise.resolve(replace(input.ticketId, t => t.state !== "draft" ? null
+      : { ...t, label: input.label, recipientEmail: input.recipientEmail, updatedAt: input.now })),
+    markSent: input => Promise.resolve(replace(input.ticketId, t => {
+      if (t.state === "sent") return null;
+      store.joinTicketDigests.set(input.tokenDigest, t.ticketId);
+      return {
+        ...t, state: "sent", tokenDigest: input.tokenDigest, sealedToken: input.sealedToken,
+        sealedKeyVersion: input.sealedKeyVersion, workspaceName: input.workspaceName,
+        sentByName: input.sentByName, sentByUserId: input.sentByUserId, sentAt: input.now,
+        withdrawnAt: null, usedAt: null, usedByUserId: null, updatedAt: input.now,
+      };
+    })),
+    withdraw: input => Promise.resolve(replace(input.ticketId, t => {
+      if (t.state === "withdrawn") return null;
+      dropDigest(t);
+      return {
+        ...t, state: "withdrawn", tokenDigest: null, sealedToken: null, sealedKeyVersion: null,
+        withdrawnAt: input.now, updatedAt: input.now,
+      };
+    })),
+    markUsedIfUnused: input => Promise.resolve(replace(input.ticketId, t =>
+      t.state !== "sent" || t.usedAt !== null ? null
+        : { ...t, usedAt: input.now, usedByUserId: input.userId, updatedAt: input.now })),
+  };
+}
+
+function scopedJoinRequests(store: InMemoryStore, scope: WorkspaceId): ScopedJoinRequestRepository {
+  const mine = () => store.joinRequests.filter(r => r.workspaceId === scope);
+  return {
+    insert: request => {
+      if (request.state === "pending"
+        && mine().some(r => r.userId === request.userId && r.state === "pending")) {
+        return Promise.reject(new Error("workspace_join_requests_one_pending"));
+      }
+      store.joinRequests.push(request);
+      return Promise.resolve();
+    },
+    find: requestId => Promise.resolve(mine().find(r => r.requestId === requestId) ?? null),
+    list: state => Promise.resolve(mine()
+      .filter(r => state === null || r.state === state)
+      .sort((a, b) => b.createdAt - a.createdAt)),
+    findPendingForUser: userId => Promise.resolve(
+      mine().find(r => r.userId === userId && r.state === "pending") ?? null),
+    decideIfPending: input => {
+      const index = store.joinRequests.findIndex(r => r.workspaceId === scope && r.requestId === input.requestId);
+      const current = index === -1 ? undefined : store.joinRequests[index];
+      if (current === undefined || current.state !== "pending") return Promise.resolve(false);
+      store.joinRequests[index] = {
+        ...current, state: input.state, decidedByUserId: input.decidedByUserId, decidedAt: input.now,
+      };
+      return Promise.resolve(true);
+    },
+  };
+}
+
+/** 078. What every join path needs to tell owners, admins and requesters. */
+export function joinNotifyDependencies(clock: Clock = new FixedClock(Date.parse("2026-09-26T00:00:00.000Z"))) {
+  let n = 0;
+  const next = (prefix: string) => `${prefix}_${String(++n).padStart(4, "0")}`;
+  return {
+    clock,
+    templates: fakeTemplateRegistry,
+    ids: {
+      nextJoinTicketId: () => next("jtk") as JoinTicketRecord["ticketId"],
+      nextJoinRequestId: () => next("jrq") as JoinRequestRecord["requestId"],
+      nextJoinNoticeId: () => next("jnt"),
+      nextNotificationIntentId: () => next("ntf") as never,
+      nextNotificationDeliveryId: () => next("ndl") as never,
+      nextWorkspaceMemberId: () => next("mem") as never,
+    },
   };
 }

@@ -11,6 +11,7 @@
 // access. A forwarded link is useless to whoever receives it, and that is the
 // single most valuable property in the design.
 
+import { fileInvitationJoinRequest, type JoinNotifyDependencies } from "./workspace-join.js";
 import type {
   UserId, WorkspaceId, WorkspaceInvitationId, InvitableWorkspaceRole,
   IdempotencyKey, InvitationState,
@@ -189,6 +190,11 @@ export interface AcceptInvitationDependencies {
   readonly clock: Clock;
   readonly tokens: InvitationTokenFactory;
   readonly memberIds: WorkspaceMemberIdGenerator;
+  /**
+   * 078. Accepting files a pending join request an owner or administrator
+   * approves; this is what tells them about it.
+   */
+  readonly joinRequests: JoinNotifyDependencies;
   /**
    * The authenticated caller's CURRENT canonical email.
    *
@@ -600,6 +606,11 @@ export interface AcceptInvitationResult {
   readonly role: InvitableWorkspaceRole;
   /** True when this call created the membership; false when it already existed. */
   readonly joined: boolean;
+  /**
+   * 078. True when acceptance filed a request that now awaits an owner or
+   * administrator's approval — the invitee is not a member yet.
+   */
+  readonly pending: boolean;
 }
 
 /**
@@ -683,6 +694,7 @@ export async function acceptWorkspaceInvitation(
           workspaceName: workspace.name,
           role: invitation.requestedRole,
           joined: false,
+          pending: false,
         };
       }
 
@@ -702,21 +714,23 @@ export async function acceptWorkspaceInvitation(
       });
       if (!consumed) throw new InvitationInvalidError();
 
-      await ws.memberships.insert({
-        memberId: deps.memberIds.nextWorkspaceMemberId(),
-        workspaceId: invitation.workspaceId,
+      // 078: no direct join. The invitation is consumed and a pending request
+      // carrying the invited role goes to the owners and administrators.
+      await fileInvitationJoinRequest(ws, deps.joinRequests, {
+        invitationId: String(invitation.invitationId),
         userId: actor.userId,
-        // From the PERSISTED invitation. There is no role field on the accept
-        // request, so the invitee cannot choose their own (§78, §194).
-        role: invitation.requestedRole,
-        createdAt: now,
+        fullName: await ws.actorProfiles.displayNameOf(actor.userId) ?? callerEmail,
+        email: callerEmail,
+        requestedRole: invitation.requestedRole,
+        workspaceName: workspace.name,
       });
 
       return {
         workspaceId: invitation.workspaceId,
         workspaceName: workspace.name,
         role: invitation.requestedRole,
-        joined: true,
+        joined: false,
+        pending: true,
       };
     });
   });

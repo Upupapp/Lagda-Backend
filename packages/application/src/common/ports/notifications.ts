@@ -121,6 +121,12 @@ export const NOTIFICATION_TYPES = [
    * only way to the sealed PDF. One per participant, keyed on the grant.
    */
   "FINAL_COPY_AVAILABLE",
+  /** 078. A single-use join link, emailed to the person it was made for. */
+  "WORKSPACE_JOIN_LINK",
+  /** 078. An owner or administrator told that someone asked to join. */
+  "WORKSPACE_JOIN_REQUESTED",
+  /** 078. The requester told their request was approved or declined. */
+  "WORKSPACE_JOIN_DECIDED",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -146,6 +152,8 @@ export const NOTIFICATION_AUDIENCE_KINDS = [
   "USER",
   "SIGNING_REQUEST_RECIPIENT",
   "WORKSPACE_INVITEE",
+  /** 078. The address a join ticket was made for — who may have no account yet. */
+  "WORKSPACE_JOIN_TICKET",
 ] as const;
 export type NotificationAudienceKind =
   (typeof NOTIFICATION_AUDIENCE_KINDS)[number];
@@ -167,7 +175,8 @@ export type NotificationAudience =
   | {
       readonly kind: "WORKSPACE_INVITEE";
       readonly invitationId: WorkspaceInvitationId;
-    };
+    }
+  | { readonly kind: "WORKSPACE_JOIN_TICKET"; readonly joinTicketId: string };
 
 // ── Tenancy ──────────────────────────────────────────────────────────────────
 
@@ -230,6 +239,10 @@ export const NOTIFICATION_SOURCE_KINDS = [
   "DOCUMENT_UPLOAD_REQUEST",
   /** A final-copy download grant (073) — one per participant, one email each. */
   "FINAL_COPY_GRANT",
+  /** 078. One send of a join ticket — each send is its own id, so a re-send is a new email. */
+  "WORKSPACE_JOIN_TICKET",
+  /** 078. A join request, or one admin's notice about it. */
+  "WORKSPACE_JOIN_REQUEST",
 ] as const;
 export type NotificationSourceKind =
   (typeof NOTIFICATION_SOURCE_KINDS)[number];
@@ -355,6 +368,9 @@ export const NOTIFICATION_TEMPLATE_KEYS = [
   "signing-completed",
   "document-upload-requested",
   "final-copy-available",
+  "workspace-join-link",
+  "workspace-join-requested",
+  "workspace-join-decided",
 ] as const;
 export type NotificationTemplateKey =
   (typeof NOTIFICATION_TEMPLATE_KEYS)[number];

@@ -85,6 +85,7 @@ import * as m074 from "./074_contacts_scope_and_tags.js";
 import * as m075 from "./075_public_verify_access.js";
 import * as m076 from "./076_signature_block_field.js";
 import * as m077 from "./077_signing_inbox_recipient_type.js";
+import * as m078 from "./078_workspace_join_tickets.js";
 
 /**
  * Migrations listed explicitly rather than read from disk.
@@ -174,6 +175,7 @@ const MIGRATIONS: Record<string, Migration> = {
   "075_public_verify_access": m075,
   "076_signature_block_field": m076,
   "077_signing_inbox_recipient_type": m077,
+  "078_workspace_join_tickets": m078,
 };
 
 class ExplicitMigrationProvider implements MigrationProvider {

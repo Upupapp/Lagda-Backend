@@ -137,6 +137,12 @@ export const WORKSPACE_CAPABILITIES = [
    */
   "document.prepare",
   /**
+   * Asking a member to SUPPLY a document (067). Split from `document.prepare`
+   * (078) so the "Request documents from others" privilege can grant exactly
+   * this and nothing about preparing documents for signature.
+   */
+  "upload-request.create",
+  /**
    * Create a signing request: turn one coherent preparation state into an
    * immutable signing workflow.
    *
@@ -330,6 +336,7 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "document.create",
       "document.update",
       "document.prepare",
+      "upload-request.create",
       "signing-request.create",
       "signing-request.view",
       "signing-request.send",
@@ -371,6 +378,7 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "document.create",
       "document.update",
       "document.prepare",
+      "upload-request.create",
       "signing-request.create",
       "signing-request.view",
       "signing-request.send",
@@ -443,6 +451,7 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "document.create",
       "document.update",
       "document.prepare",
+      "upload-request.create",
       "signing-request.create",
       "signing-request.view",
       "signing-request.send",
@@ -469,6 +478,7 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "document.create",
       "document.update",
       "document.prepare",
+      "upload-request.create",
       "signing-request.create",
       "signing-request.view",
       "signing-request.send",
@@ -503,6 +513,47 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "workspace.view", "document.view", "signing-request.view",
     ] as const),
   });
+
+// ── Member privileges (078) ───────────────────────────────────────────────────
+
+/**
+ * The two privileges an owner or administrator can grant to any member,
+ * on top of their role. A New Comer (role `member`) holds neither until one is
+ * granted; owners and administrators hold both through their role.
+ */
+export interface MemberPrivileges {
+  readonly requestDocuments: boolean;
+  readonly assignSigners: boolean;
+}
+
+export const NO_PRIVILEGES: MemberPrivileges = Object.freeze({
+  requestDocuments: false, assignSigners: false,
+});
+
+const PRIVILEGE_CAPABILITIES: Readonly<Record<keyof MemberPrivileges, readonly WorkspaceCapability[]>> =
+  Object.freeze({
+    // Ask a member for a document: pick the contact, see the requests.
+    requestDocuments: Object.freeze([
+      "workspace.view", "document.view", "contact.view", "upload-request.create",
+    ] as const),
+    // Prepare a document and send it to people to sign — a sender's document
+    // work, without editing the address book.
+    assignSigners: Object.freeze([
+      "workspace.view", "template.view", "contact.view",
+      "document.view", "document.create", "document.update", "document.prepare",
+      "signing-request.create", "signing-request.view",
+      "signing-request.send", "signing-request.cancel",
+    ] as const),
+  });
+
+/** Every capability the granted privileges add, deduplicated. */
+export function privilegeCapabilities(privileges: MemberPrivileges | undefined): WorkspaceCapability[] {
+  if (privileges === undefined) return [];
+  const out = new Set<WorkspaceCapability>();
+  if (privileges.requestDocuments) for (const c of PRIVILEGE_CAPABILITIES.requestDocuments) out.add(c);
+  if (privileges.assignSigners) for (const c of PRIVILEGE_CAPABILITIES.assignSigners) out.add(c);
+  return [...out];
+}
 
 /**
  * Whether a role holds a capability.

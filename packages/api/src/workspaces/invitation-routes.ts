@@ -141,6 +141,8 @@ export const AcceptInvitationResponseSchema = Type.Object({
   role: InvitableWorkspaceRoleSchema,
   /** False when the membership already existed — a safe, convergent outcome. */
   joined: Type.Boolean(),
+  /** 078. True when acceptance filed a request awaiting an owner's approval. */
+  pending: Type.Boolean(),
 }, { additionalProperties: false });
 
 export const DeclineInvitationResponseSchema = Type.Object({

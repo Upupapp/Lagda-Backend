@@ -155,6 +155,7 @@ export const WORKSPACE_CAPABILITY_NAMES = [
   "document.create",
   "document.update",
   "document.prepare",
+  "upload-request.create",
   "signing-request.create",
   "signing-request.view",
   "signing-request.send",

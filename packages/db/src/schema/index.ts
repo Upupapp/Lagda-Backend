@@ -68,6 +68,46 @@ export interface WorkspacesTable {
  * Foreign keys to BOTH sides (`workspaces` since 001, `users` since 013), each
  * ON DELETE RESTRICT.
  */
+/** 078. One single-use join link for one person. */
+export interface WorkspaceJoinTicketsTable {
+  ticket_id: string;
+  workspace_id: string;
+  label: string;
+  recipient_email: string | null;
+  state: string;
+  token_digest: string | null;
+  sealed_token: string | null;
+  sealed_key_version: string | null;
+  workspace_name: string | null;
+  sent_by_name: string | null;
+  sent_by_user_id: string | null;
+  sent_at: Date | null;
+  withdrawn_at: Date | null;
+  used_at: Date | null;
+  used_by_user_id: string | null;
+  created_by_user_id: string;
+  created_at: Timestamptz;
+  updated_at: Date;
+}
+
+/** 078. A pending, approved or declined request to join. */
+export interface WorkspaceJoinRequestsTable {
+  request_id: string;
+  workspace_id: string;
+  source_kind: string;
+  ticket_id: string | null;
+  invitation_id: string | null;
+  user_id: string;
+  full_name: string;
+  email: string;
+  reason: string | null;
+  requested_role: string;
+  state: string;
+  decided_by_user_id: string | null;
+  decided_at: Date | null;
+  created_at: Timestamptz;
+}
+
 export interface WorkspaceMembershipsTable {
   member_id: string;
   /** First-class tenant column. Every workspace-owned table carries it. */
@@ -76,6 +116,12 @@ export interface WorkspaceMembershipsTable {
   /** Constrained by CHECK to the canonical role vocabulary. */
   role: string;
   created_at: Timestamptz;
+  /** 078. The owner's own wording for the role; null shows the role's name. */
+  role_title: ColumnType<string | null, string | null | undefined, string | null>;
+  /** 078. "Request documents from others". */
+  can_request_documents: ColumnType<boolean, boolean | undefined, boolean>;
+  /** 078. "Assign people for document signing". */
+  can_assign_signers: ColumnType<boolean, boolean | undefined, boolean>;
 }
 
 
@@ -794,6 +840,8 @@ export interface NotificationIntentsTable {
   audience_user_id: ColumnType<string | null, string | null, never>;
   audience_recipient_id: ColumnType<string | null, string | null, never>;
   audience_invitation_id: ColumnType<string | null, string | null, never>;
+  /** 078. */
+  audience_join_ticket_id: ColumnType<string | null, string | null | undefined, never>;
   template_key: string;
   template_version: number;
   locale: string;
@@ -1615,6 +1663,8 @@ export interface UserAvatarsTable {
 export interface Database {
   workspaces: WorkspacesTable;
   workspace_memberships: WorkspaceMembershipsTable;
+  workspace_join_tickets: WorkspaceJoinTicketsTable;
+  workspace_join_requests: WorkspaceJoinRequestsTable;
   workspace_invitations: WorkspaceInvitationsTable;
   contacts: ContactsTable;
   contact_tags: ContactTagsTable;

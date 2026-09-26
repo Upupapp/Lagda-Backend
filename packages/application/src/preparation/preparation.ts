@@ -38,7 +38,7 @@ import {
   ApplicationError, ApplicationValidationError, ResourceConflictError,
   ResourceNotFoundError,
 } from "../common/errors/index.js";
-import { assertCapability, type WorkspaceAccessContext } from "../workspaces/workspace-access.js";
+import { assertCapability, type WorkspaceAccessContext, privilegesOf } from "../workspaces/workspace-access.js";
 
 // ── Errors ───────────────────────────────────────────────────────────────────
 
@@ -164,6 +164,7 @@ async function authorize(
     userId: membership.userId,
     membershipId: membership.memberId,
     role: membership.role,
+    privileges: privilegesOf(membership),
   };
   assertCapability(access, capability);
   return access;

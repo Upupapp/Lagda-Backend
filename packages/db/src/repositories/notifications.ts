@@ -73,6 +73,9 @@ function toAudience(row: Selectable<NotificationIntentsTable>): NotificationAudi
         kind: "WORKSPACE_INVITEE",
         invitationId: row.audience_invitation_id as WorkspaceInvitationId,
       };
+    case "WORKSPACE_JOIN_TICKET":
+      if (row.audience_join_ticket_id === null) break;
+      return { kind: "WORKSPACE_JOIN_TICKET", joinTicketId: row.audience_join_ticket_id };
     default:
       break;
   }
@@ -154,6 +157,8 @@ const audienceColumns = (audience: NotificationAudience) => ({
       : null,
   audience_invitation_id:
     audience.kind === "WORKSPACE_INVITEE" ? (audience.invitationId as string) : null,
+  audience_join_ticket_id:
+    audience.kind === "WORKSPACE_JOIN_TICKET" ? audience.joinTicketId : null,
 });
 
 const secretColumns = (secretRef: NotificationSecretRef | undefined) => {

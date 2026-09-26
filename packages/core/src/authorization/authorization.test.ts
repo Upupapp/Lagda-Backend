@@ -41,6 +41,9 @@ const DOCUMENT_WRITE: readonly WorkspaceCapability[] = [
   // writes — and declared separately so the first product change that
   // distinguishes renaming from preparing is a one-line edit.
   "document.prepare",
+  // 078. Asking someone to SUPPLY a document. Split from `document.prepare` so
+  // the "Request documents from others" privilege can grant it alone.
+  "upload-request.create",
   // BACKEND-32. Committing that layout to an immutable workflow. The same four
   // roles today, and separate for the same reason one step further along:
   // preparing is reversible and creating a signing request is not.
@@ -178,7 +181,7 @@ describe("role to capability matrix", () => {
     // EXPECTED table not updated, this fails rather than the matrix silently
     // testing fewer combinations.
     expect(Object.keys(EXPECTED).sort()).toEqual([...WORKSPACE_ROLES].sort());
-    expect(WORKSPACE_CAPABILITIES.length).toBe(31);
+    expect(WORKSPACE_CAPABILITIES.length).toBe(32);
   });
 });
 

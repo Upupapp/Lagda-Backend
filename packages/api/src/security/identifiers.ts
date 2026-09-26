@@ -25,6 +25,7 @@
 // test uses a double — and splitting that answer across two conventions is how
 // one of them ends up unmaintained.
 
+import type { JoinIdGenerator, JoinTicketId, JoinRequestId } from "@lagda/application";
 import { randomUUID } from "node:crypto";
 import type {
   WorkspaceIdGenerator, WorkspaceMemberIdGenerator,
@@ -107,6 +108,15 @@ function mint(prefix: string): string {
 
 export function createWorkspaceIdGenerator(): WorkspaceIdGenerator {
   return { nextWorkspaceId: () => mint("ws") as WorkspaceId };
+}
+
+/** 078. Join tickets, requests, and each notice about one. */
+export function createJoinIdGenerator(): JoinIdGenerator {
+  return {
+    nextJoinTicketId: () => mint("jtk") as JoinTicketId,
+    nextJoinRequestId: () => mint("jrq") as JoinRequestId,
+    nextJoinNoticeId: () => mint("jnt"),
+  };
 }
 
 export function createWorkspaceMemberIdGenerator(): WorkspaceMemberIdGenerator {

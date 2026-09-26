@@ -4,6 +4,7 @@
 // explicitly, which is what makes the app factory testable and keeps a stray
 // import from binding a port during a test run.
 
+export { registerJoinRoutes, registerJoinPreviewRoute } from "./workspaces/join-routes.js";
 export { createApp, type CreateAppOptions } from "./app/create-app.js";
 export type {
   AppDependencies, DatabaseHealth, WorkspaceDependencies,
@@ -95,6 +96,7 @@ export {
   type MemberRouteOptions,
 } from "./workspaces/member-routes.js";
 export { createInvitationTokenFactory } from "./security/invitation-token.js";
+export { createJoinTicketTokenFactory, createJoinTicketSecrets } from "./security/join-link.js";
 export {
   registerContactRoutes, type ContactRouteOptions, type ContactBody,
 } from "./contacts/contact-routes.js";

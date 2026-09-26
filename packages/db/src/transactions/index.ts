@@ -27,7 +27,11 @@ import type {
   SigningCredentialUnitOfWork, RecipientWorkspaceUnitOfWork,
   RecipientSessionUnitOfWork, SigningAccessDigest, RecipientSessionDigest,
   FinalCopyDigest, FinalCopyCredentialUnitOfWork, FinalCopyWorkspaceUnitOfWork,
+  JoinTicketDigest, JoinTicketCredentialUnitOfWork,
 } from "@lagda/application";
+import {
+  createScopedJoinTicketRepository, createScopedJoinRequestRepository, createJoinTicketCredentialLookup,
+} from "../repositories/workspace-join.js";
 import type { Database } from "../schema/index.js";
 import {
   createScopedWorkspaceRepository, createScopedMembershipRepository,
@@ -98,6 +102,8 @@ import {
 const WORKSPACE_SETTING = "lagda.workspace_id";
 const USER_SETTING = "lagda.user_id";
 const INVITATION_DIGEST_SETTING = "lagda.invitation_digest";
+/** 078. A join link, resolving its own workspace. */
+const JOIN_TICKET_DIGEST_SETTING = "lagda.join_ticket_digest";
 /** BACKEND-34. A signing bootstrap credential, resolving its own workspace. */
 const SIGNING_ACCESS_DIGEST_SETTING = "lagda.signing_access_digest";
 /** 073. The final-copy download realm's own setting (migration 073). */
@@ -167,6 +173,8 @@ function buildUnitOfWork(
     // Migration 058. Scoped here and by row-level security in the database.
     workflowTemplates: createScopedWorkflowTemplateRepository(trx, workspaceId),
     uploadRequests: createScopedUploadRequestRepository(trx, workspaceId),
+    joinTickets: createScopedJoinTicketRepository(trx, workspaceId),
+    joinRequests: createScopedJoinRequestRepository(trx, workspaceId),
     workflowTemplateFields: createScopedWorkflowTemplateFieldRepository(trx, workspaceId),
     // 071. The reader's own read/dismissed state on the document feed.
     notificationStates: createScopedDocumentNotificationStateRepository(trx, workspaceId),
@@ -275,6 +283,27 @@ export function createTransactionManager(db: Kysely<Database>): TransactionManag
           ): Promise<R> {
             await sql`select set_config(${WORKSPACE_SETTING}, ${workspaceId}, true)`
               .execute(trx);
+            return inner(buildUnitOfWork(trx, workspaceId));
+          },
+        });
+      });
+    },
+
+    async runForJoinTicketCredential<T>(
+      tokenDigest: JoinTicketDigest,
+      operation: (uow: JoinTicketCredentialUnitOfWork) => Promise<T>,
+    ): Promise<T> {
+      return db.transaction().execute(async trx => {
+        // Credential context only: 078's FOR SELECT policy shows the one
+        // ticket with this digest. Writes wait for the tenant context below.
+        await sql`select set_config(${JOIN_TICKET_DIGEST_SETTING}, ${tokenDigest}, true)`.execute(trx);
+        return operation({
+          ticket: createJoinTicketCredentialLookup(trx, tokenDigest),
+          async enterWorkspace<R>(
+            workspaceId: WorkspaceId,
+            inner: (uow: WorkspaceUnitOfWork) => Promise<R>,
+          ): Promise<R> {
+            await sql`select set_config(${WORKSPACE_SETTING}, ${workspaceId}, true)`.execute(trx);
             return inner(buildUnitOfWork(trx, workspaceId));
           },
         });

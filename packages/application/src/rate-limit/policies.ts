@@ -630,6 +630,38 @@ export const RATE_LIMIT_POLICIES = {
       + "same budget.",
   },
 
+  // 078. The public join-link check: anyone holding a link, before sign-in.
+  "workspace.join.preview.ip": {
+    id: "workspace.join.preview.ip",
+    scopeType: "ip",
+    limit: 30,
+    windowMs: MINUTE,
+    failureMode: "fail-closed",
+    source: "078 - not specified by the handoff. Matched to "
+      + "workspace.invitation.redeem.ip: the same preview-then-act shape against "
+      + "a link's digest. Fail-closed because the page is a guessing target.",
+  },
+  // 078. Asking to join uses up a link, so it is bounded per account.
+  "workspace.join.request.user": {
+    id: "workspace.join.request.user",
+    scopeType: "user",
+    limit: 10,
+    windowMs: 10 * MINUTE,
+    failureMode: "fail-closed",
+    source: "078 - not specified by the handoff. Chosen: a person asks to "
+      + "join a handful of workspaces, not dozens in ten minutes.",
+  },
+  // 078. Sending a join link can email somebody, like an invitation does.
+  "workspace.join.send.user": {
+    id: "workspace.join.send.user",
+    scopeType: "user",
+    limit: 20,
+    windowMs: 60 * MINUTE,
+    failureMode: "fail-closed",
+    source: "078 - not specified by the handoff. Matched to the invitation-create "
+      + "user allowance: both are outbound invitations a manager sends a few times an hour.",
+  },
+
   "workspace.invitation.redeem.ip": {
     id: "workspace.invitation.redeem.ip",
     scopeType: "ip",

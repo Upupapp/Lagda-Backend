@@ -18,7 +18,10 @@
 // at all. The API may CALL this to decorate a request; it may not BE it (§43).
 
 import type { UserId, WorkspaceId, WorkspaceMemberId, WorkspaceRole } from "@lagda/contracts";
-import { hasCapability, capabilitiesFor, type WorkspaceCapability } from "@lagda/core";
+import {
+  hasCapability, capabilitiesFor, privilegeCapabilities,
+  type WorkspaceCapability, type MemberPrivileges,
+} from "@lagda/core";
 import type { TransactionManager } from "../common/ports/index.js";
 import { ResourceNotFoundError } from "../common/errors/index.js";
 
@@ -38,6 +41,19 @@ export interface WorkspaceAccessContext {
   readonly userId: UserId;
   readonly membershipId: WorkspaceMemberId;
   readonly role: WorkspaceRole;
+  /** 078. Granted on top of the role by an owner or administrator. */
+  readonly privileges?: MemberPrivileges;
+}
+
+/** The two grants a membership record carries, as the access check reads them. */
+export function privilegesOf(membership: {
+  readonly canRequestDocuments?: boolean;
+  readonly canAssignSigners?: boolean;
+}): MemberPrivileges {
+  return {
+    requestDocuments: membership.canRequestDocuments === true,
+    assignSigners: membership.canAssignSigners === true,
+  };
 }
 
 export interface WorkspaceAccessDependencies {
@@ -80,6 +96,7 @@ export async function resolveWorkspaceAccess(
     userId: membership.userId,
     membershipId: membership.memberId,
     role: membership.role,
+    privileges: privilegesOf(membership),
   };
 }
 
@@ -154,7 +171,8 @@ export function assertCapability(
 ): void {
   // The role comes from a membership row the server read. There is no `role`
   // field on any request schema anywhere in the backend.
-  if (!hasCapability(access.role, capability)) {
+  if (!hasCapability(access.role, capability)
+    && !privilegeCapabilities(access.privileges).includes(capability)) {
     throw new ResourceNotFoundError("Workspace");
   }
 }
@@ -168,5 +186,5 @@ export function assertCapability(
 export function accessCapabilities(
   access: WorkspaceAccessContext,
 ): readonly WorkspaceCapability[] {
-  return capabilitiesFor(access.role);
+  return [...new Set([...capabilitiesFor(access.role), ...privilegeCapabilities(access.privileges)])];
 }

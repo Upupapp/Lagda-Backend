@@ -339,6 +339,37 @@ export const FinalCopyAvailableModelV1 = Type.Object(
   { additionalProperties: false },
 );
 
+/** 078. The join link, emailed to the address a ticket was made for. */
+export const WorkspaceJoinLinkModelV1 = Type.Object(
+  {
+    workspaceName: DisplayName,
+    senderDisplayName: DisplayName,
+  },
+  { additionalProperties: false },
+);
+
+/** 078. An owner or administrator told that someone asked to join. */
+export const WorkspaceJoinRequestedModelV1 = Type.Object(
+  {
+    recipientName: DisplayName,
+    requesterName: DisplayName,
+    requesterEmail: BoundedText(320),
+    workspaceName: DisplayName,
+    reason: Type.Optional(BoundedText(500)),
+  },
+  { additionalProperties: false },
+);
+
+/** 078. The requester told of the decision. */
+export const WorkspaceJoinDecidedModelV1 = Type.Object(
+  {
+    recipientName: DisplayName,
+    workspaceName: DisplayName,
+    approved: Type.Boolean(),
+  },
+  { additionalProperties: false },
+);
+
 export const DocumentUploadRequestedModelV1 = Type.Object(
   {
     /** The ASSIGNEE's display name. This message is addressed to them. */
