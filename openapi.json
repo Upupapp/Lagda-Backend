@@ -14722,6 +14722,9 @@
                           "sourceArtifactId",
                           "content",
                           "contentPageCount",
+                          "contentRevision",
+                          "contentSavedAt",
+                          "contentGenerated",
                           "createdAt",
                           "updatedAt"
                         ],
@@ -16949,6 +16952,17 @@
                             "minimum": 0,
                             "type": "integer"
                           },
+                          "contentRevision": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "contentSavedAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "contentGenerated": {
+                            "type": "boolean"
+                          },
                           "createdAt": {
                             "format": "date-time",
                             "type": "string"
@@ -17280,6 +17294,9 @@
                     "sourceArtifactId",
                     "content",
                     "contentPageCount",
+                    "contentRevision",
+                    "contentSavedAt",
+                    "contentGenerated",
                     "createdAt",
                     "updatedAt"
                   ],
@@ -19506,6 +19523,17 @@
                     "contentPageCount": {
                       "minimum": 0,
                       "type": "integer"
+                    },
+                    "contentRevision": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "contentSavedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "contentGenerated": {
+                      "type": "boolean"
                     },
                     "createdAt": {
                       "format": "date-time",
@@ -19568,6 +19596,9 @@
                     "sourceArtifactId",
                     "content",
                     "contentPageCount",
+                    "contentRevision",
+                    "contentSavedAt",
+                    "contentGenerated",
                     "createdAt",
                     "updatedAt"
                   ],
@@ -21794,6 +21825,17 @@
                     "contentPageCount": {
                       "minimum": 0,
                       "type": "integer"
+                    },
+                    "contentRevision": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "contentSavedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "contentGenerated": {
+                      "type": "boolean"
                     },
                     "createdAt": {
                       "format": "date-time",
@@ -22133,6 +22175,9 @@
                     "sourceArtifactId",
                     "content",
                     "contentPageCount",
+                    "contentRevision",
+                    "contentSavedAt",
+                    "contentGenerated",
                     "createdAt",
                     "updatedAt"
                   ],
@@ -24359,6 +24404,17 @@
                     "contentPageCount": {
                       "minimum": 0,
                       "type": "integer"
+                    },
+                    "contentRevision": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "contentSavedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "contentGenerated": {
+                      "type": "boolean"
                     },
                     "createdAt": {
                       "format": "date-time",
@@ -24478,6 +24534,9 @@
                     "sourceArtifactId",
                     "content",
                     "contentPageCount",
+                    "contentRevision",
+                    "contentSavedAt",
+                    "contentGenerated",
                     "createdAt",
                     "updatedAt"
                   ],
@@ -26704,6 +26763,17 @@
                     "contentPageCount": {
                       "minimum": 0,
                       "type": "integer"
+                    },
+                    "contentRevision": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "contentSavedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "contentGenerated": {
+                      "type": "boolean"
                     },
                     "createdAt": {
                       "format": "date-time",
@@ -26764,6 +26834,9 @@
                     "sourceArtifactId",
                     "content",
                     "contentPageCount",
+                    "contentRevision",
+                    "contentSavedAt",
+                    "contentGenerated",
                     "createdAt",
                     "updatedAt"
                   ],
@@ -28990,6 +29063,17 @@
                     "contentPageCount": {
                       "minimum": 0,
                       "type": "integer"
+                    },
+                    "contentRevision": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "contentSavedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "contentGenerated": {
+                      "type": "boolean"
                     },
                     "createdAt": {
                       "format": "date-time",
@@ -31009,6 +31093,9 @@
                         "sourceArtifactId",
                         "content",
                         "contentPageCount",
+                        "contentRevision",
+                        "contentSavedAt",
+                        "contentGenerated",
                         "createdAt",
                         "updatedAt"
                       ],
@@ -33236,6 +33323,17 @@
                           "minimum": 0,
                           "type": "integer"
                         },
+                        "contentRevision": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "contentSavedAt": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "contentGenerated": {
+                          "type": "boolean"
+                        },
                         "createdAt": {
                           "format": "date-time",
                           "type": "string"
@@ -33396,6 +33494,2016 @@
                           }
                         }
                       }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/workflow-templates/{workflowTemplateId}/content": {
+      "put": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "WorkflowTemplateContentSaveInput",
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "content"
+                ],
+                "properties": {
+                  "content": {
+                    "title": "FlowDocument",
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "kind",
+                      "content"
+                    ],
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "flowDocument"
+                        ]
+                      },
+                      "content": {
+                        "maxItems": 2000,
+                        "type": "array",
+                        "items": {
+                          "title": "DocumentBlock",
+                          "anyOf": [
+                            {
+                              "title": "DocumentParagraph",
+                              "additionalProperties": false,
+                              "type": "object",
+                              "required": [
+                                "kind",
+                                "content"
+                              ],
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "paragraph"
+                                  ]
+                                },
+                                "align": {
+                                  "title": "DocumentBlockAlign",
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "left"
+                                      ]
+                                    },
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "center"
+                                      ]
+                                    },
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "right"
+                                      ]
+                                    },
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "justify"
+                                      ]
+                                    }
+                                  ]
+                                },
+                                "content": {
+                                  "maxItems": 400,
+                                  "type": "array",
+                                  "items": {
+                                    "anyOf": [
+                                      {
+                                        "title": "DocumentTextRun",
+                                        "additionalProperties": false,
+                                        "type": "object",
+                                        "required": [
+                                          "kind",
+                                          "text"
+                                        ],
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": [
+                                              "text"
+                                            ]
+                                          },
+                                          "text": {
+                                            "minLength": 1,
+                                            "maxLength": 4000,
+                                            "type": "string"
+                                          },
+                                          "marks": {
+                                            "maxItems": 8,
+                                            "type": "array",
+                                            "items": {
+                                              "title": "DocumentTextMark",
+                                              "anyOf": [
+                                                {
+                                                  "additionalProperties": false,
+                                                  "type": "object",
+                                                  "required": [
+                                                    "kind"
+                                                  ],
+                                                  "properties": {
+                                                    "kind": {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "bold"
+                                                      ]
+                                                    }
+                                                  }
+                                                },
+                                                {
+                                                  "additionalProperties": false,
+                                                  "type": "object",
+                                                  "required": [
+                                                    "kind"
+                                                  ],
+                                                  "properties": {
+                                                    "kind": {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "italic"
+                                                      ]
+                                                    }
+                                                  }
+                                                },
+                                                {
+                                                  "additionalProperties": false,
+                                                  "type": "object",
+                                                  "required": [
+                                                    "kind"
+                                                  ],
+                                                  "properties": {
+                                                    "kind": {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "underline"
+                                                      ]
+                                                    }
+                                                  }
+                                                },
+                                                {
+                                                  "additionalProperties": false,
+                                                  "type": "object",
+                                                  "required": [
+                                                    "kind",
+                                                    "family"
+                                                  ],
+                                                  "properties": {
+                                                    "kind": {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "fontFamily"
+                                                      ]
+                                                    },
+                                                    "family": {
+                                                      "title": "DocumentFontFamily",
+                                                      "anyOf": [
+                                                        {
+                                                          "type": "string",
+                                                          "enum": [
+                                                            "times"
+                                                          ]
+                                                        },
+                                                        {
+                                                          "type": "string",
+                                                          "enum": [
+                                                            "georgia"
+                                                          ]
+                                                        },
+                                                        {
+                                                          "type": "string",
+                                                          "enum": [
+                                                            "helvetica"
+                                                          ]
+                                                        },
+                                                        {
+                                                          "type": "string",
+                                                          "enum": [
+                                                            "calibri"
+                                                          ]
+                                                        },
+                                                        {
+                                                          "type": "string",
+                                                          "enum": [
+                                                            "courier"
+                                                          ]
+                                                        }
+                                                      ]
+                                                    }
+                                                  }
+                                                },
+                                                {
+                                                  "additionalProperties": false,
+                                                  "type": "object",
+                                                  "required": [
+                                                    "kind",
+                                                    "size"
+                                                  ],
+                                                  "properties": {
+                                                    "kind": {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "fontSize"
+                                                      ]
+                                                    },
+                                                    "size": {
+                                                      "minimum": 6,
+                                                      "maximum": 72,
+                                                      "type": "integer"
+                                                    }
+                                                  }
+                                                }
+                                              ]
+                                            }
+                                          }
+                                        }
+                                      },
+                                      {
+                                        "title": "DocumentVariableRun",
+                                        "additionalProperties": false,
+                                        "type": "object",
+                                        "required": [
+                                          "kind",
+                                          "key",
+                                          "label"
+                                        ],
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": [
+                                              "variable"
+                                            ]
+                                          },
+                                          "key": {
+                                            "minLength": 1,
+                                            "maxLength": 64,
+                                            "type": "string"
+                                          },
+                                          "label": {
+                                            "minLength": 1,
+                                            "maxLength": 200,
+                                            "type": "string"
+                                          }
+                                        }
+                                      },
+                                      {
+                                        "title": "DocumentFieldAnchorRun",
+                                        "additionalProperties": false,
+                                        "type": "object",
+                                        "required": [
+                                          "kind",
+                                          "fieldType",
+                                          "required",
+                                          "label"
+                                        ],
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": [
+                                              "fieldAnchor"
+                                            ]
+                                          },
+                                          "fieldType": {
+                                            "title": "PreparationFieldType",
+                                            "description": "What the field asks for. Closed set; unknown types are refused.",
+                                            "anyOf": [
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "signature"
+                                                ]
+                                              },
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "initials"
+                                                ]
+                                              },
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "date-signed"
+                                                ]
+                                              },
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "text"
+                                                ]
+                                              },
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "checkbox"
+                                                ]
+                                              },
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "full-name"
+                                                ]
+                                              },
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "email"
+                                                ]
+                                              },
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "title"
+                                                ]
+                                              },
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "company"
+                                                ]
+                                              },
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "signature-block"
+                                                ]
+                                              },
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "review-block"
+                                                ]
+                                              },
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "approval-block"
+                                                ]
+                                              }
+                                            ]
+                                          },
+                                          "slotId": {
+                                            "minLength": 1,
+                                            "maxLength": 64,
+                                            "type": "string"
+                                          },
+                                          "variableKey": {
+                                            "minLength": 1,
+                                            "maxLength": 64,
+                                            "type": "string"
+                                          },
+                                          "required": {
+                                            "type": "boolean"
+                                          },
+                                          "label": {
+                                            "minLength": 1,
+                                            "maxLength": 200,
+                                            "type": "string"
+                                          }
+                                        }
+                                      }
+                                    ]
+                                  }
+                                }
+                              }
+                            },
+                            {
+                              "title": "DocumentHeading",
+                              "additionalProperties": false,
+                              "type": "object",
+                              "required": [
+                                "kind",
+                                "level",
+                                "content"
+                              ],
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "heading"
+                                  ]
+                                },
+                                "level": {
+                                  "title": "DocumentHeadingLevel",
+                                  "anyOf": [
+                                    {
+                                      "type": "number",
+                                      "enum": [
+                                        1
+                                      ]
+                                    },
+                                    {
+                                      "type": "number",
+                                      "enum": [
+                                        2
+                                      ]
+                                    },
+                                    {
+                                      "type": "number",
+                                      "enum": [
+                                        3
+                                      ]
+                                    }
+                                  ]
+                                },
+                                "align": {
+                                  "title": "DocumentBlockAlign",
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "left"
+                                      ]
+                                    },
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "center"
+                                      ]
+                                    },
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "right"
+                                      ]
+                                    },
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "justify"
+                                      ]
+                                    }
+                                  ]
+                                },
+                                "content": {
+                                  "maxItems": 400,
+                                  "type": "array",
+                                  "items": {
+                                    "anyOf": [
+                                      {
+                                        "title": "DocumentTextRun",
+                                        "additionalProperties": false,
+                                        "type": "object",
+                                        "required": [
+                                          "kind",
+                                          "text"
+                                        ],
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": [
+                                              "text"
+                                            ]
+                                          },
+                                          "text": {
+                                            "minLength": 1,
+                                            "maxLength": 4000,
+                                            "type": "string"
+                                          },
+                                          "marks": {
+                                            "maxItems": 8,
+                                            "type": "array",
+                                            "items": {
+                                              "title": "DocumentTextMark",
+                                              "anyOf": [
+                                                {
+                                                  "additionalProperties": false,
+                                                  "type": "object",
+                                                  "required": [
+                                                    "kind"
+                                                  ],
+                                                  "properties": {
+                                                    "kind": {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "bold"
+                                                      ]
+                                                    }
+                                                  }
+                                                },
+                                                {
+                                                  "additionalProperties": false,
+                                                  "type": "object",
+                                                  "required": [
+                                                    "kind"
+                                                  ],
+                                                  "properties": {
+                                                    "kind": {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "italic"
+                                                      ]
+                                                    }
+                                                  }
+                                                },
+                                                {
+                                                  "additionalProperties": false,
+                                                  "type": "object",
+                                                  "required": [
+                                                    "kind"
+                                                  ],
+                                                  "properties": {
+                                                    "kind": {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "underline"
+                                                      ]
+                                                    }
+                                                  }
+                                                },
+                                                {
+                                                  "additionalProperties": false,
+                                                  "type": "object",
+                                                  "required": [
+                                                    "kind",
+                                                    "family"
+                                                  ],
+                                                  "properties": {
+                                                    "kind": {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "fontFamily"
+                                                      ]
+                                                    },
+                                                    "family": {
+                                                      "title": "DocumentFontFamily",
+                                                      "anyOf": [
+                                                        {
+                                                          "type": "string",
+                                                          "enum": [
+                                                            "times"
+                                                          ]
+                                                        },
+                                                        {
+                                                          "type": "string",
+                                                          "enum": [
+                                                            "georgia"
+                                                          ]
+                                                        },
+                                                        {
+                                                          "type": "string",
+                                                          "enum": [
+                                                            "helvetica"
+                                                          ]
+                                                        },
+                                                        {
+                                                          "type": "string",
+                                                          "enum": [
+                                                            "calibri"
+                                                          ]
+                                                        },
+                                                        {
+                                                          "type": "string",
+                                                          "enum": [
+                                                            "courier"
+                                                          ]
+                                                        }
+                                                      ]
+                                                    }
+                                                  }
+                                                },
+                                                {
+                                                  "additionalProperties": false,
+                                                  "type": "object",
+                                                  "required": [
+                                                    "kind",
+                                                    "size"
+                                                  ],
+                                                  "properties": {
+                                                    "kind": {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "fontSize"
+                                                      ]
+                                                    },
+                                                    "size": {
+                                                      "minimum": 6,
+                                                      "maximum": 72,
+                                                      "type": "integer"
+                                                    }
+                                                  }
+                                                }
+                                              ]
+                                            }
+                                          }
+                                        }
+                                      },
+                                      {
+                                        "title": "DocumentVariableRun",
+                                        "additionalProperties": false,
+                                        "type": "object",
+                                        "required": [
+                                          "kind",
+                                          "key",
+                                          "label"
+                                        ],
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": [
+                                              "variable"
+                                            ]
+                                          },
+                                          "key": {
+                                            "minLength": 1,
+                                            "maxLength": 64,
+                                            "type": "string"
+                                          },
+                                          "label": {
+                                            "minLength": 1,
+                                            "maxLength": 200,
+                                            "type": "string"
+                                          }
+                                        }
+                                      },
+                                      {
+                                        "title": "DocumentFieldAnchorRun",
+                                        "additionalProperties": false,
+                                        "type": "object",
+                                        "required": [
+                                          "kind",
+                                          "fieldType",
+                                          "required",
+                                          "label"
+                                        ],
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": [
+                                              "fieldAnchor"
+                                            ]
+                                          },
+                                          "fieldType": {
+                                            "title": "PreparationFieldType",
+                                            "description": "What the field asks for. Closed set; unknown types are refused.",
+                                            "anyOf": [
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "signature"
+                                                ]
+                                              },
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "initials"
+                                                ]
+                                              },
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "date-signed"
+                                                ]
+                                              },
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "text"
+                                                ]
+                                              },
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "checkbox"
+                                                ]
+                                              },
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "full-name"
+                                                ]
+                                              },
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "email"
+                                                ]
+                                              },
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "title"
+                                                ]
+                                              },
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "company"
+                                                ]
+                                              },
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "signature-block"
+                                                ]
+                                              },
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "review-block"
+                                                ]
+                                              },
+                                              {
+                                                "type": "string",
+                                                "enum": [
+                                                  "approval-block"
+                                                ]
+                                              }
+                                            ]
+                                          },
+                                          "slotId": {
+                                            "minLength": 1,
+                                            "maxLength": 64,
+                                            "type": "string"
+                                          },
+                                          "variableKey": {
+                                            "minLength": 1,
+                                            "maxLength": 64,
+                                            "type": "string"
+                                          },
+                                          "required": {
+                                            "type": "boolean"
+                                          },
+                                          "label": {
+                                            "minLength": 1,
+                                            "maxLength": 200,
+                                            "type": "string"
+                                          }
+                                        }
+                                      }
+                                    ]
+                                  }
+                                }
+                              }
+                            },
+                            {
+                              "title": "DocumentOrderedList",
+                              "additionalProperties": false,
+                              "type": "object",
+                              "required": [
+                                "kind",
+                                "content"
+                              ],
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "orderedList"
+                                  ]
+                                },
+                                "content": {
+                                  "minItems": 1,
+                                  "maxItems": 200,
+                                  "type": "array",
+                                  "items": {
+                                    "title": "DocumentListItemLevel1",
+                                    "additionalProperties": false,
+                                    "type": "object",
+                                    "required": [
+                                      "kind",
+                                      "content"
+                                    ],
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "listItem"
+                                        ]
+                                      },
+                                      "content": {
+                                        "minItems": 1,
+                                        "maxItems": 50,
+                                        "type": "array",
+                                        "items": {
+                                          "anyOf": [
+                                            {
+                                              "title": "DocumentParagraph",
+                                              "additionalProperties": false,
+                                              "type": "object",
+                                              "required": [
+                                                "kind",
+                                                "content"
+                                              ],
+                                              "properties": {
+                                                "kind": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "paragraph"
+                                                  ]
+                                                },
+                                                "align": {
+                                                  "title": "DocumentBlockAlign",
+                                                  "anyOf": [
+                                                    {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "left"
+                                                      ]
+                                                    },
+                                                    {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "center"
+                                                      ]
+                                                    },
+                                                    {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "right"
+                                                      ]
+                                                    },
+                                                    {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "justify"
+                                                      ]
+                                                    }
+                                                  ]
+                                                },
+                                                "content": {
+                                                  "maxItems": 400,
+                                                  "type": "array",
+                                                  "items": {
+                                                    "anyOf": [
+                                                      {
+                                                        "title": "DocumentTextRun",
+                                                        "additionalProperties": false,
+                                                        "type": "object",
+                                                        "required": [
+                                                          "kind",
+                                                          "text"
+                                                        ],
+                                                        "properties": {
+                                                          "kind": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                              "text"
+                                                            ]
+                                                          },
+                                                          "text": {
+                                                            "minLength": 1,
+                                                            "maxLength": 4000,
+                                                            "type": "string"
+                                                          },
+                                                          "marks": {
+                                                            "maxItems": 8,
+                                                            "type": "array",
+                                                            "items": {
+                                                              "title": "DocumentTextMark",
+                                                              "anyOf": [
+                                                                {
+                                                                  "additionalProperties": false,
+                                                                  "type": "object",
+                                                                  "required": [
+                                                                    "kind"
+                                                                  ],
+                                                                  "properties": {
+                                                                    "kind": {
+                                                                      "type": "string",
+                                                                      "enum": [
+                                                                        "bold"
+                                                                      ]
+                                                                    }
+                                                                  }
+                                                                },
+                                                                {
+                                                                  "additionalProperties": false,
+                                                                  "type": "object",
+                                                                  "required": [
+                                                                    "kind"
+                                                                  ],
+                                                                  "properties": {
+                                                                    "kind": {
+                                                                      "type": "string",
+                                                                      "enum": [
+                                                                        "italic"
+                                                                      ]
+                                                                    }
+                                                                  }
+                                                                },
+                                                                {
+                                                                  "additionalProperties": false,
+                                                                  "type": "object",
+                                                                  "required": [
+                                                                    "kind"
+                                                                  ],
+                                                                  "properties": {
+                                                                    "kind": {
+                                                                      "type": "string",
+                                                                      "enum": [
+                                                                        "underline"
+                                                                      ]
+                                                                    }
+                                                                  }
+                                                                },
+                                                                {
+                                                                  "additionalProperties": false,
+                                                                  "type": "object",
+                                                                  "required": [
+                                                                    "kind",
+                                                                    "family"
+                                                                  ],
+                                                                  "properties": {
+                                                                    "kind": {
+                                                                      "type": "string",
+                                                                      "enum": [
+                                                                        "fontFamily"
+                                                                      ]
+                                                                    },
+                                                                    "family": {
+                                                                      "title": "DocumentFontFamily",
+                                                                      "anyOf": [
+                                                                        {
+                                                                          "type": "string",
+                                                                          "enum": [
+                                                                            "times"
+                                                                          ]
+                                                                        },
+                                                                        {
+                                                                          "type": "string",
+                                                                          "enum": [
+                                                                            "georgia"
+                                                                          ]
+                                                                        },
+                                                                        {
+                                                                          "type": "string",
+                                                                          "enum": [
+                                                                            "helvetica"
+                                                                          ]
+                                                                        },
+                                                                        {
+                                                                          "type": "string",
+                                                                          "enum": [
+                                                                            "calibri"
+                                                                          ]
+                                                                        },
+                                                                        {
+                                                                          "type": "string",
+                                                                          "enum": [
+                                                                            "courier"
+                                                                          ]
+                                                                        }
+                                                                      ]
+                                                                    }
+                                                                  }
+                                                                },
+                                                                {
+                                                                  "additionalProperties": false,
+                                                                  "type": "object",
+                                                                  "required": [
+                                                                    "kind",
+                                                                    "size"
+                                                                  ],
+                                                                  "properties": {
+                                                                    "kind": {
+                                                                      "type": "string",
+                                                                      "enum": [
+                                                                        "fontSize"
+                                                                      ]
+                                                                    },
+                                                                    "size": {
+                                                                      "minimum": 6,
+                                                                      "maximum": 72,
+                                                                      "type": "integer"
+                                                                    }
+                                                                  }
+                                                                }
+                                                              ]
+                                                            }
+                                                          }
+                                                        }
+                                                      },
+                                                      {
+                                                        "title": "DocumentVariableRun",
+                                                        "additionalProperties": false,
+                                                        "type": "object",
+                                                        "required": [
+                                                          "kind",
+                                                          "key",
+                                                          "label"
+                                                        ],
+                                                        "properties": {
+                                                          "kind": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                              "variable"
+                                                            ]
+                                                          },
+                                                          "key": {
+                                                            "minLength": 1,
+                                                            "maxLength": 64,
+                                                            "type": "string"
+                                                          },
+                                                          "label": {
+                                                            "minLength": 1,
+                                                            "maxLength": 200,
+                                                            "type": "string"
+                                                          }
+                                                        }
+                                                      },
+                                                      {
+                                                        "title": "DocumentFieldAnchorRun",
+                                                        "additionalProperties": false,
+                                                        "type": "object",
+                                                        "required": [
+                                                          "kind",
+                                                          "fieldType",
+                                                          "required",
+                                                          "label"
+                                                        ],
+                                                        "properties": {
+                                                          "kind": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                              "fieldAnchor"
+                                                            ]
+                                                          },
+                                                          "fieldType": {
+                                                            "title": "PreparationFieldType",
+                                                            "description": "What the field asks for. Closed set; unknown types are refused.",
+                                                            "anyOf": [
+                                                              {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                  "signature"
+                                                                ]
+                                                              },
+                                                              {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                  "initials"
+                                                                ]
+                                                              },
+                                                              {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                  "date-signed"
+                                                                ]
+                                                              },
+                                                              {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                  "text"
+                                                                ]
+                                                              },
+                                                              {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                  "checkbox"
+                                                                ]
+                                                              },
+                                                              {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                  "full-name"
+                                                                ]
+                                                              },
+                                                              {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                  "email"
+                                                                ]
+                                                              },
+                                                              {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                  "title"
+                                                                ]
+                                                              },
+                                                              {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                  "company"
+                                                                ]
+                                                              },
+                                                              {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                  "signature-block"
+                                                                ]
+                                                              },
+                                                              {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                  "review-block"
+                                                                ]
+                                                              },
+                                                              {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                  "approval-block"
+                                                                ]
+                                                              }
+                                                            ]
+                                                          },
+                                                          "slotId": {
+                                                            "minLength": 1,
+                                                            "maxLength": 64,
+                                                            "type": "string"
+                                                          },
+                                                          "variableKey": {
+                                                            "minLength": 1,
+                                                            "maxLength": 64,
+                                                            "type": "string"
+                                                          },
+                                                          "required": {
+                                                            "type": "boolean"
+                                                          },
+                                                          "label": {
+                                                            "minLength": 1,
+                                                            "maxLength": 200,
+                                                            "type": "string"
+                                                          }
+                                                        }
+                                                      }
+                                                    ]
+                                                  }
+                                                }
+                                              }
+                                            },
+                                            {
+                                              "title": "DocumentOrderedListLevel2",
+                                              "additionalProperties": false,
+                                              "type": "object",
+                                              "required": [
+                                                "kind",
+                                                "content"
+                                              ],
+                                              "properties": {
+                                                "kind": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "orderedList"
+                                                  ]
+                                                },
+                                                "content": {
+                                                  "minItems": 1,
+                                                  "maxItems": 200,
+                                                  "type": "array",
+                                                  "items": {
+                                                    "title": "DocumentListItemLevel2",
+                                                    "additionalProperties": false,
+                                                    "type": "object",
+                                                    "required": [
+                                                      "kind",
+                                                      "content"
+                                                    ],
+                                                    "properties": {
+                                                      "kind": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                          "listItem"
+                                                        ]
+                                                      },
+                                                      "content": {
+                                                        "minItems": 1,
+                                                        "maxItems": 50,
+                                                        "type": "array",
+                                                        "items": {
+                                                          "anyOf": [
+                                                            {
+                                                              "title": "DocumentParagraph",
+                                                              "additionalProperties": false,
+                                                              "type": "object",
+                                                              "required": [
+                                                                "kind",
+                                                                "content"
+                                                              ],
+                                                              "properties": {
+                                                                "kind": {
+                                                                  "type": "string",
+                                                                  "enum": [
+                                                                    "paragraph"
+                                                                  ]
+                                                                },
+                                                                "align": {
+                                                                  "title": "DocumentBlockAlign",
+                                                                  "anyOf": [
+                                                                    {
+                                                                      "type": "string",
+                                                                      "enum": [
+                                                                        "left"
+                                                                      ]
+                                                                    },
+                                                                    {
+                                                                      "type": "string",
+                                                                      "enum": [
+                                                                        "center"
+                                                                      ]
+                                                                    },
+                                                                    {
+                                                                      "type": "string",
+                                                                      "enum": [
+                                                                        "right"
+                                                                      ]
+                                                                    },
+                                                                    {
+                                                                      "type": "string",
+                                                                      "enum": [
+                                                                        "justify"
+                                                                      ]
+                                                                    }
+                                                                  ]
+                                                                },
+                                                                "content": {
+                                                                  "maxItems": 400,
+                                                                  "type": "array",
+                                                                  "items": {
+                                                                    "anyOf": [
+                                                                      {
+                                                                        "title": "DocumentTextRun",
+                                                                        "additionalProperties": false,
+                                                                        "type": "object",
+                                                                        "required": [
+                                                                          "kind",
+                                                                          "text"
+                                                                        ],
+                                                                        "properties": {
+                                                                          "kind": {
+                                                                            "type": "string",
+                                                                            "enum": [
+                                                                              "text"
+                                                                            ]
+                                                                          },
+                                                                          "text": {
+                                                                            "minLength": 1,
+                                                                            "maxLength": 4000,
+                                                                            "type": "string"
+                                                                          },
+                                                                          "marks": {
+                                                                            "maxItems": 8,
+                                                                            "type": "array",
+                                                                            "items": {
+                                                                              "title": "DocumentTextMark",
+                                                                              "anyOf": [
+                                                                                {
+                                                                                  "additionalProperties": false,
+                                                                                  "type": "object",
+                                                                                  "required": [
+                                                                                    "kind"
+                                                                                  ],
+                                                                                  "properties": {
+                                                                                    "kind": {
+                                                                                      "type": "string",
+                                                                                      "enum": [
+                                                                                        "bold"
+                                                                                      ]
+                                                                                    }
+                                                                                  }
+                                                                                },
+                                                                                {
+                                                                                  "additionalProperties": false,
+                                                                                  "type": "object",
+                                                                                  "required": [
+                                                                                    "kind"
+                                                                                  ],
+                                                                                  "properties": {
+                                                                                    "kind": {
+                                                                                      "type": "string",
+                                                                                      "enum": [
+                                                                                        "italic"
+                                                                                      ]
+                                                                                    }
+                                                                                  }
+                                                                                },
+                                                                                {
+                                                                                  "additionalProperties": false,
+                                                                                  "type": "object",
+                                                                                  "required": [
+                                                                                    "kind"
+                                                                                  ],
+                                                                                  "properties": {
+                                                                                    "kind": {
+                                                                                      "type": "string",
+                                                                                      "enum": [
+                                                                                        "underline"
+                                                                                      ]
+                                                                                    }
+                                                                                  }
+                                                                                },
+                                                                                {
+                                                                                  "additionalProperties": false,
+                                                                                  "type": "object",
+                                                                                  "required": [
+                                                                                    "kind",
+                                                                                    "family"
+                                                                                  ],
+                                                                                  "properties": {
+                                                                                    "kind": {
+                                                                                      "type": "string",
+                                                                                      "enum": [
+                                                                                        "fontFamily"
+                                                                                      ]
+                                                                                    },
+                                                                                    "family": {
+                                                                                      "title": "DocumentFontFamily",
+                                                                                      "anyOf": [
+                                                                                        {
+                                                                                          "type": "string",
+                                                                                          "enum": [
+                                                                                            "times"
+                                                                                          ]
+                                                                                        },
+                                                                                        {
+                                                                                          "type": "string",
+                                                                                          "enum": [
+                                                                                            "georgia"
+                                                                                          ]
+                                                                                        },
+                                                                                        {
+                                                                                          "type": "string",
+                                                                                          "enum": [
+                                                                                            "helvetica"
+                                                                                          ]
+                                                                                        },
+                                                                                        {
+                                                                                          "type": "string",
+                                                                                          "enum": [
+                                                                                            "calibri"
+                                                                                          ]
+                                                                                        },
+                                                                                        {
+                                                                                          "type": "string",
+                                                                                          "enum": [
+                                                                                            "courier"
+                                                                                          ]
+                                                                                        }
+                                                                                      ]
+                                                                                    }
+                                                                                  }
+                                                                                },
+                                                                                {
+                                                                                  "additionalProperties": false,
+                                                                                  "type": "object",
+                                                                                  "required": [
+                                                                                    "kind",
+                                                                                    "size"
+                                                                                  ],
+                                                                                  "properties": {
+                                                                                    "kind": {
+                                                                                      "type": "string",
+                                                                                      "enum": [
+                                                                                        "fontSize"
+                                                                                      ]
+                                                                                    },
+                                                                                    "size": {
+                                                                                      "minimum": 6,
+                                                                                      "maximum": 72,
+                                                                                      "type": "integer"
+                                                                                    }
+                                                                                  }
+                                                                                }
+                                                                              ]
+                                                                            }
+                                                                          }
+                                                                        }
+                                                                      },
+                                                                      {
+                                                                        "title": "DocumentVariableRun",
+                                                                        "additionalProperties": false,
+                                                                        "type": "object",
+                                                                        "required": [
+                                                                          "kind",
+                                                                          "key",
+                                                                          "label"
+                                                                        ],
+                                                                        "properties": {
+                                                                          "kind": {
+                                                                            "type": "string",
+                                                                            "enum": [
+                                                                              "variable"
+                                                                            ]
+                                                                          },
+                                                                          "key": {
+                                                                            "minLength": 1,
+                                                                            "maxLength": 64,
+                                                                            "type": "string"
+                                                                          },
+                                                                          "label": {
+                                                                            "minLength": 1,
+                                                                            "maxLength": 200,
+                                                                            "type": "string"
+                                                                          }
+                                                                        }
+                                                                      },
+                                                                      {
+                                                                        "title": "DocumentFieldAnchorRun",
+                                                                        "additionalProperties": false,
+                                                                        "type": "object",
+                                                                        "required": [
+                                                                          "kind",
+                                                                          "fieldType",
+                                                                          "required",
+                                                                          "label"
+                                                                        ],
+                                                                        "properties": {
+                                                                          "kind": {
+                                                                            "type": "string",
+                                                                            "enum": [
+                                                                              "fieldAnchor"
+                                                                            ]
+                                                                          },
+                                                                          "fieldType": {
+                                                                            "title": "PreparationFieldType",
+                                                                            "description": "What the field asks for. Closed set; unknown types are refused.",
+                                                                            "anyOf": [
+                                                                              {
+                                                                                "type": "string",
+                                                                                "enum": [
+                                                                                  "signature"
+                                                                                ]
+                                                                              },
+                                                                              {
+                                                                                "type": "string",
+                                                                                "enum": [
+                                                                                  "initials"
+                                                                                ]
+                                                                              },
+                                                                              {
+                                                                                "type": "string",
+                                                                                "enum": [
+                                                                                  "date-signed"
+                                                                                ]
+                                                                              },
+                                                                              {
+                                                                                "type": "string",
+                                                                                "enum": [
+                                                                                  "text"
+                                                                                ]
+                                                                              },
+                                                                              {
+                                                                                "type": "string",
+                                                                                "enum": [
+                                                                                  "checkbox"
+                                                                                ]
+                                                                              },
+                                                                              {
+                                                                                "type": "string",
+                                                                                "enum": [
+                                                                                  "full-name"
+                                                                                ]
+                                                                              },
+                                                                              {
+                                                                                "type": "string",
+                                                                                "enum": [
+                                                                                  "email"
+                                                                                ]
+                                                                              },
+                                                                              {
+                                                                                "type": "string",
+                                                                                "enum": [
+                                                                                  "title"
+                                                                                ]
+                                                                              },
+                                                                              {
+                                                                                "type": "string",
+                                                                                "enum": [
+                                                                                  "company"
+                                                                                ]
+                                                                              },
+                                                                              {
+                                                                                "type": "string",
+                                                                                "enum": [
+                                                                                  "signature-block"
+                                                                                ]
+                                                                              },
+                                                                              {
+                                                                                "type": "string",
+                                                                                "enum": [
+                                                                                  "review-block"
+                                                                                ]
+                                                                              },
+                                                                              {
+                                                                                "type": "string",
+                                                                                "enum": [
+                                                                                  "approval-block"
+                                                                                ]
+                                                                              }
+                                                                            ]
+                                                                          },
+                                                                          "slotId": {
+                                                                            "minLength": 1,
+                                                                            "maxLength": 64,
+                                                                            "type": "string"
+                                                                          },
+                                                                          "variableKey": {
+                                                                            "minLength": 1,
+                                                                            "maxLength": 64,
+                                                                            "type": "string"
+                                                                          },
+                                                                          "required": {
+                                                                            "type": "boolean"
+                                                                          },
+                                                                          "label": {
+                                                                            "minLength": 1,
+                                                                            "maxLength": 200,
+                                                                            "type": "string"
+                                                                          }
+                                                                        }
+                                                                      }
+                                                                    ]
+                                                                  }
+                                                                }
+                                                              }
+                                                            },
+                                                            {
+                                                              "title": "DocumentOrderedListLevel3",
+                                                              "additionalProperties": false,
+                                                              "type": "object",
+                                                              "required": [
+                                                                "kind",
+                                                                "content"
+                                                              ],
+                                                              "properties": {
+                                                                "kind": {
+                                                                  "type": "string",
+                                                                  "enum": [
+                                                                    "orderedList"
+                                                                  ]
+                                                                },
+                                                                "content": {
+                                                                  "minItems": 1,
+                                                                  "maxItems": 200,
+                                                                  "type": "array",
+                                                                  "items": {
+                                                                    "title": "DocumentListItemLevel3",
+                                                                    "additionalProperties": false,
+                                                                    "type": "object",
+                                                                    "required": [
+                                                                      "kind",
+                                                                      "content"
+                                                                    ],
+                                                                    "properties": {
+                                                                      "kind": {
+                                                                        "type": "string",
+                                                                        "enum": [
+                                                                          "listItem"
+                                                                        ]
+                                                                      },
+                                                                      "content": {
+                                                                        "minItems": 1,
+                                                                        "maxItems": 50,
+                                                                        "type": "array",
+                                                                        "items": {
+                                                                          "title": "DocumentParagraph",
+                                                                          "additionalProperties": false,
+                                                                          "type": "object",
+                                                                          "required": [
+                                                                            "kind",
+                                                                            "content"
+                                                                          ],
+                                                                          "properties": {
+                                                                            "kind": {
+                                                                              "type": "string",
+                                                                              "enum": [
+                                                                                "paragraph"
+                                                                              ]
+                                                                            },
+                                                                            "align": {
+                                                                              "title": "DocumentBlockAlign",
+                                                                              "anyOf": [
+                                                                                {
+                                                                                  "type": "string",
+                                                                                  "enum": [
+                                                                                    "left"
+                                                                                  ]
+                                                                                },
+                                                                                {
+                                                                                  "type": "string",
+                                                                                  "enum": [
+                                                                                    "center"
+                                                                                  ]
+                                                                                },
+                                                                                {
+                                                                                  "type": "string",
+                                                                                  "enum": [
+                                                                                    "right"
+                                                                                  ]
+                                                                                },
+                                                                                {
+                                                                                  "type": "string",
+                                                                                  "enum": [
+                                                                                    "justify"
+                                                                                  ]
+                                                                                }
+                                                                              ]
+                                                                            },
+                                                                            "content": {
+                                                                              "maxItems": 400,
+                                                                              "type": "array",
+                                                                              "items": {
+                                                                                "anyOf": [
+                                                                                  {
+                                                                                    "title": "DocumentTextRun",
+                                                                                    "additionalProperties": false,
+                                                                                    "type": "object",
+                                                                                    "required": [
+                                                                                      "kind",
+                                                                                      "text"
+                                                                                    ],
+                                                                                    "properties": {
+                                                                                      "kind": {
+                                                                                        "type": "string",
+                                                                                        "enum": [
+                                                                                          "text"
+                                                                                        ]
+                                                                                      },
+                                                                                      "text": {
+                                                                                        "minLength": 1,
+                                                                                        "maxLength": 4000,
+                                                                                        "type": "string"
+                                                                                      },
+                                                                                      "marks": {
+                                                                                        "maxItems": 8,
+                                                                                        "type": "array",
+                                                                                        "items": {
+                                                                                          "title": "DocumentTextMark",
+                                                                                          "anyOf": [
+                                                                                            {
+                                                                                              "additionalProperties": false,
+                                                                                              "type": "object",
+                                                                                              "required": [
+                                                                                                "kind"
+                                                                                              ],
+                                                                                              "properties": {
+                                                                                                "kind": {
+                                                                                                  "type": "string",
+                                                                                                  "enum": [
+                                                                                                    "bold"
+                                                                                                  ]
+                                                                                                }
+                                                                                              }
+                                                                                            },
+                                                                                            {
+                                                                                              "additionalProperties": false,
+                                                                                              "type": "object",
+                                                                                              "required": [
+                                                                                                "kind"
+                                                                                              ],
+                                                                                              "properties": {
+                                                                                                "kind": {
+                                                                                                  "type": "string",
+                                                                                                  "enum": [
+                                                                                                    "italic"
+                                                                                                  ]
+                                                                                                }
+                                                                                              }
+                                                                                            },
+                                                                                            {
+                                                                                              "additionalProperties": false,
+                                                                                              "type": "object",
+                                                                                              "required": [
+                                                                                                "kind"
+                                                                                              ],
+                                                                                              "properties": {
+                                                                                                "kind": {
+                                                                                                  "type": "string",
+                                                                                                  "enum": [
+                                                                                                    "underline"
+                                                                                                  ]
+                                                                                                }
+                                                                                              }
+                                                                                            },
+                                                                                            {
+                                                                                              "additionalProperties": false,
+                                                                                              "type": "object",
+                                                                                              "required": [
+                                                                                                "kind",
+                                                                                                "family"
+                                                                                              ],
+                                                                                              "properties": {
+                                                                                                "kind": {
+                                                                                                  "type": "string",
+                                                                                                  "enum": [
+                                                                                                    "fontFamily"
+                                                                                                  ]
+                                                                                                },
+                                                                                                "family": {
+                                                                                                  "title": "DocumentFontFamily",
+                                                                                                  "anyOf": [
+                                                                                                    {
+                                                                                                      "type": "string",
+                                                                                                      "enum": [
+                                                                                                        "times"
+                                                                                                      ]
+                                                                                                    },
+                                                                                                    {
+                                                                                                      "type": "string",
+                                                                                                      "enum": [
+                                                                                                        "georgia"
+                                                                                                      ]
+                                                                                                    },
+                                                                                                    {
+                                                                                                      "type": "string",
+                                                                                                      "enum": [
+                                                                                                        "helvetica"
+                                                                                                      ]
+                                                                                                    },
+                                                                                                    {
+                                                                                                      "type": "string",
+                                                                                                      "enum": [
+                                                                                                        "calibri"
+                                                                                                      ]
+                                                                                                    },
+                                                                                                    {
+                                                                                                      "type": "string",
+                                                                                                      "enum": [
+                                                                                                        "courier"
+                                                                                                      ]
+                                                                                                    }
+                                                                                                  ]
+                                                                                                }
+                                                                                              }
+                                                                                            },
+                                                                                            {
+                                                                                              "additionalProperties": false,
+                                                                                              "type": "object",
+                                                                                              "required": [
+                                                                                                "kind",
+                                                                                                "size"
+                                                                                              ],
+                                                                                              "properties": {
+                                                                                                "kind": {
+                                                                                                  "type": "string",
+                                                                                                  "enum": [
+                                                                                                    "fontSize"
+                                                                                                  ]
+                                                                                                },
+                                                                                                "size": {
+                                                                                                  "minimum": 6,
+                                                                                                  "maximum": 72,
+                                                                                                  "type": "integer"
+                                                                                                }
+                                                                                              }
+                                                                                            }
+                                                                                          ]
+                                                                                        }
+                                                                                      }
+                                                                                    }
+                                                                                  },
+                                                                                  {
+                                                                                    "title": "DocumentVariableRun",
+                                                                                    "additionalProperties": false,
+                                                                                    "type": "object",
+                                                                                    "required": [
+                                                                                      "kind",
+                                                                                      "key",
+                                                                                      "label"
+                                                                                    ],
+                                                                                    "properties": {
+                                                                                      "kind": {
+                                                                                        "type": "string",
+                                                                                        "enum": [
+                                                                                          "variable"
+                                                                                        ]
+                                                                                      },
+                                                                                      "key": {
+                                                                                        "minLength": 1,
+                                                                                        "maxLength": 64,
+                                                                                        "type": "string"
+                                                                                      },
+                                                                                      "label": {
+                                                                                        "minLength": 1,
+                                                                                        "maxLength": 200,
+                                                                                        "type": "string"
+                                                                                      }
+                                                                                    }
+                                                                                  },
+                                                                                  {
+                                                                                    "title": "DocumentFieldAnchorRun",
+                                                                                    "additionalProperties": false,
+                                                                                    "type": "object",
+                                                                                    "required": [
+                                                                                      "kind",
+                                                                                      "fieldType",
+                                                                                      "required",
+                                                                                      "label"
+                                                                                    ],
+                                                                                    "properties": {
+                                                                                      "kind": {
+                                                                                        "type": "string",
+                                                                                        "enum": [
+                                                                                          "fieldAnchor"
+                                                                                        ]
+                                                                                      },
+                                                                                      "fieldType": {
+                                                                                        "title": "PreparationFieldType",
+                                                                                        "description": "What the field asks for. Closed set; unknown types are refused.",
+                                                                                        "anyOf": [
+                                                                                          {
+                                                                                            "type": "string",
+                                                                                            "enum": [
+                                                                                              "signature"
+                                                                                            ]
+                                                                                          },
+                                                                                          {
+                                                                                            "type": "string",
+                                                                                            "enum": [
+                                                                                              "initials"
+                                                                                            ]
+                                                                                          },
+                                                                                          {
+                                                                                            "type": "string",
+                                                                                            "enum": [
+                                                                                              "date-signed"
+                                                                                            ]
+                                                                                          },
+                                                                                          {
+                                                                                            "type": "string",
+                                                                                            "enum": [
+                                                                                              "text"
+                                                                                            ]
+                                                                                          },
+                                                                                          {
+                                                                                            "type": "string",
+                                                                                            "enum": [
+                                                                                              "checkbox"
+                                                                                            ]
+                                                                                          },
+                                                                                          {
+                                                                                            "type": "string",
+                                                                                            "enum": [
+                                                                                              "full-name"
+                                                                                            ]
+                                                                                          },
+                                                                                          {
+                                                                                            "type": "string",
+                                                                                            "enum": [
+                                                                                              "email"
+                                                                                            ]
+                                                                                          },
+                                                                                          {
+                                                                                            "type": "string",
+                                                                                            "enum": [
+                                                                                              "title"
+                                                                                            ]
+                                                                                          },
+                                                                                          {
+                                                                                            "type": "string",
+                                                                                            "enum": [
+                                                                                              "company"
+                                                                                            ]
+                                                                                          },
+                                                                                          {
+                                                                                            "type": "string",
+                                                                                            "enum": [
+                                                                                              "signature-block"
+                                                                                            ]
+                                                                                          },
+                                                                                          {
+                                                                                            "type": "string",
+                                                                                            "enum": [
+                                                                                              "review-block"
+                                                                                            ]
+                                                                                          },
+                                                                                          {
+                                                                                            "type": "string",
+                                                                                            "enum": [
+                                                                                              "approval-block"
+                                                                                            ]
+                                                                                          }
+                                                                                        ]
+                                                                                      },
+                                                                                      "slotId": {
+                                                                                        "minLength": 1,
+                                                                                        "maxLength": 64,
+                                                                                        "type": "string"
+                                                                                      },
+                                                                                      "variableKey": {
+                                                                                        "minLength": 1,
+                                                                                        "maxLength": 64,
+                                                                                        "type": "string"
+                                                                                      },
+                                                                                      "required": {
+                                                                                        "type": "boolean"
+                                                                                      },
+                                                                                      "label": {
+                                                                                        "minLength": 1,
+                                                                                        "maxLength": 200,
+                                                                                        "type": "string"
+                                                                                      }
+                                                                                    }
+                                                                                  }
+                                                                                ]
+                                                                              }
+                                                                            }
+                                                                          }
+                                                                        }
+                                                                      }
+                                                                    }
+                                                                  }
+                                                                }
+                                                              }
+                                                            }
+                                                          ]
+                                                        }
+                                                      }
+                                                    }
+                                                  }
+                                                }
+                                              }
+                                            }
+                                          ]
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            },
+                            {
+                              "title": "DocumentPageBreak",
+                              "additionalProperties": false,
+                              "type": "object",
+                              "required": [
+                                "kind"
+                              ],
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "pageBreak"
+                                  ]
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "baseRevision": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workflowTemplateId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "WorkflowTemplateContentSaveResult",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "contentRevision",
+                    "contentSavedAt",
+                    "contentGenerated"
+                  ],
+                  "properties": {
+                    "contentRevision": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "contentSavedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "contentGenerated": {
+                      "type": "boolean"
                     }
                   }
                 }

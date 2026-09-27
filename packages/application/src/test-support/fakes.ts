@@ -25,6 +25,7 @@ import type {
 import type {
   RecipientWorkflowState, SigningDeclineReason,
   CompletionRunState, CompletionStep, CompletionStepState, CompletionFailureCode,
+  FlowDocument,
 } from "@lagda/contracts";
 import type {
   ScopedCompletionRepository, CompletionRetryIndexRepository, CompletionReconciliationRepository,
@@ -449,13 +450,25 @@ interface CompletionStepRow {
   failureCode: CompletionFailureCode | null;
 }
 
+/**
+ * A stored template, as its row holds it. `content` is 070's column — the
+ * document the last generate rendered — and the 088 columns ride alongside,
+ * optional so a test seeding a plain record still reads as "no draft, never
+ * generated". The record's own `contentGenerated` is ignored: a read derives
+ * it from the revisions, exactly as the real repository's caller does.
+ */
+export type FakeWorkflowTemplateRow = WorkflowTemplateRecord & {
+  readonly draftContent?: FlowDocument | null;
+  readonly contentGeneratedRevision?: number | null;
+};
+
 interface StoreSnapshot {
   readonly workspaces: Map<string, WorkspaceRecord>;
   readonly memberships: WorkspaceMembershipRecord[];
   readonly invitations: WorkspaceInvitationRecord[];
   readonly invitationDigests: Map<string, string>;
   readonly contacts: ContactRecord[];
-  readonly workflowTemplates: WorkflowTemplateRecord[];
+  readonly workflowTemplates: FakeWorkflowTemplateRow[];
   readonly uploadRequests: UploadRequestRecord[];
   readonly contactRequests: ContactRequestRecord[];
   readonly documentShares: DocumentShareRecord[];
@@ -513,7 +526,7 @@ export class InMemoryStore {
   readonly notificationIntents = new Map<string, NotificationIntentRecord>();
   readonly notificationDeliveries = new Map<string, NotificationDeliveryRecord>();
   contacts: ContactRecord[] = [];
-  workflowTemplates: WorkflowTemplateRecord[] = [];
+  workflowTemplates: FakeWorkflowTemplateRow[] = [];
   uploadRequests: UploadRequestRecord[] = [];
   /** 086. */
   contactRequests: ContactRequestRecord[] = [];
@@ -1366,7 +1379,7 @@ function scopedWorkflowTemplates(
   store: InMemoryStore, scope: WorkspaceId,
 ): ScopedWorkflowTemplateRepository {
   const inScope = () => store.workflowTemplates.filter(t => t.workspaceId === scope);
-  const raw = (t: WorkflowTemplateRecord): RawWorkflowTemplateRow => ({
+  const raw = (t: FakeWorkflowTemplateRow): RawWorkflowTemplateRow => ({
     workflowTemplateId: t.workflowTemplateId,
     workspaceId: t.workspaceId,
     name: t.name,
@@ -1381,6 +1394,10 @@ function scopedWorkflowTemplates(
     sourceArtifactId: t.sourceArtifactId,
     content: t.content,
     contentPageCount: t.contentPageCount,
+    draftContent: t.draftContent ?? null,
+    contentRevision: t.contentRevision,
+    contentSavedAt: t.contentSavedAt,
+    contentGeneratedRevision: t.contentGeneratedRevision ?? null,
   });
   const key = (name: string) => name.trim().toLowerCase();
 
@@ -1394,6 +1411,9 @@ function scopedWorkflowTemplates(
         ...template, updatedAt: template.createdAt,
         documentId: null, sourceArtifactId: null,
         content: { kind: "flowDocument", content: [] }, contentPageCount: 0,
+        // 088. Revision 0, no draft, never generated, "saved" when created.
+        contentRevision: 0, contentSavedAt: template.createdAt, contentGenerated: false,
+        draftContent: null, contentGeneratedRevision: null,
       });
       return Promise.resolve();
     },
@@ -1460,13 +1480,40 @@ function scopedWorkflowTemplates(
       const index = store.workflowTemplates.findIndex(
         t => t.workspaceId === scope && t.workflowTemplateId === id);
       if (index < 0) return Promise.resolve(false);
+      const revision = store.workflowTemplates[index]!.contentRevision + 1;
       store.workflowTemplates[index] = {
         ...store.workflowTemplates[index]!,
         content: content.document,
         contentPageCount: content.pageCount,
         updatedAt: content.updatedAt,
+        // 088: the generated document supersedes any draft.
+        draftContent: null,
+        contentRevision: revision,
+        contentGeneratedRevision: revision,
+        contentSavedAt: content.updatedAt,
       };
       return Promise.resolve(true);
+    },
+    saveDraftContent: (id, draft) => {
+      const index = store.workflowTemplates.findIndex(
+        t => t.workspaceId === scope && t.workflowTemplateId === id);
+      if (index < 0) return Promise.resolve({ kind: "not-found" as const });
+      const current = store.workflowTemplates[index]!;
+      if (draft.baseRevision !== null && draft.baseRevision !== current.contentRevision) {
+        return Promise.resolve({ kind: "conflict" as const, currentRevision: current.contentRevision });
+      }
+      const revision = current.contentRevision + 1;
+      store.workflowTemplates[index] = {
+        ...current,
+        draftContent: draft.document,
+        contentRevision: revision,
+        contentSavedAt: draft.savedAt,
+      };
+      return Promise.resolve({
+        kind: "saved" as const,
+        contentRevision: revision,
+        contentGeneratedRevision: current.contentGeneratedRevision ?? null,
+      });
     },
   };
 }

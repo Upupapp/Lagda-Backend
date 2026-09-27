@@ -710,6 +710,22 @@ export const RATE_LIMIT_POLICIES = {
       + "an invitation page previews then accepts from one address.",
   },
 
+  // 088. The template editor's autosave. It fires every few seconds while an
+  // admin types, so it gets its own budget rather than eating the general
+  // write allowance: one save a second, sustained, is far above what a
+  // debounced editor sends and far below what a runaway client would.
+  // Fail-closed like the other semantic write limits here.
+  "workflow-template.content-autosave.user": {
+    id: "workflow-template.content-autosave.user",
+    scopeType: "user",
+    limit: 60,
+    windowMs: MINUTE,
+    failureMode: "fail-closed",
+    source: "088 - not specified by the handoff. Matched to the handoff's "
+      + "commands budget (§583, 60/min per user): a debounced autosave sends "
+      + "well under one request a second.",
+  },
+
   "api.write.user": {
     id: "api.write.user",
     scopeType: "user",

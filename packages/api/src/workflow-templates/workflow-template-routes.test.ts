@@ -25,6 +25,7 @@ import {
   type SessionRepository, type SessionRecord, type NewSession,
   type CreateWorkspaceDependencies, type GetWorkspaceDependencies,
   type ListMyWorkspacesDependencies, type WorkflowTemplateDependencies,
+  type AbuseLimiter, type RateLimitCheck,
 } from "@lagda/application";
 import {
   FakeTransactionManager, FixedClock, SequentialWorkspaceIds, SequentialMemberIds,
@@ -82,7 +83,7 @@ interface Harness {
   readonly signIn: (userId: UserId) => Promise<{ cookie: string; csrf: string }>;
 }
 
-async function build(): Promise<Harness> {
+async function build(options: { limiter?: AbuseLimiter } = {}): Promise<Harness> {
   const sessions = createSessionService({
     sessions: fakeSessionRepository(),
     tokens: createSecurityTokenGenerator(),
@@ -140,6 +141,7 @@ async function build(): Promise<Harness> {
     hasCurrentSchema: () => Promise.resolve(true),
   },
       sessions,
+      ...(options.limiter === undefined ? {} : { limiter: options.limiter }),
       workspaces: {
         create: (): CreateWorkspaceDependencies => ({
           transactions,
@@ -180,8 +182,8 @@ afterEach(async () => {
   open = undefined;
 });
 
-async function harness(): Promise<Harness> {
-  const built = await build();
+async function harness(options: { limiter?: AbuseLimiter } = {}): Promise<Harness> {
+  const built = await build(options);
   open = built.app;
   return built;
 }
@@ -823,5 +825,164 @@ describe("GET .../apply", () => {
     expect(unknown.statusCode).toBe(404);
     expect(crossWorkspace.statusCode).toBe(404);
     expect(crossWorkspace.statusCode).toBe(unknown.statusCode);
+  });
+});
+
+// ── Autosave (088) ──────────────────────────────────────────────────────────
+
+describe("PUT .../content — the editor's autosave", () => {
+  const CONTENT = {
+    kind: "flowDocument",
+    content: [{ kind: "paragraph", content: [{ kind: "text", text: "Typed, not yet generated." }] }],
+  };
+
+  const put = async (
+    h: Harness, user: UserId, payload: unknown,
+    headers: { csrf?: boolean; url?: string } = {},
+  ): Promise<LightMyRequestResponse> => {
+    const { cookie, csrf } = await h.signIn(user);
+    return await h.app.inject({
+      method: "PUT", url: headers.url ?? `${URL}/wft_1/content`,
+      headers: { cookie, ...(headers.csrf === false ? {} : { [CSRF_TOKEN_HEADER]: csrf }) },
+      payload: payload as Record<string, unknown>,
+    });
+  };
+
+  it("saves the draft and returns the new revision; GET then returns it", async () => {
+    const h = await harness();
+    expect((await createAs(h, OWNER)).statusCode).toBe(201);
+
+    const response = await put(h, OWNER, { content: CONTENT, baseRevision: 0 });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["cache-control"]).toBe("no-store");
+    expect(response.json()).toEqual({
+      contentRevision: 1, contentSavedAt: new Date(AT).toISOString(), contentGenerated: false,
+    });
+
+    const { cookie } = await h.signIn(OWNER);
+    const read = await h.app.inject({ method: "GET", url: `${URL}/wft_1`, headers: { cookie } });
+    expect(read.statusCode).toBe(200);
+    expect(read.json()).toMatchObject({
+      content: CONTENT, contentRevision: 1, contentGenerated: false,
+      contentSavedAt: new Date(AT).toISOString(), documentId: null, contentPageCount: 0,
+    });
+  });
+
+  it("returns the 088 fields on a fresh template too", async () => {
+    const h = await harness();
+    const created = await createAs(h, OWNER);
+    expect(created.json()).toMatchObject({
+      contentRevision: 0, contentGenerated: false, contentSavedAt: new Date(AT).toISOString(),
+    });
+  });
+
+  it("409s a stale baseRevision with template_content_conflict and the current revision", async () => {
+    const h = await harness();
+    expect((await createAs(h, OWNER)).statusCode).toBe(201);
+    expect((await put(h, OWNER, { content: CONTENT, baseRevision: 0 })).statusCode).toBe(200);
+
+    const stale = await put(h, TEMPLATE_ADMIN, {
+      content: { kind: "flowDocument", content: [] }, baseRevision: 0,
+    });
+    expect(stale.statusCode).toBe(409);
+    const body = stale.json<{
+      error: { code: string; details?: { field: string; code: string; message: string }[] };
+    }>();
+    expect(body.error.code).toBe("template_content_conflict");
+    expect(body.error.details?.[0]).toMatchObject({ field: "baseRevision", code: "stale_revision" });
+    expect(body.error.details?.[0]?.message).toContain("1");
+
+    // Not overwritten.
+    expect(templates(h)[0]?.contentRevision).toBe(1);
+  });
+
+  it("refuses anonymously (401) and without a CSRF token (403)", async () => {
+    const h = await harness();
+    expect((await createAs(h, OWNER)).statusCode).toBe(201);
+
+    const anonymous = await h.app.inject({
+      method: "PUT", url: `${URL}/wft_1/content`, payload: { content: CONTENT },
+    });
+    expect(anonymous.statusCode).toBe(401);
+
+    const noCsrf = await put(h, OWNER, { content: CONTENT }, { csrf: false });
+    expect(noCsrf.statusCode).toBe(403);
+    expect(templates(h)[0]?.contentRevision).toBe(0);
+  });
+
+  it("404s a sender, a plain member and an outsider, and writes nothing", async () => {
+    const h = await harness();
+    expect((await createAs(h, OWNER)).statusCode).toBe(201);
+
+    for (const user of [SENDER, MEMBER]) {
+      expect((await put(h, user, { content: CONTENT })).statusCode, user).toBe(404);
+    }
+    const crossed = await put(h, OUTSIDER, { content: CONTENT }, {
+      url: `/workspaces/${OTHER_WORKSPACE}/workflow-templates/wft_1/content`,
+    });
+    expect(crossed.statusCode).toBe(404);
+    expect(templates(h)[0]?.contentRevision).toBe(0);
+  });
+
+  it("422s an invalid document, an unknown key and a bad baseRevision", async () => {
+    const h = await harness();
+    expect((await createAs(h, OWNER)).statusCode).toBe(201);
+
+    for (const payload of [
+      { content: { kind: "notAFlowDocument", content: [] } },
+      { content: CONTENT, pageCount: 3 },
+      { content: CONTENT, baseRevision: -1 },
+      { content: CONTENT, baseRevision: 1.5 },
+      {},
+    ]) {
+      const response = await put(h, OWNER, payload);
+      expect(response.statusCode, JSON.stringify(payload)).toBe(422);
+    }
+    expect(templates(h)[0]?.contentRevision).toBe(0);
+  });
+
+  it("413s a body larger than the app-wide limit generate-document runs under", async () => {
+    const h = await harness();
+    expect((await createAs(h, OWNER)).statusCode).toBe(201);
+
+    const huge = {
+      content: {
+        kind: "flowDocument",
+        content: [{ kind: "paragraph", content: [{ kind: "text", text: "x".repeat(1_100_000) }] }],
+      },
+    };
+    const response = await put(h, OWNER, huge);
+    expect(response.statusCode).toBe(413);
+    expect(templates(h)[0]?.contentRevision).toBe(0);
+  });
+
+  it("is rate-limited per user under its own fail-closed policy", async () => {
+    const seen: RateLimitCheck[] = [];
+    let allow = true;
+    const limiter: AbuseLimiter = {
+      check: checks => {
+        seen.push(...checks);
+        const autosave = checks.some(c => c.policy.id === "workflow-template.content-autosave.user");
+        return Promise.resolve(allow || !autosave
+          ? { allowed: true, remaining: 10, resetAt: AT + 60_000 }
+          : {
+              allowed: false, retryAfterSeconds: 30, resetAt: AT + 30_000,
+              policyId: "workflow-template.content-autosave.user",
+            });
+      },
+    };
+    const h = await harness({ limiter });
+    expect((await createAs(h, OWNER)).statusCode).toBe(201);
+
+    expect((await put(h, OWNER, { content: CONTENT })).statusCode).toBe(200);
+    const check = seen.find(c => c.policy.id === "workflow-template.content-autosave.user");
+    expect(check?.scope).toEqual({ type: "user", userId: OWNER });
+    expect(check?.policy).toMatchObject({ limit: 60, windowMs: 60_000, failureMode: "fail-closed" });
+
+    allow = false;
+    const limited = await put(h, OWNER, { content: CONTENT });
+    expect(limited.statusCode).toBe(429);
+    expect(limited.headers["retry-after"]).toBe("30");
+    expect(templates(h)[0]?.contentRevision).toBe(1);
   });
 });

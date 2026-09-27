@@ -43,11 +43,19 @@ export interface WorkflowTemplateRecord {
    */
   readonly documentId: DocumentId | null;
   readonly sourceArtifactId: ArtifactId | null;
-  /** 070. The authored flowing document, if the attached document was
-   *  GENERATED rather than uploaded. Empty content otherwise. */
+  /** 070. The authored flowing document — since 088, the NEWEST one: the
+   *  latest autosaved draft when there is one, else the one the last
+   *  generate rendered. Empty content for an uploaded document. */
   readonly content: FlowDocument;
   /** Pages the last generate produced. 0 before the first one. */
   readonly contentPageCount: number;
+  /** 088. Bumped by every autosave and every generate. */
+  readonly contentRevision: number;
+  /** 088. When `content` was last written, by an autosave or a generate. */
+  readonly contentSavedAt: number;
+  /** 088. Whether `content` is exactly what the last generate rendered —
+   *  false once a draft is autosaved after it, and before any generate. */
+  readonly contentGenerated: boolean;
 }
 
 export interface NewWorkflowTemplate {
@@ -93,7 +101,19 @@ export interface RawWorkflowTemplateRow {
   readonly sourceArtifactId: ArtifactId | null;
   readonly content: unknown;
   readonly contentPageCount: number;
+  /** 088. The autosaved draft, raw, or null when `content` is the newest. */
+  readonly draftContent: unknown;
+  readonly contentRevision: number;
+  readonly contentSavedAt: number;
+  /** 088. The revision the last generate produced; null if never generated. */
+  readonly contentGeneratedRevision: number | null;
 }
+
+/** 088. The outcome of an autosave write. */
+export type SaveDraftContentResult =
+  | { readonly kind: "saved"; readonly contentRevision: number; readonly contentGeneratedRevision: number | null }
+  | { readonly kind: "conflict"; readonly currentRevision: number }
+  | { readonly kind: "not-found" };
 
 export interface ScopedWorkflowTemplateRepository {
   insert(template: NewWorkflowTemplate): Promise<void>;
@@ -130,7 +150,9 @@ export interface ScopedWorkflowTemplateRepository {
   detachDocument(workflowTemplateId: string, updatedAt: number): Promise<boolean>;
   /**
    * Replaces the authored content — the whole document, like
-   * `attachDocument` replaces the whole document pair. Never touches
+   * `attachDocument` replaces the whole document pair. Since 088 it also
+   * clears any autosaved draft, bumps `contentRevision` and marks that new
+   * revision as the generated one. Never touches
    * `documentId`/`sourceArtifactId`; the generate use case calls this AND
    * `attachDocument` in the same transaction, content first, so a save that
    * fails to generate never leaves a stale document pointing at content that
@@ -140,6 +162,20 @@ export interface ScopedWorkflowTemplateRepository {
     workflowTemplateId: string,
     content: { document: FlowDocument; pageCount: number; updatedAt: number },
   ): Promise<boolean>;
+  /**
+   * 088. Autosave: writes ONLY the draft document, bumping `contentRevision`
+   * and `contentSavedAt`. Never touches `content`, the page count, the
+   * document pair or `updatedAt` — nothing the template's shape or its
+   * rendered PDF depends on.
+   *
+   * With `baseRevision` non-null, writes only if the stored revision still
+   * equals it — one conditional UPDATE, so two concurrent saves from the same
+   * base cannot both succeed.
+   */
+  saveDraftContent(
+    workflowTemplateId: string,
+    draft: { document: FlowDocument; baseRevision: number | null; savedAt: number },
+  ): Promise<SaveDraftContentResult>;
 }
 
 export interface WorkflowTemplateIdGenerator {

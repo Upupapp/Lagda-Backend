@@ -119,6 +119,31 @@ export class WorkflowTemplateDocumentMismatchError extends ApplicationError {
   }
 }
 
+/**
+ * 088. An autosave named a `baseRevision` that is no longer current — another
+ * tab (or a generate) wrote the content since this editor loaded it.
+ *
+ * A distinct 409 because the caller CAN fix it: reload and carry on. Silently
+ * applying the save would discard whatever the other write contained.
+ */
+export class WorkflowTemplateContentConflictError extends ApplicationError {
+  readonly category = "conflict" as const;
+  readonly code = "template_content_conflict";
+  /** Field-level detail the shared error mapper forwards, so a client learns
+   *  the current revision without a second read. */
+  readonly details: readonly { field: string; code: string; message: string }[];
+
+  constructor(readonly currentRevision: number) {
+    super("This template's content was changed elsewhere. Reload to continue.");
+    this.name = "WorkflowTemplateContentConflictError";
+    this.details = [{
+      field: "baseRevision",
+      code: "stale_revision",
+      message: `The current content revision is ${String(currentRevision)}.`,
+    }];
+  }
+}
+
 // ── Dependencies ─────────────────────────────────────────────────────────────
 
 export interface WorkflowTemplateDependencies {
@@ -612,8 +637,33 @@ export function parseStoredTemplate(row: RawWorkflowTemplateRow): WorkflowTempla
     updatedAt: row.updatedAt,
     documentId: row.documentId,
     sourceArtifactId: row.sourceArtifactId,
-    content: validateFlowDocument(row.content),
+    // 088. The NEWEST content: an autosaved draft when there is one, else
+    // the document the last generate rendered. Validated either way.
+    content: validateFlowDocument(
+      row.draftContent === null || row.draftContent === undefined ? row.content : row.draftContent),
     contentPageCount: row.contentPageCount,
+    contentRevision: row.contentRevision,
+    contentSavedAt: row.contentSavedAt,
+    contentGenerated: isContentGenerated(row.contentGeneratedRevision, row.contentRevision),
+  };
+}
+
+/** 088. The newest content is what the last generate rendered exactly when
+ *  that generate produced the current revision. Never generated → false. */
+function isContentGenerated(generatedRevision: number | null, revision: number): boolean {
+  return generatedRevision !== null && generatedRevision === revision;
+}
+
+/** The authored-content half of a record — carried over untouched by every
+ *  write that is not about content. */
+function contentOf(record: WorkflowTemplateRecord): Pick<WorkflowTemplateRecord,
+  "content" | "contentPageCount" | "contentRevision" | "contentSavedAt" | "contentGenerated"> {
+  return {
+    content: record.content,
+    contentPageCount: record.contentPageCount,
+    contentRevision: record.contentRevision,
+    contentSavedAt: record.contentSavedAt,
+    contentGenerated: record.contentGenerated,
   };
 }
 
@@ -693,10 +743,13 @@ export async function createWorkflowTemplate(
       // document named — creation never receives either value to begin with.
       documentId: null,
       sourceArtifactId: null,
-      // Same for authored content — `generateWorkflowTemplateDocument` is the
-      // only path that ever sets it.
+      // Same for authored content — written only by generate-document and
+      // (088) the autosave, never on creation.
       content: EMPTY_FLOW_DOCUMENT,
       contentPageCount: 0,
+      contentRevision: 0,
+      contentSavedAt: now,
+      contentGenerated: false,
     };
 
     await uow.workflowTemplates.insert(record);
@@ -809,8 +862,7 @@ export async function updateWorkflowTemplate(
       // detach its document as a side effect, or its authored content.
       documentId: existing.documentId,
       sourceArtifactId: existing.sourceArtifactId,
-      content: validateFlowDocument(existing.content),
-      contentPageCount: existing.contentPageCount,
+      ...contentOf(parseStoredTemplate(existing)),
     };
   });
 }
@@ -1101,6 +1153,73 @@ export async function generateWorkflowTemplateDocument(
   });
 
   return { template, resolvedAnchors };
+}
+
+// ── Autosave (088) ───────────────────────────────────────────────────────────
+
+export interface WorkflowTemplateContentSaveInput {
+  readonly content: FlowDocument;
+  /** The revision the editor last saw; omitted or null = overwrite. */
+  readonly baseRevision?: number | null;
+}
+
+export interface WorkflowTemplateContentSaveOutput {
+  readonly contentRevision: number;
+  readonly contentSavedAt: number;
+  readonly contentGenerated: boolean;
+}
+
+/**
+ * Saves the template's authored content as a DRAFT — the editor's autosave.
+ *
+ * The lightweight counterpart to `generateWorkflowTemplateDocument`: no
+ * layout, no PDF, no upload, no document or field change, and no `updatedAt`
+ * bump (the template's SHAPE did not change). Only the draft, its revision and
+ * when it was saved. A later generate renders whatever the editor sends then
+ * and supersedes the draft.
+ *
+ * Same capability as any other edit to the template (`template.update`), and
+ * the same content validation generate-document's stored document gets —
+ * schema AND the anchor exactly-one-target rule — BEFORE anything is written.
+ *
+ * Deliberately records nothing in the workspace activity log: it runs every
+ * few seconds while someone types, and is not an administrative act.
+ */
+export async function saveWorkflowTemplateContent(
+  actor: AuthenticatedActor,
+  workspaceId: WorkspaceId,
+  workflowTemplateId: string,
+  input: WorkflowTemplateContentSaveInput,
+  deps: WorkflowTemplateDependencies,
+): Promise<WorkflowTemplateContentSaveOutput> {
+  const baseRevision = input.baseRevision ?? null;
+  if (baseRevision !== null && (!Number.isInteger(baseRevision) || baseRevision < 0)) {
+    throw new WorkflowTemplateMalformedError("its base revision is invalid");
+  }
+
+  return deps.transactions.runForWorkspace(workspaceId, async uow => {
+    // Authorize FIRST, so a caller without the capability learns nothing —
+    // not even whether their content would have validated.
+    await authorize(uow, actor, "template.update");
+    const document = validateFlowDocument(input.content);
+
+    const savedAt = deps.clock.now();
+    const result = await uow.workflowTemplates.saveDraftContent(workflowTemplateId, {
+      document, baseRevision, savedAt,
+    });
+    switch (result.kind) {
+      case "not-found":
+        throw new ResourceNotFoundError("WorkflowTemplate");
+      case "conflict":
+        throw new WorkflowTemplateContentConflictError(result.currentRevision);
+      case "saved":
+        return {
+          contentRevision: result.contentRevision,
+          contentSavedAt: savedAt,
+          contentGenerated: isContentGenerated(result.contentGeneratedRevision, result.contentRevision),
+        };
+    }
+  });
 }
 
 /**

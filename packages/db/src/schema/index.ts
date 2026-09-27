@@ -680,6 +680,15 @@ export interface WorkspaceWorkflowTemplatesTable {
   /** 070. The authored FLOWING document — a JSON object, always present,
    *  empty content for an uploaded document or one with none at all. */
   content: ColumnType<unknown, string, string>;
+  /** 088. The latest AUTOSAVED document, or null when the newest content is
+   *  `content` itself (the one the last generate rendered). */
+  draft_content: ColumnType<unknown, string | null | undefined, string | null>;
+  /** 088. Bumped by every autosave and every generate. */
+  content_revision: ColumnType<number, number | undefined, number>;
+  /** 088. When the newest content (draft or generated) was written. */
+  content_saved_at: ColumnType<Date, Date | undefined, Date>;
+  /** 088. The revision the last generate produced; null if never generated. */
+  content_generated_revision: ColumnType<number | null, number | null | undefined, number | null>;
 }
 
 /**

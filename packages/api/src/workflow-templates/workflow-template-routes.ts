@@ -8,6 +8,7 @@
 //   PUT    /workspaces/:id/workflow-templates/:templateId/document
 //   DELETE /workspaces/:id/workflow-templates/:templateId/document
 //   POST   /workspaces/:id/workflow-templates/:templateId/generate-document
+//   PUT    /workspaces/:id/workflow-templates/:templateId/content   (088 autosave)
 //   GET    /workspaces/:id/workflow-templates/:templateId/fields
 //   PUT    /workspaces/:id/workflow-templates/:templateId/fields
 //   GET    /workspaces/:id/workflow-templates/:templateId/role-assignments
@@ -38,7 +39,7 @@ import {
   createWorkflowTemplate, listWorkflowTemplates, getWorkflowTemplate,
   updateWorkflowTemplate, deleteWorkflowTemplate,
   attachWorkflowTemplateDocument, detachWorkflowTemplateDocument,
-  generateWorkflowTemplateDocument,
+  generateWorkflowTemplateDocument, saveWorkflowTemplateContent, policyById,
   listWorkflowTemplateFields, saveWorkflowTemplateFields,
   resolveWorkflowRoleAssignments, resolveTemplateForApply,
   WorkflowTemplateNameTakenError,
@@ -52,14 +53,16 @@ import {
   WorkflowTemplateSchema, WorkflowTemplateWriteSchema, WorkflowTemplateListSchema,
   WorkflowTemplateDocumentInputSchema, WorkflowTemplateGenerateDocumentInputSchema,
   WorkflowTemplateGenerateDocumentResultSchema,
+  WorkflowTemplateContentSaveInputSchema, WorkflowTemplateContentSaveResultSchema,
   WorkflowTemplateFieldListSchema, WorkflowTemplateFieldsWriteSchema,
   WorkflowRoleAssignmentListSchema, WorkflowTemplateApplicationSchema,
   type WorkflowTemplateWrite, type WorkflowTemplateDocumentInput,
-  type WorkflowTemplateGenerateDocumentInput,
+  type WorkflowTemplateGenerateDocumentInput, type WorkflowTemplateContentSaveInput,
   type WorkflowTemplateFieldsWrite,
   type WorkspaceId, type DocumentId,
 } from "@lagda/contracts";
 import type { MetricsRecorder } from "../observability/metrics.js";
+import { checkSemanticLimits, type RateLimitOptions } from "../security/rate-limit-plugin.js";
 
 // ── Schemas ─────────────────────────────────────────────────────────────────
 
@@ -87,6 +90,10 @@ export interface WorkflowTemplateRouteOptions {
    */
   readonly generateDocumentDependencies?: () => WorkflowTemplateGenerateDocumentDependencies;
   readonly metrics?: MetricsRecorder;
+  /** 088. The autosave's per-user budget. Absent only where no limiter is
+   *  composed at all (unit harnesses), the same convention every other
+   *  semantic limit uses. */
+  readonly rateLimit?: RateLimitOptions;
 }
 
 /**
@@ -140,6 +147,9 @@ const present = (template: WorkflowTemplateRecord) => ({
   sourceArtifactId: template.sourceArtifactId,
   content: template.content,
   contentPageCount: template.contentPageCount,
+  contentRevision: template.contentRevision,
+  contentSavedAt: iso(template.contentSavedAt),
+  contentGenerated: template.contentGenerated,
   createdAt: iso(template.createdAt),
   updatedAt: iso(template.updatedAt),
 });
@@ -473,6 +483,53 @@ export function registerWorkflowTemplateRoutes(
       return reply.status(200).send({ template: present(template), resolvedAnchors });
     });
   }
+
+  // ── Autosave authored content (088) ────────────────────────────────────
+  //
+  // The lightweight counterpart to generate-document: saves the draft only —
+  // no layout, no PDF, no storage — so it is registered whether or not object
+  // storage is configured. Body size is the app-wide limit generate-document
+  // also runs under (413 past it); the content schema is the SAME one (422).
+  //
+  // Nothing is written to the activity log and no info line is logged per
+  // save: it fires every few seconds while someone types. A metric counts it.
+  app.put("/workspaces/:workspaceId/workflow-templates/:workflowTemplateId/content", {
+    schema: {
+      params: TemplateParamsSchema,
+      body: WorkflowTemplateContentSaveInputSchema,
+      response: { 200: WorkflowTemplateContentSaveResultSchema },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await actorOf(request);
+    if (actor === null) return unauthenticated(reply);
+
+    if (options.rateLimit !== undefined) {
+      await checkSemanticLimits(request, [{
+        policy: policyById("workflow-template.content-autosave.user"),
+        scope: { type: "user", userId: actor.userId },
+      }], options.rateLimit);
+    }
+
+    const { workspaceId, workflowTemplateId } =
+      request.params as Static<typeof TemplateParamsSchema>;
+    const body = request.body as WorkflowTemplateContentSaveInput;
+
+    const saved = await saveWorkflowTemplateContent(
+      actor, workspaceId as WorkspaceId, workflowTemplateId,
+      { content: body.content, baseRevision: body.baseRevision ?? null },
+      options.workflowTemplateDependencies());
+
+    metrics?.increment("workflow_template_operations_total", {
+      operation: "content_saved", result: "success", processRole: "api",
+    });
+
+    return reply.status(200).send({
+      contentRevision: saved.contentRevision,
+      contentSavedAt: iso(saved.contentSavedAt),
+      contentGenerated: saved.contentGenerated,
+    });
+  });
 
   // ── Field placements (060) ─────────────────────────────────────────────
   //

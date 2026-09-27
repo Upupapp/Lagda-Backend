@@ -595,6 +595,14 @@ export const WorkflowTemplateSchema = Type.Object(
      *  engine — not admin-declared the way 066's `pageCount` was. 0 before
      *  the first generate. */
     contentPageCount: Type.Integer({ minimum: 0 }),
+    /** 088. Bumped by every autosave (`PUT .../content`) and every generate.
+     *  Send it back as `baseRevision` on the next autosave. */
+    contentRevision: Type.Integer({ minimum: 0 }),
+    /** 088. When `content` was last written, by an autosave or a generate. */
+    contentSavedAt: Type.String({ format: "date-time" }),
+    /** 088. Whether `content` is exactly what the last generate rendered.
+     *  False before the first generate, and after any autosave since. */
+    contentGenerated: Type.Boolean(),
     createdAt: Type.String({ format: "date-time" }),
     updatedAt: Type.String({ format: "date-time" }),
   },
@@ -633,6 +641,39 @@ export const WorkflowTemplateGenerateDocumentInputSchema = Type.Object(
 );
 export type WorkflowTemplateGenerateDocumentInput =
   Static<typeof WorkflowTemplateGenerateDocumentInputSchema>;
+
+/**
+ * The body of `PUT .../workflow-templates/:id/content` (088) — the editor's
+ * AUTOSAVE.
+ *
+ * Saves the draft document only: no layout, no PDF, no field or document
+ * change. `content` is the SAME schema generate-document takes, validated the
+ * same way. `baseRevision` is the `contentRevision` the editor last saw; when
+ * given and no longer current the save is refused with 409
+ * `template_content_conflict`, so a second tab cannot silently overwrite the
+ * first. Omit it to overwrite unconditionally.
+ */
+export const WorkflowTemplateContentSaveInputSchema = Type.Object(
+  {
+    content: FlowDocumentSchema,
+    baseRevision: Type.Optional(Type.Integer({ minimum: 0 })),
+  },
+  { title: "WorkflowTemplateContentSaveInput", additionalProperties: false },
+);
+export type WorkflowTemplateContentSaveInput = Static<typeof WorkflowTemplateContentSaveInputSchema>;
+
+export const WorkflowTemplateContentSaveResultSchema = Type.Object(
+  {
+    contentRevision: Type.Integer({ minimum: 1 }),
+    contentSavedAt: Type.String({ format: "date-time" }),
+    /** The template's `contentGenerated` after this save. A draft just saved
+     *  is newer than any generate, so this is false — returned so the editor
+     *  can update its "not yet generated" state from this one response. */
+    contentGenerated: Type.Boolean(),
+  },
+  { title: "WorkflowTemplateContentSaveResult", additionalProperties: false },
+);
+export type WorkflowTemplateContentSaveResult = Static<typeof WorkflowTemplateContentSaveResultSchema>;
 
 /**
  * One `fieldAnchor` run, resolved to where the layout engine actually placed

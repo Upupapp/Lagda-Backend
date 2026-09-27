@@ -177,6 +177,9 @@ const REQUIRED_PATHS = [
   // Settings: usage (member group) and notification preferences (identity).
   "/workspaces/{workspaceId}/usage",
   "/me/notification-preferences",
+  // 088. The template editor's autosave — the path the Blank editor's
+  // no-lost-text guarantee rests on.
+  "/workspaces/{workspaceId}/workflow-templates/{workflowTemplateId}/content",
   // 086. Contact requests, and the account's own lists of them.
   "/workspaces/{workspaceId}/contact-requests",
   "/me/contact-requests",

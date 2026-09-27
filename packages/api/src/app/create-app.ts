@@ -618,6 +618,7 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
           workflowTemplateDependencies: workflowTemplates,
           ...(generateDocument === undefined ? {} : { generateDocumentDependencies: generateDocument }),
           metrics,
+          ...(limiter === undefined ? {} : { rateLimit: { limiter, metrics } }),
         });
       }
 

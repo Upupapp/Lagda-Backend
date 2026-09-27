@@ -13,7 +13,7 @@ import { sql, type Transaction } from "kysely";
 import type { WorkspaceId, UserId, DocumentId } from "@lagda/contracts";
 import type {
   ScopedWorkflowTemplateRepository, NewWorkflowTemplate,
-  WorkflowTemplateUpdate, RawWorkflowTemplateRow, ArtifactId,
+  WorkflowTemplateUpdate, RawWorkflowTemplateRow, ArtifactId, SaveDraftContentResult,
 } from "@lagda/application";
 import type { FlowDocument } from "@lagda/contracts";
 import type { Database } from "../schema/index.js";
@@ -34,6 +34,10 @@ interface Row {
   source_artifact_id: string | null;
   content: unknown;
   content_page_count: number;
+  draft_content: unknown;
+  content_revision: number;
+  content_saved_at: Date;
+  content_generated_revision: number | null;
 }
 
 /**
@@ -66,6 +70,10 @@ const toRaw = (row: Row): RawWorkflowTemplateRow => ({
   sourceArtifactId: row.source_artifact_id as ArtifactId | null,
   content: jsonValue(row.content),
   contentPageCount: row.content_page_count,
+  draftContent: row.draft_content === null ? null : jsonValue(row.draft_content),
+  contentRevision: row.content_revision,
+  contentSavedAt: row.content_saved_at.getTime(),
+  contentGeneratedRevision: row.content_generated_revision,
 });
 
 export function createScopedWorkflowTemplateRepository(
@@ -99,6 +107,10 @@ export function createScopedWorkflowTemplateRepository(
           content: JSON.stringify({ kind: "flowDocument", content: [] }),
           content_blocks: "[]",
           content_page_count: 0,
+          // 088. Revision 0, never generated, "saved" when created.
+          content_revision: 0,
+          content_saved_at: new Date(template.createdAt),
+          content_generated_revision: null,
           created_by: template.createdBy,
           created_at: new Date(template.createdAt),
           // Equal to `created_at` on insert, never null — the same position
@@ -210,11 +222,54 @@ export function createScopedWorkflowTemplateRepository(
             content: JSON.stringify(content.document),
             content_page_count: content.pageCount,
             updated_at: new Date(content.updatedAt),
+            // 088. The generated document IS the newest content now: the
+            // draft is superseded, and the new revision is the generated one.
+            draft_content: null,
+            content_revision: sql<number>`content_revision + 1`,
+            content_generated_revision: sql<number>`content_revision + 1`,
+            content_saved_at: new Date(content.updatedAt),
           })
           .where("workspace_id", "=", scope)
           .where("workflow_template_id", "=", workflowTemplateId)
           .executeTakeFirst();
         return Number(result.numUpdatedRows) > 0;
+      } catch (error) {
+        throw translatePersistenceError(error);
+      }
+    },
+
+    async saveDraftContent(workflowTemplateId, draft): Promise<SaveDraftContentResult> {
+      try {
+        // One conditional UPDATE: the revision comparison and the bump happen
+        // under the same row lock, so two saves from one base cannot both win.
+        let update = trx.updateTable("workspace_workflow_templates")
+          .set({
+            draft_content: JSON.stringify(draft.document),
+            content_revision: sql<number>`content_revision + 1`,
+            content_saved_at: new Date(draft.savedAt),
+          })
+          .where("workspace_id", "=", scope)
+          .where("workflow_template_id", "=", workflowTemplateId);
+        if (draft.baseRevision !== null) {
+          update = update.where("content_revision", "=", draft.baseRevision);
+        }
+        const saved = await update
+          .returning(["content_revision", "content_generated_revision"])
+          .executeTakeFirst();
+        if (saved !== undefined) {
+          return {
+            kind: "saved",
+            contentRevision: saved.content_revision,
+            contentGeneratedRevision: saved.content_generated_revision,
+          };
+        }
+        const current = await scoped()
+          .select("content_revision")
+          .where("workflow_template_id", "=", workflowTemplateId)
+          .executeTakeFirst();
+        return current === undefined
+          ? { kind: "not-found" }
+          : { kind: "conflict", currentRevision: current.content_revision };
       } catch (error) {
         throw translatePersistenceError(error);
       }
