@@ -57,11 +57,17 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     .addColumn("content_generated_revision", "integer")
     .execute();
 
+  // Production migrates as lagda_app, the table's OWNER, and FORCE RLS
+  // applies to the owner too: with no tenant context this backfill would
+  // match zero rows and the NOT NULL below would fail (it did, on the first
+  // production run). Lift FORCE for the backfill only, as 077 does.
+  await sql`alter table workspace_workflow_templates no force row level security`.execute(db);
   await sql`
     update workspace_workflow_templates
        set content_saved_at = updated_at,
            content_generated_revision = case when content_page_count > 0 then 0 else null end
   `.execute(db);
+  await sql`alter table workspace_workflow_templates force row level security`.execute(db);
 
   await sql`
     alter table workspace_workflow_templates
