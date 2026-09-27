@@ -249,6 +249,10 @@ const INPUT_BY_KEY: Record<string, NotificationTemplateInput> = {
   "contact-request-emailed": { recipientName: "Maria Santos", requestTitle: "Permit", requestKind: "upload", requesterDisplayName: "Paulo Reyes", requesterEmail: "paulo@example.com", workspaceName: "Reyes Legal" },
   "contact-request-completed": { recipientName: "Paulo Reyes", responderDisplayName: "Maria Santos", requestTitle: "Permit", requestKind: "upload", workspaceName: "Reyes Legal" },
   "contact-request-declined": { recipientName: "Paulo Reyes", responderDisplayName: "Maria Santos", requestTitle: "Permit", requestKind: "upload", workspaceName: "Reyes Legal", reason: "Not mine" },
+  "document-share-received": { recipientName: "Maria Santos", sharerDisplayName: "Paulo Reyes", documentTitle: "Office Lease", workspaceName: "Reyes Legal", verificationId: "LAGDA-VER-2026-A7bK9mQ2xZ" },
+  "document-share-answered": { recipientName: "Paulo Reyes", responderDisplayName: "Maria Santos", answer: "accepted", documentTitle: "Office Lease", workspaceName: "Reyes Legal", verificationId: "LAGDA-VER-2026-A7bK9mQ2xZ" },
+  "document-access-requested": { recipientName: "Paulo Reyes", requesterDisplayName: "Maria Santos", requesterEmail: "maria@example.com", note: "I am the tenant", documentTitle: "Office Lease", workspaceName: "Reyes Legal", verificationId: "LAGDA-VER-2026-A7bK9mQ2xZ" },
+  "document-access-decided": { recipientName: "Maria Santos", deciderDisplayName: "Paulo Reyes", decision: "approved", documentTitle: "Office Lease", workspaceName: "Reyes Legal", verificationId: "LAGDA-VER-2026-A7bK9mQ2xZ" },
 };
 
 describe("inline images", () => {

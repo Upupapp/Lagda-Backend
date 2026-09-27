@@ -68,6 +68,14 @@ export const NOTIFICATION_PREFERENCE_CATEGORY_BY_TYPE: Readonly<
   CONTACT_REQUEST_EMAILED: null,
   CONTACT_REQUEST_COMPLETED: null,
   CONTACT_REQUEST_DECLINED: null,
+  // 087. The six sharing notices are in-app only; the code is security mail.
+  DOCUMENT_SHARE_RECEIVED: null,
+  DOCUMENT_SHARE_ACCEPTED: null,
+  DOCUMENT_SHARE_REJECTED: null,
+  DOCUMENT_ACCESS_REQUESTED: null,
+  DOCUMENT_ACCESS_APPROVED: null,
+  DOCUMENT_ACCESS_REJECTED: null,
+  SHARED_DOCUMENT_ACCESS_CODE: null,
 };
 
 /** The category governing a type, or null when it is always sent. */

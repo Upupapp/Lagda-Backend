@@ -47,6 +47,8 @@ import {
   WorkspaceJoinLinkModelV1, WorkspaceJoinRequestedModelV1, WorkspaceJoinDecidedModelV1,
   VerificationAccessCodeModelV1,
   ContactRequestReceivedModelV1, ContactRequestEmailedModelV1, ContactRequestAnsweredModelV1,
+  DocumentShareReceivedModelV1, DocumentShareAnsweredModelV1,
+  DocumentAccessRequestedModelV1, DocumentAccessDecidedModelV1,
 } from "./template-registry.js";
 import { escapeHtml } from "./rendering.js";
 import { LAGDA_LOGO_PNG_BASE64 } from "./assets/lagda-logo.js";
@@ -774,6 +776,93 @@ export const contactRequestCompletedV1 = answeredTemplate("contact-request-compl
 /** 086. In-app only, to the requester. */
 export const contactRequestDeclinedV1 = answeredTemplate("contact-request-declined", "declined");
 
+// ── 087. Document sharing ────────────────────────────────────────────────────
+//
+// All four are in-app only — the policy stops their email at creation — and
+// registered anyway so every type renders and the feed has a preview.
+
+/** Where a recipient finds documents shared with them. */
+const SHARED_WITH_ME_PATH = "/app/documents/shared-with-me";
+/** Where an owner manages the sharing of what they sent. */
+const SHARED_BY_ME_PATH = "/app/documents/shared-by-me";
+
+function inAppNotice(title: string, recipientName: string, line: string, url: string, cta: string) {
+  return {
+    subject: title,
+    textBody: [`Hello ${recipientName},`, ``, line, ``, url].join("\n"),
+    htmlBody: htmlDocument(
+      escapeHtml(title),
+      p(`Hello ${escapeHtml(recipientName)},`) + p(escapeHtml(line)) + linkHtml(url, cta),
+    ),
+    attachments: [LOGO_ATTACHMENT],
+  };
+}
+
+export const documentShareReceivedV1 = defineTemplate({
+  key: "document-share-received",
+  version: 1,
+  locale: "en",
+  schema: DocumentShareReceivedModelV1,
+  secretBearing: false,
+  render: (input, context) => inAppNotice(
+    `${input.sharerDisplayName} shared "${input.documentTitle}" with you`,
+    input.recipientName,
+    `${input.sharerDisplayName} (${input.workspaceName}) shared the completed document `
+      + `"${input.documentTitle}" (${input.verificationId}) with you. Accept it to open it.`,
+    context.buildPath(SHARED_WITH_ME_PATH),
+    "Open Shared with me",
+  ),
+});
+
+export const documentShareAnsweredV1 = defineTemplate({
+  key: "document-share-answered",
+  version: 1,
+  locale: "en",
+  schema: DocumentShareAnsweredModelV1,
+  secretBearing: false,
+  render: (input, context) => inAppNotice(
+    `${input.responderDisplayName} ${input.answer} "${input.documentTitle}"`,
+    input.recipientName,
+    `${input.responderDisplayName} ${input.answer} the completed document `
+      + `"${input.documentTitle}" (${input.verificationId}) you shared from ${input.workspaceName}.`,
+    context.buildPath(SHARED_BY_ME_PATH),
+    "Open Shared by me",
+  ),
+});
+
+export const documentAccessRequestedV1 = defineTemplate({
+  key: "document-access-requested",
+  version: 1,
+  locale: "en",
+  schema: DocumentAccessRequestedModelV1,
+  secretBearing: false,
+  render: (input, context) => inAppNotice(
+    `${input.requesterDisplayName} asked for access to "${input.documentTitle}"`,
+    input.recipientName,
+    `${input.requesterDisplayName} (${input.requesterEmail}) asked for access to the completed `
+      + `document "${input.documentTitle}" (${input.verificationId}) in ${input.workspaceName}.`
+      + (input.note === undefined ? "" : ` Their note: ${input.note}`),
+    context.buildPath(SHARED_BY_ME_PATH),
+    "Review the request",
+  ),
+});
+
+export const documentAccessDecidedV1 = defineTemplate({
+  key: "document-access-decided",
+  version: 1,
+  locale: "en",
+  schema: DocumentAccessDecidedModelV1,
+  secretBearing: false,
+  render: (input, context) => inAppNotice(
+    `Your access request for "${input.documentTitle}" was ${input.decision}`,
+    input.recipientName,
+    `${input.deciderDisplayName} ${input.decision} your request for access to the completed `
+      + `document "${input.documentTitle}" (${input.verificationId}) in ${input.workspaceName}.`,
+    context.buildPath(SHARED_WITH_ME_PATH),
+    "Open Shared with me",
+  ),
+});
+
 /**
  * Every template version LAGDA can render.
  *
@@ -797,6 +886,10 @@ export const ALL_TEMPLATES = [
   contactRequestEmailedV1,
   contactRequestCompletedV1,
   contactRequestDeclinedV1,
+  documentShareReceivedV1,
+  documentShareAnsweredV1,
+  documentAccessRequestedV1,
+  documentAccessDecidedV1,
 ] as const;
 
 export type AccountEmailVerificationModel = Static<typeof AccountEmailVerificationModelV1>;

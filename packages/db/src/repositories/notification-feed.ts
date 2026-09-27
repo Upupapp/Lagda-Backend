@@ -35,7 +35,7 @@
 // so that "read another account's notifications" is not a query this module
 // can express.
 
-import type { Kysely } from "kysely";
+import { sql, type Kysely } from "kysely";
 import type { Database } from "../schema/index.js";
 
 /**
@@ -51,6 +51,9 @@ export type FeedNotificationType =
   | "ACCOUNT_EMAIL_VERIFICATION"
   | "PASSWORD_RESET"
   | "MFA_OTP";
+
+/** USER-audience types that exist only to carry an emailed code. */
+const EMAIL_ONLY_TYPES = ["SHARED_DOCUMENT_ACCESS_CODE"] as const;
 
 export interface FeedNotification {
   readonly notificationIntentId: string;
@@ -76,25 +79,35 @@ export function createNotificationFeedRepository(
 ): NotificationFeedRepository {
   return {
     async listForUser(userId, limit) {
-      const rows = await db
-        .selectFrom("notification_intents")
-        // Explicit column list. See the header: a `selectAll` here would ship
-        // `sealed_secret` to a browser the first time anyone refactored.
-        .select([
-          "notification_intent_id",
-          "notification_type",
-          "workspace_id",
-          "source_kind",
-          "source_id",
-          "template_input",
-          "created_at",
-        ])
-        // The authorization boundary, not a filter.
-        .where("audience_kind", "=", "USER")
-        .where("audience_user_id", "=", userId)
-        .orderBy("created_at", "desc")
-        .limit(limit)
-        .execute();
+      // 087. The account's OWN realm (`lagda.user_id`, transaction-local):
+      // with no context the runtime role sees no intent at all, and a notice
+      // about another workspace's document is readable only through 087's
+      // `notification_audience_user_read` policy, which matches this account
+      // as the audience and nothing else.
+      const rows = await db.transaction().execute(async trx => {
+        await sql`select set_config('lagda.user_id', ${userId}, true)`.execute(trx);
+        return trx
+          .selectFrom("notification_intents")
+          // Explicit column list. See the header: a `selectAll` here would ship
+          // `sealed_secret` to a browser the first time anyone refactored.
+          .select([
+            "notification_intent_id",
+            "notification_type",
+            "workspace_id",
+            "source_kind",
+            "source_id",
+            "template_input",
+            "created_at",
+          ])
+          // The authorization boundary, not a filter.
+          .where("audience_kind", "=", "USER")
+          .where("audience_user_id", "=", userId)
+          // 087. An emailed one-time code is not an in-app notice.
+          .where("notification_type", "not in", [...EMAIL_ONLY_TYPES])
+          .orderBy("created_at", "desc")
+          .limit(limit)
+          .execute();
+      });
 
       return rows.map(row => ({
         notificationIntentId: row.notification_intent_id,

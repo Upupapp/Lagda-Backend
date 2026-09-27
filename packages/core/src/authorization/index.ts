@@ -212,6 +212,16 @@ export const WORKSPACE_CAPABILITIES = [
    * (§152, §153).
    */
   "signing-request.cancel",
+  /**
+   * Share ANY completed document of the workspace and decide the access
+   * requests for it (087) — not only the ones this member sent.
+   *
+   * The member who sent a signing request owns its completed document and
+   * manages that document's sharing without this capability; the owner check
+   * is about the document, not a role. This is the workspace-wide authority
+   * on top of that, held by the two roles that run the workspace.
+   */
+  "document.share.manage",
 
   /**
    * Hand the workspace to someone else.
@@ -348,6 +358,7 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "signing-request.view",
       "signing-request.send",
       "signing-request.cancel",
+      "document.share.manage",
       "workspace.ownership.transfer",
       "unit.view",
       "unit.create",
@@ -391,6 +402,7 @@ const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, readonly WorkspaceCapabi
       "signing-request.view",
       "signing-request.send",
       "signing-request.cancel",
+      "document.share.manage",
       // The full org-chart set except nothing: an administrator runs the
       // workspace, and the org chart is workspace administration.
       "unit.view",

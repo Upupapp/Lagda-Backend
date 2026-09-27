@@ -5,7 +5,8 @@
 //   2. redeemVerificationAccessCode    {email, code} -> access grant | denied
 //   3. resolveVerificationAccessDocument / getVerificationAccessDetails
 //                                       {accessToken} -> PDF / details | denied
-//   4. grantMemberVerificationAccess   signed-in, VERIFIED account email -> grant
+//   4. grantMemberVerificationAccess   signed-in: access list by VERIFIED email,
+//                                       approved request, or owner/admin -> grant
 //
 // ── Throttle (085) ────────────────────────────────────────────────────────
 //
@@ -216,8 +217,9 @@ const SENT: VerificationCodeSent = Object.freeze({
 });
 
 /**
- * Always "sent". A code is created and emailed only when the address is a
- * participant of the completed document; nothing in the answer says which.
+ * Always "sent". A code is created and emailed only when the address is on
+ * the completed document's access list — a participant, an accepted share or
+ * an approved request (087); nothing in the answer says which.
  */
 export async function requestVerificationAccessCode(
   rawVerificationId: string,
@@ -263,9 +265,28 @@ export async function requestVerificationAccessCode(
     now,
     expiresAt: now + VERIFICATION_CODE_TTL_MS,
   }, async (target, notifications, transaction) => {
-    await createNotificationIntent({
+    const create = createNotificationIntent({
       notifications, templates: deps.templates, ids: deps.ids, clock: deps.clock,
-    })({
+    });
+    // 087. A participant is addressed through their participant row; an
+    // accepted share or approved request through the account it belongs to.
+    if (target.basis !== "participant") {
+      if (target.userId === null) return;
+      await create({
+        notificationType: "SHARED_DOCUMENT_ACCESS_CODE",
+        sourceId: challengeId,
+        scope: { kind: "WORKSPACE", workspaceId: target.workspaceId },
+        audience: { kind: "USER", userId: target.userId as never },
+        destination: target.destination,
+        templateInput: {
+          recipientName: target.recipientName,
+          documentTitle: target.documentTitle,
+        },
+        secretRef: { kind: "CHALLENGE", challengeId },
+      }, transaction);
+      return;
+    }
+    await create({
       notificationType: "VERIFICATION_ACCESS_CODE",
       sourceId: challengeId,
       scope: { kind: "WORKSPACE", workspaceId: target.workspaceId },
@@ -363,9 +384,11 @@ export async function redeemVerificationAccessCode(
 // ── Signed-in participants ───────────────────────────────────────────────────
 
 /**
- * No code for a signed-in account whose VERIFIED address is a participant —
- * the account already proved that mailbox. Anything else is the same denial,
- * and the caller falls back to the code flow.
+ * No code for a signed-in account that is on the access list by a VERIFIED
+ * address (participant, accepted share) — the account already proved that
+ * mailbox — or by its own id (approved request), or that is the document's
+ * owner or a workspace owner/administrator by membership (087). Anything
+ * else is the same denial, and the caller falls back to the code flow.
  */
 export async function grantMemberVerificationAccess(
   userId: string,
@@ -375,13 +398,14 @@ export async function grantMemberVerificationAccess(
   const verificationId = parseVerificationId(rawVerificationId);
   if (verificationId === null) return DENIED;
   const account = await deps.currentAccount(userId);
-  if (account === null || !account.emailVerified) return DENIED;
+  if (account === null) return DENIED;
 
   const now = deps.clock.now();
   const token = deps.crypto.issueGrantToken();
   const target = await deps.store.issueMemberGrant({
     verificationId,
-    normalizedEmail: account.normalizedEmail,
+    // Email-matched access needs the address PROVEN; membership does not.
+    normalizedEmail: account.emailVerified ? account.normalizedEmail : null,
     userId,
     now,
     grant: {

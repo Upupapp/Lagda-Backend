@@ -27,7 +27,8 @@ const KEY = Buffer.alloc(32, 7).toString("base64");
 const bytes = new TextEncoder().encode("%PDF-1.7 fixture");
 
 const TARGET: VerificationParticipantTarget = {
-  workspaceId: "ws_1" as never, signingRequestId: "txn_1", requestRecipientId: "srr_1",
+  workspaceId: "ws_1" as never, signingRequestId: "txn_1", basis: "participant",
+  requestRecipientId: "srr_1", shareId: null, accessRequestId: null, userId: null,
   recipientName: "Maria Santos", destination: EMAIL, recipientType: "approver",
   documentTitle: "Office Lease",
 };

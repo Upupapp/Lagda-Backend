@@ -19,7 +19,7 @@
 // possible default.
 
 import { sql, type Kysely, type Transaction } from "kysely";
-import type { UserId, WorkspaceId } from "@lagda/contracts";
+import type { UserId, WorkspaceId, VerificationId } from "@lagda/contracts";
 import type {
   TransactionManager, WorkspaceUnitOfWork, GlobalUnitOfWork, UserUnitOfWork,
   NotificationDeliveryUnitOfWork, NotificationScope,
@@ -28,6 +28,7 @@ import type {
   RecipientSessionUnitOfWork, SigningAccessDigest, RecipientSessionDigest,
   FinalCopyDigest, FinalCopyCredentialUnitOfWork, FinalCopyWorkspaceUnitOfWork,
   JoinTicketDigest, JoinTicketCredentialUnitOfWork,
+  SharingRecipient, SharingRecipientUnitOfWork,
 } from "@lagda/application";
 import {
   createScopedJoinTicketRepository, createScopedJoinRequestRepository, createJoinTicketCredentialLookup,
@@ -57,6 +58,9 @@ import {
 import { createScopedWorkflowTemplateRepository } from "../repositories/workflow-templates.js";
 import { createScopedUploadRequestRepository } from "../repositories/upload-requests.js";
 import { createScopedContactRequestRepository } from "../repositories/contact-requests.js";
+import {
+  createScopedDocumentSharingRepository, createSharingRecipientLookup, shareRecipientDigestSql,
+} from "../repositories/document-sharing.js";
 import { createScopedWorkflowTemplateFieldRepository } from "../repositories/workflow-template-fields.js";
 import { createScopedDocumentNotificationStateRepository } from "../repositories/document-notification-states.js";
 import { createIdempotencyRepository } from "../repositories/idempotency.js";
@@ -114,6 +118,11 @@ const SIGNING_ACCESS_DIGEST_SETTING = "lagda.signing_access_digest";
 const FINAL_COPY_DIGEST_SETTING = "lagda.final_copy_digest";
 /** BACKEND-34. An established recipient session cookie. A THIRD realm. */
 const RECIPIENT_SESSION_DIGEST_SETTING = "lagda.recipient_session_digest";
+/** 087. The sharing recipient realm: a digest of the VERIFIED address, and the account id. */
+const SHARE_RECIPIENT_SETTING = "lagda.document_share_recipient";
+const ACCESS_REQUESTER_SETTING = "lagda.document_access_requester";
+/** 075. The public-verification realm, used here only to resolve a reference. */
+const PUBLIC_VERIFICATION_SETTING = "lagda.public_verification_active";
 
 /**
  * Builds the repository set for one transaction and one workspace.
@@ -179,6 +188,8 @@ function buildUnitOfWork(
     uploadRequests: createScopedUploadRequestRepository(trx, workspaceId),
     // 086. Scoped here and by row-level security in the database.
     contactRequests: createScopedContactRequestRepository(trx, workspaceId),
+    // 087. Shares and access requests, the same way.
+    documentSharing: createScopedDocumentSharingRepository(trx, workspaceId),
     joinTickets: createScopedJoinTicketRepository(trx, workspaceId),
     joinRequests: createScopedJoinRequestRepository(trx, workspaceId),
     activity: createScopedWorkspaceActivityRepository(trx, workspaceId),
@@ -455,6 +466,60 @@ export function createTransactionManager(db: Kysely<Database>): TransactionManag
             });
           },
         });
+      });
+    },
+
+    async runForSharingRecipient<T>(
+      recipient: SharingRecipient,
+      operation: (uow: SharingRecipientUnitOfWork) => Promise<T>,
+    ): Promise<T> {
+      return db.transaction().execute(async trx => {
+        // 087's two FOR SELECT realms, from the SESSION's account: its own
+        // requests by id, and — only when its address is VERIFIED — the shares
+        // made to that address, by digest. No workspace context yet, so
+        // nothing can be written until `enterWorkspace` names the workspace
+        // of a row resolved here.
+        await sql`select set_config(${ACCESS_REQUESTER_SETTING}, ${recipient.userId}, true)`.execute(trx);
+        if (recipient.verifiedEmail !== null) {
+          await sql`select set_config(${SHARE_RECIPIENT_SETTING}, ${
+            shareRecipientDigestSql(recipient.verifiedEmail)}, true)`.execute(trx);
+        }
+        return operation({
+          recipient,
+          ...createSharingRecipientLookup(trx, recipient),
+          async enterWorkspace<R>(
+            workspaceId: WorkspaceId,
+            inner: (uow: WorkspaceUnitOfWork) => Promise<R>,
+          ): Promise<R> {
+            await sql`select set_config(${WORKSPACE_SETTING}, ${workspaceId}, true)`.execute(trx);
+            return inner(buildUnitOfWork(trx, workspaceId));
+          },
+        });
+      });
+    },
+
+    async runForCompletedVerification<T>(
+      verificationId: VerificationId,
+      operation: (uow: WorkspaceUnitOfWork | null) => Promise<T>,
+    ): Promise<T> {
+      return db.transaction().execute(async trx => {
+        // 075's realm for ONE lookup: which workspace holds this COMPLETED
+        // record. Then the realm is closed again before the resolved tenant is
+        // entered, so nothing after this reads any other tenant's rows.
+        await sql`select set_config(${PUBLIC_VERIFICATION_SETTING}, 'true', true)`.execute(trx);
+        const row = await trx.selectFrom("verification_records")
+          .innerJoin("signing_requests", join => join
+            .onRef("signing_requests.signing_request_id", "=", "verification_records.signing_request_id")
+            .onRef("signing_requests.workspace_id", "=", "verification_records.workspace_id"))
+          .where("verification_records.verification_id", "=", verificationId)
+          .where("signing_requests.state", "=", "completed")
+          .select("verification_records.workspace_id")
+          .executeTakeFirst();
+        await sql`select set_config(${PUBLIC_VERIFICATION_SETTING}, '', true)`.execute(trx);
+        if (!row) return operation(null);
+        const workspaceId = row.workspace_id as WorkspaceId;
+        await sql`select set_config(${WORKSPACE_SETTING}, ${workspaceId}, true)`.execute(trx);
+        return operation(buildUnitOfWork(trx, workspaceId));
       });
     },
 

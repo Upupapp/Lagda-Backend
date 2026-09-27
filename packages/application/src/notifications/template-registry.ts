@@ -433,6 +433,58 @@ export const ContactRequestAnsweredModelV1 = Type.Object(
   { additionalProperties: false },
 );
 
+/** 087. Display data shared by every sharing notice. */
+const SharedDocumentFields = {
+  documentTitle: BoundedText(300),
+  workspaceName: DisplayName,
+  /** The public reference; the feed links to the document by it. */
+  verificationId: BoundedText(64),
+};
+
+/** 087. A completed document was shared with this account's address. */
+export const DocumentShareReceivedModelV1 = Type.Object(
+  {
+    recipientName: DisplayName,
+    sharerDisplayName: DisplayName,
+    ...SharedDocumentFields,
+  },
+  { additionalProperties: false },
+);
+
+/** 087. The sharer told how the recipient answered. */
+export const DocumentShareAnsweredModelV1 = Type.Object(
+  {
+    recipientName: DisplayName,
+    responderDisplayName: DisplayName,
+    answer: Type.Union([Type.Literal("accepted"), Type.Literal("rejected")]),
+    ...SharedDocumentFields,
+  },
+  { additionalProperties: false },
+);
+
+/** 087. A document's owner told somebody asked for access. */
+export const DocumentAccessRequestedModelV1 = Type.Object(
+  {
+    recipientName: DisplayName,
+    requesterDisplayName: DisplayName,
+    requesterEmail: BoundedText(320),
+    note: Type.Optional(BoundedText(500)),
+    ...SharedDocumentFields,
+  },
+  { additionalProperties: false },
+);
+
+/** 087. The requester told the owner's decision. */
+export const DocumentAccessDecidedModelV1 = Type.Object(
+  {
+    recipientName: DisplayName,
+    deciderDisplayName: DisplayName,
+    decision: Type.Union([Type.Literal("approved"), Type.Literal("rejected")]),
+    ...SharedDocumentFields,
+  },
+  { additionalProperties: false },
+);
+
 export const DocumentUploadRequestedModelV1 = Type.Object(
   {
     /** The ASSIGNEE's display name. This message is addressed to them. */

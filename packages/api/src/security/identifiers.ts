@@ -32,6 +32,7 @@ import type {
   ContactIdGenerator, WorkflowTemplateIdGenerator,
   UploadRequestIdGenerator, UploadRequestId,
   ContactRequestIdGenerator, ContactRequestId,
+  DocumentSharingIdGenerator, DocumentShareId, DocumentAccessRequestId,
   DocumentIdGenerator, FolderIdGenerator, FolderId,
   PreparationIdGenerator,
   RecipientIdGenerator,
@@ -144,6 +145,14 @@ export function createUploadRequestIdGenerator(): UploadRequestIdGenerator {
 /** 086. `cr` — something a workspace user asked of a contact. */
 export function createContactRequestIdGenerator(): ContactRequestIdGenerator {
   return { nextContactRequestId: () => mint("cr") as ContactRequestId };
+}
+
+/** 087. `dsh` — a document share; `dar` — a document access request. */
+export function createDocumentSharingIdGenerator(): DocumentSharingIdGenerator {
+  return {
+    nextDocumentShareId: () => mint("dsh") as DocumentShareId,
+    nextDocumentAccessRequestId: () => mint("dar") as DocumentAccessRequestId,
+  };
 }
 
 export function createDocumentIdGenerator(): DocumentIdGenerator {

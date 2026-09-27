@@ -161,6 +161,8 @@ export const WORKSPACE_CAPABILITY_NAMES = [
   "signing-request.view",
   "signing-request.send",
   "signing-request.cancel",
+  // 087. Share any completed document and decide its access requests.
+  "document.share.manage",
   "workspace.ownership.transfer",
 
   // Organization units (TENANT_CORE). Editing the org chart, never reading

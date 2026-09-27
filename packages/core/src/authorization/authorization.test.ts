@@ -74,6 +74,8 @@ const ADMIN_CAPABILITIES: readonly WorkspaceCapability[] = [
   "invitation.view", "invitation.create", "invitation.resend", "invitation.revoke",
   // 079. The activity log, read by those who make the changes it records.
   "activity.view",
+  // 087. Sharing any completed document and deciding its access requests.
+  "document.share.manage",
 ];
 
 /**
@@ -183,7 +185,7 @@ describe("role to capability matrix", () => {
     // EXPECTED table not updated, this fails rather than the matrix silently
     // testing fewer combinations.
     expect(Object.keys(EXPECTED).sort()).toEqual([...WORKSPACE_ROLES].sort());
-    expect(WORKSPACE_CAPABILITIES.length).toBe(33);
+    expect(WORKSPACE_CAPABILITIES.length).toBe(34);
   });
 });
 

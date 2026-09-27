@@ -277,6 +277,75 @@ export const NOTIFICATION_POLICIES: Record<NotificationType, NotificationPolicy>
     scopeKind: "WORKSPACE",
     inAppOnly: true,
   },
+  // 087. Sharing. Every notice is between accounts and in-app only; the share
+  // or the request is the source, so one notice of each type per row. Scoped
+  // to the DOCUMENT's workspace, whoever the audience is.
+  DOCUMENT_SHARE_RECEIVED: {
+    notificationType: "DOCUMENT_SHARE_RECEIVED",
+    templateKey: "document-share-received",
+    channel: "EMAIL",
+    sourceKind: "DOCUMENT_SHARE",
+    audienceKind: "USER",
+    scopeKind: "WORKSPACE",
+    inAppOnly: true,
+  },
+  DOCUMENT_SHARE_ACCEPTED: {
+    notificationType: "DOCUMENT_SHARE_ACCEPTED",
+    templateKey: "document-share-answered",
+    channel: "EMAIL",
+    sourceKind: "DOCUMENT_SHARE",
+    audienceKind: "USER",
+    scopeKind: "WORKSPACE",
+    inAppOnly: true,
+  },
+  DOCUMENT_SHARE_REJECTED: {
+    notificationType: "DOCUMENT_SHARE_REJECTED",
+    templateKey: "document-share-answered",
+    channel: "EMAIL",
+    sourceKind: "DOCUMENT_SHARE",
+    audienceKind: "USER",
+    scopeKind: "WORKSPACE",
+    inAppOnly: true,
+  },
+  DOCUMENT_ACCESS_REQUESTED: {
+    notificationType: "DOCUMENT_ACCESS_REQUESTED",
+    templateKey: "document-access-requested",
+    channel: "EMAIL",
+    sourceKind: "DOCUMENT_ACCESS_REQUEST",
+    audienceKind: "USER",
+    scopeKind: "WORKSPACE",
+    inAppOnly: true,
+  },
+  DOCUMENT_ACCESS_APPROVED: {
+    notificationType: "DOCUMENT_ACCESS_APPROVED",
+    templateKey: "document-access-decided",
+    channel: "EMAIL",
+    sourceKind: "DOCUMENT_ACCESS_REQUEST",
+    audienceKind: "USER",
+    scopeKind: "WORKSPACE",
+    inAppOnly: true,
+  },
+  DOCUMENT_ACCESS_REJECTED: {
+    notificationType: "DOCUMENT_ACCESS_REJECTED",
+    templateKey: "document-access-decided",
+    channel: "EMAIL",
+    sourceKind: "DOCUMENT_ACCESS_REQUEST",
+    audienceKind: "USER",
+    scopeKind: "WORKSPACE",
+    inAppOnly: true,
+  },
+  SHARED_DOCUMENT_ACCESS_CODE: {
+    notificationType: "SHARED_DOCUMENT_ACCESS_CODE",
+    // The same six-digit code email a participant receives.
+    templateKey: "verification-access-code",
+    channel: "EMAIL",
+    sourceKind: "VERIFICATION_ACCESS_CHALLENGE",
+    // The account the accepted share or approved request belongs to; the
+    // address is the one on that share or request, which is what was typed.
+    audienceKind: "USER",
+    secretKind: "CHALLENGE",
+    scopeKind: "WORKSPACE",
+  },
 };
 
 export function policyFor(notificationType: NotificationType): NotificationPolicy {

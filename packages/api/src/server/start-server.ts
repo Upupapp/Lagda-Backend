@@ -50,7 +50,7 @@ import { createArgon2PasswordHasher } from "../security/password-hasher.js";
 import { buildIdentity } from "./identity-composition.js";
 import {
   createWorkspaceIdGenerator, createWorkspaceMemberIdGenerator, createJoinIdGenerator,
-  createContactIdGenerator, createUploadRequestIdGenerator, createContactRequestIdGenerator, createWorkflowTemplateIdGenerator,
+  createContactIdGenerator, createUploadRequestIdGenerator, createContactRequestIdGenerator, createDocumentSharingIdGenerator, createWorkflowTemplateIdGenerator,
   createDocumentIdGenerator, createFolderIdGenerator,
   createPreparationIdGenerator, createRecipientIdGenerator,
   createSigningRequestIdGenerator, createEvidenceEventIdGenerator,
@@ -177,6 +177,7 @@ export async function createProductionDependencies(
   const contactIds = createContactIdGenerator();
   const uploadRequestIds = createUploadRequestIdGenerator();
   const contactRequestIds = createContactRequestIdGenerator();
+  const documentSharingIds = createDocumentSharingIdGenerator();
   const workflowTemplateIds = createWorkflowTemplateIdGenerator();
   // ONE object store for every surface that touches bytes: upload writes the
   // artifact, and the ceremony serves the same one back to the recipient.
@@ -247,6 +248,28 @@ export async function createProductionDependencies(
           ...createNotificationIntentIdGenerator(),
           ...createNotificationDeliveryIdGenerator(),
         },
+      }),
+      // 087. Sharing writes in-app notices and streams the sealed PDF to an
+      // accepted recipient, so it needs the registry and the object store;
+      // the account read says whether the signed-in address is VERIFIED.
+      ...(objectStorage === null ? {} : {
+        documentSharing: () => ({
+          transactions, clock, ids: documentSharingIds, storage: objectStorage,
+          templates: createTemplateRegistry(ALL_TEMPLATES),
+          notificationIds: {
+            ...createNotificationIntentIdGenerator(),
+            ...createNotificationDeliveryIdGenerator(),
+          },
+          currentAccount: async (userId: string) => {
+            const row = await database.db.selectFrom("users")
+              .select(["email", "normalized_email", "email_verified_at", "display_name"])
+              .where("user_id", "=", userId).executeTakeFirst();
+            return row === undefined ? null : {
+              email: row.email, normalizedEmail: row.normalized_email,
+              emailVerified: row.email_verified_at !== null, displayName: row.display_name,
+            };
+          },
+        }),
       }),
       workflowTemplates: () => ({ transactions, clock, ids: workflowTemplateIds }),
       // Separate from `workflowTemplates` because it needs strictly more —

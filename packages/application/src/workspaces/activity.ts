@@ -92,6 +92,7 @@ export function describeActivity(record: Pick<WorkspaceActivityRecord, "action" 
   const target = text(d, "targetName", text(d, "targetEmail", "a member"));
   const label = text(d, "label", "a join link");
   const team = text(d, "teamName", "a team");
+  const doc = text(d, "documentTitle", "a document");
   const q = (value: string) => `“${value}”`;
 
   switch (record.action) {
@@ -171,6 +172,47 @@ export function describeActivity(record: Pick<WorkspaceActivityRecord, "action" 
     }
     case "team.member_removed":
       return { summary: `${who} removed ${target} from ${q(team)}`, subjectLabel: target };
+    // 087. `documentTitle` names the document; `targetEmail`/`targetName` the person.
+    case "document_share.created":
+      return { summary: `${who} shared ${q(doc)} with ${target}`, subjectLabel: doc };
+    case "document_share.updated": {
+      const from = text(d, "fromEmail");
+      return {
+        summary: from === ""
+          ? `${who} updated the share of ${q(doc)} with ${target}`
+          : `${who} moved the share of ${q(doc)} from ${from} to ${target}`,
+        subjectLabel: doc,
+      };
+    }
+    case "document_share.removed":
+      return { summary: `${who} stopped sharing ${q(doc)} with ${target}`, subjectLabel: doc };
+    case "document_share.accepted":
+      return { summary: `${who} accepted the shared document ${q(doc)}`, subjectLabel: doc };
+    case "document_share.rejected":
+      return { summary: `${who} rejected the shared document ${q(doc)}`, subjectLabel: doc };
+    case "document_share.rejection_withdrawn":
+      return { summary: `${who} withdrew their rejection of the shared document ${q(doc)}`, subjectLabel: doc };
+    case "document_share.deleted":
+      return { summary: `${who} deleted the rejected share of ${q(doc)} from their list`, subjectLabel: doc };
+    case "document_share.access_removed":
+      return { summary: `${who} removed their own access to ${q(doc)}`, subjectLabel: doc };
+    case "access_request.submitted":
+      return { summary: `${who} (${text(d, "email")}) asked for access to ${q(doc)}`, subjectLabel: doc };
+    case "access_request.approved":
+      return { summary: `${who} approved ${target}'s access to ${q(doc)}`, subjectLabel: doc };
+    case "access_request.rejected":
+      return { summary: `${who} rejected ${target}'s request for access to ${q(doc)}`, subjectLabel: doc };
+    case "access_request.rejection_withdrawn":
+      return { summary: `${who} withdrew the rejection of ${target}'s request for access to ${q(doc)}`, subjectLabel: doc };
+    case "access_request.deleted":
+      return { summary: `${who} deleted ${target}'s rejected request for access to ${q(doc)}`, subjectLabel: doc };
+    case "access_request.access_removed":
+      return {
+        summary: d["byRequester"] === true
+          ? `${who} removed their own access to ${q(doc)}`
+          : `${who} removed ${target}'s access to ${q(doc)}`,
+        subjectLabel: doc,
+      };
   }
 }
 

@@ -131,6 +131,8 @@ const app = await createApp({
       uploadRequests: () => stub("workspaces.uploadRequests"),
       // 086. Contact requests — listed so the emitted document carries them.
       contactRequests: () => stub("workspaces.contactRequests"),
+      // 087. Document sharing — listed so the emitted document carries it.
+      documentSharing: () => stub("workspaces.documentSharing"),
       // 078. Join links and join requests — missing from the emitted document
       // when they shipped, for the reason recorded above.
       joins: {
@@ -179,6 +181,27 @@ const REQUIRED_PATHS = [
   "/workspaces/{workspaceId}/contact-requests",
   "/me/contact-requests",
   "/me/contact-requests/sent",
+  // 087. Document sharing: owner, recipient and requester surfaces.
+  "/workspaces/{workspaceId}/documents/{documentId}/shares",
+  "/workspaces/{workspaceId}/documents/{documentId}/shares/{shareId}",
+  "/workspaces/{workspaceId}/access-requests",
+  "/workspaces/{workspaceId}/access-requests/{requestId}",
+  "/workspaces/{workspaceId}/access-requests/{requestId}/approve",
+  "/workspaces/{workspaceId}/access-requests/{requestId}/reject",
+  "/workspaces/{workspaceId}/access-requests/{requestId}/withdraw-rejection",
+  "/workspaces/{workspaceId}/access-requests/{requestId}/remove",
+  "/workspaces/{workspaceId}/shared-by-me",
+  "/me/shared-documents",
+  "/me/shared-documents/{id}",
+  "/me/shared-documents/{id}/accept",
+  "/me/shared-documents/{id}/reject",
+  "/me/shared-documents/{id}/withdraw-rejection",
+  "/me/shared-documents/{id}/remove-access",
+  "/me/shared-documents/{id}/details",
+  "/me/shared-documents/{id}/document",
+  "/me/shared-documents/{id}/branding/logo",
+  "/verifications/{verificationId}/access-requests",
+  "/verifications/{verificationId}/my-access",
 ];
 
 const missingRequired = REQUIRED_PATHS.filter(path => !paths.includes(path));

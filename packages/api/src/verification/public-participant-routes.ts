@@ -307,9 +307,12 @@ export interface MemberVerificationAccessRouteOptions {
 }
 
 /**
- * Registered INSIDE the session + CSRF scope. A signed-in account whose
- * VERIFIED email is a participant gets a grant with no code; anything else is
- * the same 401 the public routes give, and the page falls back to the code.
+ * Registered INSIDE the session + CSRF scope. A signed-in account gets a grant
+ * with no code when it is on the access list by its VERIFIED email (a
+ * participant, an accepted share), by its own id (an approved request), or by
+ * membership (the document's owner, a workspace owner/administrator — 087);
+ * anything else is the same 401 the public routes give, and the page falls
+ * back to the code.
  */
 export function registerMemberVerificationAccessRoute(
   scope: FastifyInstance,

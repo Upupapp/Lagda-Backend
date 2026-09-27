@@ -126,6 +126,15 @@ import type {
   ScopedContactRequestRepository, ContactRequestRecord,
 } from "../common/ports/contact-requests.js";
 import type {
+  ScopedDocumentSharingRepository, DocumentShareRecord, DocumentAccessRequestRecord,
+  CompletedDocumentRecord, SharingRecipient, SharingRecipientUnitOfWork,
+} from "../common/ports/document-sharing.js";
+import type {
+  VerificationDetailsProjection, VerificationGrantDocumentRef,
+} from "../common/ports/verification-access.js";
+import type { VerificationId } from "@lagda/contracts";
+import { ResourceConflictError } from "../common/errors/index.js";
+import type {
   ScopedWorkflowTemplateFieldRepository, WorkflowTemplateFieldRecord,
 } from "../common/ports/workflow-template-fields.js";
 import type {
@@ -449,6 +458,8 @@ interface StoreSnapshot {
   readonly workflowTemplates: WorkflowTemplateRecord[];
   readonly uploadRequests: UploadRequestRecord[];
   readonly contactRequests: ContactRequestRecord[];
+  readonly documentShares: DocumentShareRecord[];
+  readonly documentAccessRequests: DocumentAccessRequestRecord[];
   readonly joinTickets: JoinTicketRecord[];
   readonly joinRequests: JoinRequestRecord[];
   readonly activity: WorkspaceActivityRecord[];
@@ -506,6 +517,16 @@ export class InMemoryStore {
   uploadRequests: UploadRequestRecord[] = [];
   /** 086. */
   contactRequests: ContactRequestRecord[] = [];
+  /** 087. */
+  documentShares: DocumentShareRecord[] = [];
+  documentAccessRequests: DocumentAccessRequestRecord[] = [];
+  /**
+   * 087. Completed documents, seeded by a test: the record, its participants'
+   * normalized addresses, and what the details and document reads return.
+   */
+  completedDocuments: FakeCompletedDocument[] = [];
+  /** 087. Normalized VERIFIED address to account (id, display name). */
+  readonly verifiedAccounts = new Map<string, { userId: UserId; displayName: string }>();
   /** 078. */
   joinTickets: JoinTicketRecord[] = [];
   joinRequests: JoinRequestRecord[] = [];
@@ -568,6 +589,8 @@ export class InMemoryStore {
       workflowTemplates: [...this.workflowTemplates],
       uploadRequests: [...this.uploadRequests],
       contactRequests: [...this.contactRequests],
+      documentShares: [...this.documentShares],
+      documentAccessRequests: [...this.documentAccessRequests],
       joinTickets: [...this.joinTickets],
       joinRequests: [...this.joinRequests],
       activity: [...this.activity],
@@ -639,6 +662,8 @@ export class InMemoryStore {
     this.workflowTemplates = [...snapshot.workflowTemplates];
     this.uploadRequests = [...snapshot.uploadRequests];
     this.contactRequests = [...snapshot.contactRequests];
+    this.documentShares = [...snapshot.documentShares];
+    this.documentAccessRequests = [...snapshot.documentAccessRequests];
     this.joinTickets = [...snapshot.joinTickets];
     this.joinRequests = [...snapshot.joinRequests];
     this.activity = [...snapshot.activity];
@@ -1175,6 +1200,111 @@ function scopedUploadRequests(
       };
       return Promise.resolve(true);
     },
+  };
+}
+
+/** 087. A completed document as a test seeds it. */
+export interface FakeCompletedDocument {
+  readonly record: CompletedDocumentRecord;
+  readonly participantEmails: readonly string[];
+  readonly projection?: VerificationDetailsProjection;
+  readonly documentRef?: VerificationGrantDocumentRef;
+}
+
+/** 087. Shares and access requests: scoped, newest first, compare-and-set transitions. */
+export function scopedDocumentSharing(
+  store: InMemoryStore, scope: WorkspaceId,
+): ScopedDocumentSharingRepository {
+  const completed = (match: (doc: CompletedDocumentRecord) => boolean) => {
+    const found = store.completedDocuments
+      .filter(doc => doc.record.workspaceId === scope && match(doc.record))
+      .sort((a, b) => b.record.completedAt - a.record.completedAt)[0];
+    return Promise.resolve(found?.record ?? null);
+  };
+  const seeded = (doc: CompletedDocumentRecord) =>
+    store.completedDocuments.find(d => d.record.verificationId === doc.verificationId && d.record.workspaceId === scope);
+  const newest = <T extends { createdAt: number }>(a: T, b: T) => b.createdAt - a.createdAt;
+  const liveShare = (share: DocumentShareRecord) => share.status === "pending" || share.status === "accepted"
+    || (share.status === "rejected" && share.recipientDeletedAt === null);
+  const liveRequest = (request: DocumentAccessRequestRecord) => request.status === "pending"
+    || request.status === "approved" || (request.status === "rejected" && request.deletedAt === null);
+  const clean = <T extends object>(patch: T): Partial<T> =>
+    Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined)) as Partial<T>;
+
+  return {
+    findCompletedDocument: documentId => completed(doc => doc.documentId === documentId),
+    findCompletedByVerification: verificationId => completed(doc => doc.verificationId === verificationId),
+    detailsProjection: doc => Promise.resolve(seeded(doc)?.projection ?? null),
+    sealedDocumentRef: doc => Promise.resolve(seeded(doc)?.documentRef ?? null),
+    isParticipant: (doc, email) => Promise.resolve(seeded(doc)?.participantEmails.includes(email) ?? false),
+
+    insertShare: input => {
+      if (input.workspaceId !== scope) throw new FakeScopeMismatchError("DocumentShare", scope, input.workspaceId);
+      if (store.documentShares.some(s => s.workspaceId === scope && s.verificationId === input.verificationId
+        && s.normalizedEmail === input.normalizedEmail && liveShare(s))) {
+        return Promise.reject(new ResourceConflictError("This document is already shared with that email address."));
+      }
+      store.documentShares.push({
+        ...input, status: "pending", recipientUserId: null, removedBy: null, removedByUserId: null,
+        updatedAt: input.createdAt, respondedAt: null, removedAt: null, recipientDeletedAt: null,
+      });
+      return Promise.resolve();
+    },
+    findShare: shareId => Promise.resolve(
+      store.documentShares.find(s => s.workspaceId === scope && s.shareId === shareId) ?? null),
+    listShares: filter => Promise.resolve(store.documentShares
+      .filter(s => s.workspaceId === scope)
+      .filter(s => filter.documentId === undefined || s.documentId === filter.documentId)
+      .filter(s => filter.verificationId === undefined || s.verificationId === filter.verificationId)
+      .filter(s => filter.normalizedEmail === undefined || s.normalizedEmail === filter.normalizedEmail)
+      .filter(s => filter.statuses === undefined || filter.statuses.includes(s.status))
+      .sort(newest)),
+    updateShare: (shareId, guard, patch) => {
+      const at = store.documentShares.findIndex(s => s.workspaceId === scope && s.shareId === shareId);
+      const current = at < 0 ? null : store.documentShares[at]!;
+      if (current === null || !guard.from.includes(current.status)) return Promise.resolve(false);
+      if (guard.notDeleted === true && current.recipientDeletedAt !== null) return Promise.resolve(false);
+      const next = { ...current, ...clean(patch) };
+      if (liveShare(next) && !liveShare(current) && store.documentShares.some(s => s !== current
+        && s.workspaceId === scope && s.verificationId === next.verificationId
+        && s.normalizedEmail === next.normalizedEmail && liveShare(s))) {
+        return Promise.reject(new ResourceConflictError("That email address already has another share of this document."));
+      }
+      store.documentShares[at] = next;
+      return Promise.resolve(true);
+    },
+
+    insertAccessRequest: input => {
+      if (input.workspaceId !== scope) throw new FakeScopeMismatchError("DocumentAccessRequest", scope, input.workspaceId);
+      if (store.documentAccessRequests.some(r => r.workspaceId === scope && r.verificationId === input.verificationId
+        && r.requesterUserId === input.requesterUserId && liveRequest(r))) {
+        return Promise.reject(new ResourceConflictError("You already asked for access to this document."));
+      }
+      store.documentAccessRequests.push({
+        ...input, status: "pending", decidedByUserId: null, decidedAt: null, removedByUserId: null,
+        removedAt: null, deletedByUserId: null, deletedAt: null, updatedAt: input.createdAt,
+      });
+      return Promise.resolve();
+    },
+    findAccessRequest: requestId => Promise.resolve(
+      store.documentAccessRequests.find(r => r.workspaceId === scope && r.requestId === requestId) ?? null),
+    listAccessRequests: filter => Promise.resolve(store.documentAccessRequests
+      .filter(r => r.workspaceId === scope)
+      .filter(r => filter.verificationId === undefined || r.verificationId === filter.verificationId)
+      .filter(r => filter.requesterUserId === undefined || r.requesterUserId === filter.requesterUserId)
+      .filter(r => filter.statuses === undefined || filter.statuses.includes(r.status))
+      .filter(r => filter.includeDeleted === true || r.deletedAt === null)
+      .sort(newest)),
+    updateAccessRequest: (requestId, guard, patch) => {
+      const at = store.documentAccessRequests.findIndex(r => r.workspaceId === scope && r.requestId === requestId);
+      const current = at < 0 ? null : store.documentAccessRequests[at]!;
+      if (current === null || !guard.from.includes(current.status)) return Promise.resolve(false);
+      if (guard.notDeleted === true && current.deletedAt !== null) return Promise.resolve(false);
+      store.documentAccessRequests[at] = { ...current, ...clean(patch) };
+      return Promise.resolve(true);
+    },
+
+    verifiedAccountByEmail: email => Promise.resolve(store.verifiedAccounts.get(email) ?? null),
   };
 }
 
@@ -3311,6 +3441,7 @@ export class FakeTransactionManager implements TransactionManager {
         workflowTemplates: scopedWorkflowTemplates(this.store, workspaceId),
         uploadRequests: scopedUploadRequests(this.store, workspaceId),
         contactRequests: scopedContactRequests(this.store, workspaceId),
+        documentSharing: scopedDocumentSharing(this.store, workspaceId),
         joinTickets: scopedJoinTickets(this.store, workspaceId),
         joinRequests: scopedJoinRequests(this.store, workspaceId),
         activity: scopedActivity(this.store, workspaceId),
@@ -3376,6 +3507,54 @@ export class FakeTransactionManager implements TransactionManager {
     }
   }
 
+  /**
+   * 087. The recipient realm: shares by VERIFIED address, requests by account,
+   * across workspaces, read-only until `enterWorkspace`. One transaction, so
+   * a failure anywhere restores everything.
+   */
+  async runForSharingRecipient<T>(
+    recipient: SharingRecipient,
+    operation: (uow: SharingRecipientUnitOfWork) => Promise<T>,
+  ): Promise<T> {
+    this.scopes.push("sharing-recipient");
+    this.started++;
+    const snapshot = this.store.snapshot();
+    const store = this.store;
+    const mineShare = (s: DocumentShareRecord) =>
+      recipient.verifiedEmail !== null && s.normalizedEmail === recipient.verifiedEmail;
+    const mineRequest = (r: DocumentAccessRequestRecord) => r.requesterUserId === recipient.userId;
+    try {
+      const result = await operation({
+        recipient,
+        listShares: () => Promise.resolve(store.documentShares.filter(mineShare)
+          .sort((a, b) => b.createdAt - a.createdAt)),
+        findShare: id => Promise.resolve(store.documentShares.find(s => s.shareId === id && mineShare(s)) ?? null),
+        listAccessRequests: () => Promise.resolve(store.documentAccessRequests.filter(mineRequest)
+          .sort((a, b) => b.createdAt - a.createdAt)),
+        findAccessRequest: id => Promise.resolve(
+          store.documentAccessRequests.find(r => r.requestId === id && mineRequest(r)) ?? null),
+        enterWorkspace: (workspaceId, inner) => this.runForWorkspace(workspaceId, inner),
+      });
+      this.committed++;
+      return result;
+    } catch (error) {
+      this.store.restore(snapshot);
+      this.rolledBack++;
+      throw error;
+    }
+  }
+
+  /** 087. Resolves a COMPLETED verification id to its workspace, then enters it. */
+  async runForCompletedVerification<T>(
+    verificationId: VerificationId,
+    operation: (uow: WorkspaceUnitOfWork | null) => Promise<T>,
+  ): Promise<T> {
+    this.scopes.push("completed-verification");
+    const found = this.store.completedDocuments.find(d => d.record.verificationId === verificationId);
+    if (found === undefined) return operation(null);
+    return this.runForWorkspace(found.record.workspaceId, uow => operation(uow));
+  }
+
   async runForJoinTicketCredential<T>(
     tokenDigest: JoinTicketDigest,
     operation: (uow: JoinTicketCredentialUnitOfWork) => Promise<T>,
@@ -3422,6 +3601,7 @@ export class FakeTransactionManager implements TransactionManager {
             workflowTemplates: scopedWorkflowTemplates(store, workspaceId),
             uploadRequests: scopedUploadRequests(store, workspaceId),
             contactRequests: scopedContactRequests(store, workspaceId),
+            documentSharing: scopedDocumentSharing(store, workspaceId),
             joinTickets: scopedJoinTickets(store, workspaceId),
             joinRequests: scopedJoinRequests(store, workspaceId),
             activity: scopedActivity(store, workspaceId),
@@ -3860,6 +4040,20 @@ export class FailingTransactionManager implements TransactionManager {
   runForJoinTicketCredential<T>(
     _tokenDigest: JoinTicketDigest,
     _operation: (uow: JoinTicketCredentialUnitOfWork) => Promise<T>,
+  ): Promise<T> {
+    return this.fail();
+  }
+
+  runForSharingRecipient<T>(
+    _recipient: SharingRecipient,
+    _operation: (uow: SharingRecipientUnitOfWork) => Promise<T>,
+  ): Promise<T> {
+    return this.fail();
+  }
+
+  runForCompletedVerification<T>(
+    _verificationId: VerificationId,
+    _operation: (uow: WorkspaceUnitOfWork | null) => Promise<T>,
   ): Promise<T> {
     return this.fail();
   }

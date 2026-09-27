@@ -10,13 +10,33 @@
 import type { VerificationId, WorkspaceId } from "@lagda/contracts";
 import type { NotificationRepository } from "./notifications.js";
 
-/** The participant a verification ID and an address resolved to. */
+/**
+ * 087. What an access code or grant rests on. A code is only ever for an
+ * entry on the access list (a participant, an accepted share, an approved
+ * request); a SIGNED-IN grant may also rest on workspace membership — the
+ * document's owner, or a holder of `document.share.manage`.
+ */
+export type VerificationAccessBasis =
+  | "participant" | "share" | "access-request" | "document-owner" | "workspace-administrator";
+
+/** The entry on the access list a verification ID and an address resolved to. */
 export interface VerificationParticipantTarget {
   readonly workspaceId: WorkspaceId;
   readonly signingRequestId: string;
-  readonly requestRecipientId: string;
+  readonly basis: VerificationAccessBasis;
+  /** Set exactly for a `participant`. */
+  readonly requestRecipientId: string | null;
+  /** Set exactly for a `share`. */
+  readonly shareId: string | null;
+  /** Set exactly for an `access-request`. */
+  readonly accessRequestId: string | null;
+  /** The account behind a share, request or membership; null for a participant. */
+  readonly userId: string | null;
   readonly recipientName: string;
-  /** The participant row's own delivery address — never the typed one. */
+  /**
+   * The access-list row's own delivery address — the participant row's, the
+   * share's or the request's — never the typed one.
+   */
   readonly destination: string;
   readonly recipientType: string;
   readonly documentTitle: string;
@@ -73,7 +93,8 @@ export interface VerificationAccessStore {
   /**
    * Supersedes the live challenge for this address and document, stores the
    * new one and raises its notification — all in ONE transaction. Returns
-   * false, writing nothing, when there is no such participant.
+   * false, writing nothing, when the address is not on the access list
+   * (participants, accepted shares, approved requests — 087).
    */
   issueChallenge(
     input: NewVerificationAccessChallenge,
@@ -97,10 +118,15 @@ export interface VerificationAccessStore {
     readonly grant: NewVerificationAccessGrant;
   }): Promise<ChallengeRedemption>;
 
-  /** A signed-in participant's grant. Null when there is no such participant. */
+  /**
+   * A signed-in account's grant: a participant, an accepted share or an
+   * approved request (email-matched cases need a VERIFIED address, passed as
+   * `normalizedEmail`, else null), or the document's owner or a workspace
+   * owner/administrator by membership. Null when none applies.
+   */
   issueMemberGrant(input: {
     readonly verificationId: VerificationId;
-    readonly normalizedEmail: string;
+    readonly normalizedEmail: string | null;
     readonly userId: string;
     readonly now: number;
     readonly grant: NewVerificationAccessGrant;

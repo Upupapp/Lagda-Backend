@@ -141,6 +141,23 @@ export const NOTIFICATION_TYPES = [
   "CONTACT_REQUEST_COMPLETED",
   /** 086. The requester told their request was declined. In-app only. */
   "CONTACT_REQUEST_DECLINED",
+  /** 087. A completed document was shared with this account's address. In-app only. */
+  "DOCUMENT_SHARE_RECEIVED",
+  /** 087. The sharer told their share was accepted. In-app only. */
+  "DOCUMENT_SHARE_ACCEPTED",
+  /** 087. The sharer told their share was rejected. In-app only. */
+  "DOCUMENT_SHARE_REJECTED",
+  /** 087. A document's owner told someone asked for access. In-app only. */
+  "DOCUMENT_ACCESS_REQUESTED",
+  /** 087. The requester told their request was approved. In-app only. */
+  "DOCUMENT_ACCESS_APPROVED",
+  /** 087. The requester told their request was rejected. In-app only. */
+  "DOCUMENT_ACCESS_REJECTED",
+  /**
+   * 087. The Verify Document code for somebody on the access list who is not
+   * a participant (an accepted share or an approved request). Emailed.
+   */
+  "SHARED_DOCUMENT_ACCESS_CODE",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -264,6 +281,10 @@ export const NOTIFICATION_SOURCE_KINDS = [
   "VERIFICATION_ACCESS_CHALLENGE",
   /** 086. A contact request — one notice of each type per request. */
   "CONTACT_REQUEST",
+  /** 087. A document share — one notice of each type per share. */
+  "DOCUMENT_SHARE",
+  /** 087. An access request — one notice of each type per request. */
+  "DOCUMENT_ACCESS_REQUEST",
 ] as const;
 export type NotificationSourceKind =
   (typeof NOTIFICATION_SOURCE_KINDS)[number];
@@ -408,6 +429,10 @@ export const NOTIFICATION_TEMPLATE_KEYS = [
   "contact-request-emailed",
   "contact-request-completed",
   "contact-request-declined",
+  "document-share-received",
+  "document-share-answered",
+  "document-access-requested",
+  "document-access-decided",
 ] as const;
 export type NotificationTemplateKey =
   (typeof NOTIFICATION_TEMPLATE_KEYS)[number];

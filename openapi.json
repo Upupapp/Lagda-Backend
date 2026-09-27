@@ -3243,6 +3243,12 @@
                           {
                             "type": "string",
                             "enum": [
+                              "document.share.manage"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
                               "workspace.ownership.transfer"
                             ]
                           },
@@ -3376,6 +3382,12 @@
                   "enum": [
                     "workspace"
                   ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "sharing"
+                  ]
                 }
               ]
             },
@@ -3459,6 +3471,12 @@
                                 "type": "string",
                                 "enum": [
                                   "workspace"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "sharing"
                                 ]
                               }
                             ]
@@ -10151,6 +10169,4505 @@
                           }
                         }
                       }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/documents/{documentId}/shares": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "pending"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "accepted"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "rejected"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "removed"
+                  ]
+                }
+              ]
+            },
+            "in": "query",
+            "name": "status",
+            "required": false
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "documentId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "DocumentShares",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "document",
+                    "shares"
+                  ],
+                  "properties": {
+                    "document": {
+                      "title": "SharedCompletedDocument",
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "documentId",
+                        "verificationId",
+                        "documentTitle",
+                        "completedAt",
+                        "owner",
+                        "participantCount"
+                      ],
+                      "properties": {
+                        "documentId": {
+                          "type": "string"
+                        },
+                        "verificationId": {
+                          "type": "string"
+                        },
+                        "documentTitle": {
+                          "type": "string"
+                        },
+                        "completedAt": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "owner": {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "userId",
+                            "displayName"
+                          ],
+                          "properties": {
+                            "userId": {
+                              "type": "string"
+                            },
+                            "displayName": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "participantCount": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "shares": {
+                      "type": "array",
+                      "items": {
+                        "title": "DocumentShare",
+                        "additionalProperties": false,
+                        "description": "A completed document shared with an email address. In-app only: nothing is emailed, and the share appears to an account once its VERIFIED address matches.",
+                        "type": "object",
+                        "required": [
+                          "shareId",
+                          "documentId",
+                          "verificationId",
+                          "email",
+                          "fullName",
+                          "status",
+                          "recipient",
+                          "sharedBy",
+                          "removedBy",
+                          "replacesShareId",
+                          "recipientDeleted",
+                          "createdAt",
+                          "updatedAt",
+                          "respondedAt",
+                          "removedAt"
+                        ],
+                        "properties": {
+                          "shareId": {
+                            "type": "string"
+                          },
+                          "documentId": {
+                            "type": "string"
+                          },
+                          "verificationId": {
+                            "type": "string"
+                          },
+                          "email": {
+                            "type": "string"
+                          },
+                          "fullName": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "status": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "pending"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "accepted"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "rejected"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "removed"
+                                ]
+                              }
+                            ]
+                          },
+                          "recipient": {
+                            "anyOf": [
+                              {
+                                "additionalProperties": false,
+                                "type": "object",
+                                "required": [
+                                  "userId",
+                                  "displayName"
+                                ],
+                                "properties": {
+                                  "userId": {
+                                    "type": "string"
+                                  },
+                                  "displayName": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "sharedBy": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "required": [
+                              "userId",
+                              "displayName"
+                            ],
+                            "properties": {
+                              "userId": {
+                                "type": "string"
+                              },
+                              "displayName": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "removedBy": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "owner"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "recipient"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "email-changed"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "replacesShareId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "recipientDeleted": {
+                            "type": "boolean"
+                          },
+                          "createdAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "respondedAt": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "removedAt": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "CreateDocumentShare",
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "email"
+                ],
+                "properties": {
+                  "email": {
+                    "minLength": 1,
+                    "maxLength": 254,
+                    "type": "string"
+                  },
+                  "fullName": {
+                    "anyOf": [
+                      {
+                        "maxLength": 200,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "documentId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "A completed document shared with an email address. In-app only: nothing is emailed, and the share appears to an account once its VERIFIED address matches.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "DocumentShare",
+                  "additionalProperties": false,
+                  "description": "A completed document shared with an email address. In-app only: nothing is emailed, and the share appears to an account once its VERIFIED address matches.",
+                  "type": "object",
+                  "required": [
+                    "shareId",
+                    "documentId",
+                    "verificationId",
+                    "email",
+                    "fullName",
+                    "status",
+                    "recipient",
+                    "sharedBy",
+                    "removedBy",
+                    "replacesShareId",
+                    "recipientDeleted",
+                    "createdAt",
+                    "updatedAt",
+                    "respondedAt",
+                    "removedAt"
+                  ],
+                  "properties": {
+                    "shareId": {
+                      "type": "string"
+                    },
+                    "documentId": {
+                      "type": "string"
+                    },
+                    "verificationId": {
+                      "type": "string"
+                    },
+                    "email": {
+                      "type": "string"
+                    },
+                    "fullName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "status": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "pending"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "accepted"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "rejected"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "removed"
+                          ]
+                        }
+                      ]
+                    },
+                    "recipient": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "userId",
+                            "displayName"
+                          ],
+                          "properties": {
+                            "userId": {
+                              "type": "string"
+                            },
+                            "displayName": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "sharedBy": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "userId",
+                        "displayName"
+                      ],
+                      "properties": {
+                        "userId": {
+                          "type": "string"
+                        },
+                        "displayName": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "removedBy": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "owner"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "recipient"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "email-changed"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "replacesShareId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "recipientDeleted": {
+                      "type": "boolean"
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "respondedAt": {
+                      "anyOf": [
+                        {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "removedAt": {
+                      "anyOf": [
+                        {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/documents/{documentId}/shares/{shareId}": {
+      "patch": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "UpdateDocumentShare",
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "minLength": 1,
+                    "maxLength": 254,
+                    "type": "string"
+                  },
+                  "fullName": {
+                    "anyOf": [
+                      {
+                        "maxLength": 200,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "documentId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "shareId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "`previous` is the share an address change ended (`removed` by `email-changed`); `share` is then the NEW pending share for the new address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "UpdatedDocumentShare",
+                  "additionalProperties": false,
+                  "description": "`previous` is the share an address change ended (`removed` by `email-changed`); `share` is then the NEW pending share for the new address.",
+                  "type": "object",
+                  "required": [
+                    "share",
+                    "previous"
+                  ],
+                  "properties": {
+                    "share": {
+                      "title": "DocumentShare",
+                      "additionalProperties": false,
+                      "description": "A completed document shared with an email address. In-app only: nothing is emailed, and the share appears to an account once its VERIFIED address matches.",
+                      "type": "object",
+                      "required": [
+                        "shareId",
+                        "documentId",
+                        "verificationId",
+                        "email",
+                        "fullName",
+                        "status",
+                        "recipient",
+                        "sharedBy",
+                        "removedBy",
+                        "replacesShareId",
+                        "recipientDeleted",
+                        "createdAt",
+                        "updatedAt",
+                        "respondedAt",
+                        "removedAt"
+                      ],
+                      "properties": {
+                        "shareId": {
+                          "type": "string"
+                        },
+                        "documentId": {
+                          "type": "string"
+                        },
+                        "verificationId": {
+                          "type": "string"
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "fullName": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "status": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "pending"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "accepted"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "rejected"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "removed"
+                              ]
+                            }
+                          ]
+                        },
+                        "recipient": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "type": "object",
+                              "required": [
+                                "userId",
+                                "displayName"
+                              ],
+                              "properties": {
+                                "userId": {
+                                  "type": "string"
+                                },
+                                "displayName": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "sharedBy": {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "userId",
+                            "displayName"
+                          ],
+                          "properties": {
+                            "userId": {
+                              "type": "string"
+                            },
+                            "displayName": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "removedBy": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "owner"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "recipient"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "enum": [
+                                "email-changed"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "replacesShareId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "recipientDeleted": {
+                          "type": "boolean"
+                        },
+                        "createdAt": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "respondedAt": {
+                          "anyOf": [
+                            {
+                              "format": "date-time",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "removedAt": {
+                          "anyOf": [
+                            {
+                              "format": "date-time",
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "previous": {
+                      "anyOf": [
+                        {
+                          "title": "DocumentShare",
+                          "additionalProperties": false,
+                          "description": "A completed document shared with an email address. In-app only: nothing is emailed, and the share appears to an account once its VERIFIED address matches.",
+                          "type": "object",
+                          "required": [
+                            "shareId",
+                            "documentId",
+                            "verificationId",
+                            "email",
+                            "fullName",
+                            "status",
+                            "recipient",
+                            "sharedBy",
+                            "removedBy",
+                            "replacesShareId",
+                            "recipientDeleted",
+                            "createdAt",
+                            "updatedAt",
+                            "respondedAt",
+                            "removedAt"
+                          ],
+                          "properties": {
+                            "shareId": {
+                              "type": "string"
+                            },
+                            "documentId": {
+                              "type": "string"
+                            },
+                            "verificationId": {
+                              "type": "string"
+                            },
+                            "email": {
+                              "type": "string"
+                            },
+                            "fullName": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "status": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "pending"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "accepted"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "rejected"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "removed"
+                                  ]
+                                }
+                              ]
+                            },
+                            "recipient": {
+                              "anyOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "type": "object",
+                                  "required": [
+                                    "userId",
+                                    "displayName"
+                                  ],
+                                  "properties": {
+                                    "userId": {
+                                      "type": "string"
+                                    },
+                                    "displayName": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "sharedBy": {
+                              "additionalProperties": false,
+                              "type": "object",
+                              "required": [
+                                "userId",
+                                "displayName"
+                              ],
+                              "properties": {
+                                "userId": {
+                                  "type": "string"
+                                },
+                                "displayName": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "removedBy": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "owner"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "recipient"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "email-changed"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "replacesShareId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "recipientDeleted": {
+                              "type": "boolean"
+                            },
+                            "createdAt": {
+                              "format": "date-time",
+                              "type": "string"
+                            },
+                            "updatedAt": {
+                              "format": "date-time",
+                              "type": "string"
+                            },
+                            "respondedAt": {
+                              "anyOf": [
+                                {
+                                  "format": "date-time",
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "removedAt": {
+                              "anyOf": [
+                                {
+                                  "format": "date-time",
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "documentId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "shareId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A completed document shared with an email address. In-app only: nothing is emailed, and the share appears to an account once its VERIFIED address matches.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "DocumentShare",
+                  "additionalProperties": false,
+                  "description": "A completed document shared with an email address. In-app only: nothing is emailed, and the share appears to an account once its VERIFIED address matches.",
+                  "type": "object",
+                  "required": [
+                    "shareId",
+                    "documentId",
+                    "verificationId",
+                    "email",
+                    "fullName",
+                    "status",
+                    "recipient",
+                    "sharedBy",
+                    "removedBy",
+                    "replacesShareId",
+                    "recipientDeleted",
+                    "createdAt",
+                    "updatedAt",
+                    "respondedAt",
+                    "removedAt"
+                  ],
+                  "properties": {
+                    "shareId": {
+                      "type": "string"
+                    },
+                    "documentId": {
+                      "type": "string"
+                    },
+                    "verificationId": {
+                      "type": "string"
+                    },
+                    "email": {
+                      "type": "string"
+                    },
+                    "fullName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "status": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "pending"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "accepted"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "rejected"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "removed"
+                          ]
+                        }
+                      ]
+                    },
+                    "recipient": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "userId",
+                            "displayName"
+                          ],
+                          "properties": {
+                            "userId": {
+                              "type": "string"
+                            },
+                            "displayName": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "sharedBy": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "userId",
+                        "displayName"
+                      ],
+                      "properties": {
+                        "userId": {
+                          "type": "string"
+                        },
+                        "displayName": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "removedBy": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "owner"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "recipient"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "email-changed"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "replacesShareId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "recipientDeleted": {
+                      "type": "boolean"
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "respondedAt": {
+                      "anyOf": [
+                        {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "removedAt": {
+                      "anyOf": [
+                        {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/access-requests": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "pending"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "approved"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "rejected"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "removed"
+                  ]
+                }
+              ]
+            },
+            "in": "query",
+            "name": "status",
+            "required": false
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "DocumentAccessRequestList",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "title": "DocumentAccessRequest",
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "requestId",
+                          "document",
+                          "requester",
+                          "note",
+                          "status",
+                          "decidedBy",
+                          "decidedAt",
+                          "removedAt",
+                          "createdAt",
+                          "updatedAt"
+                        ],
+                        "properties": {
+                          "requestId": {
+                            "type": "string"
+                          },
+                          "document": {
+                            "title": "SharedCompletedDocument",
+                            "additionalProperties": false,
+                            "type": "object",
+                            "required": [
+                              "documentId",
+                              "verificationId",
+                              "documentTitle",
+                              "completedAt",
+                              "owner",
+                              "participantCount"
+                            ],
+                            "properties": {
+                              "documentId": {
+                                "type": "string"
+                              },
+                              "verificationId": {
+                                "type": "string"
+                              },
+                              "documentTitle": {
+                                "type": "string"
+                              },
+                              "completedAt": {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              "owner": {
+                                "additionalProperties": false,
+                                "type": "object",
+                                "required": [
+                                  "userId",
+                                  "displayName"
+                                ],
+                                "properties": {
+                                  "userId": {
+                                    "type": "string"
+                                  },
+                                  "displayName": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              "participantCount": {
+                                "type": "integer"
+                              }
+                            }
+                          },
+                          "requester": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "required": [
+                              "userId",
+                              "displayName",
+                              "email"
+                            ],
+                            "properties": {
+                              "userId": {
+                                "type": "string"
+                              },
+                              "displayName": {
+                                "type": "string"
+                              },
+                              "email": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "note": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "status": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "pending"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "approved"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "rejected"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "removed"
+                                ]
+                              }
+                            ]
+                          },
+                          "decidedBy": {
+                            "anyOf": [
+                              {
+                                "additionalProperties": false,
+                                "type": "object",
+                                "required": [
+                                  "userId",
+                                  "displayName"
+                                ],
+                                "properties": {
+                                  "userId": {
+                                    "type": "string"
+                                  },
+                                  "displayName": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "decidedAt": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "removedAt": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "createdAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/access-requests/{requestId}/approve": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "requestId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "DocumentAccessRequest",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "requestId",
+                    "document",
+                    "requester",
+                    "note",
+                    "status",
+                    "decidedBy",
+                    "decidedAt",
+                    "removedAt",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "properties": {
+                    "requestId": {
+                      "type": "string"
+                    },
+                    "document": {
+                      "title": "SharedCompletedDocument",
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "documentId",
+                        "verificationId",
+                        "documentTitle",
+                        "completedAt",
+                        "owner",
+                        "participantCount"
+                      ],
+                      "properties": {
+                        "documentId": {
+                          "type": "string"
+                        },
+                        "verificationId": {
+                          "type": "string"
+                        },
+                        "documentTitle": {
+                          "type": "string"
+                        },
+                        "completedAt": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "owner": {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "userId",
+                            "displayName"
+                          ],
+                          "properties": {
+                            "userId": {
+                              "type": "string"
+                            },
+                            "displayName": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "participantCount": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "requester": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "userId",
+                        "displayName",
+                        "email"
+                      ],
+                      "properties": {
+                        "userId": {
+                          "type": "string"
+                        },
+                        "displayName": {
+                          "type": "string"
+                        },
+                        "email": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "note": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "status": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "pending"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "approved"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "rejected"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "removed"
+                          ]
+                        }
+                      ]
+                    },
+                    "decidedBy": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "userId",
+                            "displayName"
+                          ],
+                          "properties": {
+                            "userId": {
+                              "type": "string"
+                            },
+                            "displayName": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "decidedAt": {
+                      "anyOf": [
+                        {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "removedAt": {
+                      "anyOf": [
+                        {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/access-requests/{requestId}/reject": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "requestId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "DocumentAccessRequest",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "requestId",
+                    "document",
+                    "requester",
+                    "note",
+                    "status",
+                    "decidedBy",
+                    "decidedAt",
+                    "removedAt",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "properties": {
+                    "requestId": {
+                      "type": "string"
+                    },
+                    "document": {
+                      "title": "SharedCompletedDocument",
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "documentId",
+                        "verificationId",
+                        "documentTitle",
+                        "completedAt",
+                        "owner",
+                        "participantCount"
+                      ],
+                      "properties": {
+                        "documentId": {
+                          "type": "string"
+                        },
+                        "verificationId": {
+                          "type": "string"
+                        },
+                        "documentTitle": {
+                          "type": "string"
+                        },
+                        "completedAt": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "owner": {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "userId",
+                            "displayName"
+                          ],
+                          "properties": {
+                            "userId": {
+                              "type": "string"
+                            },
+                            "displayName": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "participantCount": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "requester": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "userId",
+                        "displayName",
+                        "email"
+                      ],
+                      "properties": {
+                        "userId": {
+                          "type": "string"
+                        },
+                        "displayName": {
+                          "type": "string"
+                        },
+                        "email": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "note": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "status": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "pending"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "approved"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "rejected"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "removed"
+                          ]
+                        }
+                      ]
+                    },
+                    "decidedBy": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "userId",
+                            "displayName"
+                          ],
+                          "properties": {
+                            "userId": {
+                              "type": "string"
+                            },
+                            "displayName": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "decidedAt": {
+                      "anyOf": [
+                        {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "removedAt": {
+                      "anyOf": [
+                        {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/access-requests/{requestId}/withdraw-rejection": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "requestId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "DocumentAccessRequest",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "requestId",
+                    "document",
+                    "requester",
+                    "note",
+                    "status",
+                    "decidedBy",
+                    "decidedAt",
+                    "removedAt",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "properties": {
+                    "requestId": {
+                      "type": "string"
+                    },
+                    "document": {
+                      "title": "SharedCompletedDocument",
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "documentId",
+                        "verificationId",
+                        "documentTitle",
+                        "completedAt",
+                        "owner",
+                        "participantCount"
+                      ],
+                      "properties": {
+                        "documentId": {
+                          "type": "string"
+                        },
+                        "verificationId": {
+                          "type": "string"
+                        },
+                        "documentTitle": {
+                          "type": "string"
+                        },
+                        "completedAt": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "owner": {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "userId",
+                            "displayName"
+                          ],
+                          "properties": {
+                            "userId": {
+                              "type": "string"
+                            },
+                            "displayName": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "participantCount": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "requester": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "userId",
+                        "displayName",
+                        "email"
+                      ],
+                      "properties": {
+                        "userId": {
+                          "type": "string"
+                        },
+                        "displayName": {
+                          "type": "string"
+                        },
+                        "email": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "note": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "status": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "pending"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "approved"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "rejected"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "removed"
+                          ]
+                        }
+                      ]
+                    },
+                    "decidedBy": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "userId",
+                            "displayName"
+                          ],
+                          "properties": {
+                            "userId": {
+                              "type": "string"
+                            },
+                            "displayName": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "decidedAt": {
+                      "anyOf": [
+                        {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "removedAt": {
+                      "anyOf": [
+                        {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/access-requests/{requestId}/remove": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "requestId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "DocumentAccessRequest",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "requestId",
+                    "document",
+                    "requester",
+                    "note",
+                    "status",
+                    "decidedBy",
+                    "decidedAt",
+                    "removedAt",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "properties": {
+                    "requestId": {
+                      "type": "string"
+                    },
+                    "document": {
+                      "title": "SharedCompletedDocument",
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "documentId",
+                        "verificationId",
+                        "documentTitle",
+                        "completedAt",
+                        "owner",
+                        "participantCount"
+                      ],
+                      "properties": {
+                        "documentId": {
+                          "type": "string"
+                        },
+                        "verificationId": {
+                          "type": "string"
+                        },
+                        "documentTitle": {
+                          "type": "string"
+                        },
+                        "completedAt": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "owner": {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "userId",
+                            "displayName"
+                          ],
+                          "properties": {
+                            "userId": {
+                              "type": "string"
+                            },
+                            "displayName": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "participantCount": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "requester": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "userId",
+                        "displayName",
+                        "email"
+                      ],
+                      "properties": {
+                        "userId": {
+                          "type": "string"
+                        },
+                        "displayName": {
+                          "type": "string"
+                        },
+                        "email": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "note": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "status": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "pending"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "approved"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "rejected"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "removed"
+                          ]
+                        }
+                      ]
+                    },
+                    "decidedBy": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "userId",
+                            "displayName"
+                          ],
+                          "properties": {
+                            "userId": {
+                              "type": "string"
+                            },
+                            "displayName": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "decidedAt": {
+                      "anyOf": [
+                        {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "removedAt": {
+                      "anyOf": [
+                        {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/access-requests/{requestId}": {
+      "delete": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "requestId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/workspaces/{workspaceId}/shared-by-me": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "mine"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "workspace"
+                  ]
+                }
+              ]
+            },
+            "in": "query",
+            "name": "scope",
+            "required": false
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Completed documents with at least one accepted share or approved request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "SharedByMe",
+                  "additionalProperties": false,
+                  "description": "Completed documents with at least one accepted share or approved request.",
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "document",
+                          "acceptedShares",
+                          "pendingShares",
+                          "rejectedShares",
+                          "approvedRequests",
+                          "pendingRequests"
+                        ],
+                        "properties": {
+                          "document": {
+                            "title": "SharedCompletedDocument",
+                            "additionalProperties": false,
+                            "type": "object",
+                            "required": [
+                              "documentId",
+                              "verificationId",
+                              "documentTitle",
+                              "completedAt",
+                              "owner",
+                              "participantCount"
+                            ],
+                            "properties": {
+                              "documentId": {
+                                "type": "string"
+                              },
+                              "verificationId": {
+                                "type": "string"
+                              },
+                              "documentTitle": {
+                                "type": "string"
+                              },
+                              "completedAt": {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              "owner": {
+                                "additionalProperties": false,
+                                "type": "object",
+                                "required": [
+                                  "userId",
+                                  "displayName"
+                                ],
+                                "properties": {
+                                  "userId": {
+                                    "type": "string"
+                                  },
+                                  "displayName": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              "participantCount": {
+                                "type": "integer"
+                              }
+                            }
+                          },
+                          "acceptedShares": {
+                            "type": "integer"
+                          },
+                          "pendingShares": {
+                            "type": "integer"
+                          },
+                          "rejectedShares": {
+                            "type": "integer"
+                          },
+                          "approvedRequests": {
+                            "type": "integer"
+                          },
+                          "pendingRequests": {
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/shared-documents": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "pending"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "accepted"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "rejected"
+                  ]
+                }
+              ]
+            },
+            "in": "query",
+            "name": "status",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "SharedDocumentList",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "title": "SharedDocument",
+                        "additionalProperties": false,
+                        "description": "A completed document shared with this account, or one it asked for. Carries the OWNER workspace's branding; `actions` are what this account may do with it now.",
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "kind",
+                          "status",
+                          "verificationId",
+                          "documentTitle",
+                          "completedAt",
+                          "owner",
+                          "sharedBy",
+                          "fullName",
+                          "email",
+                          "note",
+                          "progress",
+                          "branding",
+                          "actions",
+                          "createdAt",
+                          "updatedAt",
+                          "respondedAt"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "share"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "access-request"
+                                ]
+                              }
+                            ]
+                          },
+                          "status": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "pending"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "accepted"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "rejected"
+                                ]
+                              }
+                            ]
+                          },
+                          "verificationId": {
+                            "type": "string"
+                          },
+                          "documentTitle": {
+                            "type": "string"
+                          },
+                          "completedAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "owner": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "required": [
+                              "displayName"
+                            ],
+                            "properties": {
+                              "displayName": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "sharedBy": {
+                            "anyOf": [
+                              {
+                                "additionalProperties": false,
+                                "type": "object",
+                                "required": [
+                                  "displayName"
+                                ],
+                                "properties": {
+                                  "displayName": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "fullName": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "email": {
+                            "type": "string"
+                          },
+                          "note": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "progress": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "required": [
+                              "participants",
+                              "completed"
+                            ],
+                            "properties": {
+                              "participants": {
+                                "type": "integer"
+                              },
+                              "completed": {
+                                "type": "integer"
+                              }
+                            }
+                          },
+                          "branding": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "required": [
+                              "displayName",
+                              "primaryColor",
+                              "logo"
+                            ],
+                            "properties": {
+                              "displayName": {
+                                "type": "string"
+                              },
+                              "primaryColor": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "logo": {
+                                "anyOf": [
+                                  {
+                                    "additionalProperties": false,
+                                    "type": "object",
+                                    "required": [
+                                      "version",
+                                      "width",
+                                      "height",
+                                      "url"
+                                    ],
+                                    "properties": {
+                                      "version": {
+                                        "type": "string"
+                                      },
+                                      "width": {
+                                        "type": "integer"
+                                      },
+                                      "height": {
+                                        "type": "integer"
+                                      },
+                                      "url": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            }
+                          },
+                          "actions": {
+                            "type": "array",
+                            "items": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "accept"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "reject"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "withdraw-rejection"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "delete"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "remove-access"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "open"
+                                  ]
+                                }
+                              ]
+                            }
+                          },
+                          "createdAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "respondedAt": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/shared-documents/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A completed document shared with this account, or one it asked for. Carries the OWNER workspace's branding; `actions` are what this account may do with it now.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "SharedDocument",
+                  "additionalProperties": false,
+                  "description": "A completed document shared with this account, or one it asked for. Carries the OWNER workspace's branding; `actions` are what this account may do with it now.",
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "kind",
+                    "status",
+                    "verificationId",
+                    "documentTitle",
+                    "completedAt",
+                    "owner",
+                    "sharedBy",
+                    "fullName",
+                    "email",
+                    "note",
+                    "progress",
+                    "branding",
+                    "actions",
+                    "createdAt",
+                    "updatedAt",
+                    "respondedAt"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "share"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "access-request"
+                          ]
+                        }
+                      ]
+                    },
+                    "status": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "pending"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "accepted"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "rejected"
+                          ]
+                        }
+                      ]
+                    },
+                    "verificationId": {
+                      "type": "string"
+                    },
+                    "documentTitle": {
+                      "type": "string"
+                    },
+                    "completedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "owner": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "displayName"
+                      ],
+                      "properties": {
+                        "displayName": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "sharedBy": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "displayName"
+                          ],
+                          "properties": {
+                            "displayName": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "fullName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "email": {
+                      "type": "string"
+                    },
+                    "note": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "progress": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "participants",
+                        "completed"
+                      ],
+                      "properties": {
+                        "participants": {
+                          "type": "integer"
+                        },
+                        "completed": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "branding": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "displayName",
+                        "primaryColor",
+                        "logo"
+                      ],
+                      "properties": {
+                        "displayName": {
+                          "type": "string"
+                        },
+                        "primaryColor": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "logo": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "type": "object",
+                              "required": [
+                                "version",
+                                "width",
+                                "height",
+                                "url"
+                              ],
+                              "properties": {
+                                "version": {
+                                  "type": "string"
+                                },
+                                "width": {
+                                  "type": "integer"
+                                },
+                                "height": {
+                                  "type": "integer"
+                                },
+                                "url": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "actions": {
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "accept"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "reject"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "withdraw-rejection"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "delete"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "remove-access"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "open"
+                            ]
+                          }
+                        ]
+                      }
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "respondedAt": {
+                      "anyOf": [
+                        {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/me/shared-documents/{id}/accept": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A completed document shared with this account, or one it asked for. Carries the OWNER workspace's branding; `actions` are what this account may do with it now.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "SharedDocument",
+                  "additionalProperties": false,
+                  "description": "A completed document shared with this account, or one it asked for. Carries the OWNER workspace's branding; `actions` are what this account may do with it now.",
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "kind",
+                    "status",
+                    "verificationId",
+                    "documentTitle",
+                    "completedAt",
+                    "owner",
+                    "sharedBy",
+                    "fullName",
+                    "email",
+                    "note",
+                    "progress",
+                    "branding",
+                    "actions",
+                    "createdAt",
+                    "updatedAt",
+                    "respondedAt"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "share"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "access-request"
+                          ]
+                        }
+                      ]
+                    },
+                    "status": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "pending"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "accepted"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "rejected"
+                          ]
+                        }
+                      ]
+                    },
+                    "verificationId": {
+                      "type": "string"
+                    },
+                    "documentTitle": {
+                      "type": "string"
+                    },
+                    "completedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "owner": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "displayName"
+                      ],
+                      "properties": {
+                        "displayName": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "sharedBy": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "displayName"
+                          ],
+                          "properties": {
+                            "displayName": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "fullName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "email": {
+                      "type": "string"
+                    },
+                    "note": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "progress": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "participants",
+                        "completed"
+                      ],
+                      "properties": {
+                        "participants": {
+                          "type": "integer"
+                        },
+                        "completed": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "branding": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "displayName",
+                        "primaryColor",
+                        "logo"
+                      ],
+                      "properties": {
+                        "displayName": {
+                          "type": "string"
+                        },
+                        "primaryColor": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "logo": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "type": "object",
+                              "required": [
+                                "version",
+                                "width",
+                                "height",
+                                "url"
+                              ],
+                              "properties": {
+                                "version": {
+                                  "type": "string"
+                                },
+                                "width": {
+                                  "type": "integer"
+                                },
+                                "height": {
+                                  "type": "integer"
+                                },
+                                "url": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "actions": {
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "accept"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "reject"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "withdraw-rejection"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "delete"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "remove-access"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "open"
+                            ]
+                          }
+                        ]
+                      }
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "respondedAt": {
+                      "anyOf": [
+                        {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/shared-documents/{id}/reject": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A completed document shared with this account, or one it asked for. Carries the OWNER workspace's branding; `actions` are what this account may do with it now.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "SharedDocument",
+                  "additionalProperties": false,
+                  "description": "A completed document shared with this account, or one it asked for. Carries the OWNER workspace's branding; `actions` are what this account may do with it now.",
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "kind",
+                    "status",
+                    "verificationId",
+                    "documentTitle",
+                    "completedAt",
+                    "owner",
+                    "sharedBy",
+                    "fullName",
+                    "email",
+                    "note",
+                    "progress",
+                    "branding",
+                    "actions",
+                    "createdAt",
+                    "updatedAt",
+                    "respondedAt"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "share"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "access-request"
+                          ]
+                        }
+                      ]
+                    },
+                    "status": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "pending"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "accepted"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "rejected"
+                          ]
+                        }
+                      ]
+                    },
+                    "verificationId": {
+                      "type": "string"
+                    },
+                    "documentTitle": {
+                      "type": "string"
+                    },
+                    "completedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "owner": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "displayName"
+                      ],
+                      "properties": {
+                        "displayName": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "sharedBy": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "displayName"
+                          ],
+                          "properties": {
+                            "displayName": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "fullName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "email": {
+                      "type": "string"
+                    },
+                    "note": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "progress": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "participants",
+                        "completed"
+                      ],
+                      "properties": {
+                        "participants": {
+                          "type": "integer"
+                        },
+                        "completed": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "branding": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "displayName",
+                        "primaryColor",
+                        "logo"
+                      ],
+                      "properties": {
+                        "displayName": {
+                          "type": "string"
+                        },
+                        "primaryColor": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "logo": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "type": "object",
+                              "required": [
+                                "version",
+                                "width",
+                                "height",
+                                "url"
+                              ],
+                              "properties": {
+                                "version": {
+                                  "type": "string"
+                                },
+                                "width": {
+                                  "type": "integer"
+                                },
+                                "height": {
+                                  "type": "integer"
+                                },
+                                "url": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "actions": {
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "accept"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "reject"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "withdraw-rejection"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "delete"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "remove-access"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "open"
+                            ]
+                          }
+                        ]
+                      }
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "respondedAt": {
+                      "anyOf": [
+                        {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/shared-documents/{id}/withdraw-rejection": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A completed document shared with this account, or one it asked for. Carries the OWNER workspace's branding; `actions` are what this account may do with it now.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "SharedDocument",
+                  "additionalProperties": false,
+                  "description": "A completed document shared with this account, or one it asked for. Carries the OWNER workspace's branding; `actions` are what this account may do with it now.",
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "kind",
+                    "status",
+                    "verificationId",
+                    "documentTitle",
+                    "completedAt",
+                    "owner",
+                    "sharedBy",
+                    "fullName",
+                    "email",
+                    "note",
+                    "progress",
+                    "branding",
+                    "actions",
+                    "createdAt",
+                    "updatedAt",
+                    "respondedAt"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "share"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "access-request"
+                          ]
+                        }
+                      ]
+                    },
+                    "status": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "pending"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "accepted"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "rejected"
+                          ]
+                        }
+                      ]
+                    },
+                    "verificationId": {
+                      "type": "string"
+                    },
+                    "documentTitle": {
+                      "type": "string"
+                    },
+                    "completedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "owner": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "displayName"
+                      ],
+                      "properties": {
+                        "displayName": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "sharedBy": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "displayName"
+                          ],
+                          "properties": {
+                            "displayName": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "fullName": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "email": {
+                      "type": "string"
+                    },
+                    "note": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "progress": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "participants",
+                        "completed"
+                      ],
+                      "properties": {
+                        "participants": {
+                          "type": "integer"
+                        },
+                        "completed": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "branding": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "displayName",
+                        "primaryColor",
+                        "logo"
+                      ],
+                      "properties": {
+                        "displayName": {
+                          "type": "string"
+                        },
+                        "primaryColor": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "logo": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "type": "object",
+                              "required": [
+                                "version",
+                                "width",
+                                "height",
+                                "url"
+                              ],
+                              "properties": {
+                                "version": {
+                                  "type": "string"
+                                },
+                                "width": {
+                                  "type": "integer"
+                                },
+                                "height": {
+                                  "type": "integer"
+                                },
+                                "url": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "actions": {
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "accept"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "reject"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "withdraw-rejection"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "delete"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "remove-access"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "open"
+                            ]
+                          }
+                        ]
+                      }
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "respondedAt": {
+                      "anyOf": [
+                        {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/shared-documents/{id}/remove-access": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/me/shared-documents/{id}/details": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "SharedDocumentDetails",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "details"
+                  ],
+                  "properties": {
+                    "details": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "documentTitle",
+                        "completedAt",
+                        "sealedDigest",
+                        "participants",
+                        "events"
+                      ],
+                      "properties": {
+                        "documentTitle": {
+                          "type": "string"
+                        },
+                        "completedAt": {
+                          "type": "number"
+                        },
+                        "sealedDigest": {
+                          "type": "string"
+                        },
+                        "participants": {
+                          "type": "array",
+                          "items": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "required": [
+                              "name",
+                              "maskedEmail",
+                              "recipientType",
+                              "status",
+                              "actedAt",
+                              "routingOrder"
+                            ],
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "maskedEmail": {
+                                "type": "string"
+                              },
+                              "recipientType": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "signed"
+                                    ]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "approved"
+                                    ]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "declined"
+                                    ]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "skipped"
+                                    ]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "viewed"
+                                    ]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "no-action"
+                                    ]
+                                  }
+                                ]
+                              },
+                              "actedAt": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "routingOrder": {
+                                "type": "integer"
+                              }
+                            }
+                          }
+                        },
+                        "events": {
+                          "type": "array",
+                          "items": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "required": [
+                              "type",
+                              "label",
+                              "at"
+                            ],
+                            "properties": {
+                              "type": {
+                                "type": "string"
+                              },
+                              "label": {
+                                "type": "string"
+                              },
+                              "at": {
+                                "type": "number"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/shared-documents/{id}/document": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "properties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/shared-documents/{id}/branding/logo": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "properties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/verifications/{verificationId}/access-requests": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "CreateDocumentAccessRequest",
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "note": {
+                    "anyOf": [
+                      {
+                        "maxLength": 500,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "verificationId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "MyDocumentAccessRequest",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "requestId",
+                    "verificationId",
+                    "documentTitle",
+                    "status",
+                    "note",
+                    "createdAt"
+                  ],
+                  "properties": {
+                    "requestId": {
+                      "type": "string"
+                    },
+                    "verificationId": {
+                      "type": "string"
+                    },
+                    "documentTitle": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "pending"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "approved"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "rejected"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "removed"
+                          ]
+                        }
+                      ]
+                    },
+                    "note": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/verifications/{verificationId}/my-access": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "verificationId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The signed-in caller's OWN relation to a completed document. Says nothing about anyone else; an unknown reference is `none`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "MyDocumentAccess",
+                  "additionalProperties": false,
+                  "description": "The signed-in caller's OWN relation to a completed document. Says nothing about anyone else; an unknown reference is `none`.",
+                  "type": "object",
+                  "required": [
+                    "verificationId",
+                    "relation",
+                    "shareId",
+                    "requestId",
+                    "canRequestAccess"
+                  ],
+                  "properties": {
+                    "verificationId": {
+                      "type": "string"
+                    },
+                    "relation": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "owner"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "admin"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "participant"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "shared-accepted"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "shared-pending"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "shared-rejected"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "request-pending"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "request-rejected"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "none"
+                          ]
+                        }
+                      ]
+                    },
+                    "shareId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "requestId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "canRequestAccess": {
+                      "type": "boolean"
                     }
                   }
                 }

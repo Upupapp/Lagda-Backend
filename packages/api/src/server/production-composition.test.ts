@@ -226,8 +226,9 @@ describe("production composition", () => {
     // 16 -> 17 with `documentFeed`, the in-app notification feed projected
     // from evidence, and 17 -> 18 with `joins` (078), single-use join links
     // and the requests an owner or administrator approves, and 18 -> 19 with
-    // `contactRequests` (086), requests sent to contacts.
-    expect(subWired).toBe(19);
+    // `contactRequests` (086), requests sent to contacts, and 19 -> 20 with
+    // `documentSharing` (087), shares, access requests and Shared with me.
+    expect(subWired).toBe(20);
   });
 });
 

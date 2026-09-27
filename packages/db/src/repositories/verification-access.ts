@@ -12,11 +12,23 @@
 //
 // Every setting is `set_config(..., true)` — transaction-local, gone at
 // commit or rollback, never left on a pooled connection.
+//
+// ── 087: the access list ──────────────────────────────────────────────────
+//
+// A code goes to — and a grant may name — any entry on the completed
+// document's access list: a participant row, an ACCEPTED share or an
+// APPROVED request, looked up in that order inside the resolved workspace. A
+// signed-in grant may also rest on membership: the document's owner (the
+// signing request's sender) or a holder of `document.share.manage`. Every
+// grant is re-validated against its basis on every use, so removing a share
+// or a membership ends access at once.
 
 import { sql, type Kysely, type Transaction } from "kysely";
-import type { WorkspaceId } from "@lagda/contracts";
+import type { WorkspaceId, WorkspaceRole } from "@lagda/contracts";
+import { hasCapability } from "@lagda/core";
 import type {
   VerificationAccessStore, VerificationParticipantTarget, NewVerificationAccessGrant,
+  VerificationAccessBasis,
 } from "@lagda/application";
 import type { Database } from "../schema/index.js";
 import { createNotificationRepository } from "./notifications.js";
@@ -33,6 +45,8 @@ interface ResolvedRequest {
   readonly sealId: string;
   readonly documentTitle: string;
   readonly completedAt: Date;
+  /** 087. The member who sent the signing request. */
+  readonly ownerUserId: string;
 }
 
 /** The completed request a verification ID names, or null — one answer. */
@@ -57,7 +71,7 @@ async function completedRequest(
     .select([
       "verification_records.workspace_id", "verification_records.signing_request_id",
       "verification_records.seal_id", "verification_records.completed_at",
-      "signing_requests.document_title",
+      "signing_requests.document_title", "signing_requests.created_by_user_id",
     ])
     .executeTakeFirst();
   if (!row) return null;
@@ -69,8 +83,11 @@ async function completedRequest(
     sealId: row.seal_id,
     documentTitle: row.document_title,
     completedAt: row.completed_at,
+    ownerUserId: row.created_by_user_id,
   };
 }
+
+const NO_REFERENCES = { requestRecipientId: null, shareId: null, accessRequestId: null, userId: null };
 
 function toTarget(
   request: ResolvedRequest,
@@ -79,6 +96,8 @@ function toTarget(
   return {
     workspaceId: request.workspaceId as WorkspaceId,
     signingRequestId: request.signingRequestId,
+    basis: "participant",
+    ...NO_REFERENCES,
     requestRecipientId: recipient.request_recipient_id,
     recipientName: recipient.name,
     destination: recipient.email,
@@ -87,11 +106,12 @@ function toTarget(
   };
 }
 
-async function participantByEmail(
-  trx: Trx, verificationId: string, normalizedEmail: string,
-): Promise<{ request: ResolvedRequest; target: VerificationParticipantTarget } | null> {
-  const request = await completedRequest(trx, verificationId);
-  if (request === null) return null;
+/** Display only, as `recipientType` always was: what the grant says the reader is. */
+const SHARED_TYPE = "shared";
+
+async function participantTarget(
+  trx: Trx, request: ResolvedRequest, normalizedEmail: string,
+): Promise<VerificationParticipantTarget | null> {
   const recipient = await trx
     .selectFrom("signing_request_recipients")
     .where("workspace_id", "=", request.workspaceId)
@@ -100,8 +120,108 @@ async function participantByEmail(
     .select(["request_recipient_id", "name", "email", "recipient_type"])
     .orderBy("order_index")
     .executeTakeFirst();
-  if (!recipient) return null;
-  return { request, target: toTarget(request, recipient) };
+  return recipient ? toTarget(request, recipient) : null;
+}
+
+async function shareTarget(
+  trx: Trx, request: ResolvedRequest, match: { normalizedEmail: string } | { shareId: string },
+): Promise<VerificationParticipantTarget | null> {
+  let query = trx.selectFrom("document_shares")
+    .where("workspace_id", "=", request.workspaceId)
+    .where("signing_request_id", "=", request.signingRequestId)
+    .where("status", "=", "accepted")
+    .where("recipient_user_id", "is not", null)
+    .select(["share_id", "email", "full_name", "recipient_user_id"]);
+  query = "shareId" in match
+    ? query.where("share_id", "=", match.shareId)
+    : query.where("normalized_email", "=", match.normalizedEmail);
+  const share = await query.orderBy("created_at", "desc").executeTakeFirst();
+  if (!share) return null;
+  return {
+    workspaceId: request.workspaceId as WorkspaceId,
+    signingRequestId: request.signingRequestId,
+    basis: "share",
+    ...NO_REFERENCES,
+    shareId: share.share_id,
+    userId: share.recipient_user_id,
+    recipientName: share.full_name ?? share.email,
+    destination: share.email,
+    recipientType: SHARED_TYPE,
+    documentTitle: request.documentTitle,
+  };
+}
+
+async function accessRequestTarget(
+  trx: Trx, request: ResolvedRequest,
+  match: { normalizedEmail: string } | { userId: string } | { accessRequestId: string },
+): Promise<VerificationParticipantTarget | null> {
+  let query = trx.selectFrom("document_access_requests")
+    .where("workspace_id", "=", request.workspaceId)
+    .where("signing_request_id", "=", request.signingRequestId)
+    .where("status", "=", "approved")
+    .select(["request_id", "requester_user_id", "requester_email", "requester_name"]);
+  if ("accessRequestId" in match) query = query.where("request_id", "=", match.accessRequestId);
+  else if ("userId" in match) query = query.where("requester_user_id", "=", match.userId);
+  else query = query.where("requester_email", "=", match.normalizedEmail);
+  const found = await query.orderBy("created_at", "desc").executeTakeFirst();
+  if (!found) return null;
+  return {
+    workspaceId: request.workspaceId as WorkspaceId,
+    signingRequestId: request.signingRequestId,
+    basis: "access-request",
+    ...NO_REFERENCES,
+    accessRequestId: found.request_id,
+    userId: found.requester_user_id,
+    recipientName: found.requester_name,
+    destination: found.requester_email,
+    recipientType: SHARED_TYPE,
+    documentTitle: request.documentTitle,
+  };
+}
+
+/**
+ * The document's owner or a `document.share.manage` holder, by CURRENT
+ * membership in the resolved workspace. The policy decides, never a role name.
+ */
+async function memberTarget(
+  trx: Trx, request: ResolvedRequest, userId: string,
+  only?: "document-owner" | "workspace-administrator",
+): Promise<VerificationParticipantTarget | null> {
+  const member = await trx.selectFrom("workspace_memberships")
+    .innerJoin("users", "users.user_id", "workspace_memberships.user_id")
+    .where("workspace_memberships.workspace_id", "=", request.workspaceId)
+    .where("workspace_memberships.user_id", "=", userId)
+    .select(["workspace_memberships.role", "users.display_name", "users.email"])
+    .executeTakeFirst();
+  if (!member) return null;
+  let basis: VerificationAccessBasis | null = null;
+  if (request.ownerUserId === userId && only !== "workspace-administrator") basis = "document-owner";
+  else if (only !== "document-owner"
+    && hasCapability(member.role as WorkspaceRole, "document.share.manage")) basis = "workspace-administrator";
+  if (basis === null) return null;
+  return {
+    workspaceId: request.workspaceId as WorkspaceId,
+    signingRequestId: request.signingRequestId,
+    basis,
+    ...NO_REFERENCES,
+    userId,
+    recipientName: member.display_name,
+    destination: member.email,
+    recipientType: basis === "document-owner" ? "owner" : "administrator",
+    documentTitle: request.documentTitle,
+  };
+}
+
+/** Who a typed address is on the access list as — participant first. */
+async function accessListByEmail(
+  trx: Trx, verificationId: string, normalizedEmail: string,
+): Promise<{ request: ResolvedRequest; target: VerificationParticipantTarget } | null> {
+  const request = await completedRequest(trx, verificationId);
+  if (request === null) return null;
+  const target = await participantTarget(trx, request, normalizedEmail)
+    ?? await shareTarget(trx, request, { normalizedEmail })
+    ?? await accessRequestTarget(trx, request, { normalizedEmail });
+  return target === null ? null : { request, target };
 }
 
 async function insertGrant(
@@ -118,6 +238,9 @@ async function insertGrant(
     verification_id: verificationId,
     signing_request_id: target.signingRequestId,
     request_recipient_id: target.requestRecipientId,
+    share_id: target.shareId,
+    access_request_id: target.accessRequestId,
+    access_basis: target.basis,
     token_digest: grant.tokenDigest,
     origin: "challengeId" in origin ? "code" : "member",
     challenge_id: "challengeId" in origin ? origin.challengeId : null,
@@ -137,7 +260,8 @@ async function resolveGrant(
     .where("token_digest", "=", tokenDigest)
     .select([
       "workspace_id", "verification_id", "signing_request_id",
-      "request_recipient_id", "expires_at",
+      "request_recipient_id", "share_id", "access_request_id", "access_basis", "user_id",
+      "expires_at",
     ])
     .executeTakeFirst();
   if (!grant) return null;
@@ -150,14 +274,38 @@ async function resolveGrant(
   if (request.workspaceId !== grant.workspace_id
     || request.signingRequestId !== grant.signing_request_id) return null;
 
-  const recipient = await trx
-    .selectFrom("signing_request_recipients")
-    .where("workspace_id", "=", request.workspaceId)
-    .where("request_recipient_id", "=", grant.request_recipient_id)
-    .select(["request_recipient_id", "name", "email", "recipient_type"])
-    .executeTakeFirst();
-  if (!recipient) return null;
-  return { request, target: toTarget(request, recipient), expiresAt: grant.expires_at.getTime() };
+  // 087. The basis must STILL hold: a removed share, a withdrawn approval or
+  // a lost membership ends the grant here, on its next use.
+  let target: VerificationParticipantTarget | null = null;
+  switch (grant.access_basis as VerificationAccessBasis) {
+    case "participant": {
+      if (grant.request_recipient_id === null) return null;
+      const recipient = await trx
+        .selectFrom("signing_request_recipients")
+        .where("workspace_id", "=", request.workspaceId)
+        .where("request_recipient_id", "=", grant.request_recipient_id)
+        .select(["request_recipient_id", "name", "email", "recipient_type"])
+        .executeTakeFirst();
+      target = recipient ? toTarget(request, recipient) : null;
+      break;
+    }
+    case "share":
+      target = grant.share_id === null ? null
+        : await shareTarget(trx, request, { shareId: grant.share_id });
+      break;
+    case "access-request":
+      target = grant.access_request_id === null ? null
+        : await accessRequestTarget(trx, request, { accessRequestId: grant.access_request_id });
+      break;
+    case "document-owner":
+    case "workspace-administrator":
+      target = grant.user_id === null ? null
+        : await memberTarget(trx, request, grant.user_id, grant.access_basis as VerificationAccessBasis & (
+          "document-owner" | "workspace-administrator"));
+      break;
+  }
+  if (target === null) return null;
+  return { request, target, expiresAt: grant.expires_at.getTime() };
 }
 
 export function createVerificationAccessStore(db: Kysely<Database>): VerificationAccessStore {
@@ -167,7 +315,7 @@ export function createVerificationAccessStore(db: Kysely<Database>): Verificatio
   return {
     issueChallenge(input, notify) {
       return run(async trx => {
-        const found = await participantByEmail(trx, input.verificationId, input.normalizedEmail);
+        const found = await accessListByEmail(trx, input.verificationId, input.normalizedEmail);
         if (found === null) return false;
 
         // Serializes concurrent resends for one address on one document, so
@@ -191,6 +339,8 @@ export function createVerificationAccessStore(db: Kysely<Database>): Verificatio
           verification_id: input.verificationId,
           signing_request_id: found.request.signingRequestId,
           request_recipient_id: found.target.requestRecipientId,
+          share_id: found.target.shareId,
+          access_request_id: found.target.accessRequestId,
           normalized_email: input.normalizedEmail,
           code_digest: input.codeDigest,
           sealed_code: input.sealedCode,
@@ -208,7 +358,7 @@ export function createVerificationAccessStore(db: Kysely<Database>): Verificatio
 
     redeemChallenge(input) {
       return run(async trx => {
-        const found = await participantByEmail(trx, input.verificationId, input.normalizedEmail);
+        const found = await accessListByEmail(trx, input.verificationId, input.normalizedEmail);
         if (found === null) return { outcome: "denied" as const };
 
         const challenge = await trx
@@ -251,11 +401,19 @@ export function createVerificationAccessStore(db: Kysely<Database>): Verificatio
 
     issueMemberGrant(input) {
       return run(async trx => {
-        const found = await participantByEmail(trx, input.verificationId, input.normalizedEmail);
-        if (found === null) return null;
-        await insertGrant(trx, input.verificationId, found.target, input.grant,
+        const request = await completedRequest(trx, input.verificationId);
+        if (request === null) return null;
+        const email = input.normalizedEmail;
+        const target = (email === null ? null : await participantTarget(trx, request, email))
+          ?? await memberTarget(trx, request, input.userId)
+          ?? (email === null ? null : await shareTarget(trx, request, { normalizedEmail: email }))
+          ?? await accessRequestTarget(trx, request, { userId: input.userId });
+        if (target === null) return null;
+        // A share accepted by a different account than the one signed in is
+        // still this address's share: the address is what was shared.
+        await insertGrant(trx, input.verificationId, target, input.grant,
           { userId: input.userId }, input.now);
-        return found.target;
+        return target;
       });
     },
 

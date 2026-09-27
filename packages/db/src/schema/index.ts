@@ -96,7 +96,10 @@ export interface VerificationAccessChallengesTable {
   workspace_id: string;
   verification_id: string;
   signing_request_id: string;
-  request_recipient_id: string;
+  /** 087. Exactly one of these three names who the code is for. */
+  request_recipient_id: string | null;
+  share_id: ColumnType<string | null, string | null | undefined, string | null>;
+  access_request_id: ColumnType<string | null, string | null | undefined, string | null>;
   normalized_email: string;
   code_digest: string;
   sealed_code: string | null;
@@ -114,7 +117,11 @@ export interface VerificationAccessGrantsTable {
   workspace_id: string;
   verification_id: string;
   signing_request_id: string;
-  request_recipient_id: string;
+  request_recipient_id: string | null;
+  /** 087. What the grant rests on; the reference columns follow it. */
+  share_id: ColumnType<string | null, string | null | undefined, string | null>;
+  access_request_id: ColumnType<string | null, string | null | undefined, string | null>;
+  access_basis: ColumnType<string, string | undefined, string>;
   token_digest: string;
   origin: string;
   challenge_id: string | null;
@@ -164,6 +171,52 @@ export interface ContactRequestsTable {
   completed_at: Date | null;
   declined_at: Date | null;
   cancelled_at: Date | null;
+}
+
+/** 087. A completed document shared with an email address. */
+export interface DocumentSharesTable {
+  share_id: string;
+  workspace_id: string;
+  document_id: string;
+  signing_request_id: string;
+  verification_id: string;
+  email: string;
+  normalized_email: string;
+  recipient_email_digest: string;
+  full_name: string | null;
+  status: string;
+  shared_by_user_id: string;
+  recipient_user_id: string | null;
+  replaces_share_id: string | null;
+  removed_by: string | null;
+  removed_by_user_id: string | null;
+  created_at: Timestamptz;
+  updated_at: Timestamptz;
+  responded_at: Date | null;
+  removed_at: Date | null;
+  recipient_deleted_at: Date | null;
+}
+
+/** 087. A signed-in account asking a completed document's owner for access. */
+export interface DocumentAccessRequestsTable {
+  request_id: string;
+  workspace_id: string;
+  document_id: string;
+  signing_request_id: string;
+  verification_id: string;
+  requester_user_id: string;
+  requester_email: string;
+  requester_name: string;
+  note: string | null;
+  status: string;
+  decided_by_user_id: string | null;
+  decided_at: Date | null;
+  removed_by_user_id: string | null;
+  removed_at: Date | null;
+  deleted_by_user_id: string | null;
+  deleted_at: Date | null;
+  created_at: Timestamptz;
+  updated_at: Timestamptz;
 }
 
 /** 082. A workspace's branding; the logo columns move together. */
@@ -1812,6 +1865,8 @@ export interface Database {
   workspace_workflow_templates: WorkspaceWorkflowTemplatesTable;
   workspace_document_upload_requests: WorkspaceDocumentUploadRequestsTable;
   contact_requests: ContactRequestsTable;
+  document_shares: DocumentSharesTable;
+  document_access_requests: DocumentAccessRequestsTable;
   workflow_template_fields: WorkflowTemplateFieldsTable;
   user_signed_documents: UserSignedDocumentsTable;
   user_signing_inbox: UserSigningInboxTable;

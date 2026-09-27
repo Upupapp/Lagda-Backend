@@ -282,12 +282,31 @@ suite("verification access (083, runtime role)", () => {
       grant: { grantId: "vag_member", tokenDigest: HASH("7"), expiresAt: AT + 1_805_000 },
     });
     expect(target?.workspaceId).toBe(WS_B);
+    // 087: an account that is neither on the access list nor a member of the
+    // document's workspace is refused.
     expect(await store.issueMemberGrant({
-      verificationId: verificationOf(WS_B), normalizedEmail: "other@example.com", userId: USER, now: AT,
-      grant: { grantId: "vag_member2", tokenDigest: HASH("8"), expiresAt: AT + 1_800_000 },
+      verificationId: verificationOf(WS_B), normalizedEmail: "other@example.com", userId: "usr_va_stranger",
+      now: AT, grant: { grantId: "vag_member2", tokenDigest: HASH("8"), expiresAt: AT + 1_800_000 },
     })).toBeNull();
     const [row] = await owner.db.selectFrom("verification_access_grants").selectAll().execute();
-    expect(row).toMatchObject({ origin: "member", user_id: USER, challenge_id: null });
+    expect(row).toMatchObject({
+      origin: "member", user_id: USER, challenge_id: null, access_basis: "participant",
+    });
+  });
+
+  it("087: the document's owner is admitted by membership, with no verified address", async () => {
+    const target = await store.issueMemberGrant({
+      verificationId: verificationOf(WS_B), normalizedEmail: null, userId: USER, now: AT + 5000,
+      grant: { grantId: "vag_owner", tokenDigest: HASH("9"), expiresAt: AT + 1_805_000 },
+    });
+    expect(target).toMatchObject({ workspaceId: WS_B, basis: "document-owner", recipientType: "owner" });
+    const [row] = await owner.db.selectFrom("verification_access_grants").selectAll().execute();
+    expect(row).toMatchObject({
+      access_basis: "document-owner", request_recipient_id: null, share_id: null, access_request_id: null,
+    });
+    // The grant opens the details while the membership holds.
+    expect(await store.findDetails({ verificationId: verificationOf(WS_B), tokenDigest: HASH("9"), now: AT + 6000 }))
+      .not.toBeNull();
   });
 
   it("the runtime role sees no rows without a realm, and cannot delete or truncate", async () => {

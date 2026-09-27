@@ -33,7 +33,11 @@ const T0 = Date.parse("2026-09-26T10:00:00.000Z");
 const TARGET: VerificationParticipantTarget = {
   workspaceId: "ws_1" as WorkspaceId,
   signingRequestId: "txn_1",
+  basis: "participant",
   requestRecipientId: "srr_maria",
+  shareId: null,
+  accessRequestId: null,
+  userId: null,
   recipientName: "Maria Santos",
   destination: "Maria@Example.com",
   recipientType: "approver",
@@ -72,7 +76,8 @@ interface Grant { verificationId: string; digest: string; expiresAt: number; ori
 function memoryStore(participants: Record<string, VerificationParticipantTarget>) {
   const challenges: Challenge[] = [];
   const grants: Grant[] = [];
-  const key = (id: string, email: string) => `${id}|${email}`;
+  const key = (id: string, email: string | null) => `${id}|${email ?? "(unverified)"}`;
+  const memberCalls: { normalizedEmail: string | null; userId: string }[] = [];
   const store: VerificationAccessStore = {
     async issueChallenge(input, notify) {
       const target = participants[key(input.verificationId, input.normalizedEmail)];
@@ -107,6 +112,7 @@ function memoryStore(participants: Record<string, VerificationParticipantTarget>
       return Promise.resolve({ outcome: "granted" as const, target });
     },
     issueMemberGrant(input) {
+      memberCalls.push({ normalizedEmail: input.normalizedEmail, userId: input.userId });
       const target = participants[key(input.verificationId, input.normalizedEmail)];
       if (target === undefined) return Promise.resolve(null);
       grants.push({ verificationId: input.verificationId, digest: input.grant.tokenDigest,
@@ -126,7 +132,7 @@ function memoryStore(participants: Record<string, VerificationParticipantTarget>
       return Promise.resolve({ storageReference: "ws/doc/sealed.pdf", mediaType: "application/pdf", sizeBytes: 3 });
     },
   };
-  return { store, challenges, grants };
+  return { store, challenges, grants, memberCalls };
 }
 
 const created: NewNotificationIntent[] = [];
@@ -233,6 +239,27 @@ describe("requesting a code", () => {
     });
     // The code never reaches the frozen model.
     expect(JSON.stringify(intent)).not.toContain("123456");
+  });
+
+  it("087: emails an accepted share's address, addressed to the account it belongs to", async () => {
+    const shared: VerificationParticipantTarget = {
+      ...TARGET, basis: "share", requestRecipientId: null, shareId: "dsh_1",
+      userId: "usr_juan", recipientName: "Juan Cruz", destination: "Juan@Example.com",
+      recipientType: "shared",
+    };
+    memory = memoryStore({ [`${ID}|juan@example.com`]: shared });
+    const answer = await requestVerificationAccessCode(ID, "juan@example.com", deps());
+    // The same answer everybody gets.
+    expect(answer).toEqual({ sent: true, expiresInSeconds: 600 });
+    expect(created).toHaveLength(1);
+    expect(created[0]).toMatchObject({
+      notificationType: "SHARED_DOCUMENT_ACCESS_CODE",
+      template: { key: "verification-access-code", version: 1 },
+      audience: { kind: "USER", userId: "usr_juan" },
+      destination: "Juan@Example.com",
+      secretRef: { kind: "CHALLENGE", challengeId: memory.challenges[0]?.challengeId },
+    });
+    expect(JSON.stringify(created[0])).not.toContain("123456");
   });
 
   it("a resend supersedes the previous live challenge", async () => {
@@ -350,6 +377,9 @@ describe("signed-in member access", () => {
     account = { normalizedEmail: EMAIL, emailVerified: false };
     expect(await grantMemberVerificationAccess("usr_1", ID, deps())).toEqual({ outcome: "denied" });
     expect(memory.grants).toHaveLength(0);
+    // 087. Still asked — by account id only — so membership (owner/admin)
+    // and an approved request can admit it; the address is never offered.
+    expect(memory.memberCalls).toEqual([{ normalizedEmail: null, userId: "usr_1" }]);
   });
 
   it("denies a verified account that is not a participant, or no account", async () => {

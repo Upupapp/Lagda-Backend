@@ -14,6 +14,9 @@ import type { ScopedWorkflowTemplateRepository } from "./workflow-templates.js";
 import type { ScopedUploadRequestRepository } from "./upload-requests.js";
 import type { ScopedContactRequestRepository } from "./contact-requests.js";
 import type {
+  ScopedDocumentSharingRepository, SharingRecipient, SharingRecipientUnitOfWork,
+} from "./document-sharing.js";
+import type {
   ScopedJoinTicketRepository, ScopedJoinRequestRepository,
   JoinTicketDigest, JoinTicketCredentialUnitOfWork,
 } from "./workspace-join.js";
@@ -51,7 +54,7 @@ import type {
 import type { SigningAccessDigest } from "./signing-access.js";
 
 import type {
-  WorkspaceId, WorkspaceMemberId, UserId, WorkspaceRole,
+  WorkspaceId, WorkspaceMemberId, UserId, WorkspaceRole, VerificationId,
 } from "@lagda/contracts";
 import type { NormalizedEmail } from "../../auth/email-identity.js";
 import type {
@@ -514,6 +517,8 @@ export interface WorkspaceUnitOfWork {
   readonly branding: ScopedWorkspaceBrandingRepository;
   /** Read-only counts for the usage summary. */
   readonly usage: ScopedWorkspaceUsageRepository;
+  /** 087. Completed documents' shares and access requests. */
+  readonly documentSharing: ScopedDocumentSharingRepository;
 }
 
 /**
@@ -797,6 +802,28 @@ export interface TransactionManager {
     sessionDigest: RecipientSessionDigest,
     operation: (uow: RecipientSessionUnitOfWork) => Promise<T>,
   ): Promise<T>;
+
+  /**
+   * 087. A transaction in the SHARING RECIPIENT realm: the shares addressed to
+   * this account's verified email and the access requests it made, across
+   * every workspace — read-only until `enterWorkspace` names the resolved
+   * row's own workspace. The recipient comes from the session, never a body.
+   */
+  runForSharingRecipient<T>(
+    recipient: SharingRecipient,
+    operation: (uow: SharingRecipientUnitOfWork) => Promise<T>,
+  ): Promise<T>;
+
+  /**
+   * 087. A transaction that resolves a verification ID to its COMPLETED
+   * document through 075's public-verification realm, then enters THAT
+   * document's workspace. The operation receives null — with no workspace
+   * entered — for an unknown or uncompleted reference.
+   */
+  runForCompletedVerification<T>(
+    verificationId: VerificationId,
+    operation: (uow: WorkspaceUnitOfWork | null) => Promise<T>,
+  ): Promise<T>;
 }
 
 import type {
@@ -860,6 +887,7 @@ export * from "./notifications.js";
 export * from "./notification-preferences.js";
 export * from "./verification-access.js";
 export * from "./contact-requests.js";
+export * from "./document-sharing.js";
 import type { SigningAccountLinkRepository } from "./signing-account-link.js";
 import type { PreparedSignatureRepository } from "./prepared-signatures.js";
 export * from "./signing-account-link.js";

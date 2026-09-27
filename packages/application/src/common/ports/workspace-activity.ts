@@ -10,7 +10,7 @@
 
 import type { UserId, WorkspaceId } from "@lagda/contracts";
 
-export const WORKSPACE_ACTIVITY_CATEGORIES = ["people", "access", "links", "teams", "workspace"] as const;
+export const WORKSPACE_ACTIVITY_CATEGORIES = ["people", "access", "links", "teams", "workspace", "sharing"] as const;
 export type WorkspaceActivityCategory = (typeof WORKSPACE_ACTIVITY_CATEGORIES)[number];
 
 /** Every action, and the one category it files under. Total, so a new action must choose. */
@@ -38,6 +38,21 @@ export const WORKSPACE_ACTIVITY_ACTIONS = Object.freeze({
   "team.member_added": "teams",
   "team.member_updated": "teams",
   "team.member_removed": "teams",
+  // 087. Completed documents shared, and access asked for.
+  "document_share.created": "sharing",
+  "document_share.updated": "sharing",
+  "document_share.removed": "sharing",
+  "document_share.accepted": "sharing",
+  "document_share.rejected": "sharing",
+  "document_share.rejection_withdrawn": "sharing",
+  "document_share.deleted": "sharing",
+  "document_share.access_removed": "sharing",
+  "access_request.submitted": "sharing",
+  "access_request.approved": "sharing",
+  "access_request.rejected": "sharing",
+  "access_request.rejection_withdrawn": "sharing",
+  "access_request.deleted": "sharing",
+  "access_request.access_removed": "sharing",
 } as const satisfies Record<string, WorkspaceActivityCategory>);
 
 export type WorkspaceActivityAction = keyof typeof WORKSPACE_ACTIVITY_ACTIONS;

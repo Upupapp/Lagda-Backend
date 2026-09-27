@@ -51,6 +51,7 @@ import { registerUsageRoutes } from "../workspaces/usage-routes.js";
 import { registerContactRoutes } from "../contacts/contact-routes.js";
 import { registerUploadRequestRoutes } from "../upload-requests/upload-request-routes.js";
 import { registerContactRequestRoutes } from "../contact-requests/contact-request-routes.js";
+import { registerDocumentSharingRoutes } from "../document-sharing/document-sharing-routes.js";
 import { registerWorkflowTemplateRoutes } from "../workflow-templates/workflow-template-routes.js";
 import { registerDocumentRoutes } from "../documents/document-routes.js";
 import { registerFolderRoutes } from "../folders/folder-routes.js";
@@ -576,6 +577,26 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
           ),
           contactRequestDependencies: contactRequests,
           metrics,
+        });
+      }
+
+      // 087. Sharing names people and opens completed documents across
+      // workspaces, so every route needs the session and CSRF of this scope —
+      // including the account's own `/me/shared-documents` and the signed-in
+      // `/verifications/...` routes.
+      if (workspaces.documentSharing !== undefined) {
+        registerDocumentSharingRoutes(scope, {
+          authenticatedUser: (request: FastifyRequest) => Promise.resolve(
+            request.auth.status === "authenticated"
+              ? {
+                  userId: request.auth.actor.userId,
+                  sessionId: request.auth.actor.sessionId,
+                }
+              : null,
+          ),
+          dependencies: workspaces.documentSharing,
+          metrics,
+          ...(limiter === undefined ? {} : { rateLimit: { limiter, metrics } }),
         });
       }
 
