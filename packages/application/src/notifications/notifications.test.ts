@@ -72,6 +72,7 @@ function fakeRepository(): NotificationRepository & {
     findDeliveryById: () => Promise.resolve(null),
     findPendingDeliveries: () => Promise.resolve([]),
     stopPendingDelivery: () => Promise.resolve(true),
+    isCategoryMutedBy: () => Promise.resolve(false),
   };
 }
 

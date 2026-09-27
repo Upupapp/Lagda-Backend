@@ -47,6 +47,7 @@ import {
 } from "../workspaces/invitation-routes.js";
 import { registerMemberRoutes } from "../workspaces/member-routes.js";
 import { registerBrandingRoutes } from "../workspaces/branding-routes.js";
+import { registerUsageRoutes } from "../workspaces/usage-routes.js";
 import { registerContactRoutes } from "../contacts/contact-routes.js";
 import { registerUploadRequestRoutes } from "../upload-requests/upload-request-routes.js";
 import { registerWorkflowTemplateRoutes } from "../workflow-templates/workflow-template-routes.js";
@@ -501,6 +502,16 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
         // 082. Branding shares the member group's dependencies (transactions
         // and clock): any member reads it, owners and administrators change it.
         registerBrandingRoutes(scope, {
+          authenticatedUser: (request: FastifyRequest) => Promise.resolve(
+            request.auth.status === "authenticated"
+              ? { userId: request.auth.actor.userId, sessionId: request.auth.actor.sessionId }
+              : null,
+          ),
+          dependencies: members.administration,
+        });
+        // The usage summary: counts any member may read, on the same
+        // transactions-and-clock dependencies.
+        registerUsageRoutes(scope, {
           authenticatedUser: (request: FastifyRequest) => Promise.resolve(
             request.auth.status === "authenticated"
               ? { userId: request.auth.actor.userId, sessionId: request.auth.actor.sessionId }

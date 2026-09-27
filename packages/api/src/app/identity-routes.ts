@@ -27,7 +27,7 @@
 
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { UserId } from "@lagda/contracts";
-import type { SessionId } from "@lagda/application";
+import type { SessionId, NotificationPreferenceRepository } from "@lagda/application";
 import type {
   RegisterUserDependencies, LoginDependencies,
   VerifyEmailDependencies, ResendVerificationDependencies,
@@ -114,6 +114,8 @@ export interface IdentityDependencies {
   readonly avatars: () => UserAvatarRepository;
   /** The caller's own notification feed. See migration 030. */
   readonly notificationFeed: () => NotificationFeedRepository;
+  /** 084. The account's own notification preferences. */
+  readonly notificationPreferences: () => NotificationPreferenceRepository;
   readonly claimSigningLink: (
     userId: UserId, code: string, currentPassword: string,
   ) => Promise<{
@@ -244,6 +246,7 @@ export function registerIdentityRoutes(
     signatures: deps.signatures,
     avatars: deps.avatars,
     notificationFeed: deps.notificationFeed,
+    notificationPreferences: deps.notificationPreferences,
     claimSigningLink: deps.claimSigningLink,
     listDocumentsToSign: deps.listDocumentsToSign,
     listSignedDocuments: deps.listSignedDocuments,

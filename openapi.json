@@ -4557,6 +4557,135 @@
         }
       }
     },
+    "/workspaces/{workspaceId}/usage": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "WorkspaceUsage",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "period",
+                    "documents",
+                    "signingRequests",
+                    "members",
+                    "templates",
+                    "contacts",
+                    "verificationsThisMonth",
+                    "storageBytes"
+                  ],
+                  "properties": {
+                    "period": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "start",
+                        "end"
+                      ],
+                      "properties": {
+                        "start": {
+                          "type": "integer"
+                        },
+                        "end": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "documents": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "total",
+                        "uploadedThisMonth"
+                      ],
+                      "properties": {
+                        "total": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "uploadedThisMonth": {
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "signingRequests": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "sentThisMonth",
+                        "sentTotal",
+                        "inProgress",
+                        "completedThisMonth",
+                        "completedTotal"
+                      ],
+                      "properties": {
+                        "sentThisMonth": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "sentTotal": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "inProgress": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "completedThisMonth": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "completedTotal": {
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "members": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "templates": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "contacts": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "verificationsThisMonth": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "storageBytes": {
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/workspaces/{workspaceId}/contacts": {
       "get": {
         "parameters": [
@@ -36920,6 +37049,139 @@
                           }
                         }
                       }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/notification-preferences": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "NotificationPreferences",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "signerActivity",
+                    "requestCompleted",
+                    "actionReminders",
+                    "workspaceRequests",
+                    "invitations",
+                    "updatedAt"
+                  ],
+                  "properties": {
+                    "signerActivity": {
+                      "type": "boolean"
+                    },
+                    "requestCompleted": {
+                      "type": "boolean"
+                    },
+                    "actionReminders": {
+                      "type": "boolean"
+                    },
+                    "workspaceRequests": {
+                      "type": "boolean"
+                    },
+                    "invitations": {
+                      "type": "boolean"
+                    },
+                    "updatedAt": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "UpdateNotificationPreferencesRequest",
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "signerActivity": {
+                    "type": "boolean"
+                  },
+                  "requestCompleted": {
+                    "type": "boolean"
+                  },
+                  "actionReminders": {
+                    "type": "boolean"
+                  },
+                  "workspaceRequests": {
+                    "type": "boolean"
+                  },
+                  "invitations": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "NotificationPreferences",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "signerActivity",
+                    "requestCompleted",
+                    "actionReminders",
+                    "workspaceRequests",
+                    "invitations",
+                    "updatedAt"
+                  ],
+                  "properties": {
+                    "signerActivity": {
+                      "type": "boolean"
+                    },
+                    "requestCompleted": {
+                      "type": "boolean"
+                    },
+                    "actionReminders": {
+                      "type": "boolean"
+                    },
+                    "workspaceRequests": {
+                      "type": "boolean"
+                    },
+                    "invitations": {
+                      "type": "boolean"
+                    },
+                    "updatedAt": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   }
                 }

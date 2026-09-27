@@ -336,6 +336,8 @@ export async function truncateAll(database: LagdaDatabase): Promise<void> {
   await database.db.deleteFrom("password_reset_challenges").execute();
   await database.db.deleteFrom("email_verification_challenges").execute();
   await database.db.deleteFrom("user_sessions").execute();
+  // 084. No runtime DELETE and a RESTRICT foreign key; the harness owns it.
+  await database.db.deleteFrom("user_notification_preferences").execute();
   await database.db.deleteFrom("users").execute();
 
   // ── Operational, no foreign keys ──────────────────────────────────────────

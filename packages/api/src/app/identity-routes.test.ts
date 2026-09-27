@@ -6,6 +6,7 @@ import { registerIdentityRoutes, IDENTITY_PATHS } from "./identity-routes.js";
 import { loadApiConfig } from "../config/index.js";
 import type { UserSignatureRepository } from "@lagda/db";
 import { createSignatureImageValidator } from "../security/signature-image.js";
+import { fakeNotificationPreferences } from "@lagda/application/test-support";
 
 /** Never exercised here: these tests assert wiring, not signature behaviour. */
 const stubSignatureRepository = (): UserSignatureRepository => ({
@@ -43,6 +44,7 @@ function app() {
       };
     },
     notificationFeed: () => ({ listForUser: () => Promise.resolve([]) }),
+    notificationPreferences: () => fakeNotificationPreferences(),
     claimSigningLink: () => Promise.reject(new Error("not used")),
     listDocumentsToSign: () => Promise.resolve([]),
     listSignedDocuments: () => Promise.resolve([]),

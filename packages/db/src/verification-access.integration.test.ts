@@ -374,9 +374,15 @@ suite("verification access (083, runtime role)", () => {
 
   it("goes down when empty and back up", async () => {
     await truncateAll(owner);
-    const down = await migrateDown(owner.db);
-    expect(down.error).toBeUndefined();
-    expect(down.applied).toEqual(["083_verification_access_codes"]);
+    // One step at a time until 083 itself is reverted: later migrations sit
+    // above it, and each must come off first.
+    const reverted: string[] = [];
+    while (!reverted.includes("083_verification_access_codes")) {
+      const down = await migrateDown(owner.db);
+      expect(down.error).toBeUndefined();
+      expect(down.applied).toHaveLength(1);
+      reverted.push(...down.applied);
+    }
     const gone = await sql<{ n: string }>`
       select count(*)::text as n from pg_tables
        where tablename in ('verification_access_challenges', 'verification_access_grants')

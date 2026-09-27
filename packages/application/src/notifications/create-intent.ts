@@ -29,6 +29,7 @@ import type {
 import type { Clock } from "../common/ports/index.js";
 import type { NotificationTemplateRegistry } from "./template-registry.js";
 import { policyFor } from "./policy.js";
+import { notificationPreferenceCategoryOf } from "./preferences.js";
 
 /** The default and only locale. Frozen onto every intent (S144). */
 const DEFAULT_LOCALE: NotificationLocale = "en";
@@ -159,6 +160,40 @@ export function createNotificationIntent(
       destination: input.destination,
     };
 
-    return deps.notifications.createIfAbsent(newIntent, transaction);
+    const created = await deps.notifications.createIfAbsent(newIntent, transaction);
+
+    // ── 084: the account's own preferences ────────────────────────────────
+    //
+    // The intent is still written — the fact happened, and the in-app feed
+    // may show it — but an OPTIONAL email to an account that switched its
+    // category off is stopped before any worker can claim it, recorded as
+    // SUPPRESSED / RECIPIENT_PREFERENCE by the same `stopPendingDelivery` the
+    // other suppressions use. Only a freshly CREATED pair: a replay that finds
+    // an existing intent must not re-decide a delivery already in flight.
+    //
+    // Types with no category (security and transactional mail) never reach
+    // the read, so no stored preference can suppress one.
+    const category = notificationPreferenceCategoryOf(input.notificationType);
+    if (
+      created.outcome === "CREATED"
+      && category !== null
+      && input.audience.kind === "USER"
+      && created.delivery.state === "PENDING"
+      && await deps.notifications.isCategoryMutedBy(
+        input.audience.userId, category, transaction)
+    ) {
+      const stopped = await deps.notifications.stopPendingDelivery(
+        created.delivery.notificationDeliveryId, "SUPPRESSED",
+        "RECIPIENT_PREFERENCE", transaction);
+      if (stopped) {
+        return {
+          ...created,
+          delivery: {
+            ...created.delivery, state: "SUPPRESSED", failureCode: "RECIPIENT_PREFERENCE",
+          },
+        };
+      }
+    }
+    return created;
   };
 }

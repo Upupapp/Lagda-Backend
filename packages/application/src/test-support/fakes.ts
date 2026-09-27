@@ -39,6 +39,13 @@ import { SIGNING_REQUEST_STATES, type SigningRequestState } from "@lagda/contrac
 import type { WorkspaceRole } from "@lagda/core";
 import type { UploadRecord, ScopedUploadRepository } from "../common/ports/upload.js";
 import type {
+  NotificationPreferenceCategory, NotificationPreferenceRepository,
+  NotificationPreferenceRecord, NotificationPreferencePatch,
+} from "../common/ports/notification-preferences.js";
+import type {
+  ScopedWorkspaceUsageRepository, WorkspaceUsageCounts, WorkspaceUsageQuery,
+} from "../common/ports/workspace-usage.js";
+import type {
   Clock, TransactionManager, WorkspaceUnitOfWork, GlobalUnitOfWork, UserUnitOfWork,
   NotificationDeliveryUnitOfWork,
   ScopedWorkspaceRepository, ScopedMembershipRepository,
@@ -3245,6 +3252,7 @@ export class FakeTransactionManager implements TransactionManager {
         joinRequests: scopedJoinRequests(this.store, workspaceId),
         activity: scopedActivity(this.store, workspaceId),
         branding: scopedBranding(this.store, workspaceId),
+        usage: scopedUsage(this.store, workspaceId),
         workflowTemplateFields: scopedWorkflowTemplateFields(this.store, workspaceId),
         notificationStates: scopedNotificationStates(this.store, workspaceId),
         organizationUnits: scopedOrganizationUnits(this.store, workspaceId),
@@ -3354,6 +3362,7 @@ export class FakeTransactionManager implements TransactionManager {
             joinRequests: scopedJoinRequests(store, workspaceId),
             activity: scopedActivity(store, workspaceId),
             branding: scopedBranding(store, workspaceId),
+            usage: scopedUsage(store, workspaceId),
             workflowTemplateFields: scopedWorkflowTemplateFields(store, workspaceId),
             notificationStates: scopedNotificationStates(store, workspaceId),
             actorProfiles: { displayNameOf: () => Promise.resolve(null) },
@@ -3875,7 +3884,9 @@ function scopedUploads(
  */
 export function fakeNotifications(
   store: { notificationIntents: Map<string, NotificationIntentRecord>;
-           notificationDeliveries: Map<string, NotificationDeliveryRecord>; },
+           notificationDeliveries: Map<string, NotificationDeliveryRecord>;
+           /** 084. Per account, the categories it switched off. */
+           mutedNotificationCategories?: Map<string, ReadonlySet<NotificationPreferenceCategory>>; },
 ): NotificationRepository {
   const logicalKey = (input: NewNotificationIntent): string =>
     `${input.source.kind}|${input.source.sourceId}|${input.notificationType}`;
@@ -3942,6 +3953,10 @@ export function fakeNotifications(
       store.notificationDeliveries.set(id, { ...delivery, state, failureCode });
       return Promise.resolve(true);
     },
+
+    // 084. Nothing is muted unless a suite says so — absence means "on".
+    isCategoryMutedBy: (userId, category) => Promise.resolve(
+      store.mutedNotificationCategories?.get(userId as string)?.has(category) ?? false),
   };
 }
 
@@ -3975,6 +3990,65 @@ export function fakeNotificationTransport(): NotificationTransportRepository {
   };
 }
 
+
+// ── 084: notification preferences ────────────────────────────────────────────
+
+/**
+ * An account-keyed preference store with the real repository's semantics: no
+ * row until the first change, and a change sets ONLY the named switches.
+ */
+export function fakeNotificationPreferences(): NotificationPreferenceRepository & {
+  readonly rows: Map<string, NotificationPreferenceRecord>;
+  readonly writes: { userId: string; patch: NotificationPreferencePatch }[];
+} {
+  const rows = new Map<string, NotificationPreferenceRecord>();
+  const writes: { userId: string; patch: NotificationPreferencePatch }[] = [];
+  const allOn = {
+    signerActivity: true, requestCompleted: true, actionReminders: true,
+    workspaceRequests: true, invitations: true,
+  };
+  return {
+    rows,
+    writes,
+    find: userId => Promise.resolve(rows.get(userId) ?? null),
+    apply: (userId, patch, now) => {
+      writes.push({ userId, patch });
+      const next = { ...(rows.get(userId) ?? allOn), ...patch, updatedAt: now };
+      rows.set(userId, next);
+      return Promise.resolve(next);
+    },
+  };
+}
+
+// ── Usage summary ────────────────────────────────────────────────────────────
+
+/**
+ * Canned counts per workspace, and the queries that asked for them.
+ *
+ * The fake does not re-implement the SQL: the counting is proved against real
+ * PostgreSQL (`workspace-usage.integration.test.ts`). What a unit test needs is
+ * that the use case asks the RIGHT workspace for the RIGHT period as the
+ * RIGHT caller, and passes the answer through unchanged.
+ */
+export const fakeUsage = {
+  counts: new Map<string, WorkspaceUsageCounts>(),
+  queries: [] as { workspaceId: WorkspaceId; query: WorkspaceUsageQuery }[],
+};
+
+const ZERO_USAGE: WorkspaceUsageCounts = {
+  documents: { total: 0, uploadedThisMonth: 0 },
+  signingRequests: { sentThisMonth: 0, sentTotal: 0, inProgress: 0, completedThisMonth: 0, completedTotal: 0 },
+  members: 0, templates: 0, contacts: 0, storageBytes: 0,
+};
+
+function scopedUsage(_store: InMemoryStore, scope: WorkspaceId): ScopedWorkspaceUsageRepository {
+  return {
+    summarize: query => {
+      fakeUsage.queries.push({ workspaceId: scope, query });
+      return Promise.resolve(fakeUsage.counts.get(scope) ?? ZERO_USAGE);
+    },
+  };
+}
 
 // ── 082: branding ────────────────────────────────────────────────────────────
 
