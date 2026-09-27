@@ -21,7 +21,7 @@ import type {
   InvitationDependencies, AcceptInvitationDependencies,
   MemberAdministrationDependencies, WorkspaceAccessDependencies,
   ContactDependencies,
-  UploadRequestDependencies, DocumentDependencies, DocumentContentDependencies, FolderDependencies,
+  UploadRequestDependencies, ContactRequestDependencies, DocumentDependencies, DocumentContentDependencies, FolderDependencies,
   PreparationDependencies,
   RecipientDependencies, SigningRequestDependencies,
   SendSigningRequestDependencies, SigningAccessDependencies, FinalCopyDownloadDependencies,
@@ -241,6 +241,11 @@ export interface WorkspaceDependencies {
    * is to notify somebody.
    */
   readonly uploadRequests?: () => UploadRequestDependencies;
+  /**
+   * 086. Requests to contacts (members in-app, others by email), and the
+   * account's own "asked of me" / "sent by me" lists. Absent means no route.
+   */
+  readonly contactRequests?: () => ContactRequestDependencies;
   /**
    * Reusable workflow templates (migration 058). Absent means the routes do
    * not exist, the same convention every other optional surface here uses.

@@ -123,6 +123,9 @@ import type {
   ScopedUploadRequestRepository, UploadRequestRecord,
 } from "../common/ports/upload-requests.js";
 import type {
+  ScopedContactRequestRepository, ContactRequestRecord,
+} from "../common/ports/contact-requests.js";
+import type {
   ScopedWorkflowTemplateFieldRepository, WorkflowTemplateFieldRecord,
 } from "../common/ports/workflow-template-fields.js";
 import type {
@@ -445,6 +448,7 @@ interface StoreSnapshot {
   readonly contacts: ContactRecord[];
   readonly workflowTemplates: WorkflowTemplateRecord[];
   readonly uploadRequests: UploadRequestRecord[];
+  readonly contactRequests: ContactRequestRecord[];
   readonly joinTickets: JoinTicketRecord[];
   readonly joinRequests: JoinRequestRecord[];
   readonly activity: WorkspaceActivityRecord[];
@@ -500,6 +504,8 @@ export class InMemoryStore {
   contacts: ContactRecord[] = [];
   workflowTemplates: WorkflowTemplateRecord[] = [];
   uploadRequests: UploadRequestRecord[] = [];
+  /** 086. */
+  contactRequests: ContactRequestRecord[] = [];
   /** 078. */
   joinTickets: JoinTicketRecord[] = [];
   joinRequests: JoinRequestRecord[] = [];
@@ -561,6 +567,7 @@ export class InMemoryStore {
     return {
       workflowTemplates: [...this.workflowTemplates],
       uploadRequests: [...this.uploadRequests],
+      contactRequests: [...this.contactRequests],
       joinTickets: [...this.joinTickets],
       joinRequests: [...this.joinRequests],
       activity: [...this.activity],
@@ -631,6 +638,7 @@ export class InMemoryStore {
     // `workflowTemplateFields` restore just below.
     this.workflowTemplates = [...snapshot.workflowTemplates];
     this.uploadRequests = [...snapshot.uploadRequests];
+    this.contactRequests = [...snapshot.contactRequests];
     this.joinTickets = [...snapshot.joinTickets];
     this.joinRequests = [...snapshot.joinRequests];
     this.activity = [...snapshot.activity];
@@ -1167,6 +1175,60 @@ function scopedUploadRequests(
       };
       return Promise.resolve(true);
     },
+  };
+}
+
+/** 086. Contact requests: scoped, newest first, transitions only from pending. */
+function scopedContactRequests(
+  store: InMemoryStore, scope: WorkspaceId,
+): ScopedContactRequestRepository {
+  const inScope = () => store.contactRequests.filter(r => r.workspaceId === scope);
+  const transition = (
+    requestId: string, patch: Partial<ContactRequestRecord>,
+  ): Promise<boolean> => {
+    const at = store.contactRequests.findIndex(
+      r => r.requestId === requestId && r.workspaceId === scope);
+    const current = at < 0 ? null : store.contactRequests[at]!;
+    if (current === null || current.status !== "pending") return Promise.resolve(false);
+    store.contactRequests[at] = { ...current, ...patch };
+    return Promise.resolve(true);
+  };
+  return {
+    insert: input => {
+      if (input.workspaceId !== scope) {
+        throw new FakeScopeMismatchError("ContactRequest", scope, input.workspaceId);
+      }
+      store.contactRequests.push({
+        ...input,
+        status: "pending",
+        responseDocumentId: null,
+        declineReason: null,
+        completedByUserId: null,
+        updatedAt: input.createdAt,
+        completedAt: null,
+        declinedAt: null,
+        cancelledAt: null,
+      });
+      return Promise.resolve();
+    },
+    find: requestId =>
+      Promise.resolve(inScope().find(r => r.requestId === requestId) ?? null),
+    list: filter => Promise.resolve(inScope()
+      .filter(r => filter.recipientUserId === undefined || r.recipientUserId === filter.recipientUserId)
+      .filter(r => filter.requestedByUserId === undefined || r.requestedByUserId === filter.requestedByUserId)
+      .filter(r => filter.contactId === undefined || r.contactId === filter.contactId)
+      .filter(r => filter.status === undefined || r.status === filter.status)
+      .sort((a, b) => b.createdAt - a.createdAt || a.requestId.localeCompare(b.requestId))),
+    markCompleted: (requestId, input) => transition(requestId, {
+      status: "completed", completedByUserId: input.byUserId,
+      responseDocumentId: input.responseDocumentId, completedAt: input.at, updatedAt: input.at,
+    }),
+    markDeclined: (requestId, input) => transition(requestId, {
+      status: "declined", declineReason: input.reason, declinedAt: input.at, updatedAt: input.at,
+    }),
+    markCancelled: (requestId, input) => transition(requestId, {
+      status: "cancelled", cancelledAt: input.at, updatedAt: input.at,
+    }),
   };
 }
 
@@ -3248,6 +3310,7 @@ export class FakeTransactionManager implements TransactionManager {
         accountLinks: signingAccountLinks(),
         workflowTemplates: scopedWorkflowTemplates(this.store, workspaceId),
         uploadRequests: scopedUploadRequests(this.store, workspaceId),
+        contactRequests: scopedContactRequests(this.store, workspaceId),
         joinTickets: scopedJoinTickets(this.store, workspaceId),
         joinRequests: scopedJoinRequests(this.store, workspaceId),
         activity: scopedActivity(this.store, workspaceId),
@@ -3358,6 +3421,7 @@ export class FakeTransactionManager implements TransactionManager {
             workspaceId,
             workflowTemplates: scopedWorkflowTemplates(store, workspaceId),
             uploadRequests: scopedUploadRequests(store, workspaceId),
+            contactRequests: scopedContactRequests(store, workspaceId),
             joinTickets: scopedJoinTickets(store, workspaceId),
             joinRequests: scopedJoinRequests(store, workspaceId),
             activity: scopedActivity(store, workspaceId),

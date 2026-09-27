@@ -176,6 +176,18 @@ export const ContactSchema = Type.Object(
     ownerUserId: Type.Union([Type.String(), Type.Null()]),
     note: Type.Union([Type.String({ maxLength: CONTACT_NOTE_MAX_LENGTH }), Type.Null()]),
     tagIds: Type.Array(ContactTagIdSchema),
+    /**
+     * 086. The current workspace member whose account address matches this
+     * contact's, computed at read time; null for anyone else. Not an identity
+     * link: nothing is stored, and a member who leaves stops matching.
+     */
+    workspaceMember: Type.Union([
+      Type.Object({
+        userId: Type.String(),
+        displayName: Type.String(),
+      }, { additionalProperties: false }),
+      Type.Null(),
+    ]),
   },
   {
     title: "Contact",

@@ -50,7 +50,7 @@ import { createArgon2PasswordHasher } from "../security/password-hasher.js";
 import { buildIdentity } from "./identity-composition.js";
 import {
   createWorkspaceIdGenerator, createWorkspaceMemberIdGenerator, createJoinIdGenerator,
-  createContactIdGenerator, createUploadRequestIdGenerator, createWorkflowTemplateIdGenerator,
+  createContactIdGenerator, createUploadRequestIdGenerator, createContactRequestIdGenerator, createWorkflowTemplateIdGenerator,
   createDocumentIdGenerator, createFolderIdGenerator,
   createPreparationIdGenerator, createRecipientIdGenerator,
   createSigningRequestIdGenerator, createEvidenceEventIdGenerator,
@@ -176,6 +176,7 @@ export async function createProductionDependencies(
   const memberIds = createWorkspaceMemberIdGenerator();
   const contactIds = createContactIdGenerator();
   const uploadRequestIds = createUploadRequestIdGenerator();
+  const contactRequestIds = createContactRequestIdGenerator();
   const workflowTemplateIds = createWorkflowTemplateIdGenerator();
   // ONE object store for every surface that touches bytes: upload writes the
   // artifact, and the ceremony serves the same one back to the recipient.
@@ -232,6 +233,15 @@ export async function createProductionDependencies(
       // it carries the template registry and the notification id generators.
       uploadRequests: () => ({
         transactions, clock, ids: uploadRequestIds,
+        templates: createTemplateRegistry(ALL_TEMPLATES),
+        notificationIds: {
+          ...createNotificationIntentIdGenerator(),
+          ...createNotificationDeliveryIdGenerator(),
+        },
+      }),
+      // 086. The same needs as upload requests: a request writes its notice.
+      contactRequests: () => ({
+        transactions, clock, ids: contactRequestIds,
         templates: createTemplateRegistry(ALL_TEMPLATES),
         notificationIds: {
           ...createNotificationIntentIdGenerator(),

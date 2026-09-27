@@ -65,6 +65,8 @@ export * from "./completion/database-failure.js";
 export * from "./completion/retry-sweep.js";
 export * from "./verification/public-verification.js";
 export * from "./verification/verification-access.js";
+export * from "./contact-requests/contact-requests.js";
+export * from "./contact-requests/contact-membership.js";
 // BACKEND-43. The ONE way to construct an evidence event: producers call a
 // factory rather than building a literal, so type, version, source and actor
 // cannot drift apart.

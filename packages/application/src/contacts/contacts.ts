@@ -40,6 +40,7 @@ import {
   ApplicationValidationError, ResourceNotFoundError,
 } from "../common/errors/index.js";
 import { assertCapability, type WorkspaceAccessContext, privilegesOf } from "../workspaces/workspace-access.js";
+import { resolveContactMembers, type ContactWorkspaceMember } from "../contact-requests/contact-membership.js";
 
 // ── Projections ──────────────────────────────────────────────────────────────
 
@@ -70,6 +71,12 @@ export interface ContactSummary {
   readonly ownerUserId: string | null;
   readonly note: string | null;
   readonly tagIds: readonly ContactTagId[];
+  /**
+   * 086. The CURRENT workspace member whose account address matches this
+   * contact's, or null. Computed at read time by a separate read-only module
+   * (`contact-membership.ts`) — never stored, and never an identity link.
+   */
+  readonly workspaceMember: ContactWorkspaceMember | null;
 }
 
 /**
@@ -86,7 +93,10 @@ export interface DuplicateWarning {
   readonly organization: string | null;
 }
 
-function summarize(record: ContactRecord): ContactSummary {
+function summarize(
+  record: ContactRecord,
+  members: ReadonlyMap<string, ContactWorkspaceMember | null>,
+): ContactSummary {
   return {
     contactId: record.contactId,
     name: record.name,
@@ -105,7 +115,16 @@ function summarize(record: ContactRecord): ContactSummary {
     ownerUserId: record.ownerUserId ?? null,
     note: record.note ?? null,
     tagIds: record.tagIds ?? [],
+    workspaceMember: members.get(record.contactId) ?? null,
   };
+}
+
+/** Summaries with 086's read-time `workspaceMember`, one directory read per call. */
+async function summarizeAll(
+  uow: WorkspaceUnitOfWork, records: readonly ContactRecord[],
+): Promise<ContactSummary[]> {
+  const members = await resolveContactMembers(uow, records);
+  return records.map(record => summarize(record, members));
 }
 
 /**
@@ -348,7 +367,8 @@ export async function createContact(
     // condition; it is a broken invariant, and the transaction should die.
     if (created === null) throw new ResourceNotFoundError("Contact");
 
-    return { contact: summarize(created), duplicates: duplicates.map(warn) };
+    const [contact] = await summarizeAll(uow, [created]);
+    return { contact: contact!, duplicates: duplicates.map(warn) };
   });
 }
 
@@ -369,7 +389,8 @@ export async function getContact(
     if (contact === null || !visibleTo(contact, actor.userId)) {
       throw new ResourceNotFoundError("Contact");
     }
-    return summarize(contact);
+    const [summary] = await summarizeAll(uow, [contact]);
+    return summary!;
   });
 }
 
@@ -438,7 +459,7 @@ export async function listContacts(
     });
 
     return {
-      items: result.items.map(summarize),
+      items: await summarizeAll(uow, result.items),
       total: result.total,
       page,
       perPage,
@@ -525,7 +546,8 @@ export async function updateContact(
     const updated = await uow.contacts.findById(contactId);
     if (updated === null) throw new ResourceNotFoundError("Contact");
 
-    return { contact: summarize(updated), duplicates: duplicates.map(warn) };
+    const [contact] = await summarizeAll(uow, [updated]);
+    return { contact: contact!, duplicates: duplicates.map(warn) };
   });
 }
 
@@ -581,7 +603,8 @@ export async function archiveContact(
 
     const archived = await uow.contacts.findById(contactId);
     if (archived === null) throw new ResourceNotFoundError("Contact");
-    return summarize(archived);
+    const [summary] = await summarizeAll(uow, [archived]);
+    return summary!;
   });
 }
 
@@ -607,7 +630,8 @@ export async function restoreContact(
 
     const restored = await uow.contacts.findById(contactId);
     if (restored === null) throw new ResourceNotFoundError("Contact");
-    return summarize(restored);
+    const [summary] = await summarizeAll(uow, [restored]);
+    return summary!;
   });
 }
 

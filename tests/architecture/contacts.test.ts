@@ -104,6 +104,31 @@ describe("a contact can never become an identity", () => {
   });
 });
 
+// ── 1b. 086: "is this contact a member" is a READ, never a link ──────────────
+
+describe("the contact-to-member resolution (086)", () => {
+  const RESOLVER = path.join(
+    PACKAGES, "application", "src", "contact-requests", "contact-membership.ts");
+
+  it("only reads: no write, no invitation, no account creation", () => {
+    const source = code(RESOLVER);
+    for (const forbidden of [
+      ".insert(", ".update", "remove", "uow.invitations", "uow.users", "uow.contacts",
+    ]) {
+      expect(source, `contact-membership must not use ${forbidden}`).not.toContain(forbidden);
+    }
+    // One directory read, and nothing else from the unit of work.
+    expect(source).toContain("uow.memberships.listWithAccounts()");
+  });
+
+  it("stores nothing: the contacts table still has no link to a user", () => {
+    // Guarded above for 015; asserted again here because 086 is the change
+    // most likely to be "tidied" into a stored column.
+    expect(code(MIGRATION)).not.toContain('"user_id"');
+    expect(code(SCHEMA)).not.toMatch(/interface ContactsTable[\s\S]{0,1200}?member_user_id/);
+  });
+});
+
 // ── 2. Nothing deletes a contact ─────────────────────────────────────────────
 
 describe("contacts are archived, never deleted", () => {

@@ -204,6 +204,7 @@ interface ContactLike {
   readonly ownerUserId: string | null;
   readonly note: string | null;
   readonly tagIds: readonly string[];
+  readonly workspaceMember: { readonly userId: string; readonly displayName: string } | null;
 }
 
 const present = (contact: ContactLike) => ({
@@ -221,6 +222,7 @@ const present = (contact: ContactLike) => ({
   ownerUserId: contact.ownerUserId,
   note: contact.note,
   tagIds: contact.tagIds,
+  workspaceMember: contact.workspaceMember,
 });
 
 export function registerContactRoutes(

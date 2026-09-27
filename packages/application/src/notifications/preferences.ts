@@ -62,6 +62,12 @@ export const NOTIFICATION_PREFERENCE_CATEGORY_BY_TYPE: Readonly<
   WORKSPACE_JOIN_DECIDED: null,
   // Security: the emailed code unlocking a verified document.
   VERIFICATION_ACCESS_CODE: null,
+  // 086. The three member notices are in-app only, so there is no email for a
+  // preference to stop; the external one goes to somebody with no account.
+  CONTACT_REQUEST_RECEIVED: null,
+  CONTACT_REQUEST_EMAILED: null,
+  CONTACT_REQUEST_COMPLETED: null,
+  CONTACT_REQUEST_DECLINED: null,
 };
 
 /** The category governing a type, or null when it is always sent. */

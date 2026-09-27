@@ -46,6 +46,7 @@ import {
   DocumentUploadRequestedModelV1, FinalCopyAvailableModelV1,
   WorkspaceJoinLinkModelV1, WorkspaceJoinRequestedModelV1, WorkspaceJoinDecidedModelV1,
   VerificationAccessCodeModelV1,
+  ContactRequestReceivedModelV1, ContactRequestEmailedModelV1, ContactRequestAnsweredModelV1,
 } from "./template-registry.js";
 import { escapeHtml } from "./rendering.js";
 import { LAGDA_LOGO_PNG_BASE64 } from "./assets/lagda-logo.js";
@@ -641,6 +642,138 @@ export const verificationAccessCodeV1 = defineTemplate({
   },
 });
 
+// ── 086. Contact requests ───────────────────────────────────────────────────
+
+const CONTACT_REQUEST_ASK: Readonly<Record<"signed-document" | "upload" | "preparation", string>> = {
+  "signed-document": "provide a signed copy of a document",
+  upload: "upload a document",
+  preparation: "prepare a document for signing",
+};
+
+/** Where a member finds what was asked of them: Documents, "Others". */
+const CONTACT_REQUESTS_PATH = "/app/documents";
+
+/**
+ * 086. In-app only — the policy stops its email at creation. Registered and
+ * renderable anyway, because every type has a template and a preview of what
+ * the feed says is worth having.
+ */
+export const contactRequestReceivedV1 = defineTemplate({
+  key: "contact-request-received",
+  version: 1,
+  locale: "en",
+  schema: ContactRequestReceivedModelV1,
+  secretBearing: false,
+  render: (input, context) => {
+    const ask = CONTACT_REQUEST_ASK[input.requestKind];
+    const url = context.buildPath(CONTACT_REQUESTS_PATH);
+    const about = input.documentTitle === undefined ? "" : ` ("${input.documentTitle}")`;
+    return {
+      subject: `${input.requesterDisplayName} asked you to ${ask}`,
+      textBody: [
+        `Hello ${input.recipientName},`,
+        ``,
+        `${input.requesterDisplayName} (${input.workspaceName}) asked you to ${ask}${about}: "${input.requestTitle}".`,
+        ...(input.message === undefined ? [] : [``, `Their message: ${input.message}`]),
+        ...(input.dueAt === undefined ? [] : [``, `Due: ${input.dueAt}`]),
+        ``,
+        url,
+      ].join("\n"),
+      htmlBody: htmlDocument(
+        `A request from ${escapeHtml(input.requesterDisplayName)}`,
+        p(`Hello ${escapeHtml(input.recipientName)},`) +
+          p(`${escapeHtml(input.requesterDisplayName)} (${escapeHtml(input.workspaceName)}) asked you to ` +
+            `${escapeHtml(ask)}${escapeHtml(about)}: "${escapeHtml(input.requestTitle)}".`) +
+          (input.message === undefined ? "" : p(`<em>${escapeHtml(input.message)}</em>`)) +
+          linkHtml(url, "Open the request"),
+      ),
+      attachments: [LOGO_ATTACHMENT],
+    };
+  },
+});
+
+/**
+ * 086. To an external contact. No link and no credential: there is nothing an
+ * external contact can open in LAGDA, so the message says who asked and how
+ * to reach them.
+ */
+export const contactRequestEmailedV1 = defineTemplate({
+  key: "contact-request-emailed",
+  version: 1,
+  locale: "en",
+  schema: ContactRequestEmailedModelV1,
+  secretBearing: false,
+  render: input => {
+    const ask = CONTACT_REQUEST_ASK[input.requestKind];
+    const about = input.documentTitle === undefined ? "" : ` ("${input.documentTitle}")`;
+    const reply = input.requesterEmail === undefined
+      ? `Reply to ${input.requesterDisplayName} directly to send it.`
+      : `Reply to ${input.requesterDisplayName} at ${input.requesterEmail} to send it.`;
+    return {
+      subject: `${input.requesterDisplayName} asked you to ${ask}`,
+      textBody: [
+        `Hello ${input.recipientName},`,
+        ``,
+        `${input.requesterDisplayName} (${input.workspaceName}) asked you to ${ask}${about}: "${input.requestTitle}".`,
+        ...(input.message === undefined ? [] : [``, `Their message: ${input.message}`]),
+        ...(input.dueAt === undefined ? [] : [``, `Due: ${input.dueAt}`]),
+        ``,
+        reply,
+        ``,
+        `You are receiving this because ${input.requesterDisplayName} sent you a request through ${PRODUCT}.`,
+      ].join("\n"),
+      htmlBody: htmlDocument(
+        `A request from ${escapeHtml(input.requesterDisplayName)}`,
+        p(`Hello ${escapeHtml(input.recipientName)},`) +
+          p(`${escapeHtml(input.requesterDisplayName)} (${escapeHtml(input.workspaceName)}) asked you to ` +
+            `${escapeHtml(ask)}${escapeHtml(about)}: "${escapeHtml(input.requestTitle)}".`) +
+          (input.message === undefined ? "" : p(`<em>${escapeHtml(input.message)}</em>`)) +
+          (input.dueAt === undefined ? "" : p(`Due: ${escapeHtml(input.dueAt)}`)) +
+          p(escapeHtml(reply)),
+      ),
+      attachments: [LOGO_ATTACHMENT],
+    };
+  },
+});
+
+function answeredTemplate(key: "contact-request-completed" | "contact-request-declined", verb: string) {
+  return defineTemplate({
+    key,
+    version: 1,
+    locale: "en",
+    schema: ContactRequestAnsweredModelV1,
+    secretBearing: false,
+    render: (input, context) => {
+      const url = context.buildPath(CONTACT_REQUESTS_PATH);
+      return {
+        subject: `${input.responderDisplayName} ${verb} "${input.requestTitle}"`,
+        textBody: [
+          `Hello ${input.recipientName},`,
+          ``,
+          `${input.responderDisplayName} ${verb} your request "${input.requestTitle}" in ${input.workspaceName}.`,
+          ...(input.reason === undefined ? [] : [``, `Reason: ${input.reason}`]),
+          ``,
+          url,
+        ].join("\n"),
+        htmlBody: htmlDocument(
+          `Your request was ${escapeHtml(verb)}`,
+          p(`Hello ${escapeHtml(input.recipientName)},`) +
+            p(`${escapeHtml(input.responderDisplayName)} ${escapeHtml(verb)} your request ` +
+              `"${escapeHtml(input.requestTitle)}" in ${escapeHtml(input.workspaceName)}.`) +
+            (input.reason === undefined ? "" : p(`<em>${escapeHtml(input.reason)}</em>`)) +
+            linkHtml(url, "Open your requests"),
+        ),
+        attachments: [LOGO_ATTACHMENT],
+      };
+    },
+  });
+}
+
+/** 086. In-app only, to the requester. */
+export const contactRequestCompletedV1 = answeredTemplate("contact-request-completed", "completed");
+/** 086. In-app only, to the requester. */
+export const contactRequestDeclinedV1 = answeredTemplate("contact-request-declined", "declined");
+
 /**
  * Every template version LAGDA can render.
  *
@@ -660,6 +793,10 @@ export const ALL_TEMPLATES = [
   workspaceJoinRequestedV1,
   workspaceJoinDecidedV1,
   verificationAccessCodeV1,
+  contactRequestReceivedV1,
+  contactRequestEmailedV1,
+  contactRequestCompletedV1,
+  contactRequestDeclinedV1,
 ] as const;
 
 export type AccountEmailVerificationModel = Static<typeof AccountEmailVerificationModelV1>;

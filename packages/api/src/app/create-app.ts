@@ -50,6 +50,7 @@ import { registerBrandingRoutes } from "../workspaces/branding-routes.js";
 import { registerUsageRoutes } from "../workspaces/usage-routes.js";
 import { registerContactRoutes } from "../contacts/contact-routes.js";
 import { registerUploadRequestRoutes } from "../upload-requests/upload-request-routes.js";
+import { registerContactRequestRoutes } from "../contact-requests/contact-request-routes.js";
 import { registerWorkflowTemplateRoutes } from "../workflow-templates/workflow-template-routes.js";
 import { registerDocumentRoutes } from "../documents/document-routes.js";
 import { registerFolderRoutes } from "../folders/folder-routes.js";
@@ -556,6 +557,24 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
               : null,
           ),
           uploadRequestDependencies: uploadRequests,
+          metrics,
+        });
+      }
+
+      // 086. Same scope, same reasoning: a request names a person and what is
+      // asked of them. The `/me/...` lists live here too — they need a session.
+      if (workspaces.contactRequests !== undefined) {
+        const contactRequests = workspaces.contactRequests;
+        registerContactRequestRoutes(scope, {
+          authenticatedUser: (request: FastifyRequest) => Promise.resolve(
+            request.auth.status === "authenticated"
+              ? {
+                  userId: request.auth.actor.userId,
+                  sessionId: request.auth.actor.sessionId,
+                }
+              : null,
+          ),
+          contactRequestDependencies: contactRequests,
           metrics,
         });
       }

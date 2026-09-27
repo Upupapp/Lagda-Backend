@@ -12,6 +12,7 @@ import type {
 } from "./user-signing-records.js";
 import type { ScopedWorkflowTemplateRepository } from "./workflow-templates.js";
 import type { ScopedUploadRequestRepository } from "./upload-requests.js";
+import type { ScopedContactRequestRepository } from "./contact-requests.js";
 import type {
   ScopedJoinTicketRepository, ScopedJoinRequestRepository,
   JoinTicketDigest, JoinTicketCredentialUnitOfWork,
@@ -503,6 +504,8 @@ export interface WorkspaceUnitOfWork {
    * flow where the workspace does not hold the file yet.
    */
   readonly uploadRequests: ScopedUploadRequestRepository;
+  /** 086. What workspace users have asked of contacts. */
+  readonly contactRequests: ScopedContactRequestRepository;
   readonly joinTickets: ScopedJoinTicketRepository;
   readonly joinRequests: ScopedJoinRequestRepository;
   /** 079. The append-only activity log, written in the change's own transaction. */
@@ -856,6 +859,7 @@ export * from "./completion-certificate.js";
 export * from "./notifications.js";
 export * from "./notification-preferences.js";
 export * from "./verification-access.js";
+export * from "./contact-requests.js";
 import type { SigningAccountLinkRepository } from "./signing-account-link.js";
 import type { PreparedSignatureRepository } from "./prepared-signatures.js";
 export * from "./signing-account-link.js";

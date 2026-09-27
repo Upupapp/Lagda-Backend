@@ -255,7 +255,7 @@ describe("POST /contacts", () => {
     expect(Object.keys(body.contact).sort()).toEqual([
       "archivedAt", "contactId", "createdAt", "email", "name", "note",
       "organization", "ownerUserId", "phone", "scope", "state", "tagIds",
-      "title", "updatedAt",
+      "title", "updatedAt", "workspaceMember",
     ]);
   });
 

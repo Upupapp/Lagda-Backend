@@ -93,6 +93,7 @@ import * as m082 from "./082_workspace_branding.js";
 import * as m083 from "./083_verification_access_codes.js";
 import * as m084 from "./084_user_notification_preferences.js";
 import * as m085 from "./085_verification_access_throttle.js";
+import * as m086 from "./086_contact_requests.js";
 
 /**
  * Migrations listed explicitly rather than read from disk.
@@ -190,6 +191,7 @@ const MIGRATIONS: Record<string, Migration> = {
   "083_verification_access_codes": m083,
   "084_user_notification_preferences": m084,
   "085_verification_access_throttle": m085,
+  "086_contact_requests": m086,
 };
 
 class ExplicitMigrationProvider implements MigrationProvider {

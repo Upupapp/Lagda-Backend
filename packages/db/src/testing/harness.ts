@@ -229,6 +229,8 @@ export async function truncateAll(database: LagdaDatabase): Promise<void> {
   await database.db.deleteFrom("notification_dispatch_index").execute();
   await database.db.deleteFrom("notification_deliveries").execute();
   await database.db.deleteFrom("notification_intents").execute();
+  // 086. No runtime DELETE; after the intents that may address one.
+  await database.db.deleteFrom("contact_requests").execute();
   // 083. No runtime DELETE; a grant references its challenge, both the
   // recipient and the verification record.
   await database.db.deleteFrom("verification_access_grants").execute();

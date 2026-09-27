@@ -245,6 +245,10 @@ const INPUT_BY_KEY: Record<string, NotificationTemplateInput> = {
   "verification-access-code": { recipientName: "Maria Santos", documentTitle: "Office Lease" },
   "workspace-join-requested": { recipientName: "Paulo Reyes", requesterName: "Maria Santos", requesterEmail: "maria@example.com", workspaceName: "Reyes Legal", reason: "New associate" },
   "workspace-join-decided": { recipientName: "Maria Santos", workspaceName: "Reyes Legal", approved: true },
+  "contact-request-received": { recipientName: "Maria Santos", requestTitle: "Signed NDA", requestKind: "signed-document", requesterDisplayName: "Paulo Reyes", workspaceName: "Reyes Legal", message: "Please", documentTitle: "NDA", dueAt: "2026-10-01T00:00:00.000Z" },
+  "contact-request-emailed": { recipientName: "Maria Santos", requestTitle: "Permit", requestKind: "upload", requesterDisplayName: "Paulo Reyes", requesterEmail: "paulo@example.com", workspaceName: "Reyes Legal" },
+  "contact-request-completed": { recipientName: "Paulo Reyes", responderDisplayName: "Maria Santos", requestTitle: "Permit", requestKind: "upload", workspaceName: "Reyes Legal" },
+  "contact-request-declined": { recipientName: "Paulo Reyes", responderDisplayName: "Maria Santos", requestTitle: "Permit", requestKind: "upload", workspaceName: "Reyes Legal", reason: "Not mine" },
 };
 
 describe("inline images", () => {

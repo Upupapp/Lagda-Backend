@@ -133,6 +133,14 @@ export const NOTIFICATION_TYPES = [
    * Document, sent to the participant address that asked for it.
    */
   "VERIFICATION_ACCESS_CODE",
+  /** 086. A member was asked something by a colleague. In-app only — never mailed. */
+  "CONTACT_REQUEST_RECEIVED",
+  /** 086. An external contact was asked something — emailed to the contact's address. */
+  "CONTACT_REQUEST_EMAILED",
+  /** 086. The requester told their request was completed. In-app only. */
+  "CONTACT_REQUEST_COMPLETED",
+  /** 086. The requester told their request was declined. In-app only. */
+  "CONTACT_REQUEST_DECLINED",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -160,6 +168,8 @@ export const NOTIFICATION_AUDIENCE_KINDS = [
   "WORKSPACE_INVITEE",
   /** 078. The address a join ticket was made for — who may have no account yet. */
   "WORKSPACE_JOIN_TICKET",
+  /** 086. An external contact, addressed through the request made of them. */
+  "CONTACT_REQUEST",
 ] as const;
 export type NotificationAudienceKind =
   (typeof NOTIFICATION_AUDIENCE_KINDS)[number];
@@ -182,7 +192,8 @@ export type NotificationAudience =
       readonly kind: "WORKSPACE_INVITEE";
       readonly invitationId: WorkspaceInvitationId;
     }
-  | { readonly kind: "WORKSPACE_JOIN_TICKET"; readonly joinTicketId: string };
+  | { readonly kind: "WORKSPACE_JOIN_TICKET"; readonly joinTicketId: string }
+  | { readonly kind: "CONTACT_REQUEST"; readonly contactRequestId: string };
 
 // ── Tenancy ──────────────────────────────────────────────────────────────────
 
@@ -251,6 +262,8 @@ export const NOTIFICATION_SOURCE_KINDS = [
   "WORKSPACE_JOIN_REQUEST",
   /** 083. One emailed verification access code — each resend is its own challenge. */
   "VERIFICATION_ACCESS_CHALLENGE",
+  /** 086. A contact request — one notice of each type per request. */
+  "CONTACT_REQUEST",
 ] as const;
 export type NotificationSourceKind =
   (typeof NOTIFICATION_SOURCE_KINDS)[number];
@@ -351,6 +364,11 @@ export const NOTIFICATION_FAILURE_CODES = [
    * transactional mail, which has no category to switch off.
    */
   "RECIPIENT_PREFERENCE",
+  /**
+   * 086. The type is in-app only by policy: the intent exists so the account's
+   * own feed lists it, and its email delivery is stopped at creation.
+   */
+  "IN_APP_ONLY",
 ] as const;
 export type NotificationFailureCode =
   (typeof NOTIFICATION_FAILURE_CODES)[number];
@@ -386,6 +404,10 @@ export const NOTIFICATION_TEMPLATE_KEYS = [
   "workspace-join-requested",
   "workspace-join-decided",
   "verification-access-code",
+  "contact-request-received",
+  "contact-request-emailed",
+  "contact-request-completed",
+  "contact-request-declined",
 ] as const;
 export type NotificationTemplateKey =
   (typeof NOTIFICATION_TEMPLATE_KEYS)[number];

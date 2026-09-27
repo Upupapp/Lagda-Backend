@@ -225,8 +225,9 @@ describe("production composition", () => {
     // (067), asking a member to supply one the workspace does not have, and
     // 16 -> 17 with `documentFeed`, the in-app notification feed projected
     // from evidence, and 17 -> 18 with `joins` (078), single-use join links
-    // and the requests an owner or administrator approves.
-    expect(subWired).toBe(18);
+    // and the requests an owner or administrator approves, and 18 -> 19 with
+    // `contactRequests` (086), requests sent to contacts.
+    expect(subWired).toBe(19);
   });
 });
 

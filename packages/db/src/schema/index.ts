@@ -140,6 +140,32 @@ export interface VerificationAccessPairStatesTable {
   updated_at: Timestamptz;
 }
 
+/** 086. Something a workspace user asked of a contact. */
+export interface ContactRequestsTable {
+  request_id: string;
+  workspace_id: string;
+  kind: string;
+  contact_id: string;
+  recipient_name: string;
+  recipient_email: string;
+  delivery: string;
+  recipient_user_id: string | null;
+  title: string;
+  message: string | null;
+  document_id: string | null;
+  due_at: Date | null;
+  status: string;
+  response_document_id: string | null;
+  decline_reason: string | null;
+  requested_by_user_id: string;
+  completed_by_user_id: string | null;
+  created_at: Timestamptz;
+  updated_at: Timestamptz;
+  completed_at: Date | null;
+  declined_at: Date | null;
+  cancelled_at: Date | null;
+}
+
 /** 082. A workspace's branding; the logo columns move together. */
 export interface WorkspaceBrandingTable {
   workspace_id: string;
@@ -919,6 +945,8 @@ export interface NotificationIntentsTable {
   audience_invitation_id: ColumnType<string | null, string | null, never>;
   /** 078. */
   audience_join_ticket_id: ColumnType<string | null, string | null | undefined, never>;
+  /** 086. */
+  audience_contact_request_id: ColumnType<string | null, string | null | undefined, never>;
   template_key: string;
   template_version: number;
   locale: string;
@@ -1783,6 +1811,7 @@ export interface Database {
   prepared_signatures: PreparedSignaturesTable;
   workspace_workflow_templates: WorkspaceWorkflowTemplatesTable;
   workspace_document_upload_requests: WorkspaceDocumentUploadRequestsTable;
+  contact_requests: ContactRequestsTable;
   workflow_template_fields: WorkflowTemplateFieldsTable;
   user_signed_documents: UserSignedDocumentsTable;
   user_signing_inbox: UserSigningInboxTable;

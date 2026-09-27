@@ -382,6 +382,57 @@ export const WorkspaceJoinDecidedModelV1 = Type.Object(
   { additionalProperties: false },
 );
 
+/** 086. The kind of a contact request, as the copy names it. */
+const ContactRequestKindModel = Type.Union([
+  Type.Literal("signed-document"), Type.Literal("upload"), Type.Literal("preparation"),
+]);
+
+/** 086. A member told in-app that a colleague asked them for something. */
+export const ContactRequestReceivedModelV1 = Type.Object(
+  {
+    recipientName: DisplayName,
+    requestTitle: BoundedText(200),
+    requestKind: ContactRequestKindModel,
+    requesterDisplayName: DisplayName,
+    workspaceName: DisplayName,
+    message: Type.Optional(BoundedText(2000)),
+    documentTitle: Type.Optional(BoundedText(300)),
+    /** ISO-8601. */
+    dueAt: Type.Optional(BoundedText(40)),
+  },
+  { additionalProperties: false },
+);
+
+/** 086. An external contact emailed a request. Display data only. */
+export const ContactRequestEmailedModelV1 = Type.Object(
+  {
+    recipientName: DisplayName,
+    requestTitle: BoundedText(200),
+    requestKind: ContactRequestKindModel,
+    requesterDisplayName: DisplayName,
+    /** The requester's own account address, so the contact can reply. */
+    requesterEmail: Type.Optional(BoundedText(320)),
+    workspaceName: DisplayName,
+    message: Type.Optional(BoundedText(2000)),
+    documentTitle: Type.Optional(BoundedText(300)),
+    dueAt: Type.Optional(BoundedText(40)),
+  },
+  { additionalProperties: false },
+);
+
+/** 086. The requester told of an answer (completed or declined). */
+export const ContactRequestAnsweredModelV1 = Type.Object(
+  {
+    recipientName: DisplayName,
+    responderDisplayName: DisplayName,
+    requestTitle: BoundedText(200),
+    requestKind: ContactRequestKindModel,
+    workspaceName: DisplayName,
+    reason: Type.Optional(BoundedText(500)),
+  },
+  { additionalProperties: false },
+);
+
 export const DocumentUploadRequestedModelV1 = Type.Object(
   {
     /** The ASSIGNEE's display name. This message is addressed to them. */

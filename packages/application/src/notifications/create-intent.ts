@@ -162,6 +162,27 @@ export function createNotificationIntent(
 
     const created = await deps.notifications.createIfAbsent(newIntent, transaction);
 
+    // ── 086: in-app only ───────────────────────────────────────────────────
+    //
+    // The intent is what the account's own feed (`/me/notifications`) lists;
+    // the email is never owed. Stopped before any worker can claim it, by the
+    // same conditional `stopPendingDelivery` the suppressions below use, and
+    // only for a freshly CREATED pair.
+    if (
+      policy.inAppOnly === true
+      && created.outcome === "CREATED"
+      && created.delivery.state === "PENDING"
+    ) {
+      const stopped = await deps.notifications.stopPendingDelivery(
+        created.delivery.notificationDeliveryId, "SUPPRESSED", "IN_APP_ONLY", transaction);
+      if (stopped) {
+        return {
+          ...created,
+          delivery: { ...created.delivery, state: "SUPPRESSED", failureCode: "IN_APP_ONLY" },
+        };
+      }
+    }
+
     // ── 084: the account's own preferences ────────────────────────────────
     //
     // The intent is still written — the fact happened, and the in-app feed

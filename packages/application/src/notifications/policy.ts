@@ -74,6 +74,12 @@ export interface NotificationPolicy {
    * workspace's admins and orphan it when the workspace is deleted (S46).
    */
   readonly scopeKind: "WORKSPACE" | "GLOBAL_USER";
+  /**
+   * 086. Listed in the account's own feed and NEVER mailed: the email
+   * delivery is stopped at creation as SUPPRESSED / IN_APP_ONLY. For notices
+   * between members of one workspace, who see them in the app.
+   */
+  readonly inAppOnly?: true;
 }
 
 /**
@@ -228,6 +234,48 @@ export const NOTIFICATION_POLICIES: Record<NotificationType, NotificationPolicy>
     secretKind: "CHALLENGE",
     // The completed document is the workspace's record.
     scopeKind: "WORKSPACE",
+  },
+  // 086. Contact requests. The REQUEST is the source of all four, so the
+  // logical key allows one notice of each type per request.
+  CONTACT_REQUEST_RECEIVED: {
+    notificationType: "CONTACT_REQUEST_RECEIVED",
+    templateKey: "contact-request-received",
+    channel: "EMAIL",
+    sourceKind: "CONTACT_REQUEST",
+    // The member recipient's account.
+    audienceKind: "USER",
+    scopeKind: "WORKSPACE",
+    // A member is told in the app, never by email.
+    inAppOnly: true,
+  },
+  CONTACT_REQUEST_EMAILED: {
+    notificationType: "CONTACT_REQUEST_EMAILED",
+    templateKey: "contact-request-emailed",
+    channel: "EMAIL",
+    sourceKind: "CONTACT_REQUEST",
+    // Somebody with no account here: addressed through the request itself,
+    // which snapshots their address — as 078 addresses a join ticket.
+    audienceKind: "CONTACT_REQUEST",
+    // No credential: there is nothing an external contact can open in LAGDA.
+    scopeKind: "WORKSPACE",
+  },
+  CONTACT_REQUEST_COMPLETED: {
+    notificationType: "CONTACT_REQUEST_COMPLETED",
+    templateKey: "contact-request-completed",
+    channel: "EMAIL",
+    sourceKind: "CONTACT_REQUEST",
+    audienceKind: "USER",
+    scopeKind: "WORKSPACE",
+    inAppOnly: true,
+  },
+  CONTACT_REQUEST_DECLINED: {
+    notificationType: "CONTACT_REQUEST_DECLINED",
+    templateKey: "contact-request-declined",
+    channel: "EMAIL",
+    sourceKind: "CONTACT_REQUEST",
+    audienceKind: "USER",
+    scopeKind: "WORKSPACE",
+    inAppOnly: true,
   },
 };
 

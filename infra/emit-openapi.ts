@@ -129,6 +129,8 @@ const app = await createApp({
       // optional group left out here registers no routes, and the emitted
       // document silently loses them.
       uploadRequests: () => stub("workspaces.uploadRequests"),
+      // 086. Contact requests — listed so the emitted document carries them.
+      contactRequests: () => stub("workspaces.contactRequests"),
       // 078. Join links and join requests — missing from the emitted document
       // when they shipped, for the reason recorded above.
       joins: {
@@ -173,6 +175,10 @@ const REQUIRED_PATHS = [
   // Settings: usage (member group) and notification preferences (identity).
   "/workspaces/{workspaceId}/usage",
   "/me/notification-preferences",
+  // 086. Contact requests, and the account's own lists of them.
+  "/workspaces/{workspaceId}/contact-requests",
+  "/me/contact-requests",
+  "/me/contact-requests/sent",
 ];
 
 const missingRequired = REQUIRED_PATHS.filter(path => !paths.includes(path));

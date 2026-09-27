@@ -56,6 +56,7 @@ import {
 } from "../repositories/user-signing-records.js";
 import { createScopedWorkflowTemplateRepository } from "../repositories/workflow-templates.js";
 import { createScopedUploadRequestRepository } from "../repositories/upload-requests.js";
+import { createScopedContactRequestRepository } from "../repositories/contact-requests.js";
 import { createScopedWorkflowTemplateFieldRepository } from "../repositories/workflow-template-fields.js";
 import { createScopedDocumentNotificationStateRepository } from "../repositories/document-notification-states.js";
 import { createIdempotencyRepository } from "../repositories/idempotency.js";
@@ -176,6 +177,8 @@ function buildUnitOfWork(
     // Migration 058. Scoped here and by row-level security in the database.
     workflowTemplates: createScopedWorkflowTemplateRepository(trx, workspaceId),
     uploadRequests: createScopedUploadRequestRepository(trx, workspaceId),
+    // 086. Scoped here and by row-level security in the database.
+    contactRequests: createScopedContactRequestRepository(trx, workspaceId),
     joinTickets: createScopedJoinTicketRepository(trx, workspaceId),
     joinRequests: createScopedJoinRequestRepository(trx, workspaceId),
     activity: createScopedWorkspaceActivityRepository(trx, workspaceId),
