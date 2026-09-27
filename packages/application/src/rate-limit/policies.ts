@@ -741,6 +741,45 @@ export const RATE_LIMIT_POLICIES = {
 export type RateLimitPolicyId = keyof typeof RATE_LIMIT_POLICIES;
 
 /**
+ * 085. The Verify Document code-request throttle.
+ *
+ * NOT fixed-window limiter policies: a cooldown, rolling caps and a lockout
+ * need per-request timestamps and challenge history, so they are enforced by
+ * their own durable store (`VerificationAccessThrottle`). They sit here beside
+ * the registry so every public-verification threshold is one reviewable file.
+ *
+ * All of them FAIL CLOSED: the store unavailable refuses the code request
+ * (503) rather than sending unmetered mail. And all of them key on the
+ * self-declared pair, never on participation, so a refusal is identical for a
+ * participant and a stranger.
+ *
+ * The 083 limits still apply first and unchanged: 5 per 15 minutes per pair
+ * (`public-verification.access-code.participant`), 20 per hour per IP
+ * (`public-verification.access-code.ip`), 10 per minute per IP on redemption
+ * (`public-verification.access.ip`), 5 attempts per code and a 10-minute
+ * expiry (`verification-access.ts`).
+ */
+export const VERIFICATION_ACCESS_THROTTLE = Object.freeze({
+  /** 085: one code per (verification, email) per minute — the resend cooldown. */
+  cooldownMs: MINUTE,
+  /** 085: ten codes per (verification, email) per rolling 24 hours. */
+  pairDailyLimit: 10,
+  pairDailyWindowMs: 24 * 60 * MINUTE,
+  /** 085: thirty codes per verification ID per rolling hour, across all emails. */
+  verificationHourlyLimit: 30,
+  verificationHourlyWindowMs: 60 * MINUTE,
+  /** 083: five wrong guesses exhaust one challenge. */
+  maxAttempts: 5,
+  /** 085: three consecutive exhausted challenges lock the pair for an hour. */
+  lockoutAfterExhausted: 3,
+  lockoutMs: 60 * MINUTE,
+  source: "085 - product decision for public verification. A person needs a "
+    + "resend or two; ten a day per address covers a slow inbox; thirty an "
+    + "hour per document covers every participant of a large envelope; three "
+    + "burned codes in a row is a guessing pattern, not a typo.",
+});
+
+/**
  * Resolves a policy by ID.
  *
  * Throws on an unknown ID rather than skipping the check. A silent skip is a

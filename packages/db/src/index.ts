@@ -54,6 +54,7 @@ export {
 // at the top of this file is about.
 export { createPublicVerificationLookup } from "./repositories/evidence.js";
 export { createVerificationAccessStore, findSealedVerificationAccessCode } from "./repositories/verification-access.js";
+export { createVerificationAccessThrottle } from "./repositories/verification-throttle.js";
 export {
   createVerificationRepository, createVerifiableUserRepository,
 } from "./repositories/verification.js";

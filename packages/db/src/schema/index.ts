@@ -13,7 +13,7 @@
 // snake_case throughout, matching PostgreSQL. Mapping to camelCase happens at
 // the repository boundary, never by exposing these outward.
 
-import type { ColumnType } from "kysely";
+import type { ColumnType, Generated } from "kysely";
 
 /**
  * A `timestamptz` column.
@@ -121,6 +121,23 @@ export interface VerificationAccessGrantsTable {
   user_id: string | null;
   expires_at: Timestamptz;
   created_at: Timestamptz;
+}
+
+/** 085. One ACCEPTED Verify Document code request; digests of the typed keys. */
+export interface VerificationAccessCodeRequestsTable {
+  request_id: Generated<string>;
+  pair_key: string;
+  verification_key: string;
+  requested_at: Timestamptz;
+}
+
+/** 085. Guess and lockout state for one typed (verification ID, email) pair. */
+export interface VerificationAccessPairStatesTable {
+  pair_key: string;
+  attempts: number;
+  exhausted_streak: number;
+  locked_until: Date | null;
+  updated_at: Timestamptz;
 }
 
 /** 082. A workspace's branding; the logo columns move together. */
@@ -1792,6 +1809,8 @@ export interface Database {
   verification_records: VerificationRecordsTable;
   verification_access_challenges: VerificationAccessChallengesTable;
   verification_access_grants: VerificationAccessGrantsTable;
+  verification_access_code_requests: VerificationAccessCodeRequestsTable;
+  verification_access_pair_states: VerificationAccessPairStatesTable;
   user_sessions: UserSessionsTable;
   idempotency_records: IdempotencyRecordsTable;
   rate_limit_counters: RateLimitCountersTable;

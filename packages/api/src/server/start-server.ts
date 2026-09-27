@@ -24,7 +24,7 @@ import { createSigningAccessTokenFactory } from "../security/signing-access-toke
 import { createFinalCopyTokenFactory } from "@lagda/security";
 import { createRecipientSessionTokenFactory } from "../security/recipient-session-token.js";
 import { createPublicVerificationLookup } from "@lagda/db";
-import { createVerificationAccessStore } from "@lagda/db";
+import { createVerificationAccessStore, createVerificationAccessThrottle } from "@lagda/db";
 import { createVerificationAccessCrypto } from "../security/verification-access-token.js";
 import { createSignatureImageValidator } from "../security/signature-image.js";
 import {
@@ -377,6 +377,8 @@ function buildPublicParticipantAccess(
   clock: Clock,
 ): Pick<AppDependencies, "publicParticipantAccess"> {
   const store = createVerificationAccessStore(database.db);
+  // 085. Cooldown, rolling caps and lockout, durable and shared by instances.
+  const throttle = createVerificationAccessThrottle(database.db);
   const crypto = createVerificationAccessCrypto(
     config.signingDeliveryKey, config.signingDeliveryKeyVersion);
   const templates = createTemplateRegistry(ALL_TEMPLATES);
@@ -396,7 +398,7 @@ function buildPublicParticipantAccess(
   };
   return {
     publicParticipantAccess: () => ({
-      store, crypto, clock, templates, ids, storage: objectStorage, currentAccount,
+      store, crypto, clock, templates, ids, storage: objectStorage, currentAccount, throttle,
     }),
   };
 }

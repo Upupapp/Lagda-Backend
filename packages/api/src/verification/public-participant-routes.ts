@@ -20,6 +20,18 @@
 //
 // ── Still no oracle ─────────────────────────────────────────────────────────
 //
+// ── Throttled answers (085) ─────────────────────────────────────────────────
+//
+// Every limit on these routes — 083's per-IP and per-pair counters and 085's
+// cooldown, rolling caps and lockout — answers one shape:
+//
+//   429 {error: {code: "verification_rate_limited", message, retryAfterSeconds}}
+//       + Retry-After
+//
+// The limits key on the typed (verification ID, email) and never on
+// participation, so a 429 is as uninformative about who is on a document as
+// the 202 is. A limiter that cannot be read refuses (503), never admits.
+//
 // Every negative — unknown reference, not completed, no such participant,
 // wrong, expired, consumed or exhausted code, unknown, expired or
 // other-document grant — is one 401 `verification_access_denied`.
@@ -30,7 +42,7 @@ import { Type, type Static } from "@sinclair/typebox";
 import {
   requestVerificationAccessCode, redeemVerificationAccessCode,
   getVerificationAccessDetails, resolveVerificationAccessDocument,
-  grantMemberVerificationAccess, policyById,
+  grantMemberVerificationAccess, policyById, RateLimitedError,
   MAX_EMAIL_LENGTH,
   type VerificationAccessDependencies, type VerificationAccessResult, type RateLimitCheck,
 } from "@lagda/application";
@@ -112,6 +124,35 @@ const DetailsResponseSchema = Type.Object({
   details: DetailsSchema,
 }, { title: "VerificationAccessDetailsResponse", additionalProperties: false });
 
+const RateLimitedSchema = Type.Object({
+  error: Type.Object({
+    code: Type.Literal("verification_rate_limited"),
+    message: Type.String(),
+    retryAfterSeconds: Type.Integer({ minimum: 1 }),
+  }, { additionalProperties: false }),
+}, { title: "VerificationRateLimited", additionalProperties: false });
+
+const RATE_LIMITED_MESSAGE = "Too many verification requests. Please wait before trying again.";
+
+/** Runs a handler, answering any rate-limit refusal with the 085 shape. */
+async function throttled(
+  reply: FastifyReply, handler: () => Promise<FastifyReply>,
+): Promise<FastifyReply> {
+  try {
+    return await handler();
+  } catch (error) {
+    if (!(error instanceof RateLimitedError)) throw error;
+    void reply.header("Retry-After", String(error.retryAfterSeconds));
+    return reply.code(429).send({
+      error: {
+        code: "verification_rate_limited",
+        message: RATE_LIMITED_MESSAGE,
+        retryAfterSeconds: error.retryAfterSeconds,
+      },
+    });
+  }
+}
+
 const DENIED = {
   error: {
     code: "verification_access_denied",
@@ -163,9 +204,9 @@ export function registerPublicParticipantRoutes(
     schema: {
       params: ParamsSchema,
       body: AccessCodeBodySchema,
-      response: { 202: AccessCodeSentSchema },
+      response: { 202: AccessCodeSentSchema, 429: RateLimitedSchema },
     },
-  }, async (request: FastifyRequest, reply: FastifyReply) => {
+  }, async (request: FastifyRequest, reply: FastifyReply) => throttled(reply, async () => {
     void reply.header("Cache-Control", "no-store");
     const { verificationId } = request.params as Static<typeof ParamsSchema>;
     const { email } = request.body as Static<typeof AccessCodeBodySchema>;
@@ -186,15 +227,15 @@ export function registerPublicParticipantRoutes(
       result: "requested", mode: "access-code",
     });
     return reply.code(202).send(result);
-  });
+  }));
 
   app.post("/public/verifications/:verificationId/access", {
     schema: {
       params: ParamsSchema,
       body: AccessBodySchema,
-      response: { 200: GrantedSchema },
+      response: { 200: GrantedSchema, 429: RateLimitedSchema },
     },
-  }, async (request: FastifyRequest, reply: FastifyReply) => {
+  }, async (request: FastifyRequest, reply: FastifyReply) => throttled(reply, async () => {
     void reply.header("Cache-Control", "no-store");
     await limits(request, [ipCheck(request, "public-verification.access.ip")], options.rateLimit);
     const { verificationId } = request.params as Static<typeof ParamsSchema>;
@@ -205,15 +246,15 @@ export function registerPublicParticipantRoutes(
       result: result.outcome, mode: "access",
     });
     return sendGranted(reply, result);
-  });
+  }));
 
   app.post("/public/verifications/:verificationId/details", {
     schema: {
       params: ParamsSchema,
       body: GrantBodySchema,
-      response: { 200: DetailsResponseSchema },
+      response: { 200: DetailsResponseSchema, 429: RateLimitedSchema },
     },
-  }, async (request: FastifyRequest, reply: FastifyReply) => {
+  }, async (request: FastifyRequest, reply: FastifyReply) => throttled(reply, async () => {
     void reply.header("Cache-Control", "no-store");
     await limits(request, [ipCheck(request, "public-verification.document.ip")], options.rateLimit);
     const { verificationId } = request.params as Static<typeof ParamsSchema>;
@@ -225,14 +266,15 @@ export function registerPublicParticipantRoutes(
     });
     if (result.outcome === "denied") return reply.code(401).send(DENIED);
     return reply.code(200).send({ details: result.details });
-  });
+  }));
 
   app.post("/public/verifications/:verificationId/document", {
     schema: {
       params: ParamsSchema,
       body: GrantBodySchema,
+      response: { 429: RateLimitedSchema },
     },
-  }, async (request: FastifyRequest, reply: FastifyReply) => {
+  }, async (request: FastifyRequest, reply: FastifyReply) => throttled(reply, async () => {
     void reply.header("Cache-Control", "no-store");
     await limits(request, [ipCheck(request, "public-verification.document.ip")], options.rateLimit);
     const { verificationId } = request.params as Static<typeof ParamsSchema>;
@@ -250,7 +292,7 @@ export function registerPublicParticipantRoutes(
     void reply.header("Content-Disposition", "inline");
     void reply.header("Accept-Ranges", "none");
     return reply.status(200).send(Readable.from(result.document.stream));
-  });
+  }));
 }
 
 // ── Signed-in participants ───────────────────────────────────────────────────

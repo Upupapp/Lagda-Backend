@@ -89,9 +89,15 @@ suite("user notification preferences (runtime role)", () => {
 
     it("goes down when empty and back up", async () => {
       await truncateAll(owner);
-      const down = await migrateDown(owner.db);
-      expect(down.error).toBeUndefined();
-      expect(down.applied).toEqual(["084_user_notification_preferences"]);
+      // One step at a time until 084 itself is reverted: later migrations sit
+      // above it, and each must come off first.
+      const reverted: string[] = [];
+      while (!reverted.includes("084_user_notification_preferences")) {
+        const down = await migrateDown(owner.db);
+        expect(down.error).toBeUndefined();
+        expect(down.applied).toHaveLength(1);
+        reverted.push(...down.applied);
+      }
       const gone = await sql<{ n: string }>`
         select count(*)::text as n from pg_tables where tablename = 'user_notification_preferences'
       `.execute(owner.db);

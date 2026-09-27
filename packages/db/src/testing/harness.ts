@@ -348,6 +348,9 @@ export async function truncateAll(database: LagdaDatabase): Promise<void> {
   // a fixture leak.
   await database.db.deleteFrom("idempotency_records").execute();
   await database.db.deleteFrom("rate_limit_counters").execute();
+  // 085. The Verify Document throttle: digests and timestamps, no FKs.
+  await database.db.deleteFrom("verification_access_code_requests").execute();
+  await database.db.deleteFrom("verification_access_pair_states").execute();
 }
 
 /**

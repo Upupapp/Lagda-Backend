@@ -20,6 +20,7 @@ import { createTransactionManager } from "./transactions/index.js";
 import {
   createVerificationAccessStore, findSealedVerificationAccessCode,
 } from "./repositories/verification-access.js";
+import { createVerificationAccessThrottle } from "./repositories/verification-throttle.js";
 import { migrateDown, migrateToLatest, migrationStatus } from "./migrations/runner.js";
 import {
   createTestDatabase, createRuntimeRoleDatabase, truncateAll, hasIntegrationDatabase, seedUser,
@@ -332,6 +333,7 @@ suite("verification access (083, runtime role)", () => {
         digestGrantToken: () => null,
         nextChallengeId: () => "vac_full",
         nextGrantId: () => "vag_full",
+        throttleKeys: () => ({ pairKey: HASH("a"), verificationKey: HASH("b") }),
       },
       clock: { now: () => AT + 10_000 },
       templates: createTemplateRegistry(ALL_TEMPLATES),
@@ -341,6 +343,7 @@ suite("verification access (083, runtime role)", () => {
       },
       storage: {} as never,
       currentAccount: () => Promise.resolve(null),
+      throttle: createVerificationAccessThrottle(app.db),
     });
     expect(result).toEqual({ sent: true, expiresInSeconds: 600 });
     const intents = await owner.db.selectFrom("notification_intents").selectAll().execute();

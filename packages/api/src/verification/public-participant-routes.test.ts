@@ -14,6 +14,7 @@ import {
   type VerificationAccessDependencies, type VerificationAccessStore,
   type VerificationParticipantTarget, type RateLimitCheck, type AbuseLimiter,
 } from "@lagda/application";
+import { createMemoryVerificationThrottle, type MemoryVerificationThrottle } from "@lagda/application/test-support";
 import { createApp } from "../app/create-app.js";
 import { loadApiConfig } from "../config/index.js";
 import { SESSION_COOKIE_NAME } from "../security/cookies.js";
@@ -88,6 +89,7 @@ const store: VerificationAccessStore = {
 
 let verifiedAccount = true;
 let getObjectCalls = 0;
+let throttle: MemoryVerificationThrottle;
 const deps = (): VerificationAccessDependencies => ({
   store,
   // Records the code the (fake) email would carry.
@@ -110,6 +112,7 @@ const deps = (): VerificationAccessDependencies => ({
     },
   } as never,
   currentAccount: () => Promise.resolve({ normalizedEmail: EMAIL, emailVerified: verifiedAccount }),
+  throttle,
 });
 
 // ── The app ──────────────────────────────────────────────────────────────────
@@ -176,6 +179,7 @@ beforeEach(async () => {
   crypto = createVerificationAccessCrypto(KEY, "v1");
   verifiedAccount = true;
   getObjectCalls = 0;
+  throttle = createMemoryVerificationThrottle();
   checks = [];
   deny = null;
   app = await buildApp();
@@ -201,6 +205,7 @@ describe("POST /public/verifications/:id/access-code", () => {
     const participant = await post("access-code", { email: EMAIL });
     const stranger = await post("access-code", { email: "stranger@example.com" });
     state.participant = false;
+    throttle = createMemoryVerificationThrottle();
     const none = await post("access-code", { email: EMAIL });
     const garbage = await app.inject({
       method: "POST", url: "/public/verifications/garbage/access-code", payload: { email: EMAIL },
@@ -223,7 +228,52 @@ describe("POST /public/verifications/:id/access-code", () => {
     deny = "public-verification.access-code.participant";
     const limited = await post("access-code", { email: EMAIL });
     expect(limited.statusCode).toBe(429);
+    expect(limited.headers["retry-after"]).toBe("60");
+    expect(limited.json()).toEqual({
+      error: {
+        code: "verification_rate_limited",
+        message: "Too many verification requests. Please wait before trying again.",
+        retryAfterSeconds: 60,
+      },
+    });
     expect(state.issued).toBe(1);
+  });
+
+  it("holds the 60-second resend cooldown with the 085 body, for participants and strangers alike", async () => {
+    const answers = [];
+    for (const participant of [true, false]) {
+      state.participant = participant;
+      throttle = createMemoryVerificationThrottle();
+      expect((await post("access-code", { email: EMAIL })).statusCode).toBe(202);
+      answers.push(await post("access-code", { email: EMAIL }));
+    }
+    for (const again of answers) {
+      expect(again.statusCode).toBe(429);
+      const body = again.json<{ error: { code: string; retryAfterSeconds: number } }>();
+      expect(body.error.code).toBe("verification_rate_limited");
+      expect(body.error.retryAfterSeconds).toBeGreaterThanOrEqual(59);
+      expect(body.error.retryAfterSeconds).toBeLessThanOrEqual(60);
+      expect(again.headers["retry-after"]).toBe(String(body.error.retryAfterSeconds));
+    }
+    expect(Object.keys(answers[0]?.json() ?? {})).toEqual(Object.keys(answers[1]?.json() ?? {}));
+  });
+
+  it("refuses a locked-out pair with 429 and the remaining lockout", async () => {
+    const key = crypto.throttleKeys(ID, EMAIL).pairKey;
+    throttle.pairs.set(key, { attempts: 0, streak: 0, lockedUntil: Date.now() + 1_800_000 });
+    const response = await post("access-code", { email: EMAIL });
+    expect(response.statusCode).toBe(429);
+    const seconds = response.json<{ error: { retryAfterSeconds: number } }>().error.retryAfterSeconds;
+    expect(seconds).toBeGreaterThan(1790);
+    expect(seconds).toBeLessThanOrEqual(1800);
+    expect(state.issued).toBe(0);
+  });
+
+  it("fails closed (503) when the throttle is unavailable", async () => {
+    throttle.failing = true;
+    const response = await post("access-code", { email: EMAIL });
+    expect(response.statusCode).toBe(503);
+    expect(state.issued).toBe(0);
   });
 
   it("rejects a body carrying anything but the email", async () => {
@@ -265,6 +315,12 @@ describe("POST /public/verifications/:id/access", () => {
   it("no longer unlocks on an email alone", async () => {
     const response = await post("access", { email: EMAIL });
     expect(response.statusCode).toBe(422);
+  });
+
+  it("counts wrong guesses toward the lockout", async () => {
+    await post("access-code", { email: EMAIL });
+    await post("access", { email: EMAIL, code: "000000" === sentCode ? "111111" : "000000" });
+    expect(throttle.pairs.get(crypto.throttleKeys(ID, EMAIL).pairKey)?.attempts).toBe(1);
   });
 
   it("is IP limited", async () => {

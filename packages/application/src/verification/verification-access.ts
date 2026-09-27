@@ -7,6 +7,14 @@
 //                                       {accessToken} -> PDF / details | denied
 //   4. grantMemberVerificationAccess   signed-in, VERIFIED account email -> grant
 //
+// ── Throttle (085) ────────────────────────────────────────────────────────
+//
+// Step 1 also passes a durable throttle — a 60-second resend cooldown, 10
+// codes per pair per rolling day, 30 per document per rolling hour, and a
+// one-hour lockout after 3 consecutive challenges burned by wrong guesses.
+// It is keyed on the typed pair and fed by every well-formed guess, so a
+// stranger is throttled exactly like a participant.
+//
 // ── No oracle ─────────────────────────────────────────────────────────────
 //
 // Step 1 answers identically whether or not the address is a participant,
@@ -25,7 +33,8 @@ import { validateRecipientEmail } from "@lagda/core";
 import type { Clock } from "../common/ports/index.js";
 import type {
   VerificationAccessStore, VerificationAccessCrypto, VerificationDetailsProjection,
-  VerificationParticipantTarget,
+  VerificationParticipantTarget, VerificationAccessThrottle, VerificationThrottleRules,
+  VerificationCodeReservation,
 } from "../common/ports/verification-access.js";
 import type {
   NotificationIntentIdGenerator, NotificationDeliveryIdGenerator,
@@ -39,10 +48,15 @@ import type { NotificationTemplateRegistry } from "../notifications/template-reg
 import { createNotificationIntent } from "../notifications/create-intent.js";
 import { EVENT_VISIBILITY, describeEvidenceEvent } from "../audit/audit-trail.js";
 import { parseVerificationId } from "./public-verification.js";
+import { RateLimitedError, AbuseControlUnavailableError } from "../rate-limit/limiter.js";
+import { VERIFICATION_ACCESS_THROTTLE } from "../rate-limit/policies.js";
 
 export const VERIFICATION_CODE_TTL_MS = 10 * 60 * 1000;
 export const VERIFICATION_GRANT_TTL_MS = 30 * 60 * 1000;
-export const VERIFICATION_CODE_MAX_ATTEMPTS = 5;
+export const VERIFICATION_CODE_MAX_ATTEMPTS = VERIFICATION_ACCESS_THROTTLE.maxAttempts;
+
+/** 085. The rules the throttle store enforces; see the policy registry. */
+export const VERIFICATION_THROTTLE_RULES: VerificationThrottleRules = VERIFICATION_ACCESS_THROTTLE;
 
 const CODE_PATTERN = /^\d{6}$/u;
 
@@ -58,6 +72,8 @@ export interface VerificationAccessDependencies {
   readonly templates: NotificationTemplateRegistry;
   readonly ids: NotificationIntentIdGenerator & NotificationDeliveryIdGenerator;
   readonly storage: ObjectStorage;
+  /** 085. Cooldown, rolling caps and lockout. Fail-closed. */
+  readonly throttle: VerificationAccessThrottle;
   /** The signed-in account's CURRENT address, read from the account itself. */
   readonly currentAccount: (userId: string) => Promise<VerificationAccount | null>;
 }
@@ -220,6 +236,23 @@ export async function requestVerificationAccessCode(
   if (verificationId === null || !email.ok) return SENT;
 
   const now = deps.clock.now();
+  // 085. Before any participant lookup, and keyed only on what the caller
+  // typed: a participant and a stranger meet the same limits at the same
+  // counts, so a 429 is no more an oracle than the 202 is.
+  let reservation: VerificationCodeReservation;
+  try {
+    reservation = await deps.throttle.reserveCodeRequest({
+      keys: deps.crypto.throttleKeys(verificationId, email.key), now,
+      rules: VERIFICATION_THROTTLE_RULES,
+    });
+  } catch {
+    // Fail-closed: no unmetered codes while the throttle is unreadable.
+    throw new AbuseControlUnavailableError();
+  }
+  if (reservation.outcome === "limited") {
+    throw new RateLimitedError(Math.max(1, Math.ceil((reservation.retryAt - now) / 1000)));
+  }
+
   await deps.store.issueChallenge({
     verificationId,
     normalizedEmail: email.key,
@@ -301,7 +334,29 @@ export async function redeemVerificationAccessCode(
       expiresAt: now + VERIFICATION_GRANT_TTL_MS,
     },
   });
-  if (redemption.outcome === "denied") return DENIED;
+  // 085. Tracked for every well-formed guess at the pair — participant or
+  // not — so the lockout arrives at the same count for both.
+  if (redemption.outcome === "denied") {
+    try {
+      await deps.throttle.recordRedemption({
+        keys: deps.crypto.throttleKeys(verificationId, email.key), now, success: false,
+        rules: VERIFICATION_THROTTLE_RULES,
+      });
+    } catch {
+      // Fail-closed: an uncounted wrong guess is a free one.
+      throw new AbuseControlUnavailableError();
+    }
+    return DENIED;
+  }
+  try {
+    await deps.throttle.recordRedemption({
+      keys: deps.crypto.throttleKeys(verificationId, email.key), now, success: true,
+      rules: VERIFICATION_THROTTLE_RULES,
+    });
+  } catch {
+    // The grant already exists. A streak that failed to clear only makes a
+    // later lockout stricter, so the proven participant is not refused.
+  }
   return grantedPayload(verificationId, token, redemption.target, deps);
 }
 

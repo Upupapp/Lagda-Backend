@@ -33615,6 +33615,47 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "VerificationRateLimited",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "retryAfterSeconds"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "verification_rate_limited"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "retryAfterSeconds": {
+                          "minimum": 1,
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -33828,6 +33869,47 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "VerificationRateLimited",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "retryAfterSeconds"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "verification_rate_limited"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "retryAfterSeconds": {
+                          "minimum": 1,
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -34012,6 +34094,47 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "VerificationRateLimited",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "retryAfterSeconds"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "verification_rate_limited"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "retryAfterSeconds": {
+                          "minimum": 1,
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -34055,8 +34178,46 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Default Response"
+          "429": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "VerificationRateLimited",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "retryAfterSeconds"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "verification_rate_limited"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "retryAfterSeconds": {
+                          "minimum": 1,
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }

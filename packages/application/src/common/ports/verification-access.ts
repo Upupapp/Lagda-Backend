@@ -124,6 +124,74 @@ export interface VerificationAccessStore {
   }): Promise<VerificationGrantDocumentRef | null>;
 }
 
+// ── 085. Code-request throttling ────────────────────────────────────────────
+//
+// Keyed by the SELF-DECLARED (verification ID, normalized email) pair and by
+// the verification ID alone — never by whether either names a participant.
+// Every pair is treated identically, so a refusal says nothing about who is
+// on a document. The adapter stores only digests of both keys.
+
+/** The throttle thresholds, from the policy registry. */
+export interface VerificationThrottleRules {
+  /** Minimum gap between two accepted code requests for one pair. */
+  readonly cooldownMs: number;
+  /** Accepted code requests per pair per rolling window. */
+  readonly pairDailyLimit: number;
+  readonly pairDailyWindowMs: number;
+  /** Accepted code requests per verification ID (all emails) per rolling window. */
+  readonly verificationHourlyLimit: number;
+  readonly verificationHourlyWindowMs: number;
+  /** Wrong guesses that exhaust one (real or virtual) challenge. */
+  readonly maxAttempts: number;
+  /** Consecutive exhausted challenges that lock the pair out. */
+  readonly lockoutAfterExhausted: number;
+  readonly lockoutMs: number;
+}
+
+export type VerificationThrottleReason =
+  | "lockout" | "cooldown" | "pair-daily" | "verification-hourly";
+
+export type VerificationCodeReservation =
+  | { readonly outcome: "allowed" }
+  | {
+    readonly outcome: "limited";
+    readonly reason: VerificationThrottleReason;
+    /** When the refusal lifts, in epoch ms. */
+    readonly retryAt: number;
+  };
+
+/** Domain-separated SHA-256 hex digests of the typed pair and the reference. */
+export interface VerificationThrottleKeys {
+  readonly pairKey: string;
+  readonly verificationKey: string;
+}
+
+export interface VerificationAccessThrottle {
+  /**
+   * Checks lockout, cooldown, the per-pair rolling cap and the per-verification
+   * rolling cap, in that order, and — only when all pass — records the request
+   * and starts a fresh challenge window for the pair. ONE transaction.
+   */
+  reserveCodeRequest(input: {
+    readonly keys: VerificationThrottleKeys;
+    readonly now: number;
+    readonly rules: VerificationThrottleRules;
+  }): Promise<VerificationCodeReservation>;
+
+  /**
+   * A well-formed code was presented for the pair. A failure spends one
+   * attempt of the current challenge window; the attempt that exhausts it
+   * extends the exhausted streak, and the streak's threshold locks the pair.
+   * A success clears the window and the streak.
+   */
+  recordRedemption(input: {
+    readonly keys: VerificationThrottleKeys;
+    readonly now: number;
+    readonly success: boolean;
+    readonly rules: VerificationThrottleRules;
+  }): Promise<void>;
+}
+
 /** The credentials. Implemented in the API's security module. */
 export interface VerificationAccessCrypto {
   /** Six uniformly random decimal digits. */
@@ -138,6 +206,8 @@ export interface VerificationAccessCrypto {
   issueGrantToken(): { readonly raw: string; readonly digest: string };
   /** Null when the value cannot be a token (refused by shape). */
   digestGrantToken(raw: string): string | null;
+  /** 085. The throttle's keys for a typed (verification ID, email) pair. */
+  throttleKeys(verificationId: string, normalizedEmail: string): VerificationThrottleKeys;
   nextChallengeId(): string;
   nextGrantId(): string;
 }

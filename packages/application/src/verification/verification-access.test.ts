@@ -14,6 +14,8 @@ import type {
 import type { NewNotificationIntent } from "../common/ports/notifications.js";
 import { createTemplateRegistry } from "../notifications/template-registry.js";
 import { ALL_TEMPLATES } from "../notifications/templates.js";
+import { createMemoryVerificationThrottle, type MemoryVerificationThrottle } from "../test-support/verification-throttle-fake.js";
+import { RateLimitedError, AbuseControlUnavailableError } from "../rate-limit/limiter.js";
 import {
   requestVerificationAccessCode, redeemVerificationAccessCode,
   grantMemberVerificationAccess, getVerificationAccessDetails,
@@ -151,12 +153,17 @@ const crypto: VerificationAccessCrypto = {
   digestGrantToken: raw => (raw.startsWith("tok") ? sha(`grant:${raw}`) : null),
   nextChallengeId: () => `vac_${++seq}`,
   nextGrantId: () => `vag_${++seq}`,
+  // Readable keys, so a test can find a pair's state by name.
+  throttleKeys: (verificationId, email) => ({
+    pairKey: `${verificationId}|${email}`, verificationKey: verificationId,
+  }),
 };
 
 let now = T0;
 let account: VerificationAccount | null = null;
 let memory: ReturnType<typeof memoryStore>;
 let stored: { stream: AsyncIterable<Uint8Array> } | null;
+let throttle: MemoryVerificationThrottle;
 
 function deps(): VerificationAccessDependencies {
   return {
@@ -170,6 +177,7 @@ function deps(): VerificationAccessDependencies {
     },
     storage: { getObject: () => Promise.resolve(stored) } as never,
     currentAccount: () => Promise.resolve(account),
+    throttle,
   };
 }
 
@@ -183,6 +191,7 @@ beforeEach(() => {
     stream: (async function* () { yield new Uint8Array([1, 2, 3]); })(),
   };
   memory = memoryStore({ [`${ID}|${EMAIL}`]: TARGET });
+  throttle = createMemoryVerificationThrottle();
 });
 
 describe("requesting a code", () => {
@@ -228,6 +237,7 @@ describe("requesting a code", () => {
 
   it("a resend supersedes the previous live challenge", async () => {
     await requestVerificationAccessCode(ID, EMAIL, deps());
+    now += 60_000;
     await requestVerificationAccessCode(ID, EMAIL, deps());
     expect(memory.challenges.map(c => c.superseded)).toEqual([true, false]);
     // The old code no longer works; the new one does.
@@ -393,5 +403,125 @@ describe("the code email", () => {
       + "If you did not ask for it, ignore this email.");
     expect(rendered.textBody).toContain("Office Lease");
     expect(rendered.htmlBody).toContain("123456");
+  });
+});
+
+// ── 085. The throttle ────────────────────────────────────────────────────────
+
+describe("the code-request throttle (085)", () => {
+  const STRANGER = "stranger@example.com";
+
+  async function limitedAfter(email: string): Promise<RateLimitedError> {
+    try {
+      await requestVerificationAccessCode(ID, email, deps());
+    } catch (error) {
+      if (error instanceof RateLimitedError) return error;
+      throw error;
+    }
+    throw new Error("expected a rate-limit refusal");
+  }
+
+  it("holds a 60-second resend cooldown, identically for a participant and a stranger", async () => {
+    for (const email of [EMAIL, STRANGER]) {
+      await requestVerificationAccessCode(ID, email, deps());
+      now += 20_000;
+      const refused = await limitedAfter(email);
+      expect(refused.retryAfterSeconds).toBe(40);
+      now -= 20_000;
+    }
+    now += 60_000;
+    await expect(requestVerificationAccessCode(ID, EMAIL, deps())).resolves.toEqual({ sent: true, expiresInSeconds: 600 });
+    await expect(requestVerificationAccessCode(ID, STRANGER, deps())).resolves.toEqual({ sent: true, expiresInSeconds: 600 });
+  });
+
+  it("caps a pair at 10 codes per rolling 24 hours", async () => {
+    for (let i = 0; i < 10; i++) {
+      await requestVerificationAccessCode(ID, EMAIL, deps());
+      now += 60_000;
+    }
+    const refused = await limitedAfter(EMAIL);
+    // The first of the ten leaves the window at T0 + 24h.
+    expect(refused.retryAfterSeconds).toBe(Math.ceil((T0 + 86_400_000 - now) / 1000));
+    // A stranger at the same counts is refused at the same point.
+    now = T0;
+    for (let i = 0; i < 10; i++) {
+      await requestVerificationAccessCode(ID, STRANGER, deps());
+      now += 60_000;
+    }
+    await limitedAfter(STRANGER);
+    // And it rolls: once the first expires, one more is allowed.
+    now = T0 + 86_400_000 + 1;
+    await expect(requestVerificationAccessCode(ID, EMAIL, deps())).resolves.toMatchObject({ sent: true });
+  });
+
+  it("caps a verification ID at 30 codes per rolling hour across all emails", async () => {
+    for (let i = 0; i < 30; i++) {
+      await requestVerificationAccessCode(ID, `person${i}@example.com`, deps());
+    }
+    const refused = await limitedAfter("person31@example.com");
+    expect(refused.retryAfterSeconds).toBe(3600);
+    // Another document is unaffected.
+    await expect(requestVerificationAccessCode(OTHER_ID, EMAIL, deps())).resolves.toMatchObject({ sent: true });
+  });
+
+  it("locks a pair for an hour after 3 consecutive challenges exhausted by wrong guesses", async () => {
+    for (const email of [EMAIL, STRANGER]) {
+      now = T0;
+      for (let round = 0; round < 3; round++) {
+        await requestVerificationAccessCode(ID, email, deps());
+        for (let i = 0; i < VERIFICATION_CODE_MAX_ATTEMPTS; i++) {
+          expect((await redeemVerificationAccessCode(ID, email, "999999", deps())).outcome).toBe("denied");
+        }
+        now += 60_000;
+      }
+      const refused = await limitedAfter(email);
+      expect(refused.retryAfterSeconds).toBe(3600 - 60);
+    }
+    // After the hour, codes flow again.
+    now = T0 + 2 * 60_000 + 3_600_000;
+    await expect(requestVerificationAccessCode(ID, EMAIL, deps())).resolves.toMatchObject({ sent: true });
+  });
+
+  it("a successful redemption resets the exhausted streak", async () => {
+    codes = ["123456", "123456", "123456", "123456"];
+    for (let round = 0; round < 2; round++) {
+      await requestVerificationAccessCode(ID, EMAIL, deps());
+      for (let i = 0; i < VERIFICATION_CODE_MAX_ATTEMPTS; i++) {
+        await redeemVerificationAccessCode(ID, EMAIL, "999999", deps());
+      }
+      now += 60_000;
+    }
+    await requestVerificationAccessCode(ID, EMAIL, deps());
+    expect((await redeemVerificationAccessCode(ID, EMAIL, "123456", deps())).outcome).toBe("granted");
+    now += 60_000;
+    await requestVerificationAccessCode(ID, EMAIL, deps());
+    for (let i = 0; i < VERIFICATION_CODE_MAX_ATTEMPTS; i++) {
+      await redeemVerificationAccessCode(ID, EMAIL, "999999", deps());
+    }
+    now += 60_000;
+    // One exhausted after the reset is not three in a row.
+    await expect(requestVerificationAccessCode(ID, EMAIL, deps())).resolves.toMatchObject({ sent: true });
+  });
+
+  it("malformed codes do not count toward the lockout", async () => {
+    await requestVerificationAccessCode(ID, EMAIL, deps());
+    for (let i = 0; i < 20; i++) await redeemVerificationAccessCode(ID, EMAIL, "abc", deps());
+    expect(throttle.pairs.get(`${ID}|${EMAIL}`)?.attempts).toBe(0);
+  });
+
+  it("refuses before any lookup: a limited request creates no challenge and no email", async () => {
+    await requestVerificationAccessCode(ID, EMAIL, deps());
+    await limitedAfter(EMAIL);
+    expect(memory.challenges).toHaveLength(1);
+    expect(created).toHaveLength(1);
+  });
+
+  it("fails closed when the throttle cannot be read", async () => {
+    throttle.failing = true;
+    await expect(requestVerificationAccessCode(ID, EMAIL, deps()))
+      .rejects.toBeInstanceOf(AbuseControlUnavailableError);
+    expect(memory.challenges).toHaveLength(0);
+    await expect(redeemVerificationAccessCode(ID, EMAIL, "999999", deps()))
+      .rejects.toBeInstanceOf(AbuseControlUnavailableError);
   });
 });

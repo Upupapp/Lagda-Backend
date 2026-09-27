@@ -13,3 +13,4 @@ export * from "./fakes.js";
 export * from "./in-memory-object-storage.js";
 export * from "./idempotency-fake.js";
 export * from "./idempotency-support.js";
+export * from "./verification-throttle-fake.js";

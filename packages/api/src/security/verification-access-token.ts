@@ -14,6 +14,8 @@ import { createDeliverySecretSealer } from "./signing-delivery.js";
 
 const CODE_DOMAIN = "lagda.verification-access-code";
 const GRANT_DOMAIN = "lagda.verification-access-grant";
+const THROTTLE_PAIR_DOMAIN = "lagda.verification-throttle.pair";
+const THROTTLE_VERIFICATION_DOMAIN = "lagda.verification-throttle.verification";
 const TOKEN_BYTES = 32;
 const ENCODED_LENGTH = 43;
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]+$/u;
@@ -45,6 +47,12 @@ export function createVerificationAccessCrypto(
       if (raw.length !== ENCODED_LENGTH || !TOKEN_PATTERN.test(raw)) return null;
       return sha256Hex(`${GRANT_DOMAIN}:${raw}`);
     },
+    // 085. Irreversible throttle keys: an email is personal data, and a
+    // throttle only ever compares.
+    throttleKeys: (verificationId, normalizedEmail) => ({
+      pairKey: sha256Hex(`${THROTTLE_PAIR_DOMAIN}:${verificationId}|${normalizedEmail}`),
+      verificationKey: sha256Hex(`${THROTTLE_VERIFICATION_DOMAIN}:${verificationId}`),
+    }),
     nextChallengeId: () => `vac_${randomUUID()}`,
     nextGrantId: () => `vag_${randomUUID()}`,
   };
