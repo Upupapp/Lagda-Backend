@@ -279,7 +279,8 @@ describe("participants' completed documents", () => {
     const { app } = await build({
       signedDocuments: [
         { signingRequestId: "sr_1", documentTitle: "Lease", senderName: "Paul", senderEmail: "p@example.com",
-          workspaceName: "Acme", signedAt: 1_700_000_000_000, completion: COMPLETION },
+          workspaceName: "Acme", signedAt: 1_700_000_000_000,
+          completion: { ...COMPLETION, signingRequestId: "sr_1" } as ParticipantCompletionView },
         { signingRequestId: "sr_2", documentTitle: "NDA", senderName: null, senderEmail: null,
           workspaceName: null, signedAt: 1_700_000_000_000, completion: null },
       ],
@@ -298,7 +299,8 @@ describe("participants' completed documents", () => {
       completedOthers: [{
         signingRequestId: "sr_3", recipientId: "srr_3", documentTitle: "Memo", recipientType: "viewer",
         senderName: "Paul", senderEmail: "p@example.com", workspaceName: "Acme",
-        invitedAt: 1_700_000_000_000, expiresAt: 1_700_000_000_000, completion: COMPLETION,
+        invitedAt: 1_700_000_000_000, expiresAt: 1_700_000_000_000,
+        completion: { ...COMPLETION, signingRequestId: "sr_3" } as ParticipantCompletionView,
       }],
     });
     const response = await app.inject({ method: "GET", url: "/me/other-documents/completed" });

@@ -195,9 +195,22 @@ const ParticipantLogoParams = Type.Object({
   verificationId: Type.String({ minLength: 1, maxLength: 64 }),
 }, { additionalProperties: false });
 
+// Field by field: the schema is closed, and the value handed in may carry more
+// than the view (the repository's row keeps its signing request id).
 const presentCompletion = (completion: ParticipantCompletionView) => ({
-  ...completion,
+  verificationId: completion.verificationId,
   completedAt: new Date(completion.completedAt).toISOString(),
+  participants: completion.participants,
+  completed: completion.completed,
+  branding: {
+    displayName: completion.branding.displayName,
+    primaryColor: completion.branding.primaryColor,
+    logo: completion.branding.logo === null ? null : {
+      version: completion.branding.logo.version,
+      width: completion.branding.logo.width,
+      height: completion.branding.logo.height,
+    },
+  },
 });
 
 const ContinueSigningRequestSchema = Type.Object({
