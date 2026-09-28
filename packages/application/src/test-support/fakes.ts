@@ -2449,6 +2449,11 @@ export function userSigningRecords(): UserSigningRecordsRepository {
         .filter(e => e.userId === userId && isOpen(e, now))
         .sort((a, b) => b.invitedAt - a.invitedAt)
         .slice(0, limit)),
+    listNonSignerEntriesForUser: (userId, limit) => Promise.resolve(
+      [...fakeSigningInbox.values()]
+        .filter(e => e.userId === userId && e.recipientType !== null && e.recipientType !== "signer")
+        .sort((a, b) => b.invitedAt - a.invitedAt)
+        .slice(0, limit)),
     findOpenInboxEntry: (userId, signingRequestId, recipientId, now) => {
       const entry = fakeSigningInbox.get(recipientKey(signingRequestId, recipientId));
       return Promise.resolve(entry !== undefined && entry.userId === userId && isOpen(entry, now)

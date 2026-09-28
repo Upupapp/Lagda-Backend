@@ -90,6 +90,8 @@ export interface UserSigningRecordsRepository {
 
   listSignedForUser(userId: string, limit: number): Promise<readonly UserSignedDocumentRecord[]>;
   listOpenInboxForUser(userId: string, now: number, limit: number): Promise<readonly UserSigningInboxRecord[]>;
+  /** Every non-signer entry of this account, open or closed, newest first. */
+  listNonSignerEntriesForUser(userId: string, limit: number): Promise<readonly UserSigningInboxRecord[]>;
   findOpenInboxEntry(
     userId: string, signingRequestId: string, recipientId: string, now: number,
   ): Promise<UserSigningInboxRecord | null>;

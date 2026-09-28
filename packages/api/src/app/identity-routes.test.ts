@@ -48,6 +48,8 @@ function app() {
     claimSigningLink: () => Promise.reject(new Error("not used")),
     listDocumentsToSign: () => Promise.resolve([]),
     listSignedDocuments: () => Promise.resolve([]),
+    listCompletedOtherDocuments: () => Promise.resolve([]),
+    participantDocumentLogo: () => Promise.resolve(null),
     beginInAppSigning: () => Promise.reject(new Error("not used")),
     signatureImages: () => createSignatureImageValidator(),
     now: () => new Date(1_700_000_000_000),

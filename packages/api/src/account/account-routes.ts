@@ -44,6 +44,7 @@ import {
   SigningLinkAddressedElsewhereError,
   InAppSigningPasswordError, InAppSigningUnverifiedError, InAppSigningUnavailableError,
   type SigningInboxItemView, type SignedDocumentView,
+  type ParticipantCompletionView, type CompletedOtherDocumentView,
   getNotificationPreferences, updateNotificationPreferences,
   type NotificationPreferenceRepository, type NotificationPreferencesView,
   setMyNotificationState, MAX_MY_NOTIFICATION_STATE_IDS,
@@ -150,14 +151,54 @@ const DocumentsToSignResponseSchema = Type.Object({
   }, { additionalProperties: false })),
 }, { title: "DocumentsToSign", additionalProperties: false });
 
+/** A completed document as its participant sees it; see ParticipantCompletionView. */
+const ParticipantCompletionSchema = Type.Object({
+  verificationId: Type.String(),
+  completedAt: Type.String({ format: "date-time" }),
+  participants: Type.Integer({ minimum: 0 }),
+  completed: Type.Integer({ minimum: 0 }),
+  branding: Type.Object({
+    displayName: Type.String(),
+    primaryColor: Type.Union([Type.String(), Type.Null()]),
+    logo: Type.Union([Type.Object({
+      version: Type.String(),
+      width: Type.Integer(),
+      height: Type.Integer(),
+    }, { additionalProperties: false }), Type.Null()]),
+  }, { additionalProperties: false }),
+}, { title: "ParticipantCompletion", additionalProperties: false });
+
 const SignedDocumentsResponseSchema = Type.Object({
   items: Type.Array(Type.Object({
     signingRequestId: Type.String(),
     documentTitle: Type.String(),
     ...SenderFields,
     signedAt: Type.String({ format: "date-time" }),
+    completion: Type.Union([ParticipantCompletionSchema, Type.Null()]),
   }, { additionalProperties: false })),
 }, { title: "SignedDocuments", additionalProperties: false });
+
+const CompletedOtherDocumentsResponseSchema = Type.Object({
+  items: Type.Array(Type.Object({
+    signingRequestId: Type.String(),
+    recipientId: Type.String(),
+    documentTitle: Type.String(),
+    recipientType: Type.Union([Type.String(), Type.Null()]),
+    ...SenderFields,
+    invitedAt: Type.String({ format: "date-time" }),
+    expiresAt: Type.String({ format: "date-time" }),
+    completion: ParticipantCompletionSchema,
+  }, { additionalProperties: false })),
+}, { title: "CompletedOtherDocuments", additionalProperties: false });
+
+const ParticipantLogoParams = Type.Object({
+  verificationId: Type.String({ minLength: 1, maxLength: 64 }),
+}, { additionalProperties: false });
+
+const presentCompletion = (completion: ParticipantCompletionView) => ({
+  ...completion,
+  completedAt: new Date(completion.completedAt).toISOString(),
+});
 
 const ContinueSigningRequestSchema = Type.Object({
   signingRequestId: Type.String({ minLength: 1, maxLength: 64 }),
@@ -417,6 +458,12 @@ export interface AccountRouteOptions {
   readonly listDocumentsToSign: (userId: UserId) => Promise<readonly SigningInboxItemView[]>;
   /** "Signed by me" (migration 055), read by the caller's own id. */
   readonly listSignedDocuments: (userId: UserId) => Promise<readonly SignedDocumentView[]>;
+  /** "Others" that are completed, read by the caller's own id. */
+  readonly listCompletedOtherDocuments: (userId: UserId) => Promise<readonly CompletedOtherDocumentView[]>;
+  /** The owner's logo, for a participant of this completed document. */
+  readonly participantDocumentLogo: (
+    userId: UserId, verificationId: string,
+  ) => Promise<{ mediaType: string; bytes: Uint8Array; digest: string } | null>;
   /** The second verification before continuing to sign from the app. */
   readonly beginInAppSigning: (
     userId: UserId,
@@ -843,8 +890,50 @@ export function registerAccountRoutes(
     if (actor === null) return unauthenticated(reply);
     const items = await options.listSignedDocuments(actor.userId);
     return reply.status(200).send({
-      items: items.map(item => ({ ...item, signedAt: new Date(item.signedAt).toISOString() })),
+      items: items.map(item => ({
+        ...item,
+        signedAt: new Date(item.signedAt).toISOString(),
+        completion: item.completion === null ? null : presentCompletion(item.completion),
+      })),
     });
+  });
+
+  // "Others" once the document is completed. Each row proves itself: the
+  // caller's verified address is a recipient of that completed request.
+  app.get("/me/other-documents/completed", {
+    schema: { response: { 200: CompletedOtherDocumentsResponseSchema } },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await options.authenticatedUser(request);
+    if (actor === null) return unauthenticated(reply);
+    const items = await options.listCompletedOtherDocuments(actor.userId);
+    return reply.status(200).send({
+      items: items.map(item => ({
+        ...item,
+        invitedAt: new Date(item.invitedAt).toISOString(),
+        expiresAt: new Date(item.expiresAt).toISOString(),
+        completion: presentCompletion(item.completion),
+      })),
+    });
+  });
+
+  // The owner workspace's logo on a participant's completed-document card.
+  app.get("/me/participant-documents/:verificationId/branding/logo", {
+    schema: { params: ParticipantLogoParams },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const actor = await options.authenticatedUser(request);
+    if (actor === null) return unauthenticated(reply);
+    const { verificationId } = request.params as Static<typeof ParticipantLogoParams>;
+    const logo = await options.participantDocumentLogo(actor.userId, verificationId);
+    if (logo === null) {
+      noStore(reply);
+      return reply.status(404).send({ error: { code: "LOGO_NOT_FOUND", message: "No logo is set." } });
+    }
+    // Private: served to one participant account.
+    void reply.header("Cache-Control", "private, max-age=300");
+    void reply.header("ETag", `"${logo.digest}"`);
+    void reply.header("X-Content-Type-Options", "nosniff");
+    return reply.type(logo.mediaType).send(Buffer.from(logo.bytes));
   });
 
   // "Continue signing": the second verification. Returns a single-use code

@@ -185,6 +185,20 @@ export function createUserSigningRecordsRepository(db: Db): UserSigningRecordsRe
       return rows.map(toInbox);
     },
 
+    async listNonSignerEntriesForUser(userId, limit) {
+      // "Others" once the document is done: the account's own non-signer
+      // entries, open or closed, so a completed one stays listed after the
+      // entry itself closes or lapses. By user id only, as every read here.
+      const rows = await db.selectFrom("user_signing_inbox").selectAll()
+        .where("user_id", "=", userId)
+        .where("recipient_type", "is not", null)
+        .where("recipient_type", "!=", "signer")
+        .orderBy("invited_at", "desc")
+        .limit(limit)
+        .execute();
+      return rows.map(toInbox);
+    },
+
     async findOpenInboxEntry(userId, signingRequestId, recipientId, now) {
       const row = await db.selectFrom("user_signing_inbox").selectAll()
         .where("user_id", "=", userId)

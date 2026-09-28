@@ -29,6 +29,20 @@ suite("signing inbox roles (077)", () => {
     await seedUser(db, USER, { email: "me@example.com" });
   });
 
+  it("lists every non-signer entry, closed or lapsed, and no signer's", async () => {
+    const records = createUserSigningRecordsRepository(db.db);
+    await records.openInboxEntry(entry());
+    await records.openInboxEntry(entry({ recipientId: "srr_approver", recipientType: "approver" }));
+    await records.openInboxEntry(entry({
+      signingRequestId: "sr_old", recipientId: "srr_viewer", recipientType: "viewer", expiresAt: NOW - 10,
+    }));
+    await records.closeInboxForRequest("sr_077", "cancelled", NOW);
+
+    const listed = await records.listNonSignerEntriesForUser(USER, 10);
+    expect(listed.map(e => e.recipientType).sort()).toEqual(["approver", "viewer"]);
+    expect(await records.listNonSignerEntriesForUser("usr_other", 10)).toEqual([]);
+  });
+
   it("stores each entry's role and lists every open one", async () => {
     const records = createUserSigningRecordsRepository(db.db);
     await records.openInboxEntry(entry());

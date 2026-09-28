@@ -53,7 +53,10 @@ export {
 // constructed instance cannot hold a connection -- which is the risk the note
 // at the top of this file is about.
 export { createPublicVerificationLookup } from "./repositories/evidence.js";
-export { createVerificationAccessStore, findSealedVerificationAccessCode } from "./repositories/verification-access.js";
+export {
+  createVerificationAccessStore, findSealedVerificationAccessCode, createParticipantDocumentsReader,
+  type ParticipantCompletion, type ParticipantLogo,
+} from "./repositories/verification-access.js";
 export { createVerificationAccessThrottle } from "./repositories/verification-throttle.js";
 export {
   createVerificationRepository, createVerifiableUserRepository,

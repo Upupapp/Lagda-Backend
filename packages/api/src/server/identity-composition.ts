@@ -61,11 +61,12 @@ import { createSignatureImageValidator } from "../security/signature-image.js";
 import { randomUUID } from "node:crypto";
 import {
   claimSigningLink, normalizeEmail, beginInAppSigning,
-  presentInboxItem, presentSignedDocument,
+  presentInboxItem, presentSignedDocument, type ParticipantCompletionView,
 } from "@lagda/application";
 import {
   createSigningAccountLinkRepository, createPreparedSignatureRepository,
   createUserSigningRecordsRepository, createSigningResumeIntentRepository,
+  createParticipantDocumentsReader,
 } from "@lagda/db";
 import { createHandoffCodeDigester } from "../security/crypto.js";
 
@@ -589,7 +590,35 @@ export function buildIdentity(
       listSignedDocuments: async (userId: UserId) => {
         const records = await createUserSigningRecordsRepository(db)
           .listSignedForUser(userId, 100);
-        return records.map(presentSignedDocument);
+        // Completion and the owner's banner, only for a VERIFIED address that
+        // is a recipient of that completed request.
+        const identity = await findAccountIdentity(userId);
+        const completions: ReadonlyMap<string, ParticipantCompletionView> =
+          identity === null || !identity.emailVerified ? new Map()
+          : await createParticipantDocumentsReader(db).completions(
+            identity.normalizedEmail, records.map(r => r.signingRequestId));
+        return records.map(record =>
+          presentSignedDocument(record, completions.get(record.signingRequestId) ?? null));
+      },
+      listCompletedOtherDocuments: async (userId: UserId) => {
+        const identity = await findAccountIdentity(userId);
+        if (identity === null || !identity.emailVerified) return [];
+        const entries = await createUserSigningRecordsRepository(db)
+          .listNonSignerEntriesForUser(userId, 100);
+        const completions = await createParticipantDocumentsReader(db).completions(
+          identity.normalizedEmail, entries.map(e => e.signingRequestId));
+        const seen = new Set<string>();
+        return entries.flatMap(entry => {
+          const completion = completions.get(entry.signingRequestId);
+          if (completion === undefined || seen.has(entry.signingRequestId)) return [];
+          seen.add(entry.signingRequestId);
+          return [{ ...presentInboxItem(entry), completion }];
+        });
+      },
+      participantDocumentLogo: async (userId: UserId, verificationId: string) => {
+        const identity = await findAccountIdentity(userId);
+        if (identity === null || !identity.emailVerified) return null;
+        return createParticipantDocumentsReader(db).logo(identity.normalizedEmail, verificationId);
       },
       // "Continue signing": the second verification, then a single-use code.
       // One transaction, so the link, the handed-over marks and the code

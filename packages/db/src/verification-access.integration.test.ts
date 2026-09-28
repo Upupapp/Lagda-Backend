@@ -18,7 +18,7 @@ import {
 import type { LagdaDatabase } from "./client/index.js";
 import { createTransactionManager } from "./transactions/index.js";
 import {
-  createVerificationAccessStore, findSealedVerificationAccessCode,
+  createVerificationAccessStore, findSealedVerificationAccessCode, createParticipantDocumentsReader,
 } from "./repositories/verification-access.js";
 import { createVerificationAccessThrottle } from "./repositories/verification-throttle.js";
 import { migrateDown, migrateToLatest, migrationStatus } from "./migrations/runner.js";
@@ -373,6 +373,49 @@ suite("verification access (083, runtime role)", () => {
       audience_kind: "SIGNING_REQUEST_RECIPIENT", audience_recipient_id: recipientOf(WS_A),
     });
     expect(JSON.stringify(intents[0])).not.toContain("123456");
+  });
+
+  describe("participants' own completed documents", () => {
+    const LOGO = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    const brand = () => owner.db.insertInto("workspace_branding").values({
+      workspace_id: WS_A, sender_display_name: null, footer_tagline: null, primary_color: "#112233",
+      logo_media_type: "image/png", logo_bytes: LOGO, logo_width: 10, logo_height: 5,
+      logo_digest: HASH("c"), logo_updated_at: new Date(AT), updated_at: new Date(AT),
+    }).execute();
+
+    it("gives a recipient's completion with the owner's branding, per tenant", async () => {
+      await brand();
+      const found = await createParticipantDocumentsReader(app.db)
+        .completions(EMAIL, [requestOf(WS_A), requestOf(WS_B), "sr_unknown"]);
+      expect(found.size).toBe(2);
+      expect(found.get(requestOf(WS_A))).toEqual({
+        signingRequestId: requestOf(WS_A), verificationId: verificationOf(WS_A),
+        completedAt: AT + 2000, participants: 1, completed: 1,
+        branding: {
+          displayName: `WS ${WS_A}`, primaryColor: "#112233",
+          logo: { version: HASH("c"), width: 10, height: 5 },
+        },
+      });
+      expect(found.get(requestOf(WS_B))?.branding).toEqual({
+        displayName: `WS ${WS_B}`, primaryColor: null, logo: null,
+      });
+    });
+
+    it("gives nothing to an address that is not a recipient", async () => {
+      const reader = createParticipantDocumentsReader(app.db);
+      expect((await reader.completions("someone@example.com", [requestOf(WS_A)])).size).toBe(0);
+      await brand();
+      expect(await reader.logo("someone@example.com", verificationOf(WS_A))).toBeNull();
+    });
+
+    it("serves the owner's logo to a recipient only", async () => {
+      await brand();
+      const reader = createParticipantDocumentsReader(app.db);
+      const logo = await reader.logo(EMAIL, verificationOf(WS_A));
+      expect(logo?.mediaType).toBe("image/png");
+      expect(Buffer.from(logo?.bytes ?? [])).toEqual(LOGO);
+      expect(await reader.logo(EMAIL, verificationOf(WS_B))).toBeNull();
+    });
   });
 
   it("documents carry their own tenant's verification ID only", async () => {

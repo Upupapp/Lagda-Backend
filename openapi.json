@@ -47227,7 +47227,8 @@
                           "senderName",
                           "senderEmail",
                           "workspaceName",
-                          "signedAt"
+                          "signedAt",
+                          "completion"
                         ],
                         "properties": {
                           "signingRequestId": {
@@ -47269,6 +47270,93 @@
                           "signedAt": {
                             "format": "date-time",
                             "type": "string"
+                          },
+                          "completion": {
+                            "anyOf": [
+                              {
+                                "title": "ParticipantCompletion",
+                                "additionalProperties": false,
+                                "type": "object",
+                                "required": [
+                                  "verificationId",
+                                  "completedAt",
+                                  "participants",
+                                  "completed",
+                                  "branding"
+                                ],
+                                "properties": {
+                                  "verificationId": {
+                                    "type": "string"
+                                  },
+                                  "completedAt": {
+                                    "format": "date-time",
+                                    "type": "string"
+                                  },
+                                  "participants": {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  "completed": {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  "branding": {
+                                    "additionalProperties": false,
+                                    "type": "object",
+                                    "required": [
+                                      "displayName",
+                                      "primaryColor",
+                                      "logo"
+                                    ],
+                                    "properties": {
+                                      "displayName": {
+                                        "type": "string"
+                                      },
+                                      "primaryColor": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "logo": {
+                                        "anyOf": [
+                                          {
+                                            "additionalProperties": false,
+                                            "type": "object",
+                                            "required": [
+                                              "version",
+                                              "width",
+                                              "height"
+                                            ],
+                                            "properties": {
+                                              "version": {
+                                                "type": "string"
+                                              },
+                                              "width": {
+                                                "type": "integer"
+                                              },
+                                              "height": {
+                                                "type": "integer"
+                                              }
+                                            }
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  }
+                                }
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         }
                       }
@@ -47277,6 +47365,208 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/me/other-documents/completed": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "CompletedOtherDocuments",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "signingRequestId",
+                          "recipientId",
+                          "documentTitle",
+                          "recipientType",
+                          "senderName",
+                          "senderEmail",
+                          "workspaceName",
+                          "invitedAt",
+                          "expiresAt",
+                          "completion"
+                        ],
+                        "properties": {
+                          "signingRequestId": {
+                            "type": "string"
+                          },
+                          "recipientId": {
+                            "type": "string"
+                          },
+                          "documentTitle": {
+                            "type": "string"
+                          },
+                          "recipientType": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "senderName": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "senderEmail": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "workspaceName": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "invitedAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "expiresAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "completion": {
+                            "title": "ParticipantCompletion",
+                            "additionalProperties": false,
+                            "type": "object",
+                            "required": [
+                              "verificationId",
+                              "completedAt",
+                              "participants",
+                              "completed",
+                              "branding"
+                            ],
+                            "properties": {
+                              "verificationId": {
+                                "type": "string"
+                              },
+                              "completedAt": {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              "participants": {
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "completed": {
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "branding": {
+                                "additionalProperties": false,
+                                "type": "object",
+                                "required": [
+                                  "displayName",
+                                  "primaryColor",
+                                  "logo"
+                                ],
+                                "properties": {
+                                  "displayName": {
+                                    "type": "string"
+                                  },
+                                  "primaryColor": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "logo": {
+                                    "anyOf": [
+                                      {
+                                        "additionalProperties": false,
+                                        "type": "object",
+                                        "required": [
+                                          "version",
+                                          "width",
+                                          "height"
+                                        ],
+                                        "properties": {
+                                          "version": {
+                                            "type": "string"
+                                          },
+                                          "width": {
+                                            "type": "integer"
+                                          },
+                                          "height": {
+                                            "type": "integer"
+                                          }
+                                        }
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/participant-documents/{verificationId}/branding/logo": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "verificationId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
           }
         }
       }

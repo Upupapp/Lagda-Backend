@@ -522,3 +522,136 @@ export async function findSealedVerificationAccessCode(
   });
 }
 
+
+// ── Participants' own completed documents ────────────────────────────────────
+//
+// "Signed by me" and "Others" show a completed document the way Completed
+// does: the owner's banner, and the signed copy, participants and audit trail
+// through the member grant above. These two reads give the list what it needs
+// and nothing more, and each proves participation itself: the account's
+// VERIFIED address must be a recipient of that request. The request id comes
+// from the account's own rows; the workspace is never taken from the caller.
+
+export interface ParticipantCompletion {
+  readonly signingRequestId: string;
+  readonly verificationId: string;
+  readonly completedAt: number;
+  readonly participants: number;
+  readonly completed: number;
+  readonly branding: {
+    readonly displayName: string;
+    readonly primaryColor: string | null;
+    readonly logo: { readonly version: string; readonly width: number; readonly height: number } | null;
+  };
+}
+
+export interface ParticipantLogo {
+  readonly mediaType: string;
+  readonly bytes: Uint8Array;
+  readonly digest: string;
+}
+
+const MAX_PARTICIPANT_LOOKUP = 100;
+
+export function createParticipantDocumentsReader(db: Kysely<Database>) {
+  return {
+    /** Completed requests among `signingRequestIds` this address took part in. */
+    completions(
+      normalizedEmail: string, signingRequestIds: readonly string[],
+    ): Promise<ReadonlyMap<string, ParticipantCompletion>> {
+      const ids = [...new Set(signingRequestIds)].slice(0, MAX_PARTICIPANT_LOOKUP);
+      if (ids.length === 0) return Promise.resolve(new Map());
+      return db.transaction().execute(async trx => {
+        await sql`select set_config(${PUBLIC_VERIFICATION_SETTING}, 'true', true)`.execute(trx);
+        const rows = await trx
+          .selectFrom("verification_records")
+          .innerJoin("signing_requests", join => join
+            .onRef("signing_requests.signing_request_id", "=", "verification_records.signing_request_id")
+            .onRef("signing_requests.workspace_id", "=", "verification_records.workspace_id"))
+          .innerJoin("signing_request_recipients", join => join
+            .onRef("signing_request_recipients.signing_request_id", "=", "verification_records.signing_request_id")
+            .onRef("signing_request_recipients.workspace_id", "=", "verification_records.workspace_id"))
+          .where("signing_requests.state", "=", "completed")
+          .where("verification_records.signing_request_id", "in", ids)
+          .where("signing_request_recipients.normalized_email", "=", normalizedEmail)
+          .select([
+            "verification_records.workspace_id", "verification_records.signing_request_id",
+            "verification_records.verification_id", "verification_records.completed_at",
+          ])
+          .execute();
+
+        const found = new Map<string, ParticipantCompletion>();
+        const byWorkspace = new Map<string, typeof rows>();
+        for (const row of rows) {
+          if (found.has(row.signing_request_id)) continue;
+          const list = byWorkspace.get(row.workspace_id) ?? [];
+          if (!list.some(r => r.signing_request_id === row.signing_request_id)) list.push(row);
+          byWorkspace.set(row.workspace_id, list);
+        }
+
+        for (const [workspaceId, list] of byWorkspace) {
+          // Branding and the workspace name are tenant rows: read them inside
+          // that tenant, which the proven participation above resolved.
+          await sql`select set_config(${WORKSPACE_SETTING}, ${workspaceId}, true)`.execute(trx);
+          const [workspace, branding] = await Promise.all([
+            trx.selectFrom("workspaces").where("workspace_id", "=", workspaceId)
+              .select(["name"]).executeTakeFirst(),
+            trx.selectFrom("workspace_branding").where("workspace_id", "=", workspaceId)
+              .select(["primary_color", "logo_digest", "logo_width", "logo_height"]).executeTakeFirst(),
+          ]);
+          const requestIds = list.map(r => r.signing_request_id);
+          const recipients = await trx.selectFrom("signing_request_recipients")
+            .where("workspace_id", "=", workspaceId)
+            .where("signing_request_id", "in", requestIds)
+            .select(["signing_request_id", "request_recipient_id"])
+            .execute();
+          const outcomes = await trx.selectFrom("evidence_events")
+            .where("workspace_id", "=", workspaceId)
+            .where("signing_request_id", "in", requestIds)
+            .where("event_type", "in", ["signature-completed", "approval-completed"])
+            .select(["signing_request_id", "recipient_id"])
+            .execute();
+
+          for (const row of list) {
+            const done = new Set(outcomes
+              .filter(o => o.signing_request_id === row.signing_request_id && o.recipient_id !== null)
+              .map(o => o.recipient_id));
+            found.set(row.signing_request_id, {
+              signingRequestId: row.signing_request_id,
+              verificationId: row.verification_id,
+              completedAt: row.completed_at.getTime(),
+              participants: recipients.filter(r => r.signing_request_id === row.signing_request_id).length,
+              completed: done.size,
+              branding: {
+                displayName: workspace?.name ?? "Workspace",
+                primaryColor: branding?.primary_color ?? null,
+                logo: branding !== undefined && branding.logo_digest !== null
+                  && branding.logo_width !== null && branding.logo_height !== null
+                  ? { version: branding.logo_digest, width: branding.logo_width, height: branding.logo_height }
+                  : null,
+              },
+            });
+          }
+        }
+        return found;
+      });
+    },
+
+    /** The owner workspace's logo, for a participant of this completed document. */
+    logo(normalizedEmail: string, verificationId: string): Promise<ParticipantLogo | null> {
+      return db.transaction().execute(async trx => {
+        const request = await completedRequest(trx, verificationId);
+        if (request === null) return null;
+        if (await participantTarget(trx, request, normalizedEmail) === null) return null;
+        const row = await trx.selectFrom("workspace_branding")
+          .where("workspace_id", "=", request.workspaceId)
+          .select(["logo_media_type", "logo_bytes", "logo_digest"])
+          .executeTakeFirst();
+        if (!row || row.logo_bytes === null || row.logo_media_type === null || row.logo_digest === null) {
+          return null;
+        }
+        return { mediaType: row.logo_media_type, bytes: new Uint8Array(row.logo_bytes), digest: row.logo_digest };
+      });
+    },
+  };
+}

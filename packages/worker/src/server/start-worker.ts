@@ -28,7 +28,6 @@ import {
   type CompleteAttemptInput, type ClaimDeliveryInput,
   type NotificationScope,
   type ObjectStorage, type CompletionDependencies, type CompletionStepRunners,
-  type SealedDeliverySecret, type FinalCopyGrantId,
   VERIFICATION_CODE_MAX_ATTEMPTS,
 } from "@lagda/application";
 import {
@@ -41,7 +40,6 @@ import {
   createArtifactIdGenerator, createSealIdGenerator, createCompletionIdGenerator,
   createEvidenceEventIdGenerator, createVerificationIdGenerator,
   createNotificationIntentIdGenerator, createNotificationDeliveryIdGenerator,
-  createSecretBox, createFinalCopyTokenFactory,
 } from "@lagda/security";
 import {
   createS3ObjectStorage, createStorageKeyStrategy, loadStorageConfig,
@@ -248,33 +246,13 @@ export async function startWorker(): Promise<StartedWorker> {
     accountContacts: createAccountContactRepository(database.db),
   };
 
-  // ── Every participant's copy (073) ────────────────────────────────────────
+  // ── Every participant's copy (073): no longer produced ──────────────────
   //
-  // Wired ONLY when a delivery key is configured. The producer seals each
-  // download link inside the finalization transaction, and a sealer with no
-  // key throws — which would roll a completion back. Absent the key, final
-  // copies are simply not offered; documents still complete and seal.
-  const deliveryKey = config.signingDeliveryKey;
-  const finalCopies = deliveryKey === null || deliveryKey === "" ? undefined : (() => {
-    const box = createSecretBox({
-      keyBase64: deliveryKey, keyVersion: config.signingDeliveryKeyVersion,
-    });
-    return {
-      tokens: createFinalCopyTokenFactory(),
-      sealer: {
-        keyVersion: box.keyVersion,
-        seal: (plaintext: string) => box.seal(plaintext) as unknown as SealedDeliverySecret,
-      },
-      ids: {
-        nextFinalCopyGrantId: () =>
-          `fcg_${randomUUID().replace(/-/g, "")}` as FinalCopyGrantId,
-        ...createNotificationIntentIdGenerator(),
-        ...createNotificationDeliveryIdGenerator(),
-      },
-      templates,
-      clock,
-    };
-  })();
+  // Participants now open the signed copy, participants and audit trail from
+  // "Signed by me" / "Others" in the app, so completion no longer emails a
+  // "download your copy" link. Only the producer is unwired: links already
+  // sent keep working until they expire (the download route and the delivery
+  // check below are untouched), and every other message is unaffected.
 
   const completionSteps: CompletionStepRunners | undefined = objectStorage === null
     ? undefined
@@ -307,7 +285,6 @@ export async function startWorker(): Promise<StartedWorker> {
             },
             storage: objectStorage, keys, sealer: new NodeDocumentSealer(),
             completionNotification,
-            ...(finalCopies === undefined ? {} : { finalCopies }),
           }),
       };
     })();

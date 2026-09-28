@@ -212,6 +212,25 @@ export function presentInboxItem(entry: UserSigningInboxRecord): SigningInboxIte
   };
 }
 
+/**
+ * A completed document as its participant sees it in "Signed by me" and
+ * "Others": the verification ID that opens the signed copy, participants and
+ * audit trail through the member grant, and the owner workspace's banner.
+ * Present only once the request is completed AND the account's verified
+ * address is one of its recipients.
+ */
+export interface ParticipantCompletionView {
+  readonly verificationId: string;
+  readonly completedAt: number;
+  readonly participants: number;
+  readonly completed: number;
+  readonly branding: {
+    readonly displayName: string;
+    readonly primaryColor: string | null;
+    readonly logo: { readonly version: string; readonly width: number; readonly height: number } | null;
+  };
+}
+
 export interface SignedDocumentView {
   readonly signingRequestId: string;
   readonly documentTitle: string;
@@ -219,9 +238,13 @@ export interface SignedDocumentView {
   readonly senderEmail: string | null;
   readonly workspaceName: string | null;
   readonly signedAt: number;
+  readonly completion: ParticipantCompletionView | null;
 }
 
-export function presentSignedDocument(record: UserSignedDocumentRecord): SignedDocumentView {
+export function presentSignedDocument(
+  record: UserSignedDocumentRecord,
+  completion: ParticipantCompletionView | null = null,
+): SignedDocumentView {
   return {
     signingRequestId: record.signingRequestId,
     documentTitle: record.documentTitle,
@@ -229,7 +252,13 @@ export function presentSignedDocument(record: UserSignedDocumentRecord): SignedD
     senderEmail: record.senderEmail,
     workspaceName: record.workspaceName,
     signedAt: record.signedAt,
+    completion,
   };
+}
+
+/** "Others", once done: a non-signer role on a completed document. */
+export interface CompletedOtherDocumentView extends SigningInboxItemView {
+  readonly completion: ParticipantCompletionView;
 }
 
 export interface ContinueInAppSigningDependencies extends SigningAccessDependencies {

@@ -11,7 +11,7 @@ import type {
   UpdatePreferencesDependencies, ChangePasswordDependencies,
   ListSessionsDependencies, RevokeSessionDependencies,
   RevokeOtherSessionsDependencies, CurrentUser, PasswordHash,
-  SessionId, UserId,
+  SessionId, UserId, SignedDocumentView, CompletedOtherDocumentView, ParticipantCompletionView,
 } from "@lagda/application";
 import type { ApiConfig } from "../config/index.js";
 import type { UserSignatureRepository, SavedSignature } from "@lagda/db";
@@ -80,6 +80,9 @@ interface Built {
 }
 
 async function build(options: {
+  signedDocuments?: readonly SignedDocumentView[];
+  completedOthers?: readonly CompletedOtherDocumentView[];
+  participantLogo?: { mediaType: string; bytes: Uint8Array; digest: string } | null;
   authenticated?: boolean;
   userExists?: boolean;
   passwordOutcome?: "changed" | "invalid-current-password";
@@ -175,7 +178,12 @@ async function build(options: {
     notificationPreferences: () => preferences,
     claimSigningLink: () => Promise.reject(new Error("not used")),
     listDocumentsToSign: () => Promise.resolve([]),
-    listSignedDocuments: () => Promise.resolve([]),
+    listSignedDocuments: () => Promise.resolve(options.signedDocuments ?? []),
+    listCompletedOtherDocuments: () => Promise.resolve(options.completedOthers ?? []),
+    participantDocumentLogo: (_userId, verificationId) => {
+      logoLookups.push(verificationId);
+      return Promise.resolve(options.participantLogo ?? null);
+    },
     beginInAppSigning: () => Promise.reject(new Error("not used")),
     signatureImages: () => createSignatureImageValidator(),
     now: () => new Date(1_700_000_000_000),
@@ -255,6 +263,82 @@ const post = (app: FastifyInstance, url: string, payload: unknown) =>
   app.inject({ method: "POST", url, payload: payload as object });
 
 // ── /me ─────────────────────────────────────────────────────────────────────
+
+const logoLookups: string[] = [];
+
+const COMPLETION: ParticipantCompletionView = {
+  verificationId: "LAGDA-VER-2026-AAAAAAAAAA",
+  completedAt: 1_700_000_000_000,
+  participants: 2,
+  completed: 2,
+  branding: { displayName: "Acme", primaryColor: "#112233", logo: { version: "d".repeat(64), width: 10, height: 5 } },
+};
+
+describe("participants' completed documents", () => {
+  it("adds the completion and owner's branding to Signed by me", async () => {
+    const { app } = await build({
+      signedDocuments: [
+        { signingRequestId: "sr_1", documentTitle: "Lease", senderName: "Paul", senderEmail: "p@example.com",
+          workspaceName: "Acme", signedAt: 1_700_000_000_000, completion: COMPLETION },
+        { signingRequestId: "sr_2", documentTitle: "NDA", senderName: null, senderEmail: null,
+          workspaceName: null, signedAt: 1_700_000_000_000, completion: null },
+      ],
+    });
+    const response = await app.inject({ method: "GET", url: "/me/signed-documents" });
+    expect(response.statusCode).toBe(200);
+    const body: { items: { completion: unknown }[] } = response.json();
+    const items = body.items;
+    expect(items[0]?.completion).toEqual({ ...COMPLETION, completedAt: new Date(1_700_000_000_000).toISOString() });
+    expect(items[1]?.completion).toBeNull();
+    await app.close();
+  });
+
+  it("lists completed Others with their completion", async () => {
+    const { app } = await build({
+      completedOthers: [{
+        signingRequestId: "sr_3", recipientId: "srr_3", documentTitle: "Memo", recipientType: "viewer",
+        senderName: "Paul", senderEmail: "p@example.com", workspaceName: "Acme",
+        invitedAt: 1_700_000_000_000, expiresAt: 1_700_000_000_000, completion: COMPLETION,
+      }],
+    });
+    const response = await app.inject({ method: "GET", url: "/me/other-documents/completed" });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["cache-control"]).toContain("no-store");
+    const body: { items: { recipientType: string; completion: { verificationId: string } }[] } = response.json();
+    const [item] = body.items;
+    expect(item?.recipientType).toBe("viewer");
+    expect(item?.completion.verificationId).toBe(COMPLETION.verificationId);
+    await app.close();
+  });
+
+  it("refuses anonymous callers", async () => {
+    const { app } = await build({ authenticated: false });
+    for (const url of ["/me/other-documents/completed", "/me/participant-documents/LAGDA-VER-2026-AAAAAAAAAA/branding/logo"]) {
+      expect((await app.inject({ method: "GET", url })).statusCode).toBe(401);
+    }
+    await app.close();
+  });
+
+  it("serves the participant's logo privately, and 404s without one", async () => {
+    const { app } = await build({
+      participantLogo: { mediaType: "image/png", bytes: new Uint8Array([1, 2, 3]), digest: "d".repeat(64) },
+    });
+    const response = await app.inject({
+      method: "GET", url: "/me/participant-documents/LAGDA-VER-2026-AAAAAAAAAA/branding/logo",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toBe("image/png");
+    expect(response.headers["cache-control"]).toBe("private, max-age=300");
+    expect(logoLookups.at(-1)).toBe("LAGDA-VER-2026-AAAAAAAAAA");
+    await app.close();
+
+    const { app: bare } = await build();
+    expect((await bare.inject({
+      method: "GET", url: "/me/participant-documents/LAGDA-VER-2026-AAAAAAAAAA/branding/logo",
+    })).statusCode).toBe(404);
+    await bare.close();
+  });
+});
 
 describe("GET /me", () => {
   it("returns the safe projection", async () => {
