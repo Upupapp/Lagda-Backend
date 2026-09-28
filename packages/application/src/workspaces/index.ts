@@ -14,6 +14,7 @@ export * from "./list-my-workspaces.js";
 export * from "./get-workspace.js";
 export * from "./get-workspace-member.js";
 export * from "./invitations.js";
+export * from "./my-invitations.js";
 export * from "./workspace-join.js";
 export * from "./members.js";
 export * from "./activity.js";

@@ -29,6 +29,12 @@ import type {
   DeliverySecretSealer, WorkspaceUnitOfWork,
 } from "../common/ports/index.js";
 import type { AuthenticatedActor } from "../common/ports/session.js";
+import type { WorkspaceInvitationNoticeIdGenerator } from "../common/ports/invitations.js";
+import type {
+  NotificationIntentIdGenerator, NotificationDeliveryIdGenerator,
+} from "../common/ports/notifications.js";
+import type { NotificationTemplateRegistry } from "../notifications/template-registry.js";
+import { createNotificationIntent } from "../notifications/create-intent.js";
 import {
   ApplicationError, ApplicationValidationError, ResourceNotFoundError,
 } from "../common/errors/index.js";
@@ -184,6 +190,21 @@ export interface InvitationDependencies extends WorkspaceAccessDependencies {
    */
   readonly scheduleDelivery?: InvitationDeliveryScheduler;
   readonly idempotency: Omit<IdempotencyDependencies, "repository">;
+  /**
+   * 089. In-app notices. With it, every send and resend to an address that
+   * belongs to a VERIFIED account also tells that account in-app
+   * (WORKSPACE_INVITATION_RECEIVED). Optional so a deployment without the
+   * template registry still invites.
+   */
+  readonly notices?: InvitationNoticeDependencies;
+}
+
+/** 089. What writing an invitation's in-app notices needs. */
+export interface InvitationNoticeDependencies {
+  readonly templates: NotificationTemplateRegistry;
+  readonly ids: NotificationIntentIdGenerator & NotificationDeliveryIdGenerator
+    & WorkspaceInvitationNoticeIdGenerator;
+  readonly clock: Clock;
 }
 
 export interface AcceptInvitationDependencies {
@@ -204,6 +225,85 @@ export interface AcceptInvitationDependencies {
    * be stale the moment the user changed their address (§108, §109).
    */
   readonly currentNormalizedEmail: (userId: UserId) => Promise<NormalizedEmail | null>;
+  /** 089. With it, a decline tells the inviter in-app (WORKSPACE_INVITATION_DECLINED). */
+  readonly notices?: InvitationNoticeDependencies;
+}
+
+// ── 089. In-app notices ──────────────────────────────────────────────────────
+
+const iso = (value: number): string => new Date(value).toISOString();
+const named = (value: string | null | undefined, fallback: string): string => {
+  const trimmed = (value ?? "").trim();
+  return (trimmed === "" ? fallback : trimmed).slice(0, 200);
+};
+
+/**
+ * Tells the account whose VERIFIED address an invitation was sent to, in-app.
+ * Nothing when no such account exists: the emailed link is then the only way in.
+ */
+export async function announceInvitationReceived(
+  uow: WorkspaceUnitOfWork, notices: InvitationNoticeDependencies | undefined,
+  invitation: {
+    readonly invitationId: WorkspaceInvitationId;
+    readonly inviteeNormalizedEmail: NormalizedEmail;
+    readonly invitedByUserId: UserId;
+    readonly requestedRole: InvitableWorkspaceRole;
+    readonly expiresAt: number;
+  },
+): Promise<void> {
+  if (notices === undefined) return;
+  const account = await uow.invitations.verifiedAccountByEmail(invitation.inviteeNormalizedEmail);
+  if (account === null) return;
+  const workspace = await uow.workspaces.find();
+  await createNotificationIntent({
+    notifications: uow.notifications, templates: notices.templates, ids: notices.ids, clock: notices.clock,
+  })({
+    notificationType: "WORKSPACE_INVITATION_RECEIVED",
+    sourceId: notices.ids.nextInvitationNoticeId(),
+    scope: { kind: "WORKSPACE", workspaceId: uow.workspaceId },
+    audience: { kind: "USER", userId: account.userId },
+    // Never sent: the policy stops it as IN_APP_ONLY.
+    destination: invitation.inviteeNormalizedEmail,
+    templateInput: {
+      recipientName: named(account.displayName, "there"),
+      invitationId: String(invitation.invitationId),
+      workspaceName: named(workspace?.name, "a workspace"),
+      inviterDisplayName: named(await uow.actorProfiles.displayNameOf(invitation.invitedByUserId), "Someone"),
+      role: invitation.requestedRole,
+      expiresAt: iso(invitation.expiresAt),
+    },
+  }, uow);
+}
+
+/** Tells the inviter, in-app, that the invitee declined — with their reason when given. */
+export async function announceInvitationDeclined(
+  uow: WorkspaceUnitOfWork, notices: InvitationNoticeDependencies | undefined,
+  invitation: WorkspaceInvitationRecord,
+  invitee: { readonly displayName: string | null; readonly reason: string | null },
+): Promise<void> {
+  if (notices === undefined) return;
+  const workspace = await uow.workspaces.find();
+  const inviterName = await uow.actorProfiles.displayNameOf(invitation.invitedByUserId);
+  await createNotificationIntent({
+    notifications: uow.notifications, templates: notices.templates, ids: notices.ids, clock: notices.clock,
+  })({
+    notificationType: "WORKSPACE_INVITATION_DECLINED",
+    sourceId: notices.ids.nextInvitationNoticeId(),
+    scope: { kind: "WORKSPACE", workspaceId: uow.workspaceId },
+    audience: { kind: "USER", userId: invitation.invitedByUserId },
+    destination: invitation.inviteeNormalizedEmail,
+    templateInput: {
+      recipientName: named(inviterName, "there"),
+      inviteeDisplayName: named(invitee.displayName, invitation.inviteeEmail),
+      inviteeEmail: invitation.inviteeEmail.slice(0, 320),
+      ...(invitee.reason === null ? {} : { reason: invitee.reason }),
+      invitationId: String(invitation.invitationId),
+      workspaceName: named(workspace?.name, "a workspace"),
+      inviterDisplayName: named(inviterName, "Someone"),
+      role: invitation.requestedRole,
+      expiresAt: iso(invitation.expiresAt),
+    },
+  }, uow);
 }
 
 // ── Create ───────────────────────────────────────────────────────────────────
@@ -307,6 +407,10 @@ export async function createWorkspaceInvitation(
         invitedByUserId: input.actor.userId,
         inviteeEmail: normalized.display, requestedRole: input.role,
         expiresAt,
+      });
+      await announceInvitationReceived(uow, deps.notices, {
+        invitationId, inviteeNormalizedEmail: normalized.normalized,
+        invitedByUserId: input.actor.userId, requestedRole: input.role, expiresAt,
       });
 
       await recordActivity(uow, {
@@ -490,6 +594,13 @@ export async function resendWorkspaceInvitation(
         workspaceId: input.workspaceId,
         invitedByUserId: existing.invitedByUserId,
         inviteeEmail: existing.inviteeEmail,
+        requestedRole: existing.requestedRole,
+        expiresAt,
+      });
+      await announceInvitationReceived(uow, deps.notices, {
+        invitationId: existing.invitationId,
+        inviteeNormalizedEmail: existing.inviteeNormalizedEmail,
+        invitedByUserId: existing.invitedByUserId,
         requestedRole: existing.requestedRole,
         expiresAt,
       });
@@ -685,78 +796,93 @@ export async function acceptWorkspaceInvitation(
 
     // Tenant context, from the RESOLVED invitation. The client never supplies a
     // workspace, so there is nothing to tamper with (§144, §195).
-    return uow.enterWorkspace(invitation.workspaceId, async ws => {
-      const workspace = await ws.workspaces.find();
-      // A workspace that cannot be read has no lifecycle state permitting a new
-      // member. Today unreachable — a foreign key guarantees it exists — and
-      // handled because "cannot happen" is a claim about a constraint.
-      if (workspace === null) throw new InvitationInvalidError();
-
-      const existing = await ws.memberships.findByUser(actor.userId);
-      if (existing !== null) {
-        // ── Converge, do not fail ─────────────────────────────────────────
-        //
-        // The membership arrived by another route — a second invitation, or a
-        // concurrent acceptance. Consuming the invitation and reporting success
-        // is right: the desired end state holds, and leaving the invitation
-        // live would dangle a credential for access that already exists (§75,
-        // §115, §165).
-        await ws.invitations.acceptIfLive({
-          invitationId: invitation.invitationId,
-          acceptedByUserId: actor.userId,
-          now,
-        });
-        return {
-          workspaceId: invitation.workspaceId,
-          workspaceName: workspace.name,
-          role: invitation.requestedRole,
-          joined: false,
-          pending: false,
-        };
-      }
-
-      // ── Consume FIRST, then insert ──────────────────────────────────────
-      //
-      // The conditional UPDATE is the serialization point. Of two concurrent
-      // acceptances of one token, exactly one matches a row here; the other
-      // gets `false` and stops without ever attempting a membership insert.
-      //
-      // Ordering it before the insert is safe because both are in one
-      // transaction: if the insert then fails, the consumption rolls back with
-      // it and the invitation is live again (§73).
-      const consumed = await ws.invitations.acceptIfLive({
-        invitationId: invitation.invitationId,
-        acceptedByUserId: actor.userId,
-        now,
-      });
-      if (!consumed) throw new InvitationInvalidError();
-
-      // 078: no direct join. The invitation is consumed and a pending request
-      // carrying the invited role goes to the owners and administrators.
-      const fullName = await ws.actorProfiles.displayNameOf(actor.userId) ?? callerEmail;
-      await fileInvitationJoinRequest(ws, deps.joinRequests, {
-        invitationId: String(invitation.invitationId),
-        userId: actor.userId,
-        fullName,
-        email: callerEmail,
-        requestedRole: invitation.requestedRole,
-        workspaceName: workspace.name,
-      });
-      // The invitee is not a member, so their name comes from the account.
-      await recordActivity(ws, {
-        action: "invitation.accepted", actorUserId: actor.userId, actorName: fullName, occurredAt: now,
-        details: { email: callerEmail, role: invitation.requestedRole },
-      });
-
-      return {
-        workspaceId: invitation.workspaceId,
-        workspaceName: workspace.name,
-        role: invitation.requestedRole,
-        joined: false,
-        pending: true,
-      };
-    });
+    return uow.enterWorkspace(invitation.workspaceId, ws =>
+      consumeInvitation(ws, invitation, actor.userId, callerEmail, deps, now));
   });
+}
+
+/**
+ * The acceptance itself, inside the RESOLVED invitation's workspace: the one
+ * body the emailed link and the signed-in inbox (089) share, so both have
+ * exactly the same outcome.
+ */
+export async function consumeInvitation(
+  ws: WorkspaceUnitOfWork,
+  invitation: WorkspaceInvitationRecord,
+  userId: UserId,
+  callerEmail: NormalizedEmail,
+  deps: Pick<AcceptInvitationDependencies, "joinRequests">,
+  now: number,
+): Promise<AcceptInvitationResult> {
+  const workspace = await ws.workspaces.find();
+  // A workspace that cannot be read has no lifecycle state permitting a new
+  // member. Today unreachable — a foreign key guarantees it exists — and
+  // handled because "cannot happen" is a claim about a constraint.
+  if (workspace === null) throw new InvitationInvalidError();
+
+  const existing = await ws.memberships.findByUser(userId);
+  if (existing !== null) {
+    // ── Converge, do not fail ─────────────────────────────────────────
+    //
+    // The membership arrived by another route — a second invitation, or a
+    // concurrent acceptance. Consuming the invitation and reporting success
+    // is right: the desired end state holds, and leaving the invitation
+    // live would dangle a credential for access that already exists (§75,
+    // §115, §165).
+    await ws.invitations.acceptIfLive({
+      invitationId: invitation.invitationId,
+      acceptedByUserId: userId,
+      now,
+    });
+    return {
+      workspaceId: invitation.workspaceId,
+      workspaceName: workspace.name,
+      role: invitation.requestedRole,
+      joined: false,
+      pending: false,
+    };
+  }
+
+  // ── Consume FIRST, then insert ──────────────────────────────────────
+  //
+  // The conditional UPDATE is the serialization point. Of two concurrent
+  // acceptances of one token, exactly one matches a row here; the other
+  // gets `false` and stops without ever attempting a membership insert.
+  //
+  // Ordering it before the insert is safe because both are in one
+  // transaction: if the insert then fails, the consumption rolls back with
+  // it and the invitation is live again (§73).
+  const consumed = await ws.invitations.acceptIfLive({
+    invitationId: invitation.invitationId,
+    acceptedByUserId: userId,
+    now,
+  });
+  if (!consumed) throw new InvitationInvalidError();
+
+  // 078: no direct join. The invitation is consumed and a pending request
+  // carrying the invited role goes to the owners and administrators.
+  const fullName = await ws.actorProfiles.displayNameOf(userId) ?? callerEmail;
+  await fileInvitationJoinRequest(ws, deps.joinRequests, {
+    invitationId: String(invitation.invitationId),
+    userId,
+    fullName,
+    email: callerEmail,
+    requestedRole: invitation.requestedRole,
+    workspaceName: workspace.name,
+  });
+  // The invitee is not a member, so their name comes from the account.
+  await recordActivity(ws, {
+    action: "invitation.accepted", actorUserId: userId, actorName: fullName, occurredAt: now,
+    details: { email: callerEmail, role: invitation.requestedRole },
+  });
+
+  return {
+    workspaceId: invitation.workspaceId,
+    workspaceName: workspace.name,
+    role: invitation.requestedRole,
+    joined: false,
+    pending: true,
+  };
 }
 
 // ── Decline ──────────────────────────────────────────────────────────────────
@@ -799,11 +925,14 @@ export async function declineWorkspaceInvitation(
     const applied = await uow.enterWorkspace(invitation.workspaceId, async ws => {
       const declined = await ws.invitations.declineIfLive({ invitationId: invitation.invitationId, now });
       if (declined) {
+        const inviteeName = await ws.actorProfiles.displayNameOf(actor.userId);
         await recordActivity(ws, {
           action: "invitation.declined", actorUserId: actor.userId, occurredAt: now,
-          actorName: await ws.actorProfiles.displayNameOf(actor.userId) ?? invitation.inviteeEmail,
+          actorName: inviteeName ?? invitation.inviteeEmail,
           details: { email: invitation.inviteeEmail },
         });
+        // 089. The emailed link carries no reason.
+        await announceInvitationDeclined(ws, deps.notices, invitation, { displayName: inviteeName, reason: null });
       }
       return declined;
     });

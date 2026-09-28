@@ -22,6 +22,7 @@
 // exists to prevent.
 
 import { Type, type Static, type TSchema } from "@sinclair/typebox";
+import { INVITABLE_WORKSPACE_ROLES } from "@lagda/contracts";
 import { Value } from "@sinclair/typebox/value";
 import type {
   NotificationTemplateKey, NotificationTemplateRef, NotificationLocale,
@@ -481,6 +482,40 @@ export const DocumentAccessDecidedModelV1 = Type.Object(
     deciderDisplayName: DisplayName,
     decision: Type.Union([Type.Literal("approved"), Type.Literal("rejected")]),
     ...SharedDocumentFields,
+  },
+  { additionalProperties: false },
+);
+
+/** 089. The invitable roles, as the invitation snapshots them. */
+const InvitedRoleModel = Type.Union(
+  INVITABLE_WORKSPACE_ROLES.map(role => Type.Literal(role)),
+);
+
+/** 089. Display data shared by both invitation-inbox notices. */
+const InvitationNoticeFields = {
+  /** The feed links to the inbox entry by it. */
+  invitationId: BoundedText(64),
+  workspaceName: DisplayName,
+  inviterDisplayName: DisplayName,
+  role: InvitedRoleModel,
+  /** ISO-8601. */
+  expiresAt: BoundedText(40),
+};
+
+/** 089. An invitation reached this account's verified address. */
+export const WorkspaceInvitationReceivedModelV1 = Type.Object(
+  { recipientName: DisplayName, ...InvitationNoticeFields },
+  { additionalProperties: false },
+);
+
+/** 089. The inviter told the invitee declined. */
+export const WorkspaceInvitationDeclinedModelV1 = Type.Object(
+  {
+    recipientName: DisplayName,
+    inviteeDisplayName: DisplayName,
+    inviteeEmail: BoundedText(320),
+    reason: Type.Optional(BoundedText(500)),
+    ...InvitationNoticeFields,
   },
   { additionalProperties: false },
 );

@@ -11,6 +11,7 @@
 //   DELETE /me/signatures/:purpose  remove one
 //   POST   /me/signing-links        claim a signing handoff code
 //   GET    /me/notifications        messages addressed to this account
+//   POST   /me/notifications/state  mark own notices read / dismissed (090)
 //   GET    /me/notification-preferences   which optional emails it wants (084)
 //   PATCH  /me/notification-preferences   change any subset of them
 //
@@ -45,6 +46,7 @@ import {
   type SigningInboxItemView, type SignedDocumentView,
   getNotificationPreferences, updateNotificationPreferences,
   type NotificationPreferenceRepository, type NotificationPreferencesView,
+  setMyNotificationState, MAX_MY_NOTIFICATION_STATE_IDS,
 } from "@lagda/application";
 import type { ApiConfig } from "../config/index.js";
 import type {
@@ -316,11 +318,43 @@ const FeedNotificationSchema = Type.Object({
   // frozen at creation and lets the client render it.
   templateInput: Type.Unknown(),
   createdAt: Type.String(),
+  /** 090. Whether THIS account has marked it read. */
+  read: Type.Boolean(),
+  /** 090. When it was marked read (ISO 8601), or null. */
+  readAt: Type.Union([Type.String(), Type.Null()]),
+  /** 090. Whether THIS account has dismissed it. Dismissed notices are
+   *  returned only with `?includeDismissed=true`. */
+  dismissed: Type.Boolean(),
 }, { title: "FeedNotification", additionalProperties: false });
 
 const NotificationFeedResponseSchema = Type.Object({
   notifications: Type.Array(FeedNotificationSchema),
 }, { title: "NotificationFeed", additionalProperties: false });
+
+/** 090. Closed: an unknown query key is a 400, not silently ignored. */
+const NotificationFeedQuerySchema = Type.Object({
+  /** Default false: a dismissed notice is hidden until restored. */
+  includeDismissed: Type.Optional(Type.Boolean()),
+}, { title: "NotificationFeedQuery", additionalProperties: false });
+
+/**
+ * 090. A state change on the caller's OWN notices. Bounded to a feed page:
+ * "mark all read" sends the rows the client is showing. At least one of
+ * `read` / `dismissed` must be present (422 otherwise).
+ */
+export const NotificationStateRequestSchema = Type.Object({
+  ids: Type.Array(Type.String({ minLength: 1, maxLength: 64 }), {
+    minItems: 1, maxItems: MAX_MY_NOTIFICATION_STATE_IDS,
+  }),
+  read: Type.Optional(Type.Boolean()),
+  dismissed: Type.Optional(Type.Boolean()),
+}, { title: "NotificationStateRequest", additionalProperties: false });
+
+/** 090. The account routes that carry their own rate limit (see
+ *  `identity-rate-limit.ts`, which installs it in the identity scope). */
+export const ACCOUNT_RATE_LIMITED_PATHS = {
+  notificationState: "/me/notifications/state",
+} as const;
 
 // ── Notification preferences (084) ─────────────────────────────────────────
 
@@ -877,14 +911,20 @@ export function registerAccountRoutes(
   // change made it select one anyway, serialization would strip it rather
   // than ship a signing-link ciphertext to a browser.
   app.get("/me/notifications", {
-    schema: { response: { 200: NotificationFeedResponseSchema } },
+    schema: {
+      querystring: NotificationFeedQuerySchema,
+      response: { 200: NotificationFeedResponseSchema },
+    },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     noStore(reply);
     const actor = await options.authenticatedUser(request);
     if (actor === null) return unauthenticated(reply);
 
+    const { includeDismissed } = request.query as Static<typeof NotificationFeedQuerySchema>;
     const rows = await options.notificationFeed()
-      .listForUser(actor.userId, NOTIFICATION_FEED_LIMIT);
+      .listForUser(actor.userId, NOTIFICATION_FEED_LIMIT, {
+        includeDismissed: includeDismissed ?? false,
+      });
 
     return reply.status(200).send({
       notifications: rows.map(row => ({
@@ -896,8 +936,42 @@ export function registerAccountRoutes(
         // Frozen, schema-checked, non-secret by construction (migration 030).
         templateInput: row.templateInput ?? {},
         createdAt: row.createdAt.toISOString(),
+        read: row.readAt !== null,
+        readAt: row.readAt === null ? null : row.readAt.toISOString(),
+        dismissed: row.dismissedAt !== null,
       })),
     });
+  });
+
+  // 090. The feed's one state change: mark read / unread, dismiss / restore.
+  // The account is the session's; ids that are not this account's own
+  // notices are skipped without saying so, so the answer (always 204) never
+  // tells a caller whether somebody else's notice exists.
+  app.post(ACCOUNT_RATE_LIMITED_PATHS.notificationState, {
+    schema: { body: NotificationStateRequestSchema, response: { 204: Type.Null() } },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await options.authenticatedUser(request);
+    if (actor === null) return unauthenticated(reply);
+    if (!options.validateCsrf(request)) return csrfFailed(reply);
+
+    const { ids, read, dismissed } = request.body as Static<typeof NotificationStateRequestSchema>;
+    const result = await setMyNotificationState({
+      userId: actor.userId,
+      ids,
+      ...(read === undefined ? {} : { read }),
+      ...(dismissed === undefined ? {} : { dismissed }),
+    }, { states: options.notificationFeed() });
+
+    if (result.outcome === "empty-change") {
+      return reply.status(422).send({
+        error: {
+          code: "EMPTY_STATE_CHANGE",
+          message: "Say whether to change read, dismissed, or both.",
+        },
+      });
+    }
+    return reply.status(204).send();
   });
 
   // ── Notification preferences (084) ──────────────────────────────────────

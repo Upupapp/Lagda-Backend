@@ -1363,6 +1363,801 @@
         }
       }
     },
+    "/me/invitations": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "pending"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "declined"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "accepted"
+                  ]
+                }
+              ]
+            },
+            "in": "query",
+            "name": "status",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "MyInvitationList",
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "title": "MyInvitation",
+                        "additionalProperties": false,
+                        "description": "A workspace invitation addressed to this account's VERIFIED email address. Carries the INVITING workspace's branding.",
+                        "type": "object",
+                        "required": [
+                          "invitationId",
+                          "workspaceId",
+                          "workspaceName",
+                          "role",
+                          "invitedBy",
+                          "status",
+                          "createdAt",
+                          "expiresAt",
+                          "declinedAt",
+                          "declineReason",
+                          "branding"
+                        ],
+                        "properties": {
+                          "invitationId": {
+                            "type": "string"
+                          },
+                          "workspaceId": {
+                            "type": "string"
+                          },
+                          "workspaceName": {
+                            "type": "string"
+                          },
+                          "role": {
+                            "title": "InvitableWorkspaceRole",
+                            "description": "The membership role an invitation grants. Never `owner`.",
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "member"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "administrator"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "template_administrator"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "sender"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "reviewer"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "auditor"
+                                ]
+                              }
+                            ]
+                          },
+                          "invitedBy": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "required": [
+                              "displayName"
+                            ],
+                            "properties": {
+                              "displayName": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "status": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "pending"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "declined"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "accepted"
+                                ]
+                              }
+                            ]
+                          },
+                          "createdAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "expiresAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "declinedAt": {
+                            "anyOf": [
+                              {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "declineReason": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "branding": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "required": [
+                              "displayName",
+                              "primaryColor",
+                              "logo"
+                            ],
+                            "properties": {
+                              "displayName": {
+                                "type": "string"
+                              },
+                              "primaryColor": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "logo": {
+                                "anyOf": [
+                                  {
+                                    "additionalProperties": false,
+                                    "type": "object",
+                                    "required": [
+                                      "version",
+                                      "url"
+                                    ],
+                                    "properties": {
+                                      "version": {
+                                        "type": "string"
+                                      },
+                                      "url": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/invitations/{invitationId}/accept": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "invitationId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "workspaceId",
+                    "workspaceName",
+                    "role",
+                    "joined",
+                    "pending"
+                  ],
+                  "properties": {
+                    "workspaceId": {
+                      "type": "string"
+                    },
+                    "workspaceName": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "title": "InvitableWorkspaceRole",
+                      "description": "The membership role an invitation grants. Never `owner`.",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "member"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "administrator"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "template_administrator"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "sender"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "reviewer"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "auditor"
+                          ]
+                        }
+                      ]
+                    },
+                    "joined": {
+                      "type": "boolean"
+                    },
+                    "pending": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/invitations/{invitationId}/decline": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "DeclineMyInvitation",
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "reason"
+                ],
+                "properties": {
+                  "reason": {
+                    "minLength": 1,
+                    "maxLength": 500,
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "invitationId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A workspace invitation addressed to this account's VERIFIED email address. Carries the INVITING workspace's branding.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "MyInvitation",
+                  "additionalProperties": false,
+                  "description": "A workspace invitation addressed to this account's VERIFIED email address. Carries the INVITING workspace's branding.",
+                  "type": "object",
+                  "required": [
+                    "invitationId",
+                    "workspaceId",
+                    "workspaceName",
+                    "role",
+                    "invitedBy",
+                    "status",
+                    "createdAt",
+                    "expiresAt",
+                    "declinedAt",
+                    "declineReason",
+                    "branding"
+                  ],
+                  "properties": {
+                    "invitationId": {
+                      "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
+                    },
+                    "workspaceName": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "title": "InvitableWorkspaceRole",
+                      "description": "The membership role an invitation grants. Never `owner`.",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "member"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "administrator"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "template_administrator"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "sender"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "reviewer"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "auditor"
+                          ]
+                        }
+                      ]
+                    },
+                    "invitedBy": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "displayName"
+                      ],
+                      "properties": {
+                        "displayName": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "status": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "pending"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "declined"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "accepted"
+                          ]
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "declinedAt": {
+                      "anyOf": [
+                        {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "declineReason": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "branding": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "displayName",
+                        "primaryColor",
+                        "logo"
+                      ],
+                      "properties": {
+                        "displayName": {
+                          "type": "string"
+                        },
+                        "primaryColor": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "logo": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "type": "object",
+                              "required": [
+                                "version",
+                                "url"
+                              ],
+                              "properties": {
+                                "version": {
+                                  "type": "string"
+                                },
+                                "url": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/invitations/{invitationId}/withdraw-decline": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "invitationId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A workspace invitation addressed to this account's VERIFIED email address. Carries the INVITING workspace's branding.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "MyInvitation",
+                  "additionalProperties": false,
+                  "description": "A workspace invitation addressed to this account's VERIFIED email address. Carries the INVITING workspace's branding.",
+                  "type": "object",
+                  "required": [
+                    "invitationId",
+                    "workspaceId",
+                    "workspaceName",
+                    "role",
+                    "invitedBy",
+                    "status",
+                    "createdAt",
+                    "expiresAt",
+                    "declinedAt",
+                    "declineReason",
+                    "branding"
+                  ],
+                  "properties": {
+                    "invitationId": {
+                      "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string"
+                    },
+                    "workspaceName": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "title": "InvitableWorkspaceRole",
+                      "description": "The membership role an invitation grants. Never `owner`.",
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "member"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "administrator"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "template_administrator"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "sender"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "reviewer"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "auditor"
+                          ]
+                        }
+                      ]
+                    },
+                    "invitedBy": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "displayName"
+                      ],
+                      "properties": {
+                        "displayName": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "status": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "pending"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "declined"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "accepted"
+                          ]
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "declinedAt": {
+                      "anyOf": [
+                        {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "declineReason": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "branding": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "displayName",
+                        "primaryColor",
+                        "logo"
+                      ],
+                      "properties": {
+                        "displayName": {
+                          "type": "string"
+                        },
+                        "primaryColor": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "logo": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "type": "object",
+                              "required": [
+                                "version",
+                                "url"
+                              ],
+                              "properties": {
+                                "version": {
+                                  "type": "string"
+                                },
+                                "url": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/invitations/{invitationId}/branding/logo": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "invitationId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "properties": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/verifications/{verificationId}/member-access": {
       "post": {
         "parameters": [
@@ -8573,17 +9368,14 @@
                 "title": "DeclineContactRequest",
                 "additionalProperties": false,
                 "type": "object",
+                "required": [
+                  "reason"
+                ],
                 "properties": {
                   "reason": {
-                    "anyOf": [
-                      {
-                        "maxLength": 500,
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
+                    "minLength": 1,
+                    "maxLength": 500,
+                    "type": "string"
                   }
                 }
               }
@@ -46556,6 +47348,16 @@
     },
     "/me/notifications": {
       "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "boolean"
+            },
+            "in": "query",
+            "name": "includeDismissed",
+            "required": false
+          }
+        ],
         "responses": {
           "200": {
             "description": "Default Response",
@@ -46582,7 +47384,10 @@
                           "sourceKind",
                           "sourceId",
                           "templateInput",
-                          "createdAt"
+                          "createdAt",
+                          "read",
+                          "readAt",
+                          "dismissed"
                         ],
                         "properties": {
                           "id": {
@@ -46610,6 +47415,22 @@
                           "templateInput": {},
                           "createdAt": {
                             "type": "string"
+                          },
+                          "read": {
+                            "type": "boolean"
+                          },
+                          "readAt": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "dismissed": {
+                            "type": "boolean"
                           }
                         }
                       }
@@ -46618,6 +47439,48 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/me/notifications/state": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "NotificationStateRequest",
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "ids"
+                ],
+                "properties": {
+                  "ids": {
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "type": "string"
+                    }
+                  },
+                  "read": {
+                    "type": "boolean"
+                  },
+                  "dismissed": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Default Response"
           }
         }
       }

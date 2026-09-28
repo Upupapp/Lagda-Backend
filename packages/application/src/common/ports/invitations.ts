@@ -76,6 +76,8 @@ export interface WorkspaceInvitationRecord {
   readonly acceptedByUserId: UserId | null;
   readonly revokedAt: number | null;
   readonly declinedAt: number | null;
+  /** 089. What the invitee wrote when declining from the inbox; null otherwise. */
+  readonly declineReason: string | null;
   readonly supersededAt: number | null;
 }
 
@@ -200,11 +202,37 @@ export interface ScopedInvitationRepository {
     readonly now: number;
   }): Promise<boolean>;
 
-  /** Conditional on being live. Returns whether it applied. */
+  /**
+   * Conditional on being live. Returns whether it applied. 089: `reason` is
+   * stored with the decline (the inbox requires one; the emailed link does not).
+   */
   declineIfLive(input: {
     readonly invitationId: WorkspaceInvitationId;
     readonly now: number;
+    readonly reason?: string | null;
   }): Promise<boolean>;
+
+  /**
+   * 089. Undoes a decline: back to pending, the reason cleared. Conditional on
+   * the row being DECLINED and on nothing else having ended it (accepted,
+   * revoked, superseded) and on it not having expired by `now`.
+   *
+   * Returns whether it applied. A newer live invitation for the same address
+   * now holding the slot surfaces as a `ResourceConflictError`.
+   */
+  withdrawDeclineIfDeclined(input: {
+    readonly invitationId: WorkspaceInvitationId;
+    readonly now: number;
+  }): Promise<boolean>;
+
+  /**
+   * 089. The account whose VERIFIED normalized address is this one, if any —
+   * who an invitation to that address can be announced to in-app.
+   */
+  verifiedAccountByEmail(email: NormalizedEmail): Promise<{
+    readonly userId: UserId;
+    readonly displayName: string;
+  } | null>;
 }
 
 /**
@@ -250,6 +278,32 @@ export interface InvitationCredentialUnitOfWork {
    * Establishes tenant context for the resolved workspace and yields the full
    * workspace unit of work, on the same transaction.
    */
+  enterWorkspace<T>(
+    workspaceId: WorkspaceId,
+    operation: (uow: WorkspaceUnitOfWork) => Promise<T>,
+  ): Promise<T>;
+}
+
+/**
+ * 089. Who the INVITEE inbox realm is opened for — from the SESSION's account,
+ * and only once its address is VERIFIED.
+ */
+export interface InviteeInbox {
+  readonly userId: UserId;
+  readonly verifiedEmail: NormalizedEmail;
+}
+
+/**
+ * 089. The invitee inbox realm: every invitation addressed to the verified
+ * address, in any workspace, READ ONLY (089's FOR SELECT policy on a digest of
+ * the address). Writes happen only after `enterWorkspace` names the workspace
+ * of an invitation resolved here.
+ */
+export interface InviteeInboxUnitOfWork {
+  readonly invitee: InviteeInbox;
+  /** Newest first. */
+  listInvitations(): Promise<readonly WorkspaceInvitationRecord[]>;
+  findInvitation(invitationId: string): Promise<WorkspaceInvitationRecord | null>;
   enterWorkspace<T>(
     workspaceId: WorkspaceId,
     operation: (uow: WorkspaceUnitOfWork) => Promise<T>,
@@ -309,6 +363,11 @@ export type InvitationDeliveryScheduler = (
 
 export interface WorkspaceInvitationIdGenerator {
   nextWorkspaceInvitationId(): WorkspaceInvitationId;
+}
+
+/** 089. One id per in-app invitation notice (received on each send, declined on each decline). */
+export interface WorkspaceInvitationNoticeIdGenerator {
+  nextInvitationNoticeId(): string;
 }
 
 import type { WorkspaceUnitOfWork } from "./index.js";

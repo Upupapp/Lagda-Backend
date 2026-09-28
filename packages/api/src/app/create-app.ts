@@ -52,6 +52,7 @@ import { registerContactRoutes } from "../contacts/contact-routes.js";
 import { registerUploadRequestRoutes } from "../upload-requests/upload-request-routes.js";
 import { registerContactRequestRoutes } from "../contact-requests/contact-request-routes.js";
 import { registerDocumentSharingRoutes } from "../document-sharing/document-sharing-routes.js";
+import { registerMyInvitationRoutes } from "../workspaces/my-invitation-routes.js";
 import { registerWorkflowTemplateRoutes } from "../workflow-templates/workflow-template-routes.js";
 import { registerDocumentRoutes } from "../documents/document-routes.js";
 import { registerFolderRoutes } from "../folders/folder-routes.js";
@@ -451,6 +452,15 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
         // MFA credential is refused by the scope hook before any invitation is
         // looked up.
         registerInvitationRedemptionRoutes(scope, invitationOptions);
+
+        // 089. The signed-in invitee's inbox, in the same session + CSRF scope.
+        if (invitations.inbox !== undefined) {
+          registerMyInvitationRoutes(scope, {
+            authenticatedUser: invitationOptions.authenticatedUser,
+            dependencies: invitations.inbox,
+            metrics,
+          });
+        }
       }
 
       // 083. The signed-in participant's code-free Verify Document unlock.

@@ -4,6 +4,7 @@ import { describe, it, expect } from "vitest";
 import { IDENTITY_PATHS } from "../app/identity-routes.js";
 import { IDENTITY_ROUTE_POLICIES } from "./identity-rate-limit.js";
 import { RATE_LIMIT_POLICIES } from "@lagda/application";
+import { ACCOUNT_RATE_LIMITED_PATHS } from "../account/account-routes.js";
 
 describe("identity rate limits", () => {
   /**
@@ -22,9 +23,16 @@ describe("identity rate limits", () => {
   });
 
   it("lists no path that is not a route", () => {
-    const paths = new Set<string>(Object.values(IDENTITY_PATHS));
+    const paths = new Set<string>([
+      ...Object.values(IDENTITY_PATHS), ...Object.values(ACCOUNT_RATE_LIMITED_PATHS),
+    ]);
     const stale = Object.keys(IDENTITY_ROUTE_POLICIES).filter((p) => !paths.has(p));
     expect(stale, "a policy entry for a path that no longer exists").toEqual([]);
+  });
+
+  it("limits the personal feed's state change per user (090)", () => {
+    expect(IDENTITY_ROUTE_POLICIES[ACCOUNT_RATE_LIMITED_PATHS.notificationState])
+      .toEqual({ user: "notification.state.user" });
   });
 
   it("names only policies that exist", () => {

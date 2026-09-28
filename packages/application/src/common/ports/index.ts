@@ -26,7 +26,7 @@ import type { ScopedUploadRepository } from "./upload.js";
 import type { IdempotencyRepository } from "./idempotency.js";
 import type {
   ScopedInvitationRepository, InvitationCredentialUnitOfWork,
-  InvitationTokenDigest,
+  InvitationTokenDigest, InviteeInbox, InviteeInboxUnitOfWork,
 } from "./invitations.js";
 import type { ScopedContactRepository } from "./contacts.js";
 import type { ScopedDocumentRepository } from "./documents.js";
@@ -812,6 +812,17 @@ export interface TransactionManager {
   runForSharingRecipient<T>(
     recipient: SharingRecipient,
     operation: (uow: SharingRecipientUnitOfWork) => Promise<T>,
+  ): Promise<T>;
+
+  /**
+   * 089. A transaction in the INVITEE INBOX realm: the invitations addressed
+   * to this account's VERIFIED email, across every workspace — read-only until
+   * `enterWorkspace` names the resolved invitation's own workspace. The
+   * invitee comes from the session's account, never a body.
+   */
+  runForInviteeInbox<T>(
+    invitee: InviteeInbox,
+    operation: (uow: InviteeInboxUnitOfWork) => Promise<T>,
   ): Promise<T>;
 
   /**

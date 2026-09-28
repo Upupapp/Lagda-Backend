@@ -252,7 +252,7 @@ describe("the recipient's side", () => {
   it("lists it under Others (GET /me/contact-requests), pending first", async () => {
     const first = await asked();
     const second = await asked("signed-document");
-    await declineContactRequest(actor(COLLEAGUE), WS, first.requestId, {}, deps);
+    await declineContactRequest(actor(COLLEAGUE), WS, first.requestId, { reason: "Not needed" }, deps);
     const mine = await listMyReceivedContactRequests(COLLEAGUE, deps);
     expect(mine.map(r => [r.requestId, r.status])).toEqual([
       [second.requestId, "pending"], [first.requestId, "declined"],
@@ -293,6 +293,14 @@ describe("the recipient's side", () => {
       .resolves.toMatchObject({ status: "completed", responseDocumentId: null });
   });
 
+  it("refuses to decline without a reason", async () => {
+    const request = await asked();
+    for (const input of [{}, { reason: null }, { reason: "" }, { reason: "   " }]) {
+      await expect(declineContactRequest(actor(COLLEAGUE), WS, request.requestId, input, deps))
+        .rejects.toThrow(/reason/i);
+    }
+  });
+
   it("declines with a reason, and tells the sender", async () => {
     const request = await asked();
     const declined = await declineContactRequest(actor(COLLEAGUE), WS, request.requestId,
@@ -309,7 +317,7 @@ describe("the recipient's side", () => {
     seedDocument("doc_s", SENDER);
     await expect(completeContactRequest(actor(SENDER), WS, request.requestId,
       { documentId: "doc_s" }, deps)).rejects.toBeInstanceOf(ApplicationValidationError);
-    await expect(declineContactRequest(actor(SENDER), WS, request.requestId, {}, deps))
+    await expect(declineContactRequest(actor(SENDER), WS, request.requestId, { reason: "Not needed" }, deps))
       .rejects.toBeInstanceOf(ApplicationValidationError);
     // A member who is neither side, and cannot send requests, cannot even see it.
     await expect(getContactRequest(actor(REVIEWER), WS, request.requestId, deps))
@@ -355,7 +363,7 @@ describe("the sender's side", () => {
       .rejects.toBeInstanceOf(ApplicationValidationError);
     await expect(cancelContactRequest(actor(SENDER), WS, other.requestId, deps))
       .resolves.toMatchObject({ status: "cancelled" });
-    await expect(declineContactRequest(actor(COLLEAGUE), WS, other.requestId, {}, deps))
+    await expect(declineContactRequest(actor(COLLEAGUE), WS, other.requestId, { reason: "Not needed" }, deps))
       .rejects.toBeInstanceOf(ResourceConflictError);
   });
 

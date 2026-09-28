@@ -6,7 +6,7 @@
 // both observe a pending invitation and both proceed; here the second matches
 // zero rows and the caller learns it lost.
 
-import { sql, type Transaction } from "kysely";
+import { sql, type RawBuilder, type Transaction } from "kysely";
 import type {
   UserId, WorkspaceId, WorkspaceInvitationId, InvitableWorkspaceRole,
 } from "@lagda/contracts";
@@ -14,15 +14,28 @@ import { INVITABLE_WORKSPACE_ROLES } from "@lagda/contracts";
 import type {
   ScopedInvitationRepository, InvitationCredentialLookup,
   WorkspaceInvitationRecord, NewWorkspaceInvitation,
-  NormalizedEmail,
+  NormalizedEmail, InviteeInbox,
 } from "@lagda/application";
-import { assertNormalized } from "@lagda/application";
+import { assertNormalized, ResourceConflictError } from "@lagda/application";
 import type { Database, WorkspaceInvitationsTable } from "../schema/index.js";
 import { PersistenceMappingError } from "../mapping/index.js";
-import { WorkspaceScopeMismatchError, translatePersistenceError } from "../errors.js";
+import {
+  WorkspaceScopeMismatchError, translatePersistenceError, UniqueConstraintViolation,
+} from "../errors.js";
 import type { Selectable } from "kysely";
 
 type InvitationRow = Selectable<WorkspaceInvitationsTable>;
+
+/** 089. The domain prefix of an invitee digest. Must match migration 089. */
+const INVITEE_DIGEST_DOMAIN = "lagda.workspace-invitee:";
+
+/**
+ * 089. SQL for the invitee digest of a normalized address — the same
+ * expression migration 089's trigger computes for the stored column.
+ */
+export function inviteeDigestSql(normalizedEmail: string): RawBuilder<string> {
+  return sql<string>`encode(sha256(convert_to(${INVITEE_DIGEST_DOMAIN + normalizedEmail}, 'UTF8')), 'hex')`;
+}
 
 /**
  * Validated rather than cast.
@@ -62,6 +75,7 @@ function toRecord(row: InvitationRow): WorkspaceInvitationRecord {
     acceptedByUserId: row.accepted_by_user_id as UserId | null,
     revokedAt: instant(row.revoked_at),
     declinedAt: instant(row.declined_at),
+    declineReason: row.decline_reason,
     supersededAt: instant(row.superseded_at),
   };
 }
@@ -249,6 +263,7 @@ export function createScopedInvitationRepository(
       const result = await trx.updateTable("workspace_invitations")
         .set({
           declined_at: new Date(input.now),
+          decline_reason: input.reason ?? null,
           sealed_secret: null,
           sealed_key_version: null,
         })
@@ -257,6 +272,60 @@ export function createScopedInvitationRepository(
         .where(LIVE)
         .executeTakeFirst();
       return Number(result.numUpdatedRows) === 1;
+    },
+
+    async withdrawDeclineIfDeclined(input) {
+      try {
+        const result = await trx.updateTable("workspace_invitations")
+          .set({ declined_at: null, decline_reason: null })
+          .where("workspace_id", "=", scope)
+          .where("invitation_id", "=", input.invitationId)
+          .where("declined_at", "is not", null)
+          .where("accepted_at", "is", null)
+          .where("revoked_at", "is", null)
+          .where("superseded_at", "is", null)
+          .where("expires_at", ">", new Date(input.now))
+          .executeTakeFirst();
+        return Number(result.numUpdatedRows) === 1;
+      } catch (error) {
+        const translated = translatePersistenceError(error);
+        // A newer invitation for this address holds the one live slot.
+        if (translated instanceof UniqueConstraintViolation
+          && (translated.constraint === undefined || translated.constraint === "uq_workspace_invitations_active")) {
+          throw new ResourceConflictError("A newer invitation for this address is live.", error);
+        }
+        throw translated;
+      }
+    },
+
+    async verifiedAccountByEmail(email) {
+      const row = await trx.selectFrom("users")
+        .where("normalized_email", "=", email)
+        .where("email_verified_at", "is not", null)
+        .select(["user_id", "display_name"])
+        .executeTakeFirst();
+      return row === undefined ? null : { userId: row.user_id as UserId, displayName: row.display_name };
+    },
+  };
+}
+
+/**
+ * 089. The invitee inbox realm's reads: only what 089's FOR SELECT policy
+ * shows for the digest the transaction manager set — each query ALSO names
+ * the address, so the filter is stated twice. Read only.
+ */
+export function createInviteeInboxLookup(trx: Transaction<Database>, invitee: InviteeInbox) {
+  const mine = () => trx.selectFrom("workspace_invitations").selectAll()
+    .where("invitee_normalized_email", "=", invitee.verifiedEmail)
+    .where(sql<boolean>`invitee_email_digest = lagda_current_workspace_invitee()`);
+  return {
+    listInvitations: async (): Promise<readonly WorkspaceInvitationRecord[]> => {
+      const rows = await mine().orderBy("created_at", "desc").orderBy("invitation_id", "asc").execute();
+      return rows.map(toRecord);
+    },
+    findInvitation: async (invitationId: string): Promise<WorkspaceInvitationRecord | null> => {
+      const row = await mine().where("invitation_id", "=", invitationId).executeTakeFirst();
+      return row === undefined ? null : toRecord(row);
     },
   };
 }

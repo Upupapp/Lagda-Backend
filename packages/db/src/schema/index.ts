@@ -1665,6 +1665,14 @@ export interface WorkspaceInvitationsTable {
   accepted_by_user_id: ColumnType<string | null, string | null, string | null>;
   revoked_at: ColumnType<Date | null, Date | null, Date | null>;
   declined_at: ColumnType<Date | null, Date | null, Date | null>;
+  /** 089. The invitee's reason, only on a declined row. */
+  decline_reason: ColumnType<string | null, string | null | undefined, string | null>;
+  /**
+   * 089. Domain-separated SHA-256 of `invitee_normalized_email`, set by a
+   * BEFORE trigger from the address (a CHECK holds it equal) — never supplied
+   * by a writer. What the invitee inbox realm matches.
+   */
+  invitee_email_digest: ColumnType<string, never, never>;
   superseded_at: ColumnType<Date | null, Date | null, Date | null>;
   /**
    * AES-256-GCM ciphertext of the raw token (OD-184, migration 036).
@@ -1841,6 +1849,18 @@ export interface UserNotificationPreferencesTable {
   updated_at: Timestamptz;
 }
 
+/**
+ * 090. An account's read and dismissed state on its personal feed, keyed on
+ * the notification intent. NULL timestamps mean unread / not dismissed.
+ */
+export interface UserNotificationStatesTable {
+  user_id: string;
+  notification_intent_id: string;
+  read_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
+  dismissed_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
+  updated_at: ColumnType<Date, Date | undefined, Date>;
+}
+
 export interface Database {
   workspaces: WorkspacesTable;
   workspace_memberships: WorkspaceMembershipsTable;
@@ -1898,6 +1918,7 @@ export interface Database {
   document_notification_states: DocumentNotificationStatesTable;
   user_avatars: UserAvatarsTable;
   user_notification_preferences: UserNotificationPreferencesTable;
+  user_notification_states: UserNotificationStatesTable;
   document_seals: DocumentSealsTable;
   verification_records: VerificationRecordsTable;
   verification_access_challenges: VerificationAccessChallengesTable;

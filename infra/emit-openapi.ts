@@ -91,6 +91,8 @@ const app = await createApp({
       invitations: {
         management: () => stub("workspaces.invitations.management"),
         redemption: () => stub("workspaces.invitations.redemption"),
+        // 089. The signed-in invitee's inbox.
+        inbox: () => stub("workspaces.invitations.inbox"),
       },
       members: {
         administration: () => stub("workspaces.members.administration"),
@@ -205,6 +207,15 @@ const REQUIRED_PATHS = [
   "/me/shared-documents/{id}/branding/logo",
   "/verifications/{verificationId}/access-requests",
   "/verifications/{verificationId}/my-access",
+  // 089. The signed-in invitee's inbox.
+  "/me/invitations",
+  "/me/invitations/{invitationId}/accept",
+  "/me/invitations/{invitationId}/decline",
+  "/me/invitations/{invitationId}/withdraw-decline",
+  "/me/invitations/{invitationId}/branding/logo",
+  // 090. The personal feed and its read / dismissed state.
+  "/me/notifications",
+  "/me/notifications/state",
 ];
 
 const missingRequired = REQUIRED_PATHS.filter(path => !paths.includes(path));

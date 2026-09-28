@@ -29,6 +29,7 @@ import type {
   FinalCopyDigest, FinalCopyCredentialUnitOfWork, FinalCopyWorkspaceUnitOfWork,
   JoinTicketDigest, JoinTicketCredentialUnitOfWork,
   SharingRecipient, SharingRecipientUnitOfWork,
+  InviteeInbox, InviteeInboxUnitOfWork,
 } from "@lagda/application";
 import {
   createScopedJoinTicketRepository, createScopedJoinRequestRepository, createJoinTicketCredentialLookup,
@@ -66,6 +67,7 @@ import { createScopedDocumentNotificationStateRepository } from "../repositories
 import { createIdempotencyRepository } from "../repositories/idempotency.js";
 import {
   createScopedInvitationRepository, createInvitationCredentialLookup,
+  createInviteeInboxLookup, inviteeDigestSql,
 } from "../repositories/invitations.js";
 import { createScopedContactRepository } from "../repositories/contacts.js";
 import { createScopedDocumentRepository } from "../repositories/documents.js";
@@ -121,6 +123,8 @@ const RECIPIENT_SESSION_DIGEST_SETTING = "lagda.recipient_session_digest";
 /** 087. The sharing recipient realm: a digest of the VERIFIED address, and the account id. */
 const SHARE_RECIPIENT_SETTING = "lagda.document_share_recipient";
 const ACCESS_REQUESTER_SETTING = "lagda.document_access_requester";
+/** 089. The invitee inbox realm: a digest of the VERIFIED address. */
+const WORKSPACE_INVITEE_SETTING = "lagda.workspace_invitee";
 /** 075. The public-verification realm, used here only to resolve a reference. */
 const PUBLIC_VERIFICATION_SETTING = "lagda.public_verification_active";
 
@@ -487,6 +491,31 @@ export function createTransactionManager(db: Kysely<Database>): TransactionManag
         return operation({
           recipient,
           ...createSharingRecipientLookup(trx, recipient),
+          async enterWorkspace<R>(
+            workspaceId: WorkspaceId,
+            inner: (uow: WorkspaceUnitOfWork) => Promise<R>,
+          ): Promise<R> {
+            await sql`select set_config(${WORKSPACE_SETTING}, ${workspaceId}, true)`.execute(trx);
+            return inner(buildUnitOfWork(trx, workspaceId));
+          },
+        });
+      });
+    },
+
+    async runForInviteeInbox<T>(
+      invitee: InviteeInbox,
+      operation: (uow: InviteeInboxUnitOfWork) => Promise<T>,
+    ): Promise<T> {
+      return db.transaction().execute(async trx => {
+        // 089's FOR SELECT realm, from the SESSION's VERIFIED address: the
+        // invitations addressed to it, in any workspace. No workspace context
+        // yet, so nothing can be written until `enterWorkspace` names the
+        // workspace of an invitation resolved here.
+        await sql`select set_config(${WORKSPACE_INVITEE_SETTING}, ${
+          inviteeDigestSql(invitee.verifiedEmail)}, true)`.execute(trx);
+        return operation({
+          invitee,
+          ...createInviteeInboxLookup(trx, invitee),
           async enterWorkspace<R>(
             workspaceId: WorkspaceId,
             inner: (uow: WorkspaceUnitOfWork) => Promise<R>,

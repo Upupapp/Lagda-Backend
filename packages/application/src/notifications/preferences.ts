@@ -76,6 +76,9 @@ export const NOTIFICATION_PREFERENCE_CATEGORY_BY_TYPE: Readonly<
   DOCUMENT_ACCESS_APPROVED: null,
   DOCUMENT_ACCESS_REJECTED: null,
   SHARED_DOCUMENT_ACCESS_CODE: null,
+  // 089. Both invitation-inbox notices are in-app only: no email to stop.
+  WORKSPACE_INVITATION_RECEIVED: null,
+  WORKSPACE_INVITATION_DECLINED: null,
 };
 
 /** The category governing a type, or null when it is always sent. */

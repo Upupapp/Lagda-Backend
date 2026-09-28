@@ -31,6 +31,7 @@ import {
 } from "@lagda/application";
 import { checkSemanticLimits, type RateLimitOptions } from "./rate-limit-plugin.js";
 import { IDENTITY_PATHS } from "../app/identity-routes.js";
+import { ACCOUNT_RATE_LIMITED_PATHS } from "../account/account-routes.js";
 
 /**
  * The policies guarding one route.
@@ -82,6 +83,8 @@ const ROUTE_POLICIES: Readonly<Record<string, RoutePolicies>> = {
   [IDENTITY_PATHS.mfaEnroll]: { user: "mfa.enroll.user" },
   [IDENTITY_PATHS.mfaConfirm]: { user: "mfa.enroll.user" },
   [IDENTITY_PATHS.mfaDisable]: { user: "mfa.disable.user" },
+  // 090. An account route in the same scope: the personal feed's state.
+  [ACCOUNT_RATE_LIMITED_PATHS.notificationState]: { user: "notification.state.user" },
 };
 
 /** Exported for the completeness gate, not for callers. */

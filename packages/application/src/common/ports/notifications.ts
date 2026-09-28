@@ -158,6 +158,13 @@ export const NOTIFICATION_TYPES = [
    * a participant (an accepted share or an approved request). Emailed.
    */
   "SHARED_DOCUMENT_ACCESS_CODE",
+  /**
+   * 089. An invitation was sent (or resent) to an address that belongs to a
+   * VERIFIED account; that account is told in-app. In-app only.
+   */
+  "WORKSPACE_INVITATION_RECEIVED",
+  /** 089. The inviter told the invitee declined, with their reason. In-app only. */
+  "WORKSPACE_INVITATION_DECLINED",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -285,6 +292,13 @@ export const NOTIFICATION_SOURCE_KINDS = [
   "DOCUMENT_SHARE",
   /** 087. An access request — one notice of each type per request. */
   "DOCUMENT_ACCESS_REQUEST",
+  /**
+   * 089. ONE in-app notice about an invitation. Its own id per notice, because
+   * an invitation is received on every send and may be declined again after a
+   * withdrawn decline — keyed on the invitation, the logical key would refuse
+   * the second. The invitation id travels in the template input.
+   */
+  "WORKSPACE_INVITATION_NOTICE",
 ] as const;
 export type NotificationSourceKind =
   (typeof NOTIFICATION_SOURCE_KINDS)[number];
@@ -433,6 +447,8 @@ export const NOTIFICATION_TEMPLATE_KEYS = [
   "document-share-answered",
   "document-access-requested",
   "document-access-decided",
+  "workspace-invitation-received",
+  "workspace-invitation-declined",
 ] as const;
 export type NotificationTemplateKey =
   (typeof NOTIFICATION_TEMPLATE_KEYS)[number];

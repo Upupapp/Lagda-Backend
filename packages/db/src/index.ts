@@ -92,7 +92,7 @@ export {
 } from "./repositories/user-signatures.js";
 export {
   createNotificationFeedRepository,
-  type NotificationFeedRepository, type FeedNotification,
+  type NotificationFeedRepository, type FeedNotification, type FeedListOptions,
   type FeedNotificationType,
 } from "./repositories/notification-feed.js";
 export {

@@ -253,6 +253,8 @@ const INPUT_BY_KEY: Record<string, NotificationTemplateInput> = {
   "document-share-answered": { recipientName: "Paulo Reyes", responderDisplayName: "Maria Santos", answer: "accepted", documentTitle: "Office Lease", workspaceName: "Reyes Legal", verificationId: "LAGDA-VER-2026-A7bK9mQ2xZ" },
   "document-access-requested": { recipientName: "Paulo Reyes", requesterDisplayName: "Maria Santos", requesterEmail: "maria@example.com", note: "I am the tenant", documentTitle: "Office Lease", workspaceName: "Reyes Legal", verificationId: "LAGDA-VER-2026-A7bK9mQ2xZ" },
   "document-access-decided": { recipientName: "Maria Santos", deciderDisplayName: "Paulo Reyes", decision: "approved", documentTitle: "Office Lease", workspaceName: "Reyes Legal", verificationId: "LAGDA-VER-2026-A7bK9mQ2xZ" },
+  "workspace-invitation-received": { recipientName: "Maria Santos", invitationId: "inv_1", workspaceName: "Reyes Legal", inviterDisplayName: "Paulo Reyes", role: "sender", expiresAt: "2026-10-05T09:00:00.000Z" },
+  "workspace-invitation-declined": { recipientName: "Paulo Reyes", inviteeDisplayName: "Maria Santos", inviteeEmail: "maria@example.com", reason: "Wrong firm", invitationId: "inv_1", workspaceName: "Reyes Legal", inviterDisplayName: "Paulo Reyes", role: "sender", expiresAt: "2026-10-05T09:00:00.000Z" },
 };
 
 describe("inline images", () => {

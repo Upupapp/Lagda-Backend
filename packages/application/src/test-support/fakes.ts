@@ -63,6 +63,7 @@ import type {
 import { InMemoryIdempotencyRepository } from "./idempotency-fake.js";
 import type {
   ScopedInvitationRepository, InvitationCredentialUnitOfWork,
+  InviteeInbox, InviteeInboxUnitOfWork,
   InvitationTokenDigest, WorkspaceInvitationRecord, NewWorkspaceInvitation,
 } from "../common/ports/invitations.js";
 import type {
@@ -1073,7 +1074,7 @@ function scopedInvitations(
         createdAt: invitation.createdAt,
         expiresAt: invitation.expiresAt,
         acceptedAt: null, acceptedByUserId: null,
-        revokedAt: null, declinedAt: null, supersededAt: null,
+        revokedAt: null, declinedAt: null, declineReason: null, supersededAt: null,
       });
       return Promise.resolve();
     },
@@ -1135,7 +1136,27 @@ function scopedInvitations(
     }))),
 
     declineIfLive: (input) =>
-      Promise.resolve(replaceLive(input.invitationId, c => ({ ...c, declinedAt: input.now }))),
+      Promise.resolve(replaceLive(input.invitationId, c => ({
+        ...c, declinedAt: input.now, declineReason: input.reason ?? null,
+      }))),
+
+    withdrawDeclineIfDeclined: (input) => {
+      const index = store.invitations.findIndex(i => i.workspaceId === scope
+        && i.invitationId === input.invitationId && i.declinedAt !== null
+        && i.acceptedAt === null && i.revokedAt === null && i.supersededAt === null
+        && i.expiresAt > input.now);
+      const current = index === -1 ? undefined : store.invitations[index];
+      if (current === undefined) return Promise.resolve(false);
+      // The partial unique index, in memory: a newer live invitation holds the slot.
+      if (inScope().some(i => i.invitationId !== current.invitationId
+        && i.inviteeNormalizedEmail === current.inviteeNormalizedEmail && isLive(i))) {
+        return Promise.reject(new ResourceConflictError("A newer invitation holds the live slot."));
+      }
+      store.invitations[index] = { ...current, declinedAt: null, declineReason: null };
+      return Promise.resolve(true);
+    },
+
+    verifiedAccountByEmail: email => Promise.resolve(store.verifiedAccounts.get(email) ?? null),
   };
 }
 
@@ -3591,6 +3612,37 @@ export class FakeTransactionManager implements TransactionManager {
     }
   }
 
+  /**
+   * 089. The invitee inbox realm: invitations by VERIFIED address, across
+   * workspaces, read-only until `enterWorkspace`. One transaction.
+   */
+  async runForInviteeInbox<T>(
+    invitee: InviteeInbox,
+    operation: (uow: InviteeInboxUnitOfWork) => Promise<T>,
+  ): Promise<T> {
+    this.scopes.push("invitee-inbox");
+    this.started++;
+    const snapshot = this.store.snapshot();
+    const store = this.store;
+    const addressed = (i: WorkspaceInvitationRecord) => i.inviteeNormalizedEmail === invitee.verifiedEmail;
+    try {
+      const result = await operation({
+        invitee,
+        listInvitations: () => Promise.resolve(store.invitations.filter(addressed)
+          .sort((a, b) => b.createdAt - a.createdAt)),
+        findInvitation: id => Promise.resolve(
+          store.invitations.find(i => i.invitationId === id && addressed(i)) ?? null),
+        enterWorkspace: (workspaceId, inner) => this.runForWorkspace(workspaceId, inner),
+      });
+      this.committed++;
+      return result;
+    } catch (error) {
+      this.store.restore(snapshot);
+      this.rolledBack++;
+      throw error;
+    }
+  }
+
   /** 087. Resolves a COMPLETED verification id to its workspace, then enters it. */
   async runForCompletedVerification<T>(
     verificationId: VerificationId,
@@ -4098,6 +4150,13 @@ export class FailingTransactionManager implements TransactionManager {
     return this.fail();
   }
 
+  runForInviteeInbox<T>(
+    _invitee: InviteeInbox,
+    _operation: (uow: InviteeInboxUnitOfWork) => Promise<T>,
+  ): Promise<T> {
+    return this.fail();
+  }
+
   runForCompletedVerification<T>(
     _verificationId: VerificationId,
     _operation: (uow: WorkspaceUnitOfWork | null) => Promise<T>,
@@ -4507,6 +4566,21 @@ export function joinNotifyDependencies(clock: Clock = new FixedClock(Date.parse(
       nextNotificationIntentId: () => next("ntf") as never,
       nextNotificationDeliveryId: () => next("ndl") as never,
       nextWorkspaceMemberId: () => next("mem") as never,
+    },
+  };
+}
+
+/** 089. What writing an invitation's in-app notices needs, for tests. */
+export function invitationNoticeDependencies(clock: Clock = new FixedClock(Date.parse("2026-09-26T00:00:00.000Z"))) {
+  let n = 0;
+  const next = (prefix: string) => `${prefix}_${String(++n).padStart(4, "0")}`;
+  return {
+    clock,
+    templates: fakeTemplateRegistry,
+    ids: {
+      nextInvitationNoticeId: () => next("ivn"),
+      nextNotificationIntentId: () => next("ivi") as never,
+      nextNotificationDeliveryId: () => next("ivd") as never,
     },
   };
 }

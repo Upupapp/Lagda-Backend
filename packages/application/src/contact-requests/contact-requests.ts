@@ -573,6 +573,10 @@ export async function declineContactRequest(
   input: { readonly reason?: string | null }, deps: ContactRequestDependencies,
 ): Promise<ContactRequestView> {
   const reason = (input.reason ?? "").trim();
+  if (reason === "") {
+    throw new ApplicationValidationError("Add a reason for rejecting this request.",
+      ["reason: required"]);
+  }
   if (reason.length > MAX_REASON) {
     throw new ApplicationValidationError("This request could not be declined.",
       [`reason: must be ${String(MAX_REASON)} characters or fewer`]);

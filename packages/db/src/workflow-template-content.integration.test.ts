@@ -194,6 +194,12 @@ suite("workflow template content autosave (088, runtime role)", () => {
     await insert(WS_A, "wft_generated");
     await insert(WS_A, "wft_plain");
 
+    // Later migrations (090, 089) come off first; they are empty here.
+    for (const name of ["090_user_notification_states", "089_invitation_inbox"]) {
+      const later = await migrateDown(owner.db);
+      expect(later.error).toBeUndefined();
+      expect(later.applied).toEqual([name]);
+    }
     const down = await migrateDown(owner.db);
     expect(down.error).toBeUndefined();
     expect(down.applied).toEqual(["088_workflow_template_content_autosave"]);

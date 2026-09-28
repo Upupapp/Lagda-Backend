@@ -72,8 +72,10 @@ const CompleteBodySchema = Type.Object({
   documentId: Type.Optional(Nullable(Type.String({ minLength: 1, maxLength: 64 }))),
 }, { title: "CompleteContactRequest", additionalProperties: false });
 
+// A rejection must say why: the requester sees the reason in their
+// Rejected list. Older rows may still hold none.
 const DeclineBodySchema = Type.Object({
-  reason: Type.Optional(Nullable(Type.String({ maxLength: 500 }))),
+  reason: Type.String({ minLength: 1, maxLength: 500 }),
 }, { title: "DeclineContactRequest", additionalProperties: false });
 
 const ListQuerySchema = Type.Object({

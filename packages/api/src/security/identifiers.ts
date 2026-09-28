@@ -52,7 +52,7 @@ import type {
   OrganizationUnitIdGenerator, OrganizationUnitId,
   VerificationChallengeId, PasswordResetChallengeId,
   MfaFactorId, RecoveryCodeId,
-  WorkspaceInvitationIdGenerator,
+  WorkspaceInvitationIdGenerator, WorkspaceInvitationNoticeIdGenerator,
   PreparationId, PreparationFieldId,
   RecipientId,
   SigningRequestId, SigningRequestRecipientId, SigningRequestFieldId,
@@ -287,6 +287,11 @@ export function createWorkspaceInvitationIdGenerator(): WorkspaceInvitationIdGen
   return {
     nextWorkspaceInvitationId: () => mint("inv") as WorkspaceInvitationId,
   };
+}
+
+/** 089. One id per in-app invitation notice. */
+export function createWorkspaceInvitationNoticeIdGenerator(): WorkspaceInvitationNoticeIdGenerator {
+  return { nextInvitationNoticeId: () => mint("ivn") };
 }
 
 /**

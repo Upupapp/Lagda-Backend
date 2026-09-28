@@ -346,6 +346,30 @@ export const NOTIFICATION_POLICIES: Record<NotificationType, NotificationPolicy>
     secretKind: "CHALLENGE",
     scopeKind: "WORKSPACE",
   },
+  // 089. The invitee inbox. Both between accounts and in-app only, each
+  // notice its own source id (see WORKSPACE_INVITATION_NOTICE), scoped to the
+  // INVITING workspace whoever the audience is.
+  WORKSPACE_INVITATION_RECEIVED: {
+    notificationType: "WORKSPACE_INVITATION_RECEIVED",
+    templateKey: "workspace-invitation-received",
+    channel: "EMAIL",
+    sourceKind: "WORKSPACE_INVITATION_NOTICE",
+    // The account whose VERIFIED address the invitation was sent to. The
+    // invitation email itself (WORKSPACE_INVITATION) is unchanged.
+    audienceKind: "USER",
+    scopeKind: "WORKSPACE",
+    inAppOnly: true,
+  },
+  WORKSPACE_INVITATION_DECLINED: {
+    notificationType: "WORKSPACE_INVITATION_DECLINED",
+    templateKey: "workspace-invitation-declined",
+    channel: "EMAIL",
+    sourceKind: "WORKSPACE_INVITATION_NOTICE",
+    // The inviter.
+    audienceKind: "USER",
+    scopeKind: "WORKSPACE",
+    inAppOnly: true,
+  },
 };
 
 export function policyFor(notificationType: NotificationType): NotificationPolicy {

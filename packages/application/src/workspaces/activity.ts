@@ -124,8 +124,16 @@ export function describeActivity(record: Pick<WorkspaceActivityRecord, "action" 
       return { summary: `${who} revoked the invitation to ${target}`, subjectLabel: target };
     case "invitation.accepted":
       return { summary: `${who} accepted the invitation and is waiting for approval`, subjectLabel: who };
-    case "invitation.declined":
-      return { summary: `${who} declined the invitation`, subjectLabel: who };
+    case "invitation.declined": {
+      // 089. A decline from the inbox carries the invitee's reason.
+      const reason = text(d, "reason");
+      return {
+        summary: reason === "" ? `${who} declined the invitation` : `${who} declined the invitation: ${q(reason)}`,
+        subjectLabel: who,
+      };
+    }
+    case "invitation.decline_withdrawn":
+      return { summary: `${who} withdrew their decline and the invitation is open again`, subjectLabel: who };
     case "join_link.created":
       return { summary: `${who} created the join link ${q(label)}`, subjectLabel: label };
     case "join_link.sent": {

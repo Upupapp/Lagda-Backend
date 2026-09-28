@@ -49,6 +49,7 @@ import {
   ContactRequestReceivedModelV1, ContactRequestEmailedModelV1, ContactRequestAnsweredModelV1,
   DocumentShareReceivedModelV1, DocumentShareAnsweredModelV1,
   DocumentAccessRequestedModelV1, DocumentAccessDecidedModelV1,
+  WorkspaceInvitationReceivedModelV1, WorkspaceInvitationDeclinedModelV1,
 } from "./template-registry.js";
 import { escapeHtml } from "./rendering.js";
 import { LAGDA_LOGO_PNG_BASE64 } from "./assets/lagda-logo.js";
@@ -863,6 +864,58 @@ export const documentAccessDecidedV1 = defineTemplate({
   ),
 });
 
+// ── 089. The invitee inbox ─────────────────────────────────────────────────
+//
+// Both in-app only, like the sharing notices above.
+
+/** Where an account finds the invitations addressed to it. */
+const MY_INVITATIONS_PATH = "/app/invitations";
+/** Where a manager sees the invitations their workspace sent. */
+const WORKSPACE_INVITATIONS_PATH = "/app/settings/members";
+
+const INVITED_ROLE_LABELS: Readonly<Record<string, string>> = Object.freeze({
+  administrator: "Administrator",
+  template_administrator: "Template administrator",
+  sender: "Sender",
+  reviewer: "Reviewer",
+  auditor: "Auditor",
+  member: "New Comer",
+});
+const invitedRole = (role: string): string => INVITED_ROLE_LABELS[role] ?? role;
+
+export const workspaceInvitationReceivedV1 = defineTemplate({
+  key: "workspace-invitation-received",
+  version: 1,
+  locale: "en",
+  schema: WorkspaceInvitationReceivedModelV1,
+  secretBearing: false,
+  render: (input, context) => inAppNotice(
+    `${input.inviterDisplayName} invited you to ${input.workspaceName}`,
+    input.recipientName,
+    `${input.inviterDisplayName} invited you to join ${input.workspaceName} as `
+      + `${invitedRole(input.role)}. The invitation is open until ${input.expiresAt}.`,
+    context.buildPath(MY_INVITATIONS_PATH),
+    "Open your invitations",
+  ),
+});
+
+export const workspaceInvitationDeclinedV1 = defineTemplate({
+  key: "workspace-invitation-declined",
+  version: 1,
+  locale: "en",
+  schema: WorkspaceInvitationDeclinedModelV1,
+  secretBearing: false,
+  render: (input, context) => inAppNotice(
+    `${input.inviteeDisplayName} declined the invitation to ${input.workspaceName}`,
+    input.recipientName,
+    `${input.inviteeDisplayName} (${input.inviteeEmail}) declined the invitation to join `
+      + `${input.workspaceName} as ${invitedRole(input.role)}.`
+      + (input.reason === undefined ? "" : ` Their reason: ${input.reason}`),
+    context.buildPath(WORKSPACE_INVITATIONS_PATH),
+    "Open invitations",
+  ),
+});
+
 /**
  * Every template version LAGDA can render.
  *
@@ -890,6 +943,8 @@ export const ALL_TEMPLATES = [
   documentShareAnsweredV1,
   documentAccessRequestedV1,
   documentAccessDecidedV1,
+  workspaceInvitationReceivedV1,
+  workspaceInvitationDeclinedV1,
 ] as const;
 
 export type AccountEmailVerificationModel = Static<typeof AccountEmailVerificationModelV1>;

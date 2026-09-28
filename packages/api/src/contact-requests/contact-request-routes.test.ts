@@ -238,6 +238,10 @@ describe("contact request routes", () => {
       .json<{ requestId: string }>().requestId;
     const second = (await call(h, SENDER, "POST", BASE, { kind: "upload", contactId: "con_colleague", title: "B" }))
       .json<{ requestId: string }>().requestId;
+    const noReason = await call(h, COLLEAGUE, "POST", `${BASE}/${first}/decline`, {});
+    expect(noReason.statusCode).toBe(422);
+    const blank = await call(h, COLLEAGUE, "POST", `${BASE}/${first}/decline`, { reason: "" });
+    expect(blank.statusCode).toBe(422);
     const declined = await call(h, COLLEAGUE, "POST", `${BASE}/${first}/decline`, { reason: "No" });
     expect(declined.json<{ status: string; declineReason: string }>())
       .toMatchObject({ status: "declined", declineReason: "No" });

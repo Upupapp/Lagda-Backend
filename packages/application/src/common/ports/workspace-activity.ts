@@ -26,6 +26,8 @@ export const WORKSPACE_ACTIVITY_ACTIONS = Object.freeze({
   "invitation.revoked": "people",
   "invitation.accepted": "people",
   "invitation.declined": "people",
+  // 089. The invitee took back a decline from their inbox.
+  "invitation.decline_withdrawn": "people",
   "join_link.created": "links",
   "join_link.sent": "links",
   "join_link.withdrawn": "links",

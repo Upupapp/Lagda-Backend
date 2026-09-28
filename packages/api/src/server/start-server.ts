@@ -55,6 +55,7 @@ import {
   createPreparationIdGenerator, createRecipientIdGenerator,
   createSigningRequestIdGenerator, createEvidenceEventIdGenerator,
   createOrganizationUnitIdGenerator, createWorkspaceInvitationIdGenerator,
+  createWorkspaceInvitationNoticeIdGenerator,
   createSigningAccessIdGenerator, createNotificationIntentIdGenerator,
   createRecipientSigningSessionIdGenerator, createSigningWorkflowIdGenerator,
   createSigningConsentIdGenerator, createRecipientSubmissionIdGenerator,
@@ -826,6 +827,18 @@ function buildLinkedSurfaces(input: {
     return (row?.normalized_email ?? null) as NormalizedEmail | null;
   };
 
+  // 089. In-app invitation notices: received (to a VERIFIED account at the
+  // invited address) and declined (to the inviter). Never mailed.
+  const invitationNotices = {
+    clock,
+    templates: createTemplateRegistry(ALL_TEMPLATES),
+    ids: {
+      ...createWorkspaceInvitationNoticeIdGenerator(),
+      ...createNotificationIntentIdGenerator(),
+      ...createNotificationDeliveryIdGenerator(),
+    },
+  };
+
   const invitations = {
     management: () => ({
       transactions, clock,
@@ -842,11 +855,29 @@ function buildLinkedSurfaces(input: {
         sealer: createDeliverySecretSealer(
           config.signingDeliveryKey, config.signingDeliveryKeyVersion),
       }),
+      notices: invitationNotices,
     }),
     redemption: () => ({
       transactions, clock, tokens: invitationTokens, memberIds,
       currentNormalizedEmail,
       joinRequests: joinNotify,
+      notices: invitationNotices,
+    }),
+    // 089. The signed-in inbox, matched by the account's VERIFIED address.
+    inbox: () => ({
+      transactions, clock,
+      joinRequests: joinNotify,
+      notices: invitationNotices,
+      currentAccount: async (userId: UserId) => {
+        const row = await database.db.selectFrom("users")
+          .select(["normalized_email", "email_verified_at", "display_name"])
+          .where("user_id", "=", userId).executeTakeFirst();
+        return row === undefined ? null : {
+          normalizedEmail: row.normalized_email,
+          emailVerified: row.email_verified_at !== null,
+          displayName: row.display_name,
+        };
+      },
     }),
   };
 

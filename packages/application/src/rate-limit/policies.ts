@@ -726,6 +726,21 @@ export const RATE_LIMIT_POLICIES = {
       + "well under one request a second.",
   },
 
+  // 090. Read / dismissed on the personal feed. A click, or "mark all read"
+  // sending one page: a person does this a few times a minute at most. Its
+  // own budget so a notification-happy client cannot eat the general write
+  // allowance. Fail-open: a failed limiter check changes nothing permanent.
+  "notification.state.user": {
+    id: "notification.state.user",
+    scopeType: "user",
+    limit: 60,
+    windowMs: MINUTE,
+    failureMode: "fail-open",
+    source: "090 - not specified by the handoff. Matched to the handoff's "
+      + "commands budget (§583, 60/min per user), under the general write "
+      + "ceiling (§317, 100/min).",
+  },
+
   "api.write.user": {
     id: "api.write.user",
     scopeType: "user",

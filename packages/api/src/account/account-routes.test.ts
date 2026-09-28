@@ -74,7 +74,8 @@ interface Built {
   readonly app: FastifyInstance;
   readonly profileWrites: unknown[];
   readonly revoked: string[];
-  readonly feedQueries: { userId: string; limit: number }[];
+  readonly feedQueries: { userId: string; limit: number; includeDismissed?: boolean }[];
+  readonly stateWrites: { userId: string; ids: readonly string[]; change: unknown }[];
   readonly preferences: ReturnType<typeof fakeNotificationPreferences>;
 }
 
@@ -89,6 +90,7 @@ async function build(options: {
     notificationIntentId: string; notificationType: string;
     workspaceId: string | null; sourceKind: string; sourceId: string;
     templateInput: unknown; createdAt: Date;
+    readAt?: Date | null; dismissedAt?: Date | null;
   }[];
 } = {}): Promise<Built> {
   const app = Fastify({
@@ -101,7 +103,8 @@ async function build(options: {
   });
   await app.register(cookie);
   const profileWrites: unknown[] = [];
-  const feedQueries: { userId: string; limit: number }[] = [];
+  const feedQueries: { userId: string; limit: number; includeDismissed?: boolean }[] = [];
+  const stateWrites: { userId: string; ids: readonly string[]; change: unknown }[] = [];
   const revoked: string[] = [];
   const preferences = fakeNotificationPreferences();
 
@@ -148,9 +151,18 @@ async function build(options: {
   };
 
   const notificationFeed = {
-    listForUser: (userId: string, limit: number) => {
-      feedQueries.push({ userId, limit });
-      return Promise.resolve(options.notifications ?? []);
+    listForUser: (userId: string, limit: number, feed: { includeDismissed?: boolean } = {}) => {
+      feedQueries.push({
+        userId, limit,
+        ...(feed.includeDismissed === undefined ? {} : { includeDismissed: feed.includeDismissed }),
+      });
+      return Promise.resolve((options.notifications ?? []).map(row => ({
+        readAt: null, dismissedAt: null, ...row,
+      })));
+    },
+    setStates: (userId: string, ids: readonly string[], change: unknown) => {
+      stateWrites.push({ userId, ids, change });
+      return Promise.resolve(ids.length);
     },
   };
 
@@ -234,7 +246,7 @@ async function build(options: {
     }),
   });
   await app.ready();
-  return { app, profileWrites, revoked, feedQueries, preferences };
+  return { app, profileWrites, revoked, feedQueries, stateWrites, preferences };
 }
 
 const patch = (app: FastifyInstance, url: string, payload: unknown) =>
@@ -563,7 +575,7 @@ describe("GET /me/notifications", () => {
     await app.inject({ method: "GET", url: "/me/notifications" });
     // The route must never widen this: the repository's WHERE clause is the
     // authorization boundary, and it is only as good as the id passed in.
-    expect(feedQueries).toEqual([{ userId: "usr_1", limit: 100 }]);
+    expect(feedQueries).toEqual([{ userId: "usr_1", limit: 100, includeDismissed: false }]);
   });
 
   it("returns the projected notification", async () => {
@@ -575,6 +587,30 @@ describe("GET /me/notifications", () => {
     expect(body.notifications[0]).toMatchObject({
       id: "nti_1", type: "SIGNING_COMPLETED", workspaceId: "wsp_1",
     });
+  });
+
+  it("carries this account's read and dismissed state (090)", async () => {
+    const { app } = await build({
+      notifications: [
+        ROW,
+        { ...ROW, notificationIntentId: "nti_2", readAt: new Date(1_700_000_100_000) },
+      ],
+    });
+    const res = await app.inject({ method: "GET", url: "/me/notifications" });
+    const body: { notifications: Record<string, unknown>[] } = res.json();
+    expect(body.notifications[0]).toMatchObject({ id: "nti_1", read: false, readAt: null, dismissed: false });
+    expect(body.notifications[1]).toMatchObject({
+      id: "nti_2", read: true, readAt: new Date(1_700_000_100_000).toISOString(), dismissed: false,
+    });
+  });
+
+  it("hides dismissed notices unless asked, and refuses an unknown query key", async () => {
+    const { app, feedQueries } = await build({ notifications: [ROW] });
+    await app.inject({ method: "GET", url: "/me/notifications?includeDismissed=true" });
+    await app.inject({ method: "GET", url: "/me/notifications?includeDismissed=false" });
+    expect(feedQueries.map(q => q.includeDismissed)).toEqual([true, false]);
+    const bad = await app.inject({ method: "GET", url: "/me/notifications?userId=usr_2" });
+    expect(bad.statusCode).toBe(400);
   });
 
   it("strips anything the schema does not name, including a sealed secret", async () => {
@@ -592,6 +628,57 @@ describe("GET /me/notifications", () => {
     expect(res.body).not.toContain("SHOULD-NEVER-BE-SERIALIZED");
     expect(res.body).not.toContain("sealedKeyVersion");
     expect(res.body).not.toContain("challengeId");
+  });
+});
+
+describe("POST /me/notifications/state (090)", () => {
+  const post = (app: FastifyInstance, payload: unknown) =>
+    app.inject({ method: "POST", url: "/me/notifications/state", payload: payload as object });
+
+  it("refuses an anonymous caller", async () => {
+    const { app, stateWrites } = await build({ authenticated: false });
+    const res = await post(app, { ids: ["nti_1"], read: true });
+    expect(res.statusCode).toBe(401);
+    expect(stateWrites).toEqual([]);
+  });
+
+  it("refuses a failed CSRF check without writing", async () => {
+    const { app, stateWrites } = await build({ csrfValid: false });
+    const res = await post(app, { ids: ["nti_1"], read: true });
+    expect(res.statusCode).toBe(403);
+    expect(stateWrites).toEqual([]);
+  });
+
+  it("writes as the SESSION's user, only the flags given, and answers 204", async () => {
+    const { app, stateWrites } = await build();
+    const res = await post(app, { ids: ["nti_1", "nti_2"], read: true });
+    expect(res.statusCode).toBe(204);
+    expect(res.body).toBe("");
+    expect(res.headers["cache-control"]).toBe("no-store");
+    const dismiss = await post(app, { ids: ["nti_1"], dismissed: true, read: false });
+    expect(dismiss.statusCode).toBe(204);
+    expect(stateWrites).toEqual([
+      { userId: "usr_1", ids: ["nti_1", "nti_2"], change: { read: true } },
+      { userId: "usr_1", ids: ["nti_1"], change: { read: false, dismissed: true } },
+    ]);
+  });
+
+  it("refuses a change that names neither flag (422)", async () => {
+    const { app, stateWrites } = await build();
+    const res = await post(app, { ids: ["nti_1"] });
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toMatchObject({ error: { code: "EMPTY_STATE_CHANGE" } });
+    expect(stateWrites).toEqual([]);
+  });
+
+  it("bounds the body: 1-100 ids, closed, no user id expressible", async () => {
+    const { app, stateWrites } = await build();
+    expect((await post(app, { ids: [], read: true })).statusCode).toBe(400);
+    const tooMany = Array.from({ length: 101 }, (_, i) => `nti_${i}`);
+    expect((await post(app, { ids: tooMany, read: true })).statusCode).toBe(400);
+    expect((await post(app, { ids: ["nti_1"], read: true, userId: "usr_2" })).statusCode).toBe(400);
+    expect((await post(app, { ids: [""], read: true })).statusCode).toBe(400);
+    expect(stateWrites).toEqual([]);
   });
 });
 

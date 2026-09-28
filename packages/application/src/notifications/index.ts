@@ -16,3 +16,4 @@ export * from "./completion-producer.js";
 // The IN-APP document feed. Reads evidence, not this substrate — see its
 // own header for why the two are different questions.
 export * from "./document-feed.js";
+export * from "./my-feed-state.js";

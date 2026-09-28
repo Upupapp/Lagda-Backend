@@ -228,6 +228,8 @@ export async function truncateAll(database: LagdaDatabase): Promise<void> {
   await database.db.deleteFrom("notification_delivery_attempts").execute();
   await database.db.deleteFrom("notification_dispatch_index").execute();
   await database.db.deleteFrom("notification_deliveries").execute();
+  // 090. Names intents by id (no FK — see the migration); cleared with them.
+  await database.db.deleteFrom("user_notification_states").execute();
   await database.db.deleteFrom("notification_intents").execute();
   // 086. No runtime DELETE; after the intents that may address one.
   await database.db.deleteFrom("contact_requests").execute();

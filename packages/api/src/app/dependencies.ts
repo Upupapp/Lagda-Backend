@@ -18,7 +18,7 @@ import type {
   CreateWorkspaceDependencies, GetWorkspaceDependencies,
   ListMyWorkspacesDependencies,
   JoinTicketDependencies, JoinRequestDependencies,
-  InvitationDependencies, AcceptInvitationDependencies,
+  InvitationDependencies, AcceptInvitationDependencies, MyInvitationDependencies,
   MemberAdministrationDependencies, WorkspaceAccessDependencies,
   ContactDependencies,
   UploadRequestDependencies, ContactRequestDependencies, DocumentSharingDependencies, DocumentDependencies, DocumentContentDependencies, FolderDependencies,
@@ -203,6 +203,11 @@ export interface WorkspaceDependencies {
   readonly invitations?: {
     readonly management: () => InvitationDependencies;
     readonly redemption: () => AcceptInvitationDependencies;
+    /**
+     * 089. The signed-in invitee's inbox (`/me/invitations`). Optional within
+     * the group: it also needs the template registry for its in-app notices.
+     */
+    readonly inbox?: () => MyInvitationDependencies;
   };
   /**
    * 078. Join links and join requests. Optional as a whole: it needs the app

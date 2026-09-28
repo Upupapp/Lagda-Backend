@@ -163,7 +163,7 @@ async function build(options: { authenticated?: boolean; csrfValid?: boolean } =
         remove: (id: string) => Promise.resolve(m.delete(id)),
       };
     },
-    notificationFeed: () => ({ listForUser: () => Promise.resolve([]) }),
+    notificationFeed: () => ({ listForUser: () => Promise.resolve([]), setStates: () => Promise.resolve(0) }),
     notificationPreferences: () => fakeNotificationPreferences(),
     claimSigningLink: () => Promise.reject(new Error("not used")),
     listDocumentsToSign: () => Promise.resolve([]),
