@@ -41,6 +41,19 @@ const REDACTED_PATHS = [
 
 type LoggerOptions = NonNullable<Exclude<FastifyServerOptions["logger"], boolean | undefined>>;
 
+/**
+ * `reply.statusCode` is undefined at the time this serializer runs for most
+ * responses (fastify-pino hands it the underlying Node `res`, not the
+ * FastifyReply), so every request was silently logged as status 0.
+ * `res.statusCode`/`raw.statusCode` is where Node actually keeps it; exported
+ * on its own so a test can prove it without standing up a full logger.
+ */
+export function serializeResponse(
+  reply: { statusCode?: number; raw?: { statusCode?: number } },
+): { statusCode: number } {
+  return { statusCode: reply.raw?.statusCode ?? reply.statusCode ?? 0 };
+}
+
 /** A readable, bounded rendering of an error cause of unknown shape. */
 function describeCause(cause: unknown): string {
   if (cause instanceof Error) return `${cause.name}: ${cause.message}`;
@@ -157,9 +170,7 @@ export function buildLoggerOptions(
             : {}),
         };
       },
-      res(reply: { statusCode?: number }) {
-        return { statusCode: reply.statusCode ?? 0 };
-      },
+      res: serializeResponse,
       // Stack and cause stay in the LOG. They are never serialized into a
       // response — see errors/index.ts.
       err(error: FastifyError) {

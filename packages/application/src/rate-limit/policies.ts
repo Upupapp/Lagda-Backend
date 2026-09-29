@@ -621,13 +621,22 @@ export const RATE_LIMIT_POLICIES = {
   "public-verification.document.ip": {
     id: "public-verification.document.ip",
     scopeType: "ip",
-    limit: 10,
+    // Was 10, matched to the rare manual "Verify a document" flow, which asks
+    // for a code and re-guesses an email at most a few times. "Signed by
+    // me"/"Others" (090) now call this same route from an already-proven,
+    // signed-in grant every time a card's Participants or Audit trail opens,
+    // with no email-guessing shape left to bound — one office behind a shared
+    // IP was hitting this within a minute of ordinary use, and every open
+    // after that read as a false "denied". Raised to a budget sized for
+    // legitimate use; public-verification.access.ip (the code-guessing route)
+    // is UNCHANGED and keeps the original 10.
+    limit: 60,
     windowMs: MINUTE,
     failureMode: "fail-closed",
-    source: "OD-135 - not specified by the handoff. Matched to "
-      + "public-verification.access.ip: the document fetch re-proves the same "
-      + "email match, so it is exposed to the same guessing shape and gets the "
-      + "same budget.",
+    source: "OD-135 - not specified by the handoff, and revised for 090: the "
+      + "code-guessing budget was reused for a route the signed-in participant "
+      + "flow now calls routinely, with no guessing shape left to bound; this "
+      + "is chosen for that traffic instead.",
   },
 
   // 083. Requesting a Verify Document access code. Each request may send an
