@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import type { UserId, WorkspaceId, WorkspaceMemberId } from "@lagda/contracts";
 import {
   effectivePlan, currentPeriodEnd, addOneMonth, planIncludes, bankMismatches,
-  getMyPlan, getWorkspacePlan, requireWorkspacePlan, claimFreeDocumentForSend, assertMayCreateWorkspace,
+  getMyPlan, getWorkspacePlan, requireWorkspacePlan, requireOwnPlan, claimFreeDocumentForSend, assertMayCreateWorkspace,
   requestPlanUpgrade, cancelMyPlanUpgradeRequest, listPendingPlanUpgradeRequests,
   getPlanUpgradeRequest, decidePlanUpgradeRequest,
   PlanRequiredError, FreeDocumentLimitError, TestBankAccountError, PlanUpgradeConflictError,
@@ -183,6 +183,19 @@ describe("a workspace's plan is its owner's", () => {
 
   it("gates nothing without plan dependencies", async () => {
     await expect(requireWorkspacePlan(WS_A, "business", "Teams", undefined, ANA)).resolves.toBeUndefined();
+  });
+});
+
+describe("joining another workspace is the person's own plan", () => {
+  it("refuses a Free person, whatever workspace they are in", async () => {
+    setPlan(ANA, "business", AT + DAY); // Ben's owner is paid; Ben is not.
+    await expect(requireOwnPlan(BEN, "personal", "Joining another workspace", deps))
+      .rejects.toMatchObject({ code: "plan_required", requiredPlan: "personal" });
+  });
+
+  it("lets a paid person join", async () => {
+    setPlan(BEN, "personal", AT + DAY);
+    await expect(requireOwnPlan(BEN, "personal", "Joining another workspace", deps)).resolves.toBeUndefined();
   });
 });
 

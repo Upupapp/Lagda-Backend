@@ -22,7 +22,7 @@ import { Type, type Static } from "@sinclair/typebox";
 import {
   getMyPlan, getWorkspacePlan, requestPlanUpgrade, cancelMyPlanUpgradeRequest,
   listPendingPlanUpgradeRequests, getPlanUpgradeRequest, decidePlanUpgradeRequest,
-  requireWorkspacePlan, policyById,
+  requireWorkspacePlan, requireOwnPlan, policyById,
   type PlanDependencies, type PlanUpgradeRequestView, type PlanUpgradeReviewView,
   type SessionId, type UserId,
 } from "@lagda/application";
@@ -271,13 +271,16 @@ interface Gate {
   readonly feature: string;
   /** When present, the gate applies only to requests it matches. */
   readonly when?: (request: FastifyRequest) => boolean;
+  /** The CALLER's own plan decides, not the workspace owner's. */
+  readonly own?: true;
 }
 
 const W = "/workspaces/:workspaceId";
 
 /**
  * Every paid feature the server refuses on a Free (or lapsed) owner's
- * workspace. Reads, and taking things away (removing a logo, revoking a share,
+ * workspace — and, marked `own`, what a Free PERSON may not do anywhere
+ * (joining another workspace). Reads, and taking things away (removing a logo, revoking a share,
  * removing a member), stay open: an expired month deletes nothing and hides
  * nothing that is already there.
  */
@@ -296,6 +299,10 @@ export const PLAN_GATES: readonly Gate[] = [
   { method: "POST", url: `${W}/units/:unitId/members`, minimum: "business", feature: "Teams" },
   { method: "PATCH", url: `${W}/units/:unitId/members/:userId`, minimum: "business", feature: "Teams" },
   { method: "GET", url: `${W}/activity`, minimum: "business", feature: "The activity log" },
+  // Joining another workspace is the PERSON's feature: their own plan decides.
+  { method: "POST", url: "/invitations/accept", minimum: "personal", feature: "Joining another workspace", own: true },
+  { method: "POST", url: "/me/invitations/:invitationId/accept", minimum: "personal", feature: "Joining another workspace", own: true },
+  { method: "POST", url: "/workspace-join/requests", minimum: "personal", feature: "Joining another workspace", own: true },
   {
     method: "POST", url: `${W}/contacts`, minimum: "business", feature: "Sharing contacts with the workspace",
     // Absent scope means "workspace" (the contacts module's default).
@@ -313,6 +320,11 @@ export function registerPlanGates(
     if (url === undefined) return;
     const gate = PLAN_GATES.find(g => g.method === request.method && g.url === url);
     if (gate === undefined || (gate.when !== undefined && !gate.when(request))) return;
+    if (gate.own === true) {
+      if (request.auth.status !== "authenticated") return;
+      await requireOwnPlan(request.auth.actor.userId, gate.minimum, gate.feature, dependencies());
+      return;
+    }
     const { workspaceId } = request.params as { workspaceId?: string };
     // Signed out, or no workspace in the route: the route's own checks answer.
     if (workspaceId === undefined || request.auth.status !== "authenticated") return;

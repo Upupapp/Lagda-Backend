@@ -339,6 +339,22 @@ export async function requireWorkspacePlan(
 }
 
 /**
+ * Refuses when the PERSON's own plan is below `minimum` — for what a person
+ * does as themselves rather than inside a workspace: joining another
+ * workspace, by invitation or by join link.
+ */
+export async function requireOwnPlan(
+  userId: UserId,
+  minimum: "personal" | "business",
+  feature: string,
+  deps: Pick<PlanReadDependencies, "plans" | "clock"> | undefined,
+): Promise<void> {
+  if (deps === undefined) return;
+  const plan = effectivePlan(await deps.plans.find(userId), deps.clock.now());
+  if (!planIncludes(plan, minimum)) throw new PlanRequiredError(minimum, feature);
+}
+
+/**
  * The send path's Free allowance. Called INSIDE the send transaction, after
  * every other check has passed, with the owner read from that transaction.
  * Returns the account whose allowance was taken (to give back on rollback),
