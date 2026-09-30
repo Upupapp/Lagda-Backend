@@ -51,6 +51,7 @@ import { registerUsageRoutes } from "../workspaces/usage-routes.js";
 import { registerContactRoutes } from "../contacts/contact-routes.js";
 import { registerContactConnectionRoutes } from "../contact-connections/contact-connection-routes.js";
 import { registerPlanRoutes, registerPlanGates } from "../plans/plan-routes.js";
+import { registerReadyMadeRoutes } from "../ready-made/ready-made-routes.js";
 import { resolveContactAccounts, assertMayCreateWorkspace, type UserId, type SessionId } from "@lagda/application";
 import { registerUploadRequestRoutes } from "../upload-requests/upload-request-routes.js";
 import { registerContactRequestRoutes } from "../contact-requests/contact-request-routes.js";
@@ -423,6 +424,15 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
           dependencies: plans,
           metrics,
           ...(limiter === undefined ? {} : { rateLimit: { limiter, metrics } }),
+        });
+        // The ready-made library: catalogue for everyone, text for Personal+.
+        registerReadyMadeRoutes(scope, {
+          authenticatedUser: (request: FastifyRequest) => Promise.resolve(
+            request.auth.status === "authenticated"
+              ? { userId: request.auth.actor.userId, sessionId: request.auth.actor.sessionId }
+              : null,
+          ),
+          dependencies: plans,
         });
       }
 

@@ -339,6 +339,28 @@ export async function requireWorkspacePlan(
 }
 
 /**
+ * For content that belongs to a plan rather than to an operation (the
+ * ready-made template library): the caller must be a MEMBER of the workspace
+ * (not-found otherwise, so nothing is confirmed), and its owner's plan must
+ * include `minimum`.
+ */
+export async function requireMemberOfPlanWorkspace(
+  actor: AuthenticatedActor,
+  workspaceId: WorkspaceId,
+  minimum: "personal" | "business",
+  feature: string,
+  deps: PlanReadDependencies,
+): Promise<void> {
+  const { owner, member } = await deps.transactions.runForWorkspace(workspaceId, async uow => ({
+    member: await uow.memberships.findByUser(actor.userId),
+    owner: findWorkspaceOwner(await uow.memberships.list())?.userId ?? null,
+  }));
+  if (member === null) throw new ResourceNotFoundError("Workspace");
+  const plan = owner === null ? "free" : effectivePlan(await deps.plans.find(owner), deps.clock.now());
+  if (!planIncludes(plan, minimum)) throw new PlanRequiredError(minimum, feature);
+}
+
+/**
  * Refuses when the PERSON's own plan is below `minimum` — for what a person
  * does as themselves rather than inside a workspace: joining another
  * workspace, by invitation or by join link.
