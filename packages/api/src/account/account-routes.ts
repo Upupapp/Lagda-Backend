@@ -43,7 +43,7 @@ import {
   type UserId, type SessionId, type UpdatePreferencesInput,
   SigningLinkAddressedElsewhereError,
   InAppSigningPasswordError, InAppSigningUnverifiedError, InAppSigningUnavailableError,
-  type SigningInboxItemView, type SignedDocumentView,
+  type SignedDocumentView, type DocumentToSignView,
   type ParticipantCompletionView, type CompletedOtherDocumentView,
   getNotificationPreferences, updateNotificationPreferences,
   type NotificationPreferenceRepository, type NotificationPreferencesView,
@@ -138,6 +138,24 @@ const SenderFields = {
   workspaceName: Type.Union([Type.String(), Type.Null()]),
 };
 
+const SenderBrandingSchema = Type.Object({
+  displayName: Type.String(),
+  primaryColor: Type.Union([Type.String(), Type.Null()]),
+  logo: Type.Union([Type.Object({
+    version: Type.String(), width: Type.Integer(), height: Type.Integer(),
+  }, { additionalProperties: false }), Type.Null()]),
+}, { title: "SenderBranding", additionalProperties: false });
+
+type SenderBranding = NonNullable<DocumentToSignView["branding"]>;
+
+/** Field by field: the schema is closed, and a union validates every key. */
+const presentSenderBranding = (branding: SenderBranding) => ({
+  displayName: branding.displayName,
+  primaryColor: branding.primaryColor,
+  logo: branding.logo === null ? null
+    : { version: branding.logo.version, width: branding.logo.width, height: branding.logo.height },
+});
+
 const DocumentsToSignResponseSchema = Type.Object({
   items: Type.Array(Type.Object({
     signingRequestId: Type.String(),
@@ -148,6 +166,8 @@ const DocumentsToSignResponseSchema = Type.Object({
     ...SenderFields,
     invitedAt: Type.String({ format: "date-time" }),
     expiresAt: Type.String({ format: "date-time" }),
+    /** The SENDER workspace's banner; null when it cannot be shown. */
+    branding: Type.Union([SenderBrandingSchema, Type.Null()]),
   }, { additionalProperties: false })),
 }, { title: "DocumentsToSign", additionalProperties: false });
 
@@ -190,6 +210,10 @@ const CompletedOtherDocumentsResponseSchema = Type.Object({
     completion: ParticipantCompletionSchema,
   }, { additionalProperties: false })),
 }, { title: "CompletedOtherDocuments", additionalProperties: false });
+
+const DocumentToSignLogoParams = Type.Object({
+  signingRequestId: Type.String({ minLength: 1, maxLength: 64 }),
+}, { additionalProperties: false });
 
 const ParticipantLogoParams = Type.Object({
   verificationId: Type.String({ minLength: 1, maxLength: 64 }),
@@ -468,7 +492,11 @@ export interface AccountRouteOptions {
   }>;
   readonly signatureImages: () => SignatureImageValidator;
   /** "Documents I must sign" (migration 056), read by the caller's own id. */
-  readonly listDocumentsToSign: (userId: UserId) => Promise<readonly SigningInboxItemView[]>;
+  readonly listDocumentsToSign: (userId: UserId) => Promise<readonly DocumentToSignView[]>;
+  /** The sender workspace's logo, for a recipient of this still-open request. */
+  readonly documentToSignLogo: (
+    userId: UserId, signingRequestId: string,
+  ) => Promise<{ mediaType: string; bytes: Uint8Array; digest: string } | null>;
   /** "Signed by me" (migration 055), read by the caller's own id. */
   readonly listSignedDocuments: (userId: UserId) => Promise<readonly SignedDocumentView[]>;
   /** "Others" that are completed, read by the caller's own id. */
@@ -888,11 +916,37 @@ export function registerAccountRoutes(
     const items = await options.listDocumentsToSign(actor.userId);
     return reply.status(200).send({
       items: items.map(item => ({
-        ...item,
+        signingRequestId: item.signingRequestId,
+        recipientId: item.recipientId,
+        documentTitle: item.documentTitle,
+        recipientType: item.recipientType,
+        senderName: item.senderName,
+        senderEmail: item.senderEmail,
+        workspaceName: item.workspaceName,
         invitedAt: new Date(item.invitedAt).toISOString(),
         expiresAt: new Date(item.expiresAt).toISOString(),
+        branding: item.branding === null ? null : presentSenderBranding(item.branding),
       })),
     });
+  });
+
+  // The sender workspace's logo on an "I must sign" card. Proven per request:
+  // the caller's verified address is a recipient of it.
+  app.get("/me/documents-to-sign/:signingRequestId/branding/logo", {
+    schema: { params: DocumentToSignLogoParams },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const actor = await options.authenticatedUser(request);
+    if (actor === null) return unauthenticated(reply);
+    const { signingRequestId } = request.params as Static<typeof DocumentToSignLogoParams>;
+    const logo = await options.documentToSignLogo(actor.userId, signingRequestId);
+    if (logo === null) {
+      noStore(reply);
+      return reply.status(404).send({ error: { code: "LOGO_NOT_FOUND", message: "No logo is set." } });
+    }
+    void reply.header("Cache-Control", "private, max-age=300");
+    void reply.header("ETag", `"${logo.digest}"`);
+    void reply.header("X-Content-Type-Options", "nosniff");
+    return reply.type(logo.mediaType).send(Buffer.from(logo.bytes));
   });
 
   app.get("/me/signed-documents", {

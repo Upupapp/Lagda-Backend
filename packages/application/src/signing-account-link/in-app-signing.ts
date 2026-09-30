@@ -198,6 +198,19 @@ export interface SigningInboxItemView {
   readonly expiresAt: number;
 }
 
+/**
+ * "I must sign" / "Others" while still open: the row, plus the SENDER
+ * workspace's banner — present only when the account's verified address is a
+ * recipient of that request, null otherwise (the list still shows the row).
+ */
+export interface DocumentToSignView extends SigningInboxItemView {
+  readonly branding: {
+    readonly displayName: string;
+    readonly primaryColor: string | null;
+    readonly logo: { readonly version: string; readonly width: number; readonly height: number } | null;
+  } | null;
+}
+
 export function presentInboxItem(entry: UserSigningInboxRecord): SigningInboxItemView {
   return {
     signingRequestId: entry.signingRequestId,

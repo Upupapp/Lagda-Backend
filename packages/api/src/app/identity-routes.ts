@@ -42,7 +42,7 @@ import type {
 } from "@lagda/application";
 import type { UserSignatureRepository, UserAvatarRepository, NotificationFeedRepository } from "@lagda/db";
 import type {
-  SignatureImageValidator, SigningInboxItemView, SignedDocumentView, CompletedOtherDocumentView,
+  SignatureImageValidator, SignedDocumentView, CompletedOtherDocumentView, DocumentToSignView,
 } from "@lagda/application";
 import type { ApiConfig } from "../config/index.js";
 import { registerAuthRoutes } from "../auth/register-route.js";
@@ -123,7 +123,10 @@ export interface IdentityDependencies {
   }>;
   readonly signatureImages: () => SignatureImageValidator;
   /** "Documents I must sign" (migration 056), read by the caller's own id. */
-  readonly listDocumentsToSign: (userId: UserId) => Promise<readonly SigningInboxItemView[]>;
+  readonly listDocumentsToSign: (userId: UserId) => Promise<readonly DocumentToSignView[]>;
+  readonly documentToSignLogo: (
+    userId: UserId, signingRequestId: string,
+  ) => Promise<{ mediaType: string; bytes: Uint8Array; digest: string } | null>;
   /** "Signed by me" (migration 055), read by the caller's own id. */
   readonly listSignedDocuments: (userId: UserId) => Promise<readonly SignedDocumentView[]>;
   readonly listCompletedOtherDocuments: (userId: UserId) => Promise<readonly CompletedOtherDocumentView[]>;
@@ -253,6 +256,7 @@ export function registerIdentityRoutes(
     notificationPreferences: deps.notificationPreferences,
     claimSigningLink: deps.claimSigningLink,
     listDocumentsToSign: deps.listDocumentsToSign,
+    documentToSignLogo: deps.documentToSignLogo,
     listSignedDocuments: deps.listSignedDocuments,
     listCompletedOtherDocuments: deps.listCompletedOtherDocuments,
     participantDocumentLogo: deps.participantDocumentLogo,

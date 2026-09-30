@@ -169,6 +169,7 @@ async function build(options: { authenticated?: boolean; csrfValid?: boolean } =
     listDocumentsToSign: () => Promise.resolve([]),
     listSignedDocuments: () => Promise.resolve([]),
     listCompletedOtherDocuments: () => Promise.resolve([]),
+    documentToSignLogo: () => Promise.resolve(null),
     participantDocumentLogo: () => Promise.resolve(null),
     beginInAppSigning: () => Promise.reject(new Error("not used")),
     signatureImages: () => createSignatureImageValidator(),

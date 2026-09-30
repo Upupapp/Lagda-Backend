@@ -61,7 +61,7 @@ import { createSignatureImageValidator } from "../security/signature-image.js";
 import { randomUUID } from "node:crypto";
 import {
   claimSigningLink, normalizeEmail, beginInAppSigning,
-  presentInboxItem, presentSignedDocument, type ParticipantCompletionView,
+  presentInboxItem, presentSignedDocument, type ParticipantCompletionView, type DocumentToSignView,
 } from "@lagda/application";
 import {
   createSigningAccountLinkRepository, createPreparedSignatureRepository,
@@ -585,7 +585,20 @@ export function buildIdentity(
           await records.claimInboxForAddress(userId, identity.normalizedEmail);
         }
         const entries = await records.listOpenInboxForUser(userId, clock.now(), 100);
-        return entries.map(presentInboxItem);
+        // The sender's banner, only where this VERIFIED address is a recipient.
+        const brandings: ReadonlyMap<string, NonNullable<DocumentToSignView["branding"]>> =
+          identity === null || !identity.emailVerified ? new Map()
+            : await createParticipantDocumentsReader(db).pendingBranding(
+              identity.normalizedEmail, entries.map(e => e.signingRequestId));
+        return entries.map(entry => ({
+          ...presentInboxItem(entry),
+          branding: brandings.get(entry.signingRequestId) ?? null,
+        }));
+      },
+      documentToSignLogo: async (userId: UserId, signingRequestId: string) => {
+        const identity = await findAccountIdentity(userId);
+        if (identity === null || !identity.emailVerified) return null;
+        return createParticipantDocumentsReader(db).pendingLogo(identity.normalizedEmail, signingRequestId);
       },
       listSignedDocuments: async (userId: UserId) => {
         const records = await createUserSigningRecordsRepository(db)

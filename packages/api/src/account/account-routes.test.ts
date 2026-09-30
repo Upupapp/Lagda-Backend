@@ -11,7 +11,7 @@ import type {
   UpdatePreferencesDependencies, ChangePasswordDependencies,
   ListSessionsDependencies, RevokeSessionDependencies,
   RevokeOtherSessionsDependencies, CurrentUser, PasswordHash,
-  SessionId, UserId, SignedDocumentView, CompletedOtherDocumentView, ParticipantCompletionView,
+  SessionId, UserId, DocumentToSignView, SignedDocumentView, CompletedOtherDocumentView, ParticipantCompletionView,
 } from "@lagda/application";
 import type { ApiConfig } from "../config/index.js";
 import type { UserSignatureRepository, SavedSignature } from "@lagda/db";
@@ -80,6 +80,8 @@ interface Built {
 }
 
 async function build(options: {
+  documentsToSign?: readonly DocumentToSignView[];
+  documentToSignLogo?: { mediaType: string; bytes: Uint8Array; digest: string } | null;
   signedDocuments?: readonly SignedDocumentView[];
   completedOthers?: readonly CompletedOtherDocumentView[];
   participantLogo?: { mediaType: string; bytes: Uint8Array; digest: string } | null;
@@ -177,9 +179,10 @@ async function build(options: {
     notificationFeed: () => notificationFeed,
     notificationPreferences: () => preferences,
     claimSigningLink: () => Promise.reject(new Error("not used")),
-    listDocumentsToSign: () => Promise.resolve([]),
+    listDocumentsToSign: () => Promise.resolve(options.documentsToSign ?? []),
     listSignedDocuments: () => Promise.resolve(options.signedDocuments ?? []),
     listCompletedOtherDocuments: () => Promise.resolve(options.completedOthers ?? []),
+    documentToSignLogo: () => Promise.resolve(options.documentToSignLogo ?? null),
     participantDocumentLogo: (_userId, verificationId) => {
       logoLookups.push(verificationId);
       return Promise.resolve(options.participantLogo ?? null);
@@ -273,6 +276,51 @@ const COMPLETION: ParticipantCompletionView = {
   completed: 2,
   branding: { displayName: "Acme", primaryColor: "#112233", logo: { version: "d".repeat(64), width: 10, height: 5 } },
 };
+
+describe("I must sign: the sender's banner", () => {
+  const ROW = {
+    signingRequestId: "sr_9", recipientId: "srr_9", documentTitle: "Lease", recipientType: "signer",
+    senderName: "Maria", senderEmail: "m@example.com", workspaceName: "Acme",
+    invitedAt: 1_700_000_000_000, expiresAt: 1_700_086_400_000,
+  };
+
+  it("carries the sender's branding field by field, even when the value holds more", async () => {
+    const { app } = await build({
+      documentsToSign: [
+        { ...ROW, branding: { displayName: "Acme", primaryColor: "#112233",
+          logo: { version: "d".repeat(64), width: 10, height: 5, extra: true } as never, workspaceId: "ws_x" } as never },
+        { ...ROW, signingRequestId: "sr_10", branding: null },
+      ],
+    });
+    const response = await app.inject({ method: "GET", url: "/me/documents-to-sign" });
+    expect(response.statusCode).toBe(200);
+    const body: { items: { branding: unknown }[] } = response.json();
+    expect(body.items[0]?.branding).toEqual({
+      displayName: "Acme", primaryColor: "#112233", logo: { version: "d".repeat(64), width: 10, height: 5 },
+    });
+    expect(body.items[1]?.branding).toBeNull();
+    await app.close();
+  });
+
+  it("serves the sender's logo to a recipient, 404s otherwise, and refuses anonymous callers", async () => {
+    const { app } = await build({
+      documentToSignLogo: { mediaType: "image/png", bytes: new Uint8Array([1, 2]), digest: "d".repeat(64) },
+    });
+    const ok = await app.inject({ method: "GET", url: "/me/documents-to-sign/sr_9/branding/logo" });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.headers["content-type"]).toBe("image/png");
+    expect(ok.headers["cache-control"]).toBe("private, max-age=300");
+    await app.close();
+
+    const { app: none } = await build();
+    expect((await none.inject({ method: "GET", url: "/me/documents-to-sign/sr_9/branding/logo" })).statusCode).toBe(404);
+    await none.close();
+
+    const { app: anon } = await build({ authenticated: false });
+    expect((await anon.inject({ method: "GET", url: "/me/documents-to-sign/sr_9/branding/logo" })).statusCode).toBe(401);
+    await anon.close();
+  });
+});
 
 describe("participants' completed documents", () => {
   it("adds the completion and owner's branding to Signed by me", async () => {

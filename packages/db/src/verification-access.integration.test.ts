@@ -408,6 +408,22 @@ suite("verification access (083, runtime role)", () => {
       expect(await reader.logo("someone@example.com", verificationOf(WS_A))).toBeNull();
     });
 
+    it("gives the sender's banner for a request to its recipient, not to anyone else", async () => {
+      await brand();
+      const reader = createParticipantDocumentsReader(app.db);
+      const found = await reader.pendingBranding(EMAIL, [requestOf(WS_A), requestOf(WS_B), "sr_unknown"]);
+      expect(found.get(requestOf(WS_A))).toEqual({
+        displayName: `WS ${WS_A}`, primaryColor: "#112233", logo: { version: HASH("c"), width: 10, height: 5 },
+      });
+      expect(found.get(requestOf(WS_B))).toEqual({ displayName: `WS ${WS_B}`, primaryColor: null, logo: null });
+      expect(found.has("sr_unknown")).toBe(false);
+      expect((await reader.pendingBranding("someone@example.com", [requestOf(WS_A)])).size).toBe(0);
+
+      expect(Buffer.from((await reader.pendingLogo(EMAIL, requestOf(WS_A)))?.bytes ?? [])).toEqual(LOGO);
+      expect(await reader.pendingLogo("someone@example.com", requestOf(WS_A))).toBeNull();
+      expect(await reader.pendingLogo(EMAIL, requestOf(WS_B))).toBeNull();
+    });
+
     it("serves the owner's logo to a recipient only", async () => {
       await brand();
       const reader = createParticipantDocumentsReader(app.db);

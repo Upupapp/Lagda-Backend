@@ -653,5 +653,81 @@ export function createParticipantDocumentsReader(db: Kysely<Database>) {
         return { mediaType: row.logo_media_type, bytes: new Uint8Array(row.logo_bytes), digest: row.logo_digest };
       });
     },
+
+    /**
+     * "I must sign": the SENDER workspace's banner for documents still out for
+     * signing. The same proof as above — the account's verified address is a
+     * recipient of that request — without needing it completed. The ids come
+     * from the account's own inbox rows; the workspace comes from the request.
+     */
+    pendingBranding(
+      normalizedEmail: string, signingRequestIds: readonly string[],
+    ): Promise<ReadonlyMap<string, ParticipantCompletion["branding"]>> {
+      const ids = [...new Set(signingRequestIds)].slice(0, MAX_PARTICIPANT_LOOKUP);
+      if (ids.length === 0) return Promise.resolve(new Map());
+      return db.transaction().execute(async trx => {
+        await sql`select set_config(${PUBLIC_VERIFICATION_SETTING}, 'true', true)`.execute(trx);
+        const rows = await trx.selectFrom("signing_requests")
+          .innerJoin("signing_request_recipients", join => join
+            .onRef("signing_request_recipients.signing_request_id", "=", "signing_requests.signing_request_id")
+            .onRef("signing_request_recipients.workspace_id", "=", "signing_requests.workspace_id"))
+          .where("signing_requests.signing_request_id", "in", ids)
+          .where("signing_request_recipients.normalized_email", "=", normalizedEmail)
+          .select(["signing_requests.workspace_id", "signing_requests.signing_request_id"])
+          .execute();
+
+        const byWorkspace = new Map<string, Set<string>>();
+        for (const row of rows) {
+          const set = byWorkspace.get(row.workspace_id) ?? new Set<string>();
+          set.add(row.signing_request_id);
+          byWorkspace.set(row.workspace_id, set);
+        }
+        const found = new Map<string, ParticipantCompletion["branding"]>();
+        for (const [workspaceId, requestIds] of byWorkspace) {
+          await sql`select set_config(${WORKSPACE_SETTING}, ${workspaceId}, true)`.execute(trx);
+          const [workspace, branding] = await Promise.all([
+            trx.selectFrom("workspaces").where("workspace_id", "=", workspaceId)
+              .select(["name"]).executeTakeFirst(),
+            trx.selectFrom("workspace_branding").where("workspace_id", "=", workspaceId)
+              .select(["primary_color", "logo_digest", "logo_width", "logo_height"]).executeTakeFirst(),
+          ]);
+          const value: ParticipantCompletion["branding"] = {
+            displayName: workspace?.name ?? "Workspace",
+            primaryColor: branding?.primary_color ?? null,
+            logo: branding !== undefined && branding.logo_digest !== null
+              && branding.logo_width !== null && branding.logo_height !== null
+              ? { version: branding.logo_digest, width: branding.logo_width, height: branding.logo_height }
+              : null,
+          };
+          for (const id of requestIds) found.set(id, value);
+        }
+        return found;
+      });
+    },
+
+    /** The sender workspace's logo, for a recipient of this (pending) request. */
+    pendingLogo(normalizedEmail: string, signingRequestId: string): Promise<ParticipantLogo | null> {
+      return db.transaction().execute(async trx => {
+        await sql`select set_config(${PUBLIC_VERIFICATION_SETTING}, 'true', true)`.execute(trx);
+        const row = await trx.selectFrom("signing_requests")
+          .innerJoin("signing_request_recipients", join => join
+            .onRef("signing_request_recipients.signing_request_id", "=", "signing_requests.signing_request_id")
+            .onRef("signing_request_recipients.workspace_id", "=", "signing_requests.workspace_id"))
+          .where("signing_requests.signing_request_id", "=", signingRequestId)
+          .where("signing_request_recipients.normalized_email", "=", normalizedEmail)
+          .select(["signing_requests.workspace_id"])
+          .executeTakeFirst();
+        if (!row) return null;
+        await sql`select set_config(${WORKSPACE_SETTING}, ${row.workspace_id}, true)`.execute(trx);
+        const logo = await trx.selectFrom("workspace_branding")
+          .where("workspace_id", "=", row.workspace_id)
+          .select(["logo_media_type", "logo_bytes", "logo_digest"])
+          .executeTakeFirst();
+        if (!logo || logo.logo_bytes === null || logo.logo_media_type === null || logo.logo_digest === null) {
+          return null;
+        }
+        return { mediaType: logo.logo_media_type, bytes: new Uint8Array(logo.logo_bytes), digest: logo.logo_digest };
+      });
+    },
   };
 }

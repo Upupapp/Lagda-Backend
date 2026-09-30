@@ -47130,7 +47130,8 @@
                           "senderEmail",
                           "workspaceName",
                           "invitedAt",
-                          "expiresAt"
+                          "expiresAt",
+                          "branding"
                         ],
                         "properties": {
                           "signingRequestId": {
@@ -47189,6 +47190,65 @@
                           "expiresAt": {
                             "format": "date-time",
                             "type": "string"
+                          },
+                          "branding": {
+                            "anyOf": [
+                              {
+                                "title": "SenderBranding",
+                                "additionalProperties": false,
+                                "type": "object",
+                                "required": [
+                                  "displayName",
+                                  "primaryColor",
+                                  "logo"
+                                ],
+                                "properties": {
+                                  "displayName": {
+                                    "type": "string"
+                                  },
+                                  "primaryColor": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "logo": {
+                                    "anyOf": [
+                                      {
+                                        "additionalProperties": false,
+                                        "type": "object",
+                                        "required": [
+                                          "version",
+                                          "width",
+                                          "height"
+                                        ],
+                                        "properties": {
+                                          "version": {
+                                            "type": "string"
+                                          },
+                                          "width": {
+                                            "type": "integer"
+                                          },
+                                          "height": {
+                                            "type": "integer"
+                                          }
+                                        }
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                }
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         }
                       }
@@ -47197,6 +47257,27 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/me/documents-to-sign/{signingRequestId}/branding/logo": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "signingRequestId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
           }
         }
       }
