@@ -14,7 +14,7 @@ import type { ContactId, UserId, WorkspaceId } from "@lagda/contracts";
 import { WORKSPACE_ROLES } from "@lagda/contracts";
 import {
   createContact, listContacts, getContact, updateContact,
-  archiveContact, restoreContact,
+  archiveContact, restoreContact, deleteContact,
   type ContactDependencies,
 } from "./contacts.js";
 import { CreateWorkspace } from "../workspaces/create-workspace.js";
@@ -620,7 +620,7 @@ describe("archive and restore", () => {
       actor(OWNER), h.workspaceId, created.contact.contactId, h.deps);
     expect(archived.state).toBe("archived");
     expect(archived.archivedAt).toBe(AT);
-    // The row survives. There is no delete anywhere in this domain.
+    // The row survives: archiving is not deleting.
     expect(h.store.contacts).toHaveLength(1);
 
     const restored = await restoreContact(
@@ -651,6 +651,37 @@ describe("archive and restore", () => {
     await expect(archiveContact(
       actor(OWNER), h.workspaceId, "con_nope" as ContactId, h.deps))
       .rejects.toBeInstanceOf(ResourceNotFoundError);
+  });
+});
+
+describe("permanent delete (092)", () => {
+  it("deletes an archived contact for good", async () => {
+    const h = await harness();
+    const created = await createContact(actor(OWNER), h.workspaceId, VALID, h.deps);
+    await archiveContact(actor(OWNER), h.workspaceId, created.contact.contactId, h.deps);
+    await deleteContact(actor(OWNER), h.workspaceId, created.contact.contactId, h.deps);
+    expect(h.store.contacts).toHaveLength(0);
+    await expect(deleteContact(actor(OWNER), h.workspaceId, created.contact.contactId, h.deps))
+      .rejects.toBeInstanceOf(ResourceNotFoundError);
+  });
+
+  it("refuses an active contact: archive first", async () => {
+    const h = await harness();
+    const created = await createContact(actor(OWNER), h.workspaceId, VALID, h.deps);
+    await expect(deleteContact(actor(OWNER), h.workspaceId, created.contact.contactId, h.deps))
+      .rejects.toThrow(/Archive this contact before deleting it/);
+    expect(h.store.contacts).toHaveLength(1);
+  });
+
+  it("needs contact.archive, and never reaches another person's personal contact", async () => {
+    const h = await harness();
+    const mine = await createContact(actor(OWNER), h.workspaceId, { ...VALID, scope: "personal" }, h.deps);
+    await archiveContact(actor(OWNER), h.workspaceId, mine.contact.contactId, h.deps);
+    await expect(deleteContact(actor(REVIEWER), h.workspaceId, mine.contact.contactId, h.deps))
+      .rejects.toBeInstanceOf(ResourceNotFoundError);
+    await expect(deleteContact(actor(ADMIN), h.workspaceId, mine.contact.contactId, h.deps))
+      .rejects.toBeInstanceOf(ResourceNotFoundError);
+    expect(h.store.contacts).toHaveLength(1);
   });
 });
 

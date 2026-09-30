@@ -1271,6 +1271,9 @@ export function scopedDocumentSharing(
     detailsProjection: doc => Promise.resolve(seeded(doc)?.projection ?? null),
     sealedDocumentRef: doc => Promise.resolve(seeded(doc)?.documentRef ?? null),
     isParticipant: (doc, email) => Promise.resolve(seeded(doc)?.participantEmails.includes(email) ?? false),
+    listParticipants: doc => Promise.resolve((seeded(doc)?.participantEmails ?? []).map(email => ({
+      name: email.split("@")[0] ?? email, email, organization: null, role: "SIGNER",
+    }))),
 
     insertShare: input => {
       if (input.workspaceId !== scope) throw new FakeScopeMismatchError("DocumentShare", scope, input.workspaceId);
@@ -1756,6 +1759,13 @@ function scopedContacts(store: InMemoryStore, scope: WorkspaceId): ScopedContact
     restoreIfArchived: (input) => Promise.resolve(
       replaceWhere(input.contactId, c => c.archivedAt !== null,
         c => ({ ...c, archivedAt: null, updatedAt: input.now }))),
+
+    deleteIfArchived: (contactId) => {
+      const index = store.contacts.findIndex(c => c.workspaceId === scope && c.contactId === contactId && c.archivedAt !== null);
+      if (index < 0) return Promise.resolve(false);
+      store.contacts.splice(index, 1);
+      return Promise.resolve(true);
+    },
   };
 }
 

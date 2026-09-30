@@ -42,7 +42,8 @@ export interface ContactRequestRecord {
   readonly requestId: ContactRequestId;
   readonly workspaceId: WorkspaceId;
   readonly kind: ContactRequestKind;
-  readonly contactId: ContactId;
+  /** 092: null once the contact was deleted; the snapshots below remain. */
+  readonly contactId: ContactId | null;
   /** Snapshots of the contact at creation; an edit to the contact later does
    *  not rewrite whom a request was sent to. */
   readonly recipientName: string;

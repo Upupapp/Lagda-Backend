@@ -20,7 +20,7 @@ interface Row {
   request_id: string;
   workspace_id: string;
   kind: string;
-  contact_id: string;
+  contact_id: string | null;
   recipient_name: string;
   recipient_email: string;
   delivery: string;
@@ -48,7 +48,7 @@ const toRecord = (row: Row): ContactRequestRecord => ({
   requestId: row.request_id as ContactRequestId,
   workspaceId: row.workspace_id as WorkspaceId,
   kind: row.kind as ContactRequestKind,
-  contactId: row.contact_id as ContactId,
+  contactId: row.contact_id as ContactId | null,
   recipientName: row.recipient_name,
   recipientEmail: row.recipient_email,
   delivery: row.delivery as ContactRequestDelivery,

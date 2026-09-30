@@ -110,7 +110,8 @@ export interface ContactRequestView {
   readonly documentId: string | null;
   readonly documentTitle: string | null;
   readonly dueAt: number | null;
-  readonly contact: { readonly contactId: string; readonly name: string; readonly email: string };
+  /** `contactId` is null once the contact was deleted (092); name and email are the request's own snapshot. */
+  readonly contact: { readonly contactId: string | null; readonly name: string; readonly email: string };
   readonly delivery: ContactRequestDelivery;
   readonly recipient: { readonly userId: string; readonly displayName: string } | null;
   readonly requestedBy: { readonly userId: string; readonly displayName: string };

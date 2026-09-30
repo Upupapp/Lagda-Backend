@@ -560,7 +560,7 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
               const versions = await connections.avatarVersions([...accounts.values()].map(a => a.userId));
               return new Map([...accounts].map(([contactId, a]) => [contactId, {
                 userId: a.userId, displayName: a.displayName, jobTitle: a.jobTitle,
-                avatarVersion: versions.get(a.userId) ?? null, connected: a.connected,
+                avatarVersion: versions.get(a.userId) ?? null, connected: a.connected, brandColor: a.brandColor,
               }]));
             },
           }),

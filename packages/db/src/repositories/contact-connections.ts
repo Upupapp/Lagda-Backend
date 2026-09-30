@@ -153,7 +153,7 @@ export function createContactConnectionRepository(db: Db): ContactConnectionRepo
     },
 
     async accountsForContacts(workspaceId, contactIds) {
-      const out = new Map<string, UserId>();
+      const out = new Map<string, { userId: UserId; workspaceId: WorkspaceId | null }>();
       if (contactIds.length === 0) return out;
       const rows = await db.selectFrom("contact_connections")
         .select(["requester_workspace_id", "requester_contact_id", "requester_user_id",
@@ -167,10 +167,14 @@ export function createContactConnectionRepository(db: Db): ContactConnectionRepo
       for (const r of rows) {
         // Each side's contact stands for the OTHER side's account.
         if (r.requester_workspace_id === workspaceId && r.requester_contact_id !== null) {
-          out.set(r.requester_contact_id, r.recipient_user_id as UserId);
+          out.set(r.requester_contact_id, {
+            userId: r.recipient_user_id as UserId, workspaceId: r.recipient_workspace_id as WorkspaceId | null,
+          });
         }
         if (r.recipient_workspace_id === workspaceId && r.recipient_contact_id !== null) {
-          out.set(r.recipient_contact_id, r.requester_user_id as UserId);
+          out.set(r.recipient_contact_id, {
+            userId: r.requester_user_id as UserId, workspaceId: r.requester_workspace_id as WorkspaceId,
+          });
         }
       }
       return out;

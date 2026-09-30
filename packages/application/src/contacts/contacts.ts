@@ -608,6 +608,31 @@ export async function archiveContact(
   });
 }
 
+/**
+ * 092. Permanently deletes an ARCHIVED contact. Same capability as archiving,
+ * same visibility (another person's personal contact is "not found"), and an
+ * active contact is refused: deleting is always archive first, then delete.
+ */
+export async function deleteContact(
+  actor: AuthenticatedActor,
+  workspaceId: WorkspaceId,
+  contactId: ContactId,
+  deps: Pick<ContactDependencies, "transactions">,
+): Promise<void> {
+  await deps.transactions.runForWorkspace(workspaceId, async uow => {
+    await authorize(uow, actor, "contact.archive");
+    const before = await uow.contacts.findById(contactId);
+    if (before === null || !visibleTo(before, actor.userId)) {
+      throw new ResourceNotFoundError("Contact");
+    }
+    if (before.archivedAt === null) {
+      throw new ApplicationValidationError(
+        "Archive this contact before deleting it.", ["contactId: only an archived contact can be deleted"]);
+    }
+    if (!(await uow.contacts.deleteIfArchived(contactId))) throw new ResourceNotFoundError("Contact");
+  });
+}
+
 /** The inverse. Same capability — one reversible control, not two authorities. */
 export async function restoreContact(
   actor: AuthenticatedActor,

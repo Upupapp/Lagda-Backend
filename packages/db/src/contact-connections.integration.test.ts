@@ -100,8 +100,8 @@ suite("contact connections (runtime role)", () => {
     expect(await repo().markAccepted({ connectionId: "cc_1", recipientUserId: BEN, recipientWorkspaceId: WS_B, at: AT + 1 })).toBe(true);
     await repo().setContacts({ connectionId: "cc_1", requesterContactId: "con_a" as ContactId, recipientContactId: "con_b" as ContactId, at: AT + 2 });
     // Each side's contact stands for the other account.
-    expect([...await repo().accountsForContacts(WS_A, ["con_a", "con_x"])]).toEqual([["con_a", BEN]]);
-    expect([...await repo().accountsForContacts(WS_B, ["con_b"])]).toEqual([["con_b", ANA]]);
+    expect([...await repo().accountsForContacts(WS_A, ["con_a", "con_x"])]).toEqual([["con_a", { userId: BEN, workspaceId: WS_B }]]);
+    expect([...await repo().accountsForContacts(WS_B, ["con_b"])]).toEqual([["con_b", { userId: ANA, workspaceId: WS_A }]]);
     // Once accepted it cannot be declined or cancelled.
     expect(await repo().markDeclined({ connectionId: "cc_1", recipientUserId: BEN, at: AT })).toBe(false);
     expect(await repo().markCancelled({ connectionId: "cc_1", requesterUserId: ANA, at: AT })).toBe(false);
@@ -129,6 +129,10 @@ suite("contact connections (runtime role)", () => {
 
   it("goes down when empty and back up", async () => {
     await truncateAll(owner);
+    // 092 sits above 091 and comes off first.
+    const later = await migrateDown(owner.db);
+    expect(later.error).toBeUndefined();
+    expect(later.applied).toEqual(["092_contact_deletion"]);
     const down = await migrateDown(owner.db);
     expect(down.error).toBeUndefined();
     expect(down.applied).toEqual(["091_contact_connections"]);

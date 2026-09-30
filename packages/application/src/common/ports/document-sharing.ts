@@ -173,6 +173,15 @@ export interface TransitionGuard<S extends string> {
 }
 
 /** One workspace's sharing records, on the unit of work's transaction. */
+/** One participant of a completed document, as its signing request snapshotted them. */
+export interface DocumentParticipantRecord {
+  readonly name: string;
+  readonly email: string;
+  readonly organization: string | null;
+  /** The signing request's recipient type, e.g. SIGNER, APPROVER, CC. */
+  readonly role: string;
+}
+
 export interface ScopedDocumentSharingRepository {
   /** The document's latest completed signing request, or null. */
   findCompletedDocument(documentId: DocumentId): Promise<CompletedDocumentRecord | null>;
@@ -183,6 +192,8 @@ export interface ScopedDocumentSharingRepository {
   sealedDocumentRef(document: CompletedDocumentRecord): Promise<VerificationGrantDocumentRef | null>;
   /** Whether this normalized address is a participant of the request. */
   isParticipant(document: CompletedDocumentRecord, normalizedEmail: string): Promise<boolean>;
+  /** The request's participants as they were snapshotted, in signing order. */
+  listParticipants(document: CompletedDocumentRecord): Promise<readonly DocumentParticipantRecord[]>;
 
   insertShare(input: DocumentShareInsert): Promise<void>;
   findShare(shareId: string): Promise<DocumentShareRecord | null>;

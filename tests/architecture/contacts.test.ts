@@ -131,7 +131,9 @@ describe("the contact-to-member resolution (086)", () => {
 
 // ── 2. Nothing deletes a contact ─────────────────────────────────────────────
 
-describe("contacts are archived, never deleted", () => {
+// 092 changed the rule from "never deleted" to "archived first, then deleted
+// only on purpose": the checks below enforce the narrower version.
+describe("contacts are archived first, and only an archived contact is deleted", () => {
   it("the runtime role has no DELETE grant on the table", () => {
     const migration = read(MIGRATION);
     const grant = /grant\s+([a-z,\s]+?)\s+on\s+table\s+contacts/i.exec(migration);
@@ -140,12 +142,15 @@ describe("contacts are archived, never deleted", () => {
     expect(grant?.[1]).not.toContain("delete");
   });
 
-  it("no contact file issues a delete statement", () => {
-    for (const file of [CONTACT_REPOSITORY, CONTACT_USE_CASES, CONTACT_PORTS]) {
-      const source = code(file);
-      expect(source, `${path.basename(file)} must not delete`)
-        .not.toMatch(/deleteFrom|DELETE\s+FROM/i);
+  it("the only delete statement is conditional on the contact being archived", () => {
+    for (const file of [CONTACT_USE_CASES, CONTACT_PORTS]) {
+      expect(code(file), `${path.basename(file)} must not delete directly`).not.toMatch(/deleteFrom|DELETE\s+FROM/i);
     }
+    const repository = code(CONTACT_REPOSITORY);
+    expect((repository.match(/deleteFrom\(/g) ?? []).length).toBe(1);
+    expect(repository).toMatch(/deleteFrom\("contacts"\)[\s\S]{0,300}?\.where\("archived_at", "is not", null\)/);
+    // And the use case refuses an active contact before it gets there.
+    expect(code(CONTACT_USE_CASES)).toContain("Archive this contact before deleting it.");
   });
 
   it("the port declares no delete method", () => {
@@ -157,9 +162,10 @@ describe("contacts are archived, never deleted", () => {
     expect(ports).toContain("restoreIfArchived");
   });
 
-  it("the API exposes no DELETE route for a contact", () => {
+  it("the API exposes exactly one DELETE route, for one contact", () => {
     const routes = code(CONTACT_ROUTES);
-    expect(routes).not.toMatch(/app\.delete\s*\(/);
+    expect((routes.match(/app\.delete\s*\(/g) ?? []).length).toBe(1);
+    expect(routes).toContain('app.delete("/workspaces/:workspaceId/contacts/:contactId"');
     expect(routes).toContain("/contacts/:contactId/archive");
     expect(routes).toContain("/contacts/:contactId/restore");
   });
@@ -303,7 +309,7 @@ describe("contact PII stays out of telemetry", () => {
   it("responses are marked no-store", () => {
     // An address book is a list of named people with their phone numbers.
     const routes = code(CONTACT_ROUTES);
-    const handlers = (routes.match(/app\.(get|post|put)\(/g) ?? []).length;
+    const handlers = (routes.match(/app\.(get|post|put|delete)\(/g) ?? []).length;
     const noStore = (routes.match(/noStore\(reply\);/g) ?? []).length;
     expect(noStore).toBe(handlers);
   });

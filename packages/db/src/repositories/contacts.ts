@@ -284,6 +284,15 @@ export function createScopedContactRepository(
       return Number(result.numUpdatedRows) === 1;
     },
 
+    async deleteIfArchived(contactId) {
+      const result = await trx.deleteFrom("contacts")
+        .where("workspace_id", "=", scope)
+        .where("contact_id", "=", contactId)
+        .where("archived_at", "is not", null)
+        .executeTakeFirst();
+      return Number(result.numDeletedRows) === 1;
+    },
+
     async restoreIfArchived(input) {
       const result = await trx.updateTable("contacts")
         .set({ archived_at: null, updated_at: new Date(input.now) })

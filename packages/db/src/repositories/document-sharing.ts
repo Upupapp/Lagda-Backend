@@ -236,6 +236,16 @@ export function createScopedDocumentSharingRepository(
       };
     },
 
+    async listParticipants(document) {
+      const rows = await trx.selectFrom("signing_request_recipients")
+        .where("workspace_id", "=", scope)
+        .where("signing_request_id", "=", document.signingRequestId)
+        .select(["name", "email", "organization", "recipient_type"])
+        .orderBy("routing_order").orderBy("order_index")
+        .execute();
+      return rows.map(r => ({ name: r.name, email: r.email, organization: r.organization, role: r.recipient_type }));
+    },
+
     async isParticipant(document, normalizedEmail) {
       const row = await trx.selectFrom("signing_request_recipients")
         .where("workspace_id", "=", scope)

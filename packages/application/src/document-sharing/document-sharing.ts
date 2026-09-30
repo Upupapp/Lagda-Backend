@@ -34,6 +34,7 @@ import type {
   CompletedDocumentRecord, DocumentShareRecord, DocumentAccessRequestRecord,
   DocumentSharingIdGenerator, DocumentShareStatus, DocumentAccessRequestStatus,
   SharingRecipientUnitOfWork,
+  DocumentParticipantRecord,
 } from "../common/ports/document-sharing.js";
 import {
   DOCUMENT_SHARE_NAME_MAX_LENGTH, DOCUMENT_ACCESS_REQUEST_NOTE_MAX_LENGTH,
@@ -187,6 +188,8 @@ export interface DocumentShareView {
 export interface DocumentSharesView {
   readonly document: CompletedDocumentSummary;
   readonly shares: readonly DocumentShareView[];
+  /** The people who took part in it — they always keep their own access. */
+  readonly participants: readonly DocumentParticipantRecord[];
 }
 
 export interface DocumentAccessRequestView {
@@ -471,7 +474,11 @@ export async function listDocumentShares(
       verificationId: document.verificationId,
       ...(filter.status === undefined ? {} : { statuses: [filter.status] }),
     });
-    return { document: await summarize(uow, document), shares: await presentShares(uow, shares) };
+    return {
+      document: await summarize(uow, document),
+      shares: await presentShares(uow, shares),
+      participants: await uow.documentSharing.listParticipants(document),
+    };
   });
 }
 

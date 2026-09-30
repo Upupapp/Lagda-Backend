@@ -76,10 +76,10 @@ class FakeConnections implements ContactConnectionRepository {
       && (r.status === "pending" || r.status === "declined"), { status: "cancelled", cancelledAt: x.at }));
   }
   accountsForContacts(ws: WorkspaceId, ids: readonly string[]) {
-    const out = new Map<string, UserId>();
+    const out = new Map<string, { userId: UserId; workspaceId: WorkspaceId | null }>();
     for (const r of this.rows.filter(x => x.status === "accepted")) {
-      if (r.requesterWorkspaceId === ws && r.requesterContactId && ids.includes(r.requesterContactId)) out.set(r.requesterContactId, r.recipientUserId);
-      if (r.recipientWorkspaceId === ws && r.recipientContactId && ids.includes(r.recipientContactId)) out.set(r.recipientContactId, r.requesterUserId);
+      if (r.requesterWorkspaceId === ws && r.requesterContactId && ids.includes(r.requesterContactId)) out.set(r.requesterContactId, { userId: r.recipientUserId, workspaceId: r.recipientWorkspaceId });
+      if (r.recipientWorkspaceId === ws && r.recipientContactId && ids.includes(r.recipientContactId)) out.set(r.recipientContactId, { userId: r.requesterUserId, workspaceId: r.requesterWorkspaceId });
     }
     return Promise.resolve(out);
   }
@@ -247,11 +247,27 @@ describe("accepting", () => {
 
     expect(intents().map(i => i.notificationType)).toEqual(["CONTACT_CONNECTION_REQUESTED", "CONTACT_CONNECTION_ACCEPTED"]);
     const accounts = await resolveContactAccounts(WS_A, [{ contactId: anas!.contactId, workspaceMember: null }], deps);
-    expect(accounts.get(anas!.contactId)).toEqual({ userId: BEN, displayName: "Ben Lim", jobTitle: "Counsel", connected: true });
+    // Ben's banner is the brand of the workspace he accepted into (none set: the default).
+    expect(accounts.get(anas!.contactId)).toEqual({ userId: BEN, displayName: "Ben Lim", jobTitle: "Counsel", connected: true, brandColor: null });
 
     // Accepting again changes nothing and creates nothing.
     await acceptConnectionRequest(actor(BEN), sent.connectionId, { workspaceId: WS_B }, deps);
     expect(store.contacts).toHaveLength(2);
+  });
+
+  it("gives each contact the brand colour of the workspace its person belongs to", async () => {
+    store.branding.set(WS_A, { senderDisplayName: null, footerTagline: null, primaryColor: "#0B5E3C", logo: null, updatedAt: AT });
+    store.branding.set(WS_B2, { senderDisplayName: null, footerTagline: null, primaryColor: "#7C3AED", logo: null, updatedAt: AT });
+    const sent = await sendConnectionRequest(actor(ANA), WS_A, { email: "ben@example.com" }, deps);
+    await acceptConnectionRequest(actor(BEN), sent.connectionId, { workspaceId: WS_B2 }, deps);
+    const [anas] = contactsOf(WS_A);
+    const [bens] = contactsOf(WS_B2);
+    // Ana's contact for Ben wears Ben's workspace; Ben's for Ana wears Ana's.
+    expect((await resolveContactAccounts(WS_A, [{ contactId: anas!.contactId, workspaceMember: null }], deps)).get(anas!.contactId)?.brandColor).toBe("#7C3AED");
+    expect((await resolveContactAccounts(WS_B2, [{ contactId: bens!.contactId, workspaceMember: null }], deps)).get(bens!.contactId)?.brandColor).toBe("#0B5E3C");
+    // A workspace member wears this workspace's own brand.
+    const member = await resolveContactAccounts(WS_A, [{ contactId: "con_member", workspaceMember: { userId: ANA } }], deps);
+    expect(member.get("con_member")?.brandColor).toBe("#0B5E3C");
   });
 
   it("links an address already in the address book instead of duplicating it", async () => {

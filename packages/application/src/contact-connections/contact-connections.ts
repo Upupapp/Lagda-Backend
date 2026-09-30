@@ -427,6 +427,12 @@ export interface ContactAccount {
   readonly jobTitle: string | null;
   /** Through an accepted request, rather than only a shared workspace. */
   readonly connected: boolean;
+  /**
+   * The brand colour (`#RRGGBB`) of the workspace this person belongs to —
+   * the one they took part in the request from, or this workspace for a
+   * member — for their banner. Null means the LAGDA default.
+   */
+  readonly brandColor: string | null;
 }
 
 /**
@@ -438,22 +444,38 @@ export interface ContactAccount {
 export async function resolveContactAccounts(
   workspaceId: WorkspaceId,
   contacts: readonly { readonly contactId: string; readonly workspaceMember: { readonly userId: string } | null }[],
-  deps: Pick<ContactConnectionDependencies, "connections" | "people">,
+  deps: Pick<ContactConnectionDependencies, "connections" | "people" | "transactions">,
 ): Promise<ReadonlyMap<string, ContactAccount>> {
   const out = new Map<string, ContactAccount>();
   if (contacts.length === 0) return out;
   const linked = await deps.connections.accountsForContacts(workspaceId, contacts.map(c => c.contactId));
-  const userIdOf = new Map<string, { userId: UserId; connected: boolean }>();
+  const userIdOf = new Map<string, { userId: UserId; connected: boolean; brandWorkspace: WorkspaceId | null }>();
   for (const c of contacts) {
     const viaConnection = linked.get(c.contactId);
-    if (viaConnection !== undefined) userIdOf.set(c.contactId, { userId: viaConnection, connected: true });
-    else if (c.workspaceMember !== null) userIdOf.set(c.contactId, { userId: c.workspaceMember.userId as UserId, connected: false });
+    if (viaConnection !== undefined) {
+      userIdOf.set(c.contactId, { userId: viaConnection.userId, connected: true, brandWorkspace: viaConnection.workspaceId });
+    } else if (c.workspaceMember !== null) {
+      userIdOf.set(c.contactId, { userId: c.workspaceMember.userId as UserId, connected: false, brandWorkspace: workspaceId });
+    }
   }
   const people = await deps.people.findManyById([...new Set([...userIdOf.values()].map(v => v.userId))]);
-  for (const [contactId, { userId, connected }] of userIdOf) {
+  // One branding read per workspace involved. Only the colour leaves, and only
+  // for accounts behind contacts the caller was already allowed to read.
+  const colours = new Map<string, string | null>();
+  for (const ws of new Set([...userIdOf.values()].map(v => v.brandWorkspace).filter((w): w is WorkspaceId => w !== null))) {
+    try {
+      colours.set(ws, await deps.transactions.runForWorkspace(ws, async uow => (await uow.branding.find())?.primaryColor ?? null));
+    } catch {
+      colours.set(ws, null);
+    }
+  }
+  for (const [contactId, { userId, connected, brandWorkspace }] of userIdOf) {
     const person = people.get(userId);
     if (person !== undefined) {
-      out.set(contactId, { userId, displayName: person.displayName, jobTitle: person.jobTitle, connected });
+      out.set(contactId, {
+        userId, displayName: person.displayName, jobTitle: person.jobTitle, connected,
+        brandColor: brandWorkspace === null ? null : colours.get(brandWorkspace) ?? null,
+      });
     }
   }
   return out;

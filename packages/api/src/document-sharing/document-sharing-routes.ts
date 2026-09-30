@@ -104,9 +104,18 @@ const DocumentShareSchema = Type.Object({
     + "emailed, and the share appears to an account once its VERIFIED address matches.",
 });
 
+/** A participant of the completed document, as its signing request snapshotted them. */
+const DocumentParticipantSchema = Type.Object({
+  name: Type.String(),
+  email: Type.String(),
+  organization: Type.Union([Type.String(), Type.Null()]),
+  role: Type.String(),
+}, { additionalProperties: false });
+
 const DocumentSharesSchema = Type.Object({
   document: CompletedDocumentSchema,
   shares: Type.Array(DocumentShareSchema),
+  participants: Type.Array(DocumentParticipantSchema),
 }, { title: "DocumentShares", additionalProperties: false });
 
 const UpdatedShareSchema = Type.Object({
@@ -393,7 +402,12 @@ export function registerDocumentSharingRoutes(
     const { status } = request.query as Static<typeof ShareListQuery>;
     const view = await listDocumentShares(actor, workspaceId as WorkspaceId, documentId, deps(),
       status === undefined ? {} : { status });
-    return reply.status(200).send({ document: presentDocument(view.document), shares: view.shares.map(presentShare) });
+    return reply.status(200).send({
+      document: presentDocument(view.document),
+      shares: view.shares.map(presentShare),
+      // Field by field: the schema is closed.
+      participants: view.participants.map(p => ({ name: p.name, email: p.email, organization: p.organization, role: p.role })),
+    });
   });
 
   app.post("/workspaces/:workspaceId/documents/:documentId/shares", {

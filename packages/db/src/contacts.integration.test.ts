@@ -174,29 +174,28 @@ suite("contacts (RLS, runtime role)", () => {
 
   // ── Deletion is unavailable ───────────────────────────────────────────────
 
-  describe("the runtime role cannot delete a contact", () => {
-    it("is refused a DELETE by PostgreSQL", async () => {
+  // 092: deleting became possible — for an archived contact, inside its own
+  // workspace. contact-deletion.integration.test.ts covers what it leaves.
+  describe("deleting a contact (092)", () => {
+    it("is refused across tenants by row-level security, even with the grant", async () => {
       await insert(WS_A, "con_del");
-      // Not "the repository has no method" — a raw statement, with correct
-      // tenant context, from the role production runs as.
-      await expect(app.db.transaction().execute(async trx => {
-        await sql`select set_config('lagda.workspace_id', ${WS_A}, true)`.execute(trx);
+      await app.db.transaction().execute(async trx => {
+        await sql`select set_config('lagda.workspace_id', ${WS_B}, true)`.execute(trx);
         await sql`delete from contacts where contact_id = 'con_del'`.execute(trx);
-      })).rejects.toThrow(/permission denied/i);
-
+      });
       const tx = createTransactionManager(app.db);
       const survivor = await tx.runForWorkspace(WS_A,
         uow => uow.contacts.findById("con_del" as ContactId));
       expect(survivor).not.toBeNull();
     });
 
-    it("holds exactly select, insert and update", async () => {
+    it("holds select, insert, update and delete", async () => {
       const grants = await sql<{ privilege_type: string }>`
         select privilege_type from information_schema.role_table_grants
         where grantee = 'lagda_app' and table_name = 'contacts'
       `.execute(owner.db);
       expect(grants.rows.map(r => r.privilege_type).sort())
-        .toEqual(["INSERT", "SELECT", "UPDATE"]);
+        .toEqual(["DELETE", "INSERT", "SELECT", "UPDATE"]);
     });
   });
 

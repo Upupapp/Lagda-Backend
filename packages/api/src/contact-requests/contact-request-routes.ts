@@ -94,7 +94,8 @@ const ContactRequestSchema = Type.Object({
   documentTitle: Nullable(Type.String()),
   dueAt: Nullable(Type.String({ format: "date-time" })),
   contact: Type.Object({
-    contactId: Type.String(),
+    /** Null once the contact was deleted; name and email are the request's snapshot. */
+    contactId: Nullable(Type.String()),
     name: Type.String(),
     email: Type.String(),
   }, { additionalProperties: false }),

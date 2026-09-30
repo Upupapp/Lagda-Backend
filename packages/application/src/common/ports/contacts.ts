@@ -241,6 +241,12 @@ export interface ScopedContactRepository {
     readonly contactId: ContactId;
     readonly now: number;
   }): Promise<boolean>;
+
+  /**
+   * 092. Permanently removes an ARCHIVED contact (its tags go with it; what
+   * other records snapshotted stays). Returns whether it applied.
+   */
+  deleteIfArchived(contactId: ContactId): Promise<boolean>;
 }
 
 export interface ContactIdGenerator {

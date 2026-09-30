@@ -31,7 +31,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { Type, type Static } from "@sinclair/typebox";
 import {
   createContact, listContacts, getContact, updateContact,
-  archiveContact, restoreContact,
+  archiveContact, restoreContact, deleteContact,
   type ContactDependencies, type SessionId, type UserId,
 } from "@lagda/application";
 import {
@@ -185,6 +185,7 @@ export interface ContactAccountView {
   readonly jobTitle: string | null;
   readonly avatarVersion: string | null;
   readonly connected: boolean;
+  readonly brandColor: string | null;
 }
 
 /**
@@ -246,6 +247,7 @@ const present = (contact: ContactLike, account: ContactAccountView | null) => ({
     jobTitle: account.jobTitle,
     avatarVersion: account.avatarVersion,
     connected: account.connected,
+    brandColor: account.brandColor,
   },
 });
 
@@ -276,7 +278,7 @@ export function registerContactRoutes(
    */
   const record = (
     request: FastifyRequest,
-    event: "contact.created" | "contact.updated" | "contact.archived" | "contact.restored",
+    event: "contact.created" | "contact.updated" | "contact.archived" | "contact.restored" | "contact.deleted",
     fields: Record<string, unknown>,
   ): void => {
     request.log.info({ event, result: "success", ...fields }, event);
@@ -484,5 +486,23 @@ export function registerContactRoutes(
       workspaceId, contactId, actorUserId: actor.userId,
     });
     return reply.status(200).send(await presentOne(workspaceId, contact));
+  });
+
+  // ── Delete (092) ────────────────────────────────────────────────────────
+  //
+  // Only an ARCHIVED contact: 422 for an active one, so a client cannot skip
+  // the archive step. Documents, requests and preparations keep the name and
+  // email they snapshotted; only the address-book entry goes.
+  app.delete("/workspaces/:workspaceId/contacts/:contactId", {
+    schema: { params: ContactParamsSchema },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await actorOf(request);
+    if (actor === null) return unauthenticated(reply);
+
+    const { workspaceId, contactId } = request.params as Static<typeof ContactParamsSchema>;
+    await deleteContact(actor, workspaceId as WorkspaceId, contactId as ContactId, options.contactDependencies());
+    record(request, "contact.deleted", { workspaceId, contactId, actorUserId: actor.userId });
+    return reply.status(204).send();
   });
 }

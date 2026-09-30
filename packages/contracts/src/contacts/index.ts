@@ -202,6 +202,8 @@ export const ContactSchema = Type.Object(
         jobTitle: Type.Union([Type.String(), Type.Null()]),
         avatarVersion: Type.Union([Type.String(), Type.Null()]),
         connected: Type.Boolean(),
+        /** The brand colour (`#RRGGBB`) of the person's workspace, for their banner; null means LAGDA's default. */
+        brandColor: Type.Union([Type.String(), Type.Null()]),
       }, { additionalProperties: false }),
       Type.Null(),
     ]),

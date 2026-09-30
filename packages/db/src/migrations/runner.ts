@@ -99,6 +99,7 @@ import * as m088 from "./088_workflow_template_content_autosave.js";
 import * as m089 from "./089_invitation_inbox.js";
 import * as m090 from "./090_user_notification_states.js";
 import * as m091 from "./091_contact_connections.js";
+import * as m092 from "./092_contact_deletion.js";
 
 /**
  * Migrations listed explicitly rather than read from disk.
@@ -202,6 +203,7 @@ const MIGRATIONS: Record<string, Migration> = {
   "089_invitation_inbox": m089,
   "090_user_notification_states": m090,
   "091_contact_connections": m091,
+  "092_contact_deletion": m092,
 };
 
 class ExplicitMigrationProvider implements MigrationProvider {

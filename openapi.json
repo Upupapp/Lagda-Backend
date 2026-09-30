@@ -5884,7 +5884,8 @@
                                   "displayName",
                                   "jobTitle",
                                   "avatarVersion",
-                                  "connected"
+                                  "connected",
+                                  "brandColor"
                                 ],
                                 "properties": {
                                   "userId": {
@@ -5915,6 +5916,16 @@
                                   },
                                   "connected": {
                                     "type": "boolean"
+                                  },
+                                  "brandColor": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   }
                                 }
                               },
@@ -6388,7 +6399,8 @@
                                 "displayName",
                                 "jobTitle",
                                 "avatarVersion",
-                                "connected"
+                                "connected",
+                                "brandColor"
                               ],
                               "properties": {
                                 "userId": {
@@ -6419,6 +6431,16 @@
                                 },
                                 "connected": {
                                   "type": "boolean"
+                                },
+                                "brandColor": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
                                 }
                               }
                             },
@@ -6747,7 +6769,8 @@
                             "displayName",
                             "jobTitle",
                             "avatarVersion",
-                            "connected"
+                            "connected",
+                            "brandColor"
                           ],
                           "properties": {
                             "userId": {
@@ -6778,6 +6801,16 @@
                             },
                             "connected": {
                               "type": "boolean"
+                            },
+                            "brandColor": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
                             }
                           }
                         },
@@ -7225,7 +7258,8 @@
                                 "displayName",
                                 "jobTitle",
                                 "avatarVersion",
-                                "connected"
+                                "connected",
+                                "brandColor"
                               ],
                               "properties": {
                                 "userId": {
@@ -7256,6 +7290,16 @@
                                 },
                                 "connected": {
                                   "type": "boolean"
+                                },
+                                "brandColor": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
                                 }
                               }
                             },
@@ -7300,6 +7344,35 @@
                 }
               }
             }
+          }
+        }
+      },
+      "delete": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "workspaceId",
+            "required": true
+          },
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "contactId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
           }
         }
       }
@@ -7584,7 +7657,8 @@
                             "displayName",
                             "jobTitle",
                             "avatarVersion",
-                            "connected"
+                            "connected",
+                            "brandColor"
                           ],
                           "properties": {
                             "userId": {
@@ -7615,6 +7689,16 @@
                             },
                             "connected": {
                               "type": "boolean"
+                            },
+                            "brandColor": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
                             }
                           }
                         },
@@ -7911,7 +7995,8 @@
                             "displayName",
                             "jobTitle",
                             "avatarVersion",
-                            "connected"
+                            "connected",
+                            "brandColor"
                           ],
                           "properties": {
                             "userId": {
@@ -7942,6 +8027,16 @@
                             },
                             "connected": {
                               "type": "boolean"
+                            },
+                            "brandColor": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
                             }
                           }
                         },
@@ -8888,7 +8983,14 @@
                       ],
                       "properties": {
                         "contactId": {
-                          "type": "string"
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "name": {
                           "type": "string"
@@ -9193,7 +9295,14 @@
                       ],
                       "properties": {
                         "contactId": {
-                          "type": "string"
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "name": {
                           "type": "string"
@@ -9524,7 +9633,14 @@
                       ],
                       "properties": {
                         "contactId": {
-                          "type": "string"
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "name": {
                           "type": "string"
@@ -9851,7 +9967,14 @@
                       ],
                       "properties": {
                         "contactId": {
-                          "type": "string"
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "name": {
                           "type": "string"
@@ -10156,7 +10279,14 @@
                       ],
                       "properties": {
                         "contactId": {
-                          "type": "string"
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "name": {
                           "type": "string"
@@ -10471,7 +10601,14 @@
                             ],
                             "properties": {
                               "contactId": {
-                                "type": "string"
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               },
                               "name": {
                                 "type": "string"
@@ -10802,7 +10939,14 @@
                             ],
                             "properties": {
                               "contactId": {
-                                "type": "string"
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               },
                               "name": {
                                 "type": "string"
@@ -11133,7 +11277,14 @@
                             ],
                             "properties": {
                               "contactId": {
-                                "type": "string"
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               },
                               "name": {
                                 "type": "string"
@@ -11338,7 +11489,8 @@
                   "type": "object",
                   "required": [
                     "document",
-                    "shares"
+                    "shares",
+                    "participants"
                   ],
                   "properties": {
                     "document": {
@@ -11569,6 +11721,40 @@
                                 "type": "null"
                               }
                             ]
+                          }
+                        }
+                      }
+                    },
+                    "participants": {
+                      "type": "array",
+                      "items": {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "name",
+                          "email",
+                          "organization",
+                          "role"
+                        ],
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "email": {
+                            "type": "string"
+                          },
+                          "organization": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "role": {
+                            "type": "string"
                           }
                         }
                       }

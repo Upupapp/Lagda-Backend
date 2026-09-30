@@ -348,8 +348,8 @@ suite("invitee inbox (089, runtime role)", () => {
   it("backfills the digest when a table-owning runtime role migrates under FORCE", async () => {
     await truncateAll(owner);
     await seedUser(owner, OWNER_A, { email: "owner.a@example.com" });
-    // 091 and 090 sit above 089 and come off first; both are empty here.
-    for (const name of ["091_contact_connections", "090_user_notification_states"]) {
+    // 092, 091 and 090 sit above 089 and come off first; all are empty here.
+    for (const name of ["092_contact_deletion", "091_contact_connections", "090_user_notification_states"]) {
       const later = await migrateDown(owner.db);
       expect(later.error).toBeUndefined();
       expect(later.applied).toEqual([name]);
@@ -401,8 +401,8 @@ suite("invitee inbox (089, runtime role)", () => {
 
   it("goes down when empty and back up", async () => {
     await truncateAll(owner);
-    // 091 and 090 sit above 089 and come off first; both are empty here.
-    for (const name of ["091_contact_connections", "090_user_notification_states"]) {
+    // 092, 091 and 090 sit above 089 and come off first; all are empty here.
+    for (const name of ["092_contact_deletion", "091_contact_connections", "090_user_notification_states"]) {
       const later = await migrateDown(owner.db);
       expect(later.error).toBeUndefined();
       expect(later.applied).toEqual([name]);

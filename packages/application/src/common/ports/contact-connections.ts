@@ -69,9 +69,12 @@ export interface ContactConnectionRepository {
   markCancelled(input: { readonly connectionId: string; readonly requesterUserId: UserId; readonly at: number }): Promise<boolean>;
   /**
    * The account each of these contacts stands for, through an ACCEPTED
-   * request that recorded it, by contact id. Contacts with none are absent.
+   * request that recorded it, by contact id — with the workspace that account
+   * took part from (its own side of the request). Contacts with none are absent.
    */
-  accountsForContacts(workspaceId: WorkspaceId, contactIds: readonly string[]): Promise<ReadonlyMap<string, UserId>>;
+  accountsForContacts(workspaceId: WorkspaceId, contactIds: readonly string[]): Promise<ReadonlyMap<string, {
+    readonly userId: UserId; readonly workspaceId: WorkspaceId | null;
+  }>>;
 }
 
 /** What LAGDA shows of an account to someone looking for it. */

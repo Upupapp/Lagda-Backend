@@ -152,7 +152,8 @@ export interface ContactRequestsTable {
   request_id: string;
   workspace_id: string;
   kind: string;
-  contact_id: string;
+  /** 092: null once the contact was deleted. */
+  contact_id: ColumnType<string | null, string, string | null>;
   recipient_name: string;
   recipient_email: string;
   delivery: string;

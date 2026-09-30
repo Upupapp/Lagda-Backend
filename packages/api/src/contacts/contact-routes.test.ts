@@ -427,16 +427,20 @@ describe("archive and restore", () => {
       .toMatchObject({ state: "active", archivedAt: null });
   });
 
-  it("exposes no DELETE route", async () => {
+  it("deletes only an archived contact (092): 422 while active, 204 once archived", async () => {
     const h = await harness();
     await createOne(h);
     const { cookie, csrf } = await h.signIn(OWNER);
-    const response = await h.app.inject({
-      method: "DELETE", url: `${URL}/con_1`,
-      headers: { cookie, [CSRF_TOKEN_HEADER]: csrf },
-    });
-    expect(response.statusCode).toBe(404);
+    const headers = { cookie, [CSRF_TOKEN_HEADER]: csrf };
+    const active = await h.app.inject({ method: "DELETE", url: `${URL}/con_1`, headers });
+    expect(active.statusCode).toBe(422);
     expect(h.transactions.store.contacts).toHaveLength(1);
+
+    const archived = await h.app.inject({ method: "POST", url: `${URL}/con_1/archive`, headers });
+    expect(archived.statusCode).toBe(200);
+    const deleted = await h.app.inject({ method: "DELETE", url: `${URL}/con_1`, headers });
+    expect(deleted.statusCode).toBe(204);
+    expect(h.transactions.store.contacts).toHaveLength(0);
   });
 });
 

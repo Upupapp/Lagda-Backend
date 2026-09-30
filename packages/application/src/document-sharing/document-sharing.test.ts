@@ -173,6 +173,8 @@ describe("owner: sharing a completed document", () => {
     const listed = await listDocumentShares(actor(SENDER), WS, "doc_done", deps);
     expect(listed.shares.map(s => s.email)).toEqual(["stranger@example.com"]);
     expect(listed.document).toMatchObject({ verificationId: VID, owner: { userId: SENDER }, participantCount: 2 });
+    // The participants come with the list: they always keep their own access.
+    expect(listed.participants.map(p => p.email)).toEqual(["maria@example.com", "sender@example.com"]);
   });
 
   it("refuses a participant, a duplicate live share and yourself", async () => {
