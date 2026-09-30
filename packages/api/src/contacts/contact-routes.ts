@@ -169,6 +169,22 @@ export interface ContactRouteOptions {
   } | null>;
   readonly contactDependencies: () => ContactDependencies;
   readonly metrics?: MetricsRecorder;
+  /**
+   * 091. The account behind each contact the caller was just allowed to read,
+   * by contact id. Absent (tests, older compositions): every `account` is null.
+   */
+  readonly contactAccounts?: (
+    workspaceId: WorkspaceId, contacts: readonly ContactLike[],
+  ) => Promise<ReadonlyMap<string, ContactAccountView>>;
+}
+
+/** 091. What `account` carries. */
+export interface ContactAccountView {
+  readonly userId: string;
+  readonly displayName: string;
+  readonly jobTitle: string | null;
+  readonly avatarVersion: string | null;
+  readonly connected: boolean;
 }
 
 /**
@@ -189,7 +205,7 @@ function unauthenticated(reply: FastifyReply): FastifyReply {
 /** Timestamps leave as ISO-8601. The domain works in epoch milliseconds. */
 const iso = (ms: number): string => new Date(ms).toISOString();
 
-interface ContactLike {
+export interface ContactLike {
   readonly contactId: string;
   readonly name: string;
   readonly email: string;
@@ -207,7 +223,7 @@ interface ContactLike {
   readonly workspaceMember: { readonly userId: string; readonly displayName: string } | null;
 }
 
-const present = (contact: ContactLike) => ({
+const present = (contact: ContactLike, account: ContactAccountView | null) => ({
   contactId: contact.contactId,
   name: contact.name,
   email: contact.email,
@@ -223,6 +239,14 @@ const present = (contact: ContactLike) => ({
   note: contact.note,
   tagIds: contact.tagIds,
   workspaceMember: contact.workspaceMember,
+  // Field by field: the schema is closed.
+  account: account === null ? null : {
+    userId: account.userId,
+    displayName: account.displayName,
+    jobTitle: account.jobTitle,
+    avatarVersion: account.avatarVersion,
+    connected: account.connected,
+  },
 });
 
 export function registerContactRoutes(
@@ -262,6 +286,13 @@ export function registerContactRoutes(
       processRole: "api",
     });
   };
+
+  const accountsFor = async (workspaceId: string, contacts: readonly ContactLike[]) =>
+    options.contactAccounts === undefined
+      ? new Map<string, ContactAccountView>()
+      : options.contactAccounts(workspaceId as WorkspaceId, contacts);
+  const presentOne = async (workspaceId: string, contact: ContactLike) =>
+    present(contact, (await accountsFor(workspaceId, [contact])).get(contact.contactId) ?? null);
 
   const actorOf = async (request: FastifyRequest) => {
     const actor = await options.authenticatedUser(request);
@@ -303,8 +334,9 @@ export function registerContactRoutes(
 
     // A page past the end is 200 with an empty array, per API_CONVENTIONS. The
     // collection exists; the page is simply empty.
+    const accounts = await accountsFor(workspaceId, result.items);
     return reply.status(200).send({
-      items: result.items.map(present),
+      items: result.items.map(c => present(c, accounts.get(c.contactId) ?? null)),
       total: result.total,
       page: result.page,
       perPage: result.perPage,
@@ -343,7 +375,7 @@ export function registerContactRoutes(
     void reply.header("Location",
       `/workspaces/${workspaceId}/contacts/${result.contact.contactId}`);
     return reply.status(201).send({
-      contact: present(result.contact),
+      contact: await presentOne(workspaceId, result.contact),
       duplicates: result.duplicates,
     });
   });
@@ -364,7 +396,7 @@ export function registerContactRoutes(
       actor, workspaceId as WorkspaceId, contactId as ContactId,
       options.contactDependencies());
 
-    return reply.status(200).send(present(contact));
+    return reply.status(200).send(await presentOne(workspaceId, contact));
   });
 
   // ── Replace ─────────────────────────────────────────────────────────────
@@ -401,7 +433,7 @@ export function registerContactRoutes(
     });
 
     return reply.status(200).send({
-      contact: present(result.contact),
+      contact: await presentOne(workspaceId, result.contact),
       duplicates: result.duplicates,
     });
   });
@@ -428,7 +460,7 @@ export function registerContactRoutes(
     record(request, "contact.archived", {
       workspaceId, contactId, actorUserId: actor.userId,
     });
-    return reply.status(200).send(present(contact));
+    return reply.status(200).send(await presentOne(workspaceId, contact));
   });
 
   // ── Restore ─────────────────────────────────────────────────────────────
@@ -451,6 +483,6 @@ export function registerContactRoutes(
     record(request, "contact.restored", {
       workspaceId, contactId, actorUserId: actor.userId,
     });
-    return reply.status(200).send(present(contact));
+    return reply.status(200).send(await presentOne(workspaceId, contact));
   });
 }

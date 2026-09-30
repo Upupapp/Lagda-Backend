@@ -370,6 +370,28 @@ export const NOTIFICATION_POLICIES: Record<NotificationType, NotificationPolicy>
     scopeKind: "WORKSPACE",
     inAppOnly: true,
   },
+  // 091. Between two accounts, in-app only, scoped to the REQUESTER's
+  // workspace (where the request was sent from) whoever the audience is.
+  CONTACT_CONNECTION_REQUESTED: {
+    notificationType: "CONTACT_CONNECTION_REQUESTED",
+    templateKey: "contact-connection-requested",
+    channel: "EMAIL",
+    sourceKind: "CONTACT_CONNECTION",
+    // The account whose verified address was looked up.
+    audienceKind: "USER",
+    scopeKind: "WORKSPACE",
+    inAppOnly: true,
+  },
+  CONTACT_CONNECTION_ACCEPTED: {
+    notificationType: "CONTACT_CONNECTION_ACCEPTED",
+    templateKey: "contact-connection-accepted",
+    channel: "EMAIL",
+    sourceKind: "CONTACT_CONNECTION",
+    // The requester.
+    audienceKind: "USER",
+    scopeKind: "WORKSPACE",
+    inAppOnly: true,
+  },
 };
 
 export function policyFor(notificationType: NotificationType): NotificationPolicy {

@@ -49,6 +49,8 @@ import { registerMemberRoutes } from "../workspaces/member-routes.js";
 import { registerBrandingRoutes } from "../workspaces/branding-routes.js";
 import { registerUsageRoutes } from "../workspaces/usage-routes.js";
 import { registerContactRoutes } from "../contacts/contact-routes.js";
+import { registerContactConnectionRoutes } from "../contact-connections/contact-connection-routes.js";
+import { resolveContactAccounts } from "@lagda/application";
 import { registerUploadRequestRoutes } from "../upload-requests/upload-request-routes.js";
 import { registerContactRequestRoutes } from "../contact-requests/contact-request-routes.js";
 import { registerDocumentSharingRoutes } from "../document-sharing/document-sharing-routes.js";
@@ -550,7 +552,41 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
           ),
           contactDependencies: contacts,
           metrics,
+          ...(workspaces.contactConnections === undefined ? {} : {
+            contactAccounts: async (workspaceId, list) => {
+              const connections = workspaces.contactConnections;
+              if (connections === undefined) return new Map();
+              const accounts = await resolveContactAccounts(workspaceId, list, connections.dependencies());
+              const versions = await connections.avatarVersions([...accounts.values()].map(a => a.userId));
+              return new Map([...accounts].map(([contactId, a]) => [contactId, {
+                userId: a.userId, displayName: a.displayName, jobTitle: a.jobTitle,
+                avatarVersion: versions.get(a.userId) ?? null, connected: a.connected,
+              }]));
+            },
+          }),
         });
+
+        // 091. Same scope: finding people and answering requests needs the
+        // session, and every mutation its CSRF check.
+        if (workspaces.contactConnections !== undefined) {
+          const connections = workspaces.contactConnections;
+          registerContactConnectionRoutes(scope, {
+            authenticatedUser: (request: FastifyRequest) => Promise.resolve(
+              request.auth.status === "authenticated"
+                ? {
+                    userId: request.auth.actor.userId,
+                    sessionId: request.auth.actor.sessionId,
+                  }
+                : null,
+            ),
+            dependencies: connections.dependencies,
+            contactDependencies: contacts,
+            avatars: connections.avatars,
+            avatarVersions: connections.avatarVersions,
+            metrics,
+            ...(limiter === undefined ? {} : { rateLimit: { limiter, metrics } }),
+          });
+        }
       }
 
       // 067. Same scope, same reasoning: a request names a colleague and what

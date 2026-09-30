@@ -1861,6 +1861,31 @@ export interface UserNotificationStatesTable {
   updated_at: ColumnType<Date, Date | undefined, Date>;
 }
 
+/** 091. One account asking another to become mutual contacts. Account-owned. */
+export interface ContactConnectionsTable {
+  connection_id: string;
+  requester_user_id: string;
+  requester_workspace_id: string;
+  requester_workspace_name: string;
+  recipient_user_id: string;
+  recipient_workspace_id: ColumnType<string | null, string | null | undefined, string | null>;
+  status: string;
+  requester_contact_id: ColumnType<string | null, string | null | undefined, string | null>;
+  recipient_contact_id: ColumnType<string | null, string | null | undefined, string | null>;
+  created_at: Timestamptz;
+  updated_at: Timestamptz;
+  accepted_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
+  declined_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
+  cancelled_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
+}
+
+/** 091. Whether an account may be found by exact email. No row means yes. */
+export interface ContactDiscoverySettingsTable {
+  user_id: string;
+  discoverable: boolean;
+  updated_at: Timestamptz;
+}
+
 export interface Database {
   workspaces: WorkspacesTable;
   workspace_memberships: WorkspaceMembershipsTable;
@@ -1919,6 +1944,8 @@ export interface Database {
   user_avatars: UserAvatarsTable;
   user_notification_preferences: UserNotificationPreferencesTable;
   user_notification_states: UserNotificationStatesTable;
+  contact_connections: ContactConnectionsTable;
+  contact_discovery_settings: ContactDiscoverySettingsTable;
   document_seals: DocumentSealsTable;
   verification_records: VerificationRecordsTable;
   verification_access_challenges: VerificationAccessChallengesTable;

@@ -21,7 +21,7 @@ import type {
   InvitationDependencies, AcceptInvitationDependencies, MyInvitationDependencies,
   MemberAdministrationDependencies, WorkspaceAccessDependencies,
   ContactDependencies,
-  UploadRequestDependencies, ContactRequestDependencies, DocumentSharingDependencies, DocumentDependencies, DocumentContentDependencies, FolderDependencies,
+  UploadRequestDependencies, ContactRequestDependencies, DocumentSharingDependencies, ContactConnectionDependencies, DocumentDependencies, DocumentContentDependencies, FolderDependencies,
   PreparationDependencies,
   RecipientDependencies, SigningRequestDependencies,
   SendSigningRequestDependencies, SigningAccessDependencies, FinalCopyDownloadDependencies,
@@ -256,6 +256,17 @@ export interface WorkspaceDependencies {
    * "Shared with me". Absent means no route.
    */
   readonly documentSharing?: () => DocumentSharingDependencies;
+  /**
+   * 091. Finding people by email, asking to add them, and the photos that go
+   * with contacts. Absent means no route, and every contact's `account` is null.
+   */
+  readonly contactConnections?: {
+    readonly dependencies: () => ContactConnectionDependencies;
+    readonly avatars: () => {
+      find(userId: string): Promise<{ mediaType: string; bytes: Uint8Array; digest: string } | null>;
+    };
+    readonly avatarVersions: (userIds: readonly string[]) => Promise<ReadonlyMap<string, string>>;
+  };
   /**
    * Reusable workflow templates (migration 058). Absent means the routes do
    * not exist, the same convention every other optional surface here uses.

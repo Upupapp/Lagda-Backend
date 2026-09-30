@@ -165,6 +165,10 @@ export const NOTIFICATION_TYPES = [
   "WORKSPACE_INVITATION_RECEIVED",
   /** 089. The inviter told the invitee declined, with their reason. In-app only. */
   "WORKSPACE_INVITATION_DECLINED",
+  /** 091. Someone asked this account to become mutual contacts. In-app only. */
+  "CONTACT_CONNECTION_REQUESTED",
+  /** 091. The requester told their request was accepted. In-app only. */
+  "CONTACT_CONNECTION_ACCEPTED",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -299,6 +303,8 @@ export const NOTIFICATION_SOURCE_KINDS = [
    * the second. The invitation id travels in the template input.
    */
   "WORKSPACE_INVITATION_NOTICE",
+  /** 091. The connection request. One notice of each type per request. */
+  "CONTACT_CONNECTION",
 ] as const;
 export type NotificationSourceKind =
   (typeof NOTIFICATION_SOURCE_KINDS)[number];
@@ -449,6 +455,8 @@ export const NOTIFICATION_TEMPLATE_KEYS = [
   "document-access-decided",
   "workspace-invitation-received",
   "workspace-invitation-declined",
+  "contact-connection-requested",
+  "contact-connection-accepted",
 ] as const;
 export type NotificationTemplateKey =
   (typeof NOTIFICATION_TEMPLATE_KEYS)[number];

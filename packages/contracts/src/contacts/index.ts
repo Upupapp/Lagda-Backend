@@ -188,6 +188,23 @@ export const ContactSchema = Type.Object(
       }, { additionalProperties: false }),
       Type.Null(),
     ]),
+    /**
+     * 091. The LAGDA account this contact stands for — through an accepted
+     * contact request, or else the current workspace member holding its
+     * address — with that account's OWN name and title as they are now, and
+     * its photo version (`/workspaces/{workspaceId}/contacts/{contactId}/avatar?v=`).
+     * Null for an address-book entry with no account behind it.
+     */
+    account: Type.Union([
+      Type.Object({
+        userId: Type.String(),
+        displayName: Type.String(),
+        jobTitle: Type.Union([Type.String(), Type.Null()]),
+        avatarVersion: Type.Union([Type.String(), Type.Null()]),
+        connected: Type.Boolean(),
+      }, { additionalProperties: false }),
+      Type.Null(),
+    ]),
   },
   {
     title: "Contact",

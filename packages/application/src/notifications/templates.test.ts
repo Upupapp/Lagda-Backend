@@ -255,6 +255,8 @@ const INPUT_BY_KEY: Record<string, NotificationTemplateInput> = {
   "document-access-decided": { recipientName: "Maria Santos", deciderDisplayName: "Paulo Reyes", decision: "approved", documentTitle: "Office Lease", workspaceName: "Reyes Legal", verificationId: "LAGDA-VER-2026-A7bK9mQ2xZ" },
   "workspace-invitation-received": { recipientName: "Maria Santos", invitationId: "inv_1", workspaceName: "Reyes Legal", inviterDisplayName: "Paulo Reyes", role: "sender", expiresAt: "2026-10-05T09:00:00.000Z" },
   "workspace-invitation-declined": { recipientName: "Paulo Reyes", inviteeDisplayName: "Maria Santos", inviteeEmail: "maria@example.com", reason: "Wrong firm", invitationId: "inv_1", workspaceName: "Reyes Legal", inviterDisplayName: "Paulo Reyes", role: "sender", expiresAt: "2026-10-05T09:00:00.000Z" },
+  "contact-connection-requested": { recipientName: "Maria Santos", requesterDisplayName: "Paulo Reyes", workspaceName: "Reyes Legal", connectionId: "cc_1" },
+  "contact-connection-accepted": { recipientName: "Paulo Reyes", responderDisplayName: "Maria Santos", connectionId: "cc_1", contactId: "con_1" },
 };
 
 describe("inline images", () => {

@@ -50,6 +50,7 @@ import {
   DocumentShareReceivedModelV1, DocumentShareAnsweredModelV1,
   DocumentAccessRequestedModelV1, DocumentAccessDecidedModelV1,
   WorkspaceInvitationReceivedModelV1, WorkspaceInvitationDeclinedModelV1,
+  ContactConnectionRequestedModelV1, ContactConnectionAcceptedModelV1,
 } from "./template-registry.js";
 import { escapeHtml } from "./rendering.js";
 import { LAGDA_LOGO_PNG_BASE64 } from "./assets/lagda-logo.js";
@@ -916,6 +917,45 @@ export const workspaceInvitationDeclinedV1 = defineTemplate({
   ),
 });
 
+// ── 091. Contact connections ────────────────────────────────────────────────
+//
+// In-app only, like 087's and 089's: rendered so the intent is complete, never
+// sent (the policy suppresses the email).
+
+const PENDING_CONTACTS_PATH = "/app/contacts/pending";
+const CONTACTS_PATH = "/app/contacts";
+
+export const contactConnectionRequestedV1 = defineTemplate({
+  key: "contact-connection-requested",
+  version: 1,
+  locale: "en",
+  schema: ContactConnectionRequestedModelV1,
+  secretBearing: false,
+  render: (input, context) => inAppNotice(
+    `${input.requesterDisplayName} wants to add you as a contact`,
+    input.recipientName,
+    `${input.requesterDisplayName} (${input.workspaceName}) asked to add you as a contact on LAGDA. `
+      + "Accept to add each other, or decline — they are not told.",
+    context.buildPath(PENDING_CONTACTS_PATH),
+    "Review the request",
+  ),
+});
+
+export const contactConnectionAcceptedV1 = defineTemplate({
+  key: "contact-connection-accepted",
+  version: 1,
+  locale: "en",
+  schema: ContactConnectionAcceptedModelV1,
+  secretBearing: false,
+  render: (input, context) => inAppNotice(
+    `${input.responderDisplayName} accepted your contact request`,
+    input.recipientName,
+    `${input.responderDisplayName} accepted your request. You are now in each other's contacts.`,
+    context.buildPath(CONTACTS_PATH),
+    "Open contacts",
+  ),
+});
+
 /**
  * Every template version LAGDA can render.
  *
@@ -945,6 +985,8 @@ export const ALL_TEMPLATES = [
   documentAccessDecidedV1,
   workspaceInvitationReceivedV1,
   workspaceInvitationDeclinedV1,
+  contactConnectionRequestedV1,
+  contactConnectionAcceptedV1,
 ] as const;
 
 export type AccountEmailVerificationModel = Static<typeof AccountEmailVerificationModelV1>;

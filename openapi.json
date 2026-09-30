@@ -5653,7 +5653,8 @@
                           "ownerUserId",
                           "note",
                           "tagIds",
-                          "workspaceMember"
+                          "workspaceMember",
+                          "account"
                         ],
                         "properties": {
                           "contactId": {
@@ -5865,6 +5866,55 @@
                                   },
                                   "displayName": {
                                     "type": "string"
+                                  }
+                                }
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "account": {
+                            "anyOf": [
+                              {
+                                "additionalProperties": false,
+                                "type": "object",
+                                "required": [
+                                  "userId",
+                                  "displayName",
+                                  "jobTitle",
+                                  "avatarVersion",
+                                  "connected"
+                                ],
+                                "properties": {
+                                  "userId": {
+                                    "type": "string"
+                                  },
+                                  "displayName": {
+                                    "type": "string"
+                                  },
+                                  "jobTitle": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "avatarVersion": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "connected": {
+                                    "type": "boolean"
                                   }
                                 }
                               },
@@ -6107,7 +6157,8 @@
                         "ownerUserId",
                         "note",
                         "tagIds",
-                        "workspaceMember"
+                        "workspaceMember",
+                        "account"
                       ],
                       "properties": {
                         "contactId": {
@@ -6326,6 +6377,55 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "account": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "type": "object",
+                              "required": [
+                                "userId",
+                                "displayName",
+                                "jobTitle",
+                                "avatarVersion",
+                                "connected"
+                              ],
+                              "properties": {
+                                "userId": {
+                                  "type": "string"
+                                },
+                                "displayName": {
+                                  "type": "string"
+                                },
+                                "jobTitle": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "avatarVersion": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "connected": {
+                                  "type": "boolean"
+                                }
+                              }
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       }
                     },
@@ -6416,7 +6516,8 @@
                     "ownerUserId",
                     "note",
                     "tagIds",
-                    "workspaceMember"
+                    "workspaceMember",
+                    "account"
                   ],
                   "properties": {
                     "contactId": {
@@ -6628,6 +6729,55 @@
                             },
                             "displayName": {
                               "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "account": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "userId",
+                            "displayName",
+                            "jobTitle",
+                            "avatarVersion",
+                            "connected"
+                          ],
+                          "properties": {
+                            "userId": {
+                              "type": "string"
+                            },
+                            "displayName": {
+                              "type": "string"
+                            },
+                            "jobTitle": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "avatarVersion": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "connected": {
+                              "type": "boolean"
                             }
                           }
                         },
@@ -6844,7 +6994,8 @@
                         "ownerUserId",
                         "note",
                         "tagIds",
-                        "workspaceMember"
+                        "workspaceMember",
+                        "account"
                       ],
                       "properties": {
                         "contactId": {
@@ -7063,6 +7214,55 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "account": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "type": "object",
+                              "required": [
+                                "userId",
+                                "displayName",
+                                "jobTitle",
+                                "avatarVersion",
+                                "connected"
+                              ],
+                              "properties": {
+                                "userId": {
+                                  "type": "string"
+                                },
+                                "displayName": {
+                                  "type": "string"
+                                },
+                                "jobTitle": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "avatarVersion": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "connected": {
+                                  "type": "boolean"
+                                }
+                              }
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       }
                     },
@@ -7153,7 +7353,8 @@
                     "ownerUserId",
                     "note",
                     "tagIds",
-                    "workspaceMember"
+                    "workspaceMember",
+                    "account"
                   ],
                   "properties": {
                     "contactId": {
@@ -7372,6 +7573,55 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "account": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "userId",
+                            "displayName",
+                            "jobTitle",
+                            "avatarVersion",
+                            "connected"
+                          ],
+                          "properties": {
+                            "userId": {
+                              "type": "string"
+                            },
+                            "displayName": {
+                              "type": "string"
+                            },
+                            "jobTitle": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "avatarVersion": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "connected": {
+                              "type": "boolean"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   }
                 }
@@ -7430,7 +7680,8 @@
                     "ownerUserId",
                     "note",
                     "tagIds",
-                    "workspaceMember"
+                    "workspaceMember",
+                    "account"
                   ],
                   "properties": {
                     "contactId": {
@@ -7642,6 +7893,55 @@
                             },
                             "displayName": {
                               "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "account": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "type": "object",
+                          "required": [
+                            "userId",
+                            "displayName",
+                            "jobTitle",
+                            "avatarVersion",
+                            "connected"
+                          ],
+                          "properties": {
+                            "userId": {
+                              "type": "string"
+                            },
+                            "displayName": {
+                              "type": "string"
+                            },
+                            "jobTitle": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "avatarVersion": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "connected": {
+                              "type": "boolean"
                             }
                           }
                         },

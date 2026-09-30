@@ -46,6 +46,7 @@ export const METRIC_NAMES = [
   "contact_request_operations_total",
   // 087. Document sharing writes — shares, answers, access requests.
   "document_sharing_operations_total",
+  "contact_connection_operations_total",
   // Migration 058. Workflow-template writes — created, updated, deleted.
   "workflow_template_operations_total",
   // BACKEND-29. Document writes — created, renamed.
@@ -148,6 +149,7 @@ export const METRIC_LABELS = {
   upload_request_operations_total: ["operation", "result", "processRole"],
   contact_request_operations_total: ["operation", "result", "processRole"],
   document_sharing_operations_total: ["operation", "result", "processRole"],
+  contact_connection_operations_total: ["operation", "result", "processRole"],
   // `operation` is a six-value union in code (created, updated, deleted,
   // document_attached, document_detached — 059 — and fields_saved — 060).
   // Deliberately NOT the template NAME or any slot label: a label names the

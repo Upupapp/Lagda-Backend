@@ -898,6 +898,7 @@ export * from "./notifications.js";
 export * from "./notification-preferences.js";
 export * from "./verification-access.js";
 export * from "./contact-requests.js";
+export * from "./contact-connections.js";
 export * from "./document-sharing.js";
 import type { SigningAccountLinkRepository } from "./signing-account-link.js";
 import type { PreparedSignatureRepository } from "./prepared-signatures.js";

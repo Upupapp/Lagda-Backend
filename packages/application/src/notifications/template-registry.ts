@@ -520,6 +520,30 @@ export const WorkspaceInvitationDeclinedModelV1 = Type.Object(
   { additionalProperties: false },
 );
 
+/** 091. Someone asked to become mutual contacts. */
+export const ContactConnectionRequestedModelV1 = Type.Object(
+  {
+    recipientName: DisplayName,
+    requesterDisplayName: DisplayName,
+    workspaceName: DisplayName,
+    /** The feed links to the pending request by it. */
+    connectionId: BoundedText(64),
+  },
+  { additionalProperties: false },
+);
+
+/** 091. The requester told their request was accepted. */
+export const ContactConnectionAcceptedModelV1 = Type.Object(
+  {
+    recipientName: DisplayName,
+    responderDisplayName: DisplayName,
+    connectionId: BoundedText(64),
+    /** The requester's new contact, when it was created. */
+    contactId: Type.Optional(BoundedText(64)),
+  },
+  { additionalProperties: false },
+);
+
 export const DocumentUploadRequestedModelV1 = Type.Object(
   {
     /** The ASSIGNEE's display name. This message is addressed to them. */

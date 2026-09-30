@@ -676,6 +676,19 @@ export const RATE_LIMIT_POLICIES = {
       + "budget; a signed-in caller learns the same granted/denied answer.",
   },
 
+  // 091. Finding a person by exact email. A lookup answers "does an account
+  // with this address exist and want to be found", so it is bounded tightly
+  // per account: generous for someone adding colleagues, useless for fishing.
+  "contacts.lookup.user": {
+    id: "contacts.lookup.user",
+    scopeType: "user",
+    limit: 30,
+    windowMs: 60 * MINUTE,
+    failureMode: "fail-closed",
+    source: "091 - not specified by the handoff. Chosen to bound email "
+      + "enumeration by one signed-in account; subject to product review.",
+  },
+
   // 078. The public join-link check: anyone holding a link, before sign-in.
   "workspace.join.preview.ip": {
     id: "workspace.join.preview.ip",

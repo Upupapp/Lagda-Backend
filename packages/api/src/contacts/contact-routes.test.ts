@@ -253,7 +253,7 @@ describe("POST /contacts", () => {
     const h = await harness();
     const body = (await createOne(h)).json<{ contact: Record<string, unknown> }>();
     expect(Object.keys(body.contact).sort()).toEqual([
-      "archivedAt", "contactId", "createdAt", "email", "name", "note",
+      "account", "archivedAt", "contactId", "createdAt", "email", "name", "note",
       "organization", "ownerUserId", "phone", "scope", "state", "tagIds",
       "title", "updatedAt", "workspaceMember",
     ]);

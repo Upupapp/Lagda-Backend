@@ -24,6 +24,9 @@ import { createSigningAccessTokenFactory } from "../security/signing-access-toke
 import { createFinalCopyTokenFactory } from "@lagda/security";
 import { createRecipientSessionTokenFactory } from "../security/recipient-session-token.js";
 import { createPublicVerificationLookup } from "@lagda/db";
+import {
+  createContactConnectionRepository, createPeopleDirectory, avatarVersionsOf, createUserAvatarRepository,
+} from "@lagda/db";
 import { createVerificationAccessStore, createVerificationAccessThrottle } from "@lagda/db";
 import { createVerificationAccessCrypto } from "../security/verification-access-token.js";
 import { createSignatureImageValidator } from "../security/signature-image.js";
@@ -50,7 +53,7 @@ import { createArgon2PasswordHasher } from "../security/password-hasher.js";
 import { buildIdentity } from "./identity-composition.js";
 import {
   createWorkspaceIdGenerator, createWorkspaceMemberIdGenerator, createJoinIdGenerator,
-  createContactIdGenerator, createUploadRequestIdGenerator, createContactRequestIdGenerator, createDocumentSharingIdGenerator, createWorkflowTemplateIdGenerator,
+  createContactIdGenerator, createUploadRequestIdGenerator, createContactRequestIdGenerator, createDocumentSharingIdGenerator, createWorkflowTemplateIdGenerator, createContactConnectionIdGenerator,
   createDocumentIdGenerator, createFolderIdGenerator,
   createPreparationIdGenerator, createRecipientIdGenerator,
   createSigningRequestIdGenerator, createEvidenceEventIdGenerator,
@@ -179,6 +182,7 @@ export async function createProductionDependencies(
   const uploadRequestIds = createUploadRequestIdGenerator();
   const contactRequestIds = createContactRequestIdGenerator();
   const documentSharingIds = createDocumentSharingIdGenerator();
+  const contactConnectionIds = createContactConnectionIdGenerator();
   const workflowTemplateIds = createWorkflowTemplateIdGenerator();
   // ONE object store for every surface that touches bytes: upload writes the
   // artifact, and the ceremony serves the same one back to the recipient.
@@ -230,6 +234,24 @@ export async function createProductionDependencies(
       list: () => ({ transactions }),
       workspace: () => ({ transactions, clock }),
       contacts: () => ({ transactions, clock, ids: contactIds }),
+      // 091. Account-owned requests (no tenant scope can hold them), written
+      // through the pool like 072's photos; each side's contact is written in
+      // its own workspace's transaction.
+      contactConnections: {
+        dependencies: () => ({
+          transactions, clock,
+          ids: { ...contactIds, ...contactConnectionIds },
+          connections: createContactConnectionRepository(database.db),
+          people: createPeopleDirectory(database.db),
+          templates: createTemplateRegistry(ALL_TEMPLATES),
+          notificationIds: {
+            ...createNotificationIntentIdGenerator(),
+            ...createNotificationDeliveryIdGenerator(),
+          },
+        }),
+        avatars: () => createUserAvatarRepository(database.db),
+        avatarVersions: (userIds: readonly string[]) => avatarVersionsOf(database.db, userIds),
+      },
       // 067. Needs strictly more than `contacts` does: creating a request
       // also creates the notification that tells the assignee about it, so
       // it carries the template registry and the notification id generators.

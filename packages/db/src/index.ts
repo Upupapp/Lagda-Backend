@@ -103,5 +103,8 @@ export {
   type UserAvatarRepository, type StoredAvatar, type SaveAvatarInput,
 } from "./repositories/user-avatars.js";
 export {
+  createContactConnectionRepository, createPeopleDirectory, avatarVersionsOf,
+} from "./repositories/contact-connections.js";
+export {
   createNotificationPreferenceRepository, isNotificationCategoryMuted,
 } from "./repositories/notification-preferences.js";

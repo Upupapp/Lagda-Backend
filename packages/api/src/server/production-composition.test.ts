@@ -228,8 +228,9 @@ describe("production composition", () => {
     // and the requests an owner or administrator approves, and 18 -> 19 with
     // `contactRequests` (086), requests sent to contacts, and 19 -> 20 with
     // `documentSharing` (087), shares, access requests and Shared with me,
-    // and 20 -> 21 with `inbox` (089), the signed-in invitee's invitations.
-    expect(subWired).toBe(21);
+    // and 20 -> 21 with `inbox` (089), the signed-in invitee's invitations,
+    // and 21 -> 22 with `contactConnections` (091), finding people by email.
+    expect(subWired).toBe(22);
   });
 });
 

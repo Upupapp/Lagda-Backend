@@ -32,7 +32,7 @@ import type {
   ContactIdGenerator, WorkflowTemplateIdGenerator,
   UploadRequestIdGenerator, UploadRequestId,
   ContactRequestIdGenerator, ContactRequestId,
-  DocumentSharingIdGenerator, DocumentShareId, DocumentAccessRequestId,
+  DocumentSharingIdGenerator, ContactConnectionIdGenerator, DocumentShareId, DocumentAccessRequestId,
   DocumentIdGenerator, FolderIdGenerator, FolderId,
   PreparationIdGenerator,
   RecipientIdGenerator,
@@ -148,6 +148,11 @@ export function createContactRequestIdGenerator(): ContactRequestIdGenerator {
 }
 
 /** 087. `dsh` — a document share; `dar` — a document access request. */
+/** 091. `cc` — one account asking another to become mutual contacts. */
+export function createContactConnectionIdGenerator(): ContactConnectionIdGenerator {
+  return { nextConnectionId: () => mint("cc") };
+}
+
 export function createDocumentSharingIdGenerator(): DocumentSharingIdGenerator {
   return {
     nextDocumentShareId: () => mint("dsh") as DocumentShareId,

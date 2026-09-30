@@ -79,6 +79,9 @@ export const NOTIFICATION_PREFERENCE_CATEGORY_BY_TYPE: Readonly<
   // 089. Both invitation-inbox notices are in-app only: no email to stop.
   WORKSPACE_INVITATION_RECEIVED: null,
   WORKSPACE_INVITATION_DECLINED: null,
+  // 091. Both connection notices are in-app only: no email to stop.
+  CONTACT_CONNECTION_REQUESTED: null,
+  CONTACT_CONNECTION_ACCEPTED: null,
 };
 
 /** The category governing a type, or null when it is always sent. */
