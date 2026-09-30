@@ -21,7 +21,7 @@ import type {
   InvitationDependencies, AcceptInvitationDependencies, MyInvitationDependencies,
   MemberAdministrationDependencies, WorkspaceAccessDependencies,
   ContactDependencies,
-  UploadRequestDependencies, ContactRequestDependencies, DocumentSharingDependencies, ContactConnectionDependencies, DocumentDependencies, DocumentContentDependencies, FolderDependencies,
+  UploadRequestDependencies, ContactRequestDependencies, DocumentSharingDependencies, ContactConnectionDependencies, PlanDependencies, DocumentDependencies, DocumentContentDependencies, FolderDependencies,
   PreparationDependencies,
   RecipientDependencies, SigningRequestDependencies,
   SendSigningRequestDependencies, SigningAccessDependencies, FinalCopyDownloadDependencies,
@@ -267,6 +267,12 @@ export interface WorkspaceDependencies {
     };
     readonly avatarVersions: (userIds: readonly string[]) => Promise<ReadonlyMap<string, string>>;
   };
+  /**
+   * 093. Plans: the account's own, a workspace's (its owner's), test-mode
+   * upgrades, and the gates on paid features. Absent means no plan route and
+   * no gate — every workspace keeps every feature.
+   */
+  readonly plans?: () => PlanDependencies;
   /**
    * Reusable workflow templates (migration 058). Absent means the routes do
    * not exist, the same convention every other optional surface here uses.

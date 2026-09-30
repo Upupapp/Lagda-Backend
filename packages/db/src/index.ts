@@ -105,6 +105,7 @@ export {
 export {
   createContactConnectionRepository, createPeopleDirectory, avatarVersionsOf,
 } from "./repositories/contact-connections.js";
+export { createPlanRepository } from "./repositories/plans.js";
 export {
   createNotificationPreferenceRepository, isNotificationCategoryMuted,
 } from "./repositories/notification-preferences.js";

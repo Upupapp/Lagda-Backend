@@ -392,6 +392,32 @@ export const NOTIFICATION_POLICIES: Record<NotificationType, NotificationPolicy>
     scopeKind: "WORKSPACE",
     inAppOnly: true,
   },
+  // 093. A plan is a fact about a person: GLOBAL_USER, emailed and in-app.
+  PLAN_UPGRADE_REQUESTED: {
+    notificationType: "PLAN_UPGRADE_REQUESTED",
+    templateKey: "plan-upgrade-requested",
+    channel: "EMAIL",
+    sourceKind: "PLAN_UPGRADE_REQUEST",
+    // The approver.
+    audienceKind: "USER",
+    scopeKind: "GLOBAL_USER",
+  },
+  PLAN_UPGRADE_APPROVED: {
+    notificationType: "PLAN_UPGRADE_APPROVED",
+    templateKey: "plan-upgrade-approved",
+    channel: "EMAIL",
+    sourceKind: "PLAN_UPGRADE_REQUEST",
+    audienceKind: "USER",
+    scopeKind: "GLOBAL_USER",
+  },
+  PLAN_UPGRADE_DECLINED: {
+    notificationType: "PLAN_UPGRADE_DECLINED",
+    templateKey: "plan-upgrade-declined",
+    channel: "EMAIL",
+    sourceKind: "PLAN_UPGRADE_REQUEST",
+    audienceKind: "USER",
+    scopeKind: "GLOBAL_USER",
+  },
 };
 
 export function policyFor(notificationType: NotificationType): NotificationPolicy {

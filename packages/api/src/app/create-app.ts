@@ -50,7 +50,8 @@ import { registerBrandingRoutes } from "../workspaces/branding-routes.js";
 import { registerUsageRoutes } from "../workspaces/usage-routes.js";
 import { registerContactRoutes } from "../contacts/contact-routes.js";
 import { registerContactConnectionRoutes } from "../contact-connections/contact-connection-routes.js";
-import { resolveContactAccounts } from "@lagda/application";
+import { registerPlanRoutes, registerPlanGates } from "../plans/plan-routes.js";
+import { resolveContactAccounts, assertMayCreateWorkspace, type UserId, type SessionId } from "@lagda/application";
 import { registerUploadRequestRoutes } from "../upload-requests/upload-request-routes.js";
 import { registerContactRequestRoutes } from "../contact-requests/contact-request-routes.js";
 import { registerDocumentSharingRoutes } from "../document-sharing/document-sharing-routes.js";
@@ -408,6 +409,23 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
     await app.register(scope => {
       requireSession(scope, { sessions, metrics });
 
+      // 093. Plans, and the gates on paid features. The gates are a hook, so
+      // they are registered before any route they guard.
+      if (workspaces.plans !== undefined) {
+        const plans = workspaces.plans;
+        registerPlanGates(scope, plans);
+        registerPlanRoutes(scope, {
+          authenticatedUser: (request: FastifyRequest) => Promise.resolve(
+            request.auth.status === "authenticated"
+              ? { userId: request.auth.actor.userId, sessionId: request.auth.actor.sessionId }
+              : null,
+          ),
+          dependencies: plans,
+          metrics,
+          ...(limiter === undefined ? {} : { rateLimit: { limiter, metrics } }),
+        });
+      }
+
       registerWorkspaceRoutes(scope, {
         // Reads the state `requireSession` has already validated. It cannot be
         // reached with anything else: the hook rejects an anonymous or pre-auth
@@ -423,6 +441,10 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
             : null,
         ),
         createWorkspaceDependencies: workspaces.create,
+        ...(workspaces.plans === undefined ? {} : {
+          beforeCreate: (actor: { readonly userId: UserId; readonly sessionId: SessionId }) =>
+            assertMayCreateWorkspace({ actorType: "user", ...actor }, workspaces.plans?.()),
+        }),
         listDependencies: workspaces.list,
         workspaceDependencies: workspaces.workspace,
         ...(limiter === undefined ? {} : { rateLimit: { limiter, metrics } }),

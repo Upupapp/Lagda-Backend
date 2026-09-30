@@ -689,6 +689,18 @@ export const RATE_LIMIT_POLICIES = {
       + "enumeration by one signed-in account; subject to product review.",
   },
 
+  // 093. Test-mode upgrade requests: each one emails the plan approver, so
+  // one account cannot fill that inbox.
+  "plans.upgrade-request.user": {
+    id: "plans.upgrade-request.user",
+    scopeType: "user",
+    limit: 5,
+    windowMs: 24 * 60 * MINUTE,
+    failureMode: "fail-closed",
+    source: "093 - not specified by the handoff. Chosen to bound mail to the "
+      + "plan approver from one signed-in account; subject to product review.",
+  },
+
   // 078. The public join-link check: anyone holding a link, before sign-in.
   "workspace.join.preview.ip": {
     id: "workspace.join.preview.ip",

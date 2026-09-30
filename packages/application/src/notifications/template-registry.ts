@@ -544,6 +544,32 @@ export const ContactConnectionAcceptedModelV1 = Type.Object(
   { additionalProperties: false },
 );
 
+/** 093. The approver asked to decide a test-mode upgrade. */
+export const PlanUpgradeRequestedModelV1 = Type.Object(
+  {
+    recipientName: DisplayName,
+    requesterDisplayName: DisplayName,
+    requesterEmail: BoundedText(254),
+    planName: BoundedText(40),
+    amount: BoundedText(40),
+    expiresAt: BoundedText(80),
+    requestId: BoundedText(64),
+  },
+  { additionalProperties: false },
+);
+
+/** 093. The requester told the outcome. */
+export const PlanUpgradeDecidedModelV1 = Type.Object(
+  {
+    recipientName: DisplayName,
+    planName: BoundedText(40),
+    requestId: BoundedText(64),
+    /** Approved only: when the paid month ends. */
+    paidUntil: Type.Optional(BoundedText(80)),
+  },
+  { additionalProperties: false },
+);
+
 export const DocumentUploadRequestedModelV1 = Type.Object(
   {
     /** The ASSIGNEE's display name. This message is addressed to them. */

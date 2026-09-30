@@ -102,6 +102,9 @@ suite("contact deletion (runtime role)", () => {
 
   it("goes down when empty and back up", async () => {
     await truncateAll(owner);
+    const later = await migrateDown(owner.db);
+    expect(later.error).toBeUndefined();
+    expect(later.applied).toEqual(["093_user_plans"]);
     const down = await migrateDown(owner.db);
     expect(down.error).toBeUndefined();
     expect(down.applied).toEqual(["092_contact_deletion"]);

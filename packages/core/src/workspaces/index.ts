@@ -67,6 +67,14 @@ export function assertExactlyOneOwner(members: readonly MembershipView[]): void 
  * Pure: the caller supplies the membership list. Whether the ACTOR is permitted
  * to remove anyone is authorization, and belongs to BACKEND-27.
  */
+/**
+ * 093. The workspace's owner, whose plan decides what the workspace offers.
+ * Here beside the other owner rules, so no second file compares role names.
+ */
+export function findWorkspaceOwner<T extends { readonly role: string }>(members: readonly T[]): T | undefined {
+  return members.find(m => m.role === "owner");
+}
+
 export function wouldOrphanWorkspace(
   members: readonly MembershipView[],
   removingMemberId: string,

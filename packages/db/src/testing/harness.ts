@@ -233,6 +233,9 @@ export async function truncateAll(database: LagdaDatabase): Promise<void> {
   // 091. Account-owned, no runtime DELETE; cleared before the users they name.
   await database.db.deleteFrom("contact_connections").execute();
   await database.db.deleteFrom("contact_discovery_settings").execute();
+  // 093. Account-owned, no runtime DELETE; cleared before the users they name.
+  await database.db.deleteFrom("plan_upgrade_requests").execute();
+  await database.db.deleteFrom("user_plans").execute();
   await database.db.deleteFrom("notification_intents").execute();
   // 086. No runtime DELETE; after the intents that may address one.
   await database.db.deleteFrom("contact_requests").execute();

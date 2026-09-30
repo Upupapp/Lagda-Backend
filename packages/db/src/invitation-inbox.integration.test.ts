@@ -349,7 +349,7 @@ suite("invitee inbox (089, runtime role)", () => {
     await truncateAll(owner);
     await seedUser(owner, OWNER_A, { email: "owner.a@example.com" });
     // 092, 091 and 090 sit above 089 and come off first; all are empty here.
-    for (const name of ["092_contact_deletion", "091_contact_connections", "090_user_notification_states"]) {
+    for (const name of ["093_user_plans", "092_contact_deletion", "091_contact_connections", "090_user_notification_states"]) {
       const later = await migrateDown(owner.db);
       expect(later.error).toBeUndefined();
       expect(later.applied).toEqual([name]);
@@ -402,7 +402,7 @@ suite("invitee inbox (089, runtime role)", () => {
   it("goes down when empty and back up", async () => {
     await truncateAll(owner);
     // 092, 091 and 090 sit above 089 and come off first; all are empty here.
-    for (const name of ["092_contact_deletion", "091_contact_connections", "090_user_notification_states"]) {
+    for (const name of ["093_user_plans", "092_contact_deletion", "091_contact_connections", "090_user_notification_states"]) {
       const later = await migrateDown(owner.db);
       expect(later.error).toBeUndefined();
       expect(later.applied).toEqual([name]);

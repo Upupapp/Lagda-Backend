@@ -51,6 +51,7 @@ import {
   DocumentAccessRequestedModelV1, DocumentAccessDecidedModelV1,
   WorkspaceInvitationReceivedModelV1, WorkspaceInvitationDeclinedModelV1,
   ContactConnectionRequestedModelV1, ContactConnectionAcceptedModelV1,
+  PlanUpgradeRequestedModelV1, PlanUpgradeDecidedModelV1,
 } from "./template-registry.js";
 import { escapeHtml } from "./rendering.js";
 import { LAGDA_LOGO_PNG_BASE64 } from "./assets/lagda-logo.js";
@@ -956,6 +957,63 @@ export const contactConnectionAcceptedV1 = defineTemplate({
   ),
 });
 
+// ── 093. Plans ─────────────────────────────────────────────────────────────
+//
+// Emailed AND listed in-app. The approver's link opens the request inside
+// LAGDA, where deciding needs the approver's own session: the email carries
+// no credential and no bank details.
+
+const PLAN_PATH = "/app/settings/plan";
+
+export const planUpgradeRequestedV1 = defineTemplate({
+  key: "plan-upgrade-requested",
+  version: 1,
+  locale: "en",
+  schema: PlanUpgradeRequestedModelV1,
+  secretBearing: false,
+  render: (input, context) => inAppNotice(
+    `${input.requesterDisplayName} asked for the ${input.planName} plan`,
+    input.recipientName,
+    `${input.requesterDisplayName} (${input.requesterEmail}) asked to move to ${input.planName} `
+      + `for ${input.amount} a month, using the test-mode sample account. No money was moved. `
+      + `Approve or decline it in LAGDA before ${input.expiresAt}.`,
+    context.buildPath(`/app/plan-requests/${encodeURIComponent(input.requestId)}`),
+    "Review the request",
+  ),
+});
+
+export const planUpgradeApprovedV1 = defineTemplate({
+  key: "plan-upgrade-approved",
+  version: 1,
+  locale: "en",
+  schema: PlanUpgradeDecidedModelV1,
+  secretBearing: false,
+  render: (input, context) => inAppNotice(
+    `Your ${input.planName} plan is active`,
+    input.recipientName,
+    `Your request was approved. ${input.planName} is active`
+      + (input.paidUntil === undefined ? "." : ` until ${input.paidUntil}.`)
+      + " Everything it includes is unlocked now.",
+    context.buildPath(PLAN_PATH),
+    "Open Plan & Billing",
+  ),
+});
+
+export const planUpgradeDeclinedV1 = defineTemplate({
+  key: "plan-upgrade-declined",
+  version: 1,
+  locale: "en",
+  schema: PlanUpgradeDecidedModelV1,
+  secretBearing: false,
+  render: (input, context) => inAppNotice(
+    `Your ${input.planName} plan request was declined`,
+    input.recipientName,
+    `Your request to move to ${input.planName} was declined. You can send a new request from Plan & Billing.`,
+    context.buildPath(PLAN_PATH),
+    "Open Plan & Billing",
+  ),
+});
+
 /**
  * Every template version LAGDA can render.
  *
@@ -987,6 +1045,9 @@ export const ALL_TEMPLATES = [
   workspaceInvitationDeclinedV1,
   contactConnectionRequestedV1,
   contactConnectionAcceptedV1,
+  planUpgradeRequestedV1,
+  planUpgradeApprovedV1,
+  planUpgradeDeclinedV1,
 ] as const;
 
 export type AccountEmailVerificationModel = Static<typeof AccountEmailVerificationModelV1>;

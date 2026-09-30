@@ -169,6 +169,12 @@ export const NOTIFICATION_TYPES = [
   "CONTACT_CONNECTION_REQUESTED",
   /** 091. The requester told their request was accepted. In-app only. */
   "CONTACT_CONNECTION_ACCEPTED",
+  /** 093. The plan approver asked to approve a test-mode upgrade. */
+  "PLAN_UPGRADE_REQUESTED",
+  /** 093. The requester told their upgrade was approved. */
+  "PLAN_UPGRADE_APPROVED",
+  /** 093. The requester told their upgrade was declined. */
+  "PLAN_UPGRADE_DECLINED",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -305,6 +311,8 @@ export const NOTIFICATION_SOURCE_KINDS = [
   "WORKSPACE_INVITATION_NOTICE",
   /** 091. The connection request. One notice of each type per request. */
   "CONTACT_CONNECTION",
+  /** 093. The upgrade request. One notice of each type per request. */
+  "PLAN_UPGRADE_REQUEST",
 ] as const;
 export type NotificationSourceKind =
   (typeof NOTIFICATION_SOURCE_KINDS)[number];
@@ -457,6 +465,9 @@ export const NOTIFICATION_TEMPLATE_KEYS = [
   "workspace-invitation-declined",
   "contact-connection-requested",
   "contact-connection-accepted",
+  "plan-upgrade-requested",
+  "plan-upgrade-approved",
+  "plan-upgrade-declined",
 ] as const;
 export type NotificationTemplateKey =
   (typeof NOTIFICATION_TEMPLATE_KEYS)[number];

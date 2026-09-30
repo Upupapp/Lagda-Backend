@@ -82,6 +82,10 @@ export const NOTIFICATION_PREFERENCE_CATEGORY_BY_TYPE: Readonly<
   // 091. Both connection notices are in-app only: no email to stop.
   CONTACT_CONNECTION_REQUESTED: null,
   CONTACT_CONNECTION_ACCEPTED: null,
+  // 093. About the account's own plan: always sent.
+  PLAN_UPGRADE_REQUESTED: null,
+  PLAN_UPGRADE_APPROVED: null,
+  PLAN_UPGRADE_DECLINED: null,
 };
 
 /** The category governing a type, or null when it is always sent. */

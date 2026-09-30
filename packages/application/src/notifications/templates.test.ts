@@ -257,6 +257,9 @@ const INPUT_BY_KEY: Record<string, NotificationTemplateInput> = {
   "workspace-invitation-declined": { recipientName: "Paulo Reyes", inviteeDisplayName: "Maria Santos", inviteeEmail: "maria@example.com", reason: "Wrong firm", invitationId: "inv_1", workspaceName: "Reyes Legal", inviterDisplayName: "Paulo Reyes", role: "sender", expiresAt: "2026-10-05T09:00:00.000Z" },
   "contact-connection-requested": { recipientName: "Maria Santos", requesterDisplayName: "Paulo Reyes", workspaceName: "Reyes Legal", connectionId: "cc_1" },
   "contact-connection-accepted": { recipientName: "Paulo Reyes", responderDisplayName: "Maria Santos", connectionId: "cc_1", contactId: "con_1" },
+  "plan-upgrade-requested": { recipientName: "Chris Cortes", requesterDisplayName: "Maria Santos", requesterEmail: "maria@example.com", planName: "Business", amount: "₱799.00", expiresAt: "7 October 2026", requestId: "pur_1" },
+  "plan-upgrade-approved": { recipientName: "Maria Santos", planName: "Business", requestId: "pur_1", paidUntil: "30 October 2026" },
+  "plan-upgrade-declined": { recipientName: "Maria Santos", planName: "Business", requestId: "pur_1" },
 };
 
 describe("inline images", () => {

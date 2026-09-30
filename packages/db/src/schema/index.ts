@@ -1887,6 +1887,29 @@ export interface ContactDiscoverySettingsTable {
   updated_at: Timestamptz;
 }
 
+/** 093. A person's plan. No row means Free. */
+export interface UserPlansTable {
+  user_id: string;
+  plan: string;
+  paid_until: ColumnType<Date | null, Date | null | undefined, Date | null>;
+  auto_renew: ColumnType<boolean, boolean | undefined, boolean>;
+  free_documents_used: ColumnType<number, number | undefined, number>;
+  updated_at: Timestamptz;
+}
+
+/** 093. A test-mode request to move to a paid plan. */
+export interface PlanUpgradeRequestsTable {
+  request_id: string;
+  user_id: string;
+  plan: string;
+  amount_pesos: number;
+  status: string;
+  created_at: Timestamptz;
+  expires_at: Timestamptz;
+  decided_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
+  decided_by: ColumnType<string | null, string | null | undefined, string | null>;
+}
+
 export interface Database {
   workspaces: WorkspacesTable;
   workspace_memberships: WorkspaceMembershipsTable;
@@ -1947,6 +1970,8 @@ export interface Database {
   user_notification_states: UserNotificationStatesTable;
   contact_connections: ContactConnectionsTable;
   contact_discovery_settings: ContactDiscoverySettingsTable;
+  user_plans: UserPlansTable;
+  plan_upgrade_requests: PlanUpgradeRequestsTable;
   document_seals: DocumentSealsTable;
   verification_records: VerificationRecordsTable;
   verification_access_challenges: VerificationAccessChallengesTable;

@@ -129,10 +129,12 @@ suite("contact connections (runtime role)", () => {
 
   it("goes down when empty and back up", async () => {
     await truncateAll(owner);
-    // 092 sits above 091 and comes off first.
-    const later = await migrateDown(owner.db);
-    expect(later.error).toBeUndefined();
-    expect(later.applied).toEqual(["092_contact_deletion"]);
+    // 093 and 092 sit above 091 and come off first.
+    for (const name of ["093_user_plans", "092_contact_deletion"]) {
+      const later = await migrateDown(owner.db);
+      expect(later.error).toBeUndefined();
+      expect(later.applied).toEqual([name]);
+    }
     const down = await migrateDown(owner.db);
     expect(down.error).toBeUndefined();
     expect(down.applied).toEqual(["091_contact_connections"]);

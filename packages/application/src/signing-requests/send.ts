@@ -30,14 +30,14 @@
 // sent.
 
 import type {
-  WorkspaceId, IdempotencyKey, TransactionId,
+  WorkspaceId, IdempotencyKey, TransactionId, UserId,
 } from "@lagda/contracts";
 // BACKEND-43. Factories, never hand-built event literals.
 import { requestSent, recipientActivated } from "../evidence/events.js";
 import {
   assessSendEligibility, describeSendBlocker, planActivation, routingShape,
   needsSigningAccess, isEditableForSend,
-  type WorkspaceCapability, type SendableRecipient,
+  type WorkspaceCapability, type SendableRecipient, findWorkspaceOwner,
 } from "@lagda/core";
 import type {
   Clock, TransactionManager, WorkspaceUnitOfWork,
@@ -47,6 +47,8 @@ import type {
   SigningAccessIdGenerator, RecipientActivationRecord,
 } from "../common/ports/index.js";
 import type { AuthenticatedActor } from "../common/ports/session.js";
+import type { PlanRepository } from "../common/ports/plans.js";
+import { claimFreeDocumentForSend } from "../plans/plans.js";
 import {
   ApplicationError, ApplicationValidationError, ResourceConflictError,
   ResourceNotFoundError,
@@ -166,6 +168,11 @@ export interface SendSigningRequestDependencies
   extends SigningAccessProvisioningDependencies {
   readonly transactions: TransactionManager;
   readonly idempotency: Omit<IdempotencyDependencies, "repository">;
+  /**
+   * 093. The Free allowance: one document for life under a Free owner's
+   * workspace. Absent means no allowance is applied.
+   */
+  readonly plans?: PlanRepository;
 }
 
 export interface SigningAccessPolicy {
@@ -237,6 +244,26 @@ export async function sendSigningRequest(
   input: SendSigningRequestInput,
   deps: SendSigningRequestDependencies,
 ): Promise<SigningRequestSentView> {
+  // 093. Whose Free allowance this send took, so a send that does not commit
+  // gives it back. The claim is its own statement (the plans table is not a
+  // tenant table), so the rollback below cannot undo it.
+  const claim: { userId: UserId | null } = { userId: null };
+
+  try {
+    return await sendInTransaction(input, deps, claim);
+  } catch (error) {
+    if (claim.userId !== null && deps.plans !== undefined) {
+      await deps.plans.releaseFreeDocument(claim.userId, deps.clock.now()).catch(() => undefined);
+    }
+    throw error;
+  }
+}
+
+async function sendInTransaction(
+  input: SendSigningRequestInput,
+  deps: SendSigningRequestDependencies,
+  claim: { userId: UserId | null },
+): Promise<SigningRequestSentView> {
   const { actor, workspaceId, signingRequestId } = input;
 
   return deps.transactions.runForWorkspace(workspaceId, async uow => {
@@ -245,7 +272,7 @@ export async function sendSigningRequest(
     let sent: SigningRequestSentView | undefined;
 
     const write = async (): Promise<{ statusCode: number; body: unknown }> => {
-      sent = await performSend(uow, input, deps);
+      sent = await performSend(uow, input, deps, claim);
       return { statusCode: 200, body: sent };
     };
 
@@ -285,6 +312,7 @@ async function performSend(
   uow: WorkspaceUnitOfWork,
   input: SendSigningRequestInput,
   deps: SendSigningRequestDependencies,
+  claim: { userId: UserId | null },
 ): Promise<SigningRequestSentView> {
   const signingRequestId = input.signingRequestId as SigningRequestId;
 
@@ -321,6 +349,13 @@ async function performSend(
   // pointing at a missing artifact is a workflow nobody could complete, and it
   // must not be sent (§96). No bytes are downloaded and no PDF is parsed.
   await assertSourceArtifactPresent(uow, request);
+
+  // 093. Last of the checks: a request that could not be sent anyway must not
+  // spend the Free document. The owner is read on this transaction.
+  if (deps.plans !== undefined) {
+    const owner = findWorkspaceOwner(await uow.memberships.list())?.userId ?? null;
+    claim.userId = await claimFreeDocumentForSend(owner, input.actor.userId, { plans: deps.plans, clock: deps.clock });
+  }
 
   const plan = planActivation(sendable);
   const now = deps.clock.now();

@@ -229,8 +229,9 @@ describe("production composition", () => {
     // `contactRequests` (086), requests sent to contacts, and 19 -> 20 with
     // `documentSharing` (087), shares, access requests and Shared with me,
     // and 20 -> 21 with `inbox` (089), the signed-in invitee's invitations,
+    // and 22 -> 23 with `plans` (093), plans, upgrades and the paid-feature gates,
     // and 21 -> 22 with `contactConnections` (091), finding people by email.
-    expect(subWired).toBe(22);
+    expect(subWired).toBe(23);
   });
 });
 

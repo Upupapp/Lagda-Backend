@@ -32,7 +32,7 @@ import type {
   ContactIdGenerator, WorkflowTemplateIdGenerator,
   UploadRequestIdGenerator, UploadRequestId,
   ContactRequestIdGenerator, ContactRequestId,
-  DocumentSharingIdGenerator, ContactConnectionIdGenerator, DocumentShareId, DocumentAccessRequestId,
+  DocumentSharingIdGenerator, ContactConnectionIdGenerator, PlanUpgradeRequestIdGenerator, DocumentShareId, DocumentAccessRequestId,
   DocumentIdGenerator, FolderIdGenerator, FolderId,
   PreparationIdGenerator,
   RecipientIdGenerator,
@@ -151,6 +151,11 @@ export function createContactRequestIdGenerator(): ContactRequestIdGenerator {
 /** 091. `cc` — one account asking another to become mutual contacts. */
 export function createContactConnectionIdGenerator(): ContactConnectionIdGenerator {
   return { nextConnectionId: () => mint("cc") };
+}
+
+/** 093. `pur` — a test-mode plan upgrade request. */
+export function createPlanUpgradeRequestIdGenerator(): PlanUpgradeRequestIdGenerator {
+  return { nextPlanUpgradeRequestId: () => mint("pur") };
 }
 
 export function createDocumentSharingIdGenerator(): DocumentSharingIdGenerator {

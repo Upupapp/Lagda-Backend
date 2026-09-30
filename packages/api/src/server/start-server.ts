@@ -26,6 +26,7 @@ import { createRecipientSessionTokenFactory } from "../security/recipient-sessio
 import { createPublicVerificationLookup } from "@lagda/db";
 import {
   createContactConnectionRepository, createPeopleDirectory, avatarVersionsOf, createUserAvatarRepository,
+  createPlanRepository,
 } from "@lagda/db";
 import { createVerificationAccessStore, createVerificationAccessThrottle } from "@lagda/db";
 import { createVerificationAccessCrypto } from "../security/verification-access-token.js";
@@ -53,7 +54,7 @@ import { createArgon2PasswordHasher } from "../security/password-hasher.js";
 import { buildIdentity } from "./identity-composition.js";
 import {
   createWorkspaceIdGenerator, createWorkspaceMemberIdGenerator, createJoinIdGenerator,
-  createContactIdGenerator, createUploadRequestIdGenerator, createContactRequestIdGenerator, createDocumentSharingIdGenerator, createWorkflowTemplateIdGenerator, createContactConnectionIdGenerator,
+  createContactIdGenerator, createUploadRequestIdGenerator, createContactRequestIdGenerator, createDocumentSharingIdGenerator, createWorkflowTemplateIdGenerator, createContactConnectionIdGenerator, createPlanUpgradeRequestIdGenerator,
   createDocumentIdGenerator, createFolderIdGenerator,
   createPreparationIdGenerator, createRecipientIdGenerator,
   createSigningRequestIdGenerator, createEvidenceEventIdGenerator,
@@ -183,6 +184,9 @@ export async function createProductionDependencies(
   const contactRequestIds = createContactRequestIdGenerator();
   const documentSharingIds = createDocumentSharingIdGenerator();
   const contactConnectionIds = createContactConnectionIdGenerator();
+  const planUpgradeRequestIds = createPlanUpgradeRequestIdGenerator();
+  // 093. Account-owned, through the pool like 091's connections.
+  const planRepository = createPlanRepository(database.db);
   const workflowTemplateIds = createWorkflowTemplateIdGenerator();
   // ONE object store for every surface that touches bytes: upload writes the
   // artifact, and the ceremony serves the same one back to the recipient.
@@ -252,6 +256,17 @@ export async function createProductionDependencies(
         avatars: () => createUserAvatarRepository(database.db),
         avatarVersions: (userIds: readonly string[]) => avatarVersionsOf(database.db, userIds),
       },
+      plans: () => ({
+        transactions, clock,
+        plans: planRepository,
+        ids: planUpgradeRequestIds,
+        templates: createTemplateRegistry(ALL_TEMPLATES),
+        notificationIds: {
+          ...createNotificationIntentIdGenerator(),
+          ...createNotificationDeliveryIdGenerator(),
+        },
+        approverEmail: config.planApproverEmail,
+      }),
       // 067. Needs strictly more than `contacts` does: creating a request
       // also creates the notification that tells the assignee about it, so
       // it carries the template registry and the notification id generators.
@@ -959,6 +974,8 @@ function buildLinkedSurfaces(input: {
       transactions,
       ...accessDeps,
       idempotency,
+      // 093. The Free allowance: one document under a Free owner's workspace.
+      plans: createPlanRepository(database.db),
     }),
     // BACKEND-37, routed by OD-154 — the sender's withdrawal (registerCancelRoutes,
     // create-app.ts). Was defined in the application layer with a matching route

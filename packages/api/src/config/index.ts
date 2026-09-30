@@ -111,6 +111,11 @@ export interface ApiConfig {
    * wrong links are worse than absent routes because they look like they work.
    */
   readonly appBaseUrl: string | null;
+  /**
+   * 093. The account that approves test-mode plan upgrades (the LAGDA owner).
+   * Absent means upgrades cannot be requested.
+   */
+  readonly planApproverEmail: string | null;
 
   /**
    * How long a signing bootstrap credential stays usable.
@@ -384,6 +389,7 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     mfaSecretKey: env["MFA_SECRET_KEY"] ?? null,
     mfaSecretKeyVersion: env["MFA_SECRET_KEY_VERSION"] ?? "v1",
     appBaseUrl: parseAppBaseUrl(env["APP_BASE_URL"]),
+    planApproverEmail: (env["PLAN_APPROVER_EMAIL"] ?? "").trim() || null,
     signingDeliveryKey: env["SIGNING_DELIVERY_KEY"] ?? null,
     signingDeliveryKeyVersion: env["SIGNING_DELIVERY_KEY_VERSION"] ?? "v1",
     signingAccessLifetimeMs: readInt(

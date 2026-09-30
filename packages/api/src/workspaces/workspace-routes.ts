@@ -123,6 +123,11 @@ export interface WorkspaceRouteOptions {
   readonly listDependencies: () => ListMyWorkspacesDependencies;
   readonly workspaceDependencies: () => GetWorkspaceDependencies;
   /**
+   * 093. Refuses a workspace the caller's plan does not allow (a Free
+   * account's second one). Absent means every account may create workspaces.
+   */
+  readonly beforeCreate?: (actor: { readonly userId: UserId; readonly sessionId: SessionId }) => Promise<void>;
+  /**
    * Optional so a test can exercise routing without a limiter. Absent means the
    * semantic policies are not applied — reported honestly rather than implied.
    */
@@ -226,6 +231,7 @@ export function registerWorkspaceRoutes(
       string | undefined);
 
     const body = request.body as CreateWorkspaceRequest;
+    if (options.beforeCreate !== undefined) await options.beforeCreate(actor);
     const created = await new CreateWorkspace(options.createWorkspaceDependencies())
       .execute({
         // From the validated session. There is no body field that could
