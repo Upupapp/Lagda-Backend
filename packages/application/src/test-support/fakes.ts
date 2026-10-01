@@ -940,6 +940,15 @@ function scopedOrganizationUnits(
       return Promise.resolve(true);
     },
 
+    deleteIfEmpty: unitId => {
+      const busy = store.organizationUnitMembers.some(m => m.workspaceId === scope && m.unitId === unitId)
+        || store.organizationUnits.some(u => u.workspaceId === scope && u.parentUnitId === unitId);
+      const index = store.organizationUnits.findIndex(u => u.workspaceId === scope && u.unitId === unitId);
+      if (busy || index === -1) return Promise.resolve(false);
+      store.organizationUnits.splice(index, 1);
+      return Promise.resolve(true);
+    },
+
     listMembers: unitId => Promise.resolve(
       store.organizationUnitMembers
         .filter(m => m.workspaceId === scope && m.unitId === unitId)

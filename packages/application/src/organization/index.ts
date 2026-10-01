@@ -21,7 +21,7 @@ import {
 import type { WorkspaceId, UserId } from "@lagda/contracts";
 import type { Clock } from "../common/ports/index.js";
 import {
-  ApplicationValidationError, ResourceNotFoundError,
+  ApplicationValidationError, ResourceNotFoundError, ResourceConflictError,
 } from "../common/errors/index.js";
 import {
   requireCapability, type WorkspaceAccessDependencies,
@@ -79,6 +79,12 @@ export interface ScopedOrganizationUnitRepository {
     readonly unitId: OrganizationUnitId;
     readonly now: number;
   }): Promise<boolean>;
+  /**
+   * 094. Deletes the unit only if it is EMPTY — no members and no sub-units —
+   * decided in the same statement that deletes it, so a member added at the
+   * same moment is never removed with it. Returns whether it applied.
+   */
+  deleteIfEmpty(unitId: OrganizationUnitId): Promise<boolean>;
 
   listMembers(unitId: OrganizationUnitId): Promise<readonly UnitMembership[]>;
   /** Idempotent: adding somebody twice is a no-op, not an error — including
@@ -291,6 +297,52 @@ export async function archiveOrganizationUnit(
     await recordActivity(uow, {
       action: "team.archived", actorUserId: input.actor.userId, occurredAt: deps.clock.now(),
       details: { teamName: existing.find(unit => unit.unitId === unitId)?.name ?? null },
+    });
+  });
+}
+
+export interface DeleteUnitInput {
+  readonly actor: { readonly userId: UserId };
+  readonly workspaceId: WorkspaceId;
+  readonly unitId: string;
+}
+
+/**
+ * 094. Deletes a team for good — only an empty one.
+ *
+ * A team with people in it, or with teams inside it, is refused with what to
+ * do first; nothing is ever cascaded. The check is repeated by the delete
+ * itself, so a person added in between keeps the team. The name is kept in
+ * the activity log's entry, as every other team entry keeps it.
+ * Held by the same capability that archiving was (`unit.archive`).
+ */
+export async function deleteOrganizationUnit(
+  input: DeleteUnitInput,
+  deps: OrganizationDependencies,
+): Promise<void> {
+  await requireCapability(
+    input.actor.userId, input.workspaceId, "unit.archive", deps);
+
+  const unitId = input.unitId as OrganizationUnitId;
+
+  await deps.transactions.runForWorkspace(input.workspaceId, async uow => {
+    const units = await uow.organizationUnits.list();
+    const unit = units.find(u => u.unitId === unitId);
+    if (unit === undefined) throw new ResourceNotFoundError("OrganizationUnit");
+    if (units.some(u => u.parentUnitId === unitId)) {
+      throw new ResourceConflictError("Delete or move the teams inside this one first.");
+    }
+    const members = await uow.organizationUnits.listMembers(unitId);
+    if (members.length > 0) {
+      throw new ResourceConflictError(
+        `Remove the ${String(members.length)} ${members.length === 1 ? "person" : "people"} in this team first.`);
+    }
+    if (!(await uow.organizationUnits.deleteIfEmpty(unitId))) {
+      throw new ResourceConflictError("Someone was just added to this team. Remove them first.");
+    }
+    await recordActivity(uow, {
+      action: "team.deleted", actorUserId: input.actor.userId, occurredAt: deps.clock.now(),
+      details: { teamName: unit.name },
     });
   });
 }

@@ -2,7 +2,7 @@
 
 import { describe, it, expect } from "vitest";
 import {
-  createOrganizationUnit, updateOrganizationUnit, archiveOrganizationUnit,
+  createOrganizationUnit, updateOrganizationUnit, archiveOrganizationUnit, deleteOrganizationUnit,
   addUnitMember, removeUnitMember, listOrganizationUnits,
   setUnitMemberTitle, listUnitMembers,
   type OrganizationDependencies, type OrganizationUnitId,
@@ -225,6 +225,42 @@ describe("archiving", () => {
 
     await archive();
     await expect(archive()).rejects.toThrow();
+  });
+});
+
+describe("deleting (094)", () => {
+  const del = (deps: OrganizationDependencies, unitId: string, actor = OWNER) =>
+    deleteOrganizationUnit({ actor: { userId: actor }, workspaceId: WS, unitId }, deps);
+
+  it("deletes an empty team for good, and records it with its name", async () => {
+    const h = harness();
+    const unit = await create(h.deps, { name: "Legal" });
+    await del(h.deps, unit.unitId);
+    const units = await listOrganizationUnits({ actor: { userId: OWNER }, workspaceId: WS }, h.deps);
+    expect(units).toEqual([]);
+    expect(h.store.activity.at(-1)).toMatchObject({ action: "team.deleted", actorUserId: OWNER, details: { teamName: "Legal" } });
+  });
+
+  it("refuses while anyone is in the team, and says how many", async () => {
+    const h = harness();
+    const unit = await create(h.deps, { name: "Legal" });
+    await addUnitMember({ actor: { userId: OWNER }, workspaceId: WS, unitId: unit.unitId, userId: MEMBER }, h.deps);
+    await expect(del(h.deps, unit.unitId)).rejects.toThrow("Remove the 1 person in this team first.");
+    expect(await listOrganizationUnits({ actor: { userId: OWNER }, workspaceId: WS }, h.deps)).toHaveLength(1);
+  });
+
+  it("refuses while teams are inside it — nothing is cascaded", async () => {
+    const h = harness();
+    const parent = await create(h.deps, { name: "Legal" });
+    await create(h.deps, { name: "Contracts", parentUnitId: parent.unitId });
+    await expect(del(h.deps, parent.unitId)).rejects.toThrow("Delete or move the teams inside this one first.");
+  });
+
+  it("is for those who may manage teams, and a missing team is not found", async () => {
+    const h = harness();
+    const unit = await create(h.deps, { name: "Legal" });
+    await expect(del(h.deps, unit.unitId, MEMBER)).rejects.toThrow();
+    await expect(del(h.deps, "unit_nope")).rejects.toThrow();
   });
 });
 

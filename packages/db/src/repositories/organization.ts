@@ -113,6 +113,22 @@ export function createScopedOrganizationUnitRepository(
       return Number(result.numUpdatedRows ?? 0n) === 1;
     },
 
+    // 094. Empty, decided in the WHERE clause: no members and no sub-units at
+    // the moment of the delete, whatever an earlier read saw.
+    async deleteIfEmpty(unitId) {
+      const result = await trx.deleteFrom("organization_units")
+        .where("workspace_id", "=", scope)
+        .where("unit_id", "=", unitId as string)
+        .where(eb => eb.not(eb.exists(
+          eb.selectFrom("organization_unit_members as m").select("m.user_id")
+            .where("m.workspace_id", "=", scope).where("m.unit_id", "=", unitId as string))))
+        .where(eb => eb.not(eb.exists(
+          eb.selectFrom("organization_units as c").select("c.unit_id")
+            .where("c.workspace_id", "=", scope).where("c.parent_unit_id", "=", unitId as string))))
+        .executeTakeFirst();
+      return Number(result.numDeletedRows ?? 0n) === 1;
+    },
+
     async listMembers(unitId: OrganizationUnitId): Promise<readonly UnitMembership[]> {
       const rows = await trx.selectFrom("organization_unit_members")
         .select(["user_id", "title"])

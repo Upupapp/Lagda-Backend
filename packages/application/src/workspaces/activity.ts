@@ -167,6 +167,8 @@ export function describeActivity(record: Pick<WorkspaceActivityRecord, "action" 
       return { summary: `${who} renamed the team ${q(text(d, "from"))} to ${q(team)}`, subjectLabel: team };
     case "team.archived":
       return { summary: `${who} archived the team ${q(team)}`, subjectLabel: team };
+    case "team.deleted":
+      return { summary: `${who} deleted the team ${q(team)}`, subjectLabel: team };
     case "team.member_added":
       return { summary: `${who} added ${target} to ${q(team)}`, subjectLabel: target };
     case "team.member_updated": {

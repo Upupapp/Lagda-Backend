@@ -4,6 +4,7 @@
 //   POST   /workspaces/:workspaceId/units
 //   PATCH  /workspaces/:workspaceId/units/:unitId
 //   POST   /workspaces/:workspaceId/units/:unitId/archive
+//   DELETE /workspaces/:workspaceId/units/:unitId        (094: an empty team, for good)
 //   GET    /workspaces/:workspaceId/units/:unitId/members
 //   POST   /workspaces/:workspaceId/units/:unitId/members
 //   PATCH  /workspaces/:workspaceId/units/:unitId/members/:userId
@@ -22,7 +23,7 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Type } from "@sinclair/typebox";
 import {
-  createOrganizationUnit, updateOrganizationUnit, archiveOrganizationUnit,
+  createOrganizationUnit, updateOrganizationUnit, archiveOrganizationUnit, deleteOrganizationUnit,
   addUnitMember, removeUnitMember, listOrganizationUnits,
   setUnitMemberTitle, listUnitMembers,
   type OrganizationDependencies,
@@ -234,6 +235,23 @@ export function registerOrganizationRoutes(
     const actor = await requireActor(request);
 
     await archiveOrganizationUnit({
+      actor, workspaceId: workspaceId as WorkspaceId, unitId,
+    }, options.organizationDependencies);
+
+    return reply.code(204).send();
+  });
+
+  // 094. Deleting is real deletion, and only of an EMPTY team: 409 with what
+  // to do first when it has people or teams inside it.
+  app.delete("/workspaces/:workspaceId/units/:unitId", {
+    schema: { params: UnitParams, response: { 204: Type.Null() } },
+  }, async (request, reply) => {
+    const { workspaceId, unitId } = request.params as {
+      workspaceId: string; unitId: string;
+    };
+    const actor = await requireActor(request);
+
+    await deleteOrganizationUnit({
       actor, workspaceId: workspaceId as WorkspaceId, unitId,
     }, options.organizationDependencies);
 

@@ -37,6 +37,8 @@ export const WORKSPACE_ACTIVITY_ACTIONS = Object.freeze({
   "team.created": "teams",
   "team.renamed": "teams",
   "team.archived": "teams",
+  // 094. An empty team, deleted for good.
+  "team.deleted": "teams",
   "team.member_added": "teams",
   "team.member_updated": "teams",
   "team.member_removed": "teams",
