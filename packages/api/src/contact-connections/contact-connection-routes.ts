@@ -10,6 +10,8 @@
 //   GET  /me/contact-discovery        |  PUT /me/contact-discovery
 //   GET  /me/people/:userId/avatar    a found person's, or a requester's, photo
 //   GET  /workspaces/:workspaceId/contacts/:contactId/avatar   a contact's photo
+//   GET  /workspaces/:workspaceId/people                       members' photo versions
+//   GET  /workspaces/:workspaceId/members/:userId/avatar       a fellow member's photo
 //
 // Registered inside the authenticated scope: every route needs the session,
 // and every mutation its CSRF check. A user id is only ever taken from the
@@ -21,6 +23,7 @@ import {
   lookupPerson, sendConnectionRequest, listConnections, acceptConnectionRequest,
   declineConnectionRequest, cancelConnectionRequest, getDiscovery, setDiscovery,
   canSeePhoto, resolveContactAccounts, getContact, policyById,
+  listWorkspacePeople, canSeeMemberPhoto,
   type ContactConnectionDependencies, type ContactDependencies, type PersonView,
   type ConnectionView, type SessionId, type UserId,
 } from "@lagda/application";
@@ -95,6 +98,19 @@ const EmailBody = Type.Object({
 const WorkspaceParams = Type.Object({ workspaceId: Type.String({ minLength: 1, maxLength: 64 }) });
 const ConnectionParams = Type.Object({ connectionId: Type.String({ minLength: 1, maxLength: 64 }) });
 const PersonParams = Type.Object({ userId: Type.String({ minLength: 1, maxLength: 64 }) });
+const MemberPhotoParams = Type.Object({
+  workspaceId: Type.String({ minLength: 1, maxLength: 64 }),
+  userId: Type.String({ minLength: 1, maxLength: 64 }),
+});
+
+/** Each current member and their photo's version (`…/members/{userId}/avatar?v=`). */
+const WorkspacePeopleResponseSchema = Type.Object({
+  people: Type.Array(Type.Object({
+    userId: Type.String(),
+    avatarVersion: Nullable(Type.String()),
+  }, { additionalProperties: false })),
+}, { additionalProperties: false });
+
 const ContactParams = Type.Object({
   workspaceId: Type.String({ minLength: 1, maxLength: 64 }),
   contactId: Type.String({ minLength: 1, maxLength: 64 }),
@@ -327,5 +343,34 @@ export function registerContactConnectionRoutes(
     const account = accounts.get(contact.contactId);
     if (account === undefined) return noPhoto(reply);
     return sendPhoto(reply, account.userId);
+  });
+
+  // ── Fellow members' photos (the Workspace's people and activity log) ────
+  app.get("/workspaces/:workspaceId/people", {
+    schema: { params: WorkspaceParams, response: { 200: WorkspacePeopleResponseSchema } },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await actorOf(request);
+    if (actor === null) return unauthenticated(reply);
+    const { workspaceId } = request.params as Static<typeof WorkspaceParams>;
+    // Not a member: the same hidden 404 as every other workspace read.
+    const people = await listWorkspacePeople(actor.userId, workspaceId as WorkspaceId, options.contactDependencies());
+    const versions = await options.avatarVersions(people);
+    return reply.status(200).send({
+      people: people.map(userId => ({ userId, avatarVersion: versions.get(userId) ?? null })),
+    });
+  });
+
+  app.get("/workspaces/:workspaceId/members/:userId/avatar", {
+    schema: { params: MemberPhotoParams },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const actor = await actorOf(request);
+    if (actor === null) return unauthenticated(reply);
+    const { workspaceId, userId } = request.params as Static<typeof MemberPhotoParams>;
+    // One answer for "not allowed" and "no photo".
+    if (!(await canSeeMemberPhoto(actor.userId, workspaceId as WorkspaceId, userId as UserId, options.contactDependencies()))) {
+      return noPhoto(reply);
+    }
+    return sendPhoto(reply, userId);
   });
 }

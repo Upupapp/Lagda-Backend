@@ -240,6 +240,8 @@ export interface WorkspaceActivityView {
   readonly occurredAt: number;
   readonly category: WorkspaceActivityCategory;
   readonly action: WorkspaceActivityAction;
+  /** Who did it (null: the system). Lets a reader say "You" and show a photo. */
+  readonly actorUserId: string | null;
   readonly actorName: string | null;
   readonly summary: string;
   readonly subjectLabel: string | null;
@@ -292,6 +294,7 @@ export async function listWorkspaceActivity(
         occurredAt: row.occurredAt,
         category: WORKSPACE_ACTIVITY_ACTIONS[row.action],
         action: row.action,
+        actorUserId: row.actorUserId ?? null,
         actorName: typeof row.details["actorName"] === "string" ? row.details["actorName"] : null,
         ...describeActivity(row),
       })),

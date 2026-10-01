@@ -4225,6 +4225,7 @@
                           "occurredAt",
                           "category",
                           "action",
+                          "actorUserId",
                           "actorName",
                           "summary",
                           "subjectLabel"
@@ -4278,6 +4279,16 @@
                           },
                           "action": {
                             "type": "string"
+                          },
+                          "actorUserId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "actorName": {
                             "anyOf": [

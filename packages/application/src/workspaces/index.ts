@@ -18,5 +18,6 @@ export * from "./my-invitations.js";
 export * from "./workspace-join.js";
 export * from "./members.js";
 export * from "./activity.js";
+export * from "./member-photos.js";
 export * from "./branding.js";
 export * from "./usage.js";

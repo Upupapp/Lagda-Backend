@@ -128,6 +128,8 @@ export const WorkspaceActivityEventSchema = Type.Object({
   occurredAt: Type.Integer(),
   category: ActivityCategorySchema,
   action: Type.String(),
+  /** Who did it — for "You" and their photo. Null for the system. */
+  actorUserId: Type.Union([Type.String(), Type.Null()]),
   actorName: Type.Union([Type.String(), Type.Null()]),
   summary: Type.String(),
   subjectLabel: Type.Union([Type.String(), Type.Null()]),
