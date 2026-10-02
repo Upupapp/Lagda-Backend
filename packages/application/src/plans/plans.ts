@@ -168,6 +168,12 @@ export interface PlanDependencies extends PlanReadDependencies {
   readonly notificationIds: NotificationIntentIdGenerator & NotificationDeliveryIdGenerator;
   /** Who approves upgrades, or null when upgrades are not offered. */
   readonly approverEmail: string | null;
+  /**
+   * Test mode: a person approves THEIR OWN request (the email goes to them,
+   * not to the approver). Off before real payments — then only the approver
+   * decides. The approver may always decide anyone's.
+   */
+  readonly selfApprove?: boolean;
 }
 
 function notifier(uow: PlanUnitOfWork, deps: PlanDependencies) {
@@ -190,6 +196,14 @@ async function isApprover(actor: AuthenticatedActor, deps: PlanDependencies): Pr
   if (approver === null) return false;
   const account = await deps.plans.account(actor.userId);
   return account !== null && normalized(account.email) === approver;
+}
+
+/** The approver may decide any request; in self-approve mode so may its owner. */
+async function requireDecider(
+  actor: AuthenticatedActor, request: PlanUpgradeRequestRecord, deps: PlanDependencies,
+): Promise<void> {
+  if (deps.selfApprove === true && request.userId === actor.userId) return;
+  await requireApprover(actor, deps);
 }
 
 async function requireApprover(actor: AuthenticatedActor, deps: PlanDependencies): Promise<void> {
@@ -261,7 +275,7 @@ export async function getMyPlan(actor: AuthenticatedActor, deps: PlanDependencie
     freeDocumentLimit: FREE_DOCUMENT_LIMIT,
     pendingRequest: live === null ? null : requestView(live, now),
     approver: await isApprover(actor, deps),
-    upgradesAvailable: normalized(deps.approverEmail) !== null,
+    upgradesAvailable: deps.selfApprove === true || normalized(deps.approverEmail) !== null,
   };
 }
 
@@ -441,9 +455,10 @@ export async function requestPlanUpgrade(
   const mismatched = bankMismatches(input.bank);
   if (mismatched.length > 0) throw new TestBankAccountError(mismatched);
 
-  const approver = await approverAccount(deps);
   const requester = await deps.plans.account(actor.userId);
   if (requester === null) throw new ResourceNotFoundError("Account");
+  // Self-approve: the approval email goes to the requester themselves.
+  const approver = deps.selfApprove === true ? requester : await approverAccount(deps);
 
   const now = deps.clock.now();
   const existing = await deps.plans.findPendingRequest(actor.userId);
@@ -534,9 +549,9 @@ export async function getPlanUpgradeRequest(
   requestId: string,
   deps: PlanDependencies,
 ): Promise<PlanUpgradeReviewView> {
-  await requireApprover(actor, deps);
   const request = await deps.plans.findRequest(requestId);
   if (request === null) throw new ResourceNotFoundError("PlanUpgradeRequest");
+  await requireDecider(actor, request, deps);
   return review(request, deps, deps.clock.now());
 }
 
@@ -546,9 +561,9 @@ export async function decidePlanUpgradeRequest(
   decision: "approve" | "decline",
   deps: PlanDependencies,
 ): Promise<PlanUpgradeReviewView> {
-  await requireApprover(actor, deps);
   const request = await deps.plans.findRequest(requestId);
   if (request === null) throw new ResourceNotFoundError("PlanUpgradeRequest");
+  await requireDecider(actor, request, deps);
   const now = deps.clock.now();
   const status = statusAt(request, now);
   if (status !== "pending") {

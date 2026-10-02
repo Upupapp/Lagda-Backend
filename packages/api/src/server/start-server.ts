@@ -266,6 +266,7 @@ export async function createProductionDependencies(
           ...createNotificationDeliveryIdGenerator(),
         },
         approverEmail: config.planApproverEmail,
+        selfApprove: config.planSelfApprove,
       }),
       // 067. Needs strictly more than `contacts` does: creating a request
       // also creates the notification that tells the assignee about it, so

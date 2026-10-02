@@ -116,6 +116,8 @@ export interface ApiConfig {
    * Absent means upgrades cannot be requested.
    */
   readonly planApproverEmail: string | null;
+  /** Test mode: people approve their own plan requests (PLAN_SELF_APPROVE=true). */
+  readonly planSelfApprove: boolean;
 
   /**
    * How long a signing bootstrap credential stays usable.
@@ -390,6 +392,7 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     mfaSecretKeyVersion: env["MFA_SECRET_KEY_VERSION"] ?? "v1",
     appBaseUrl: parseAppBaseUrl(env["APP_BASE_URL"]),
     planApproverEmail: (env["PLAN_APPROVER_EMAIL"] ?? "").trim() || null,
+    planSelfApprove: (env["PLAN_SELF_APPROVE"] ?? "").trim().toLowerCase() === "true",
     signingDeliveryKey: env["SIGNING_DELIVERY_KEY"] ?? null,
     signingDeliveryKeyVersion: env["SIGNING_DELIVERY_KEY_VERSION"] ?? "v1",
     signingAccessLifetimeMs: readInt(

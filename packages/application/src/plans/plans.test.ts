@@ -281,6 +281,40 @@ describe("upgrading in test mode", () => {
     expect((await listPendingPlanUpgradeRequests(actor(BOSS), deps)).map(r => r.requesterName)).toEqual(["Ana Reyes"]);
   });
 
+  describe("self-approve (test mode)", () => {
+    beforeEach(() => { deps = { ...deps, selfApprove: true }; });
+
+    it("sends the approval email to the requester, not the approver", async () => {
+      await requestPlanUpgrade(actor(ANA), { plan: "business", bank: sample }, deps);
+      const [notice] = intents();
+      expect(notice).toMatchObject({ notificationType: "PLAN_UPGRADE_REQUESTED", audience: { kind: "USER", userId: ANA } });
+    });
+
+    it("lets the requester approve their own request, and only theirs", async () => {
+      const { requestId } = await requestPlanUpgrade(actor(ANA), { plan: "business", bank: sample }, deps);
+      await expect(decidePlanUpgradeRequest(actor(BEN), requestId, "approve", deps)).rejects.toBeInstanceOf(ResourceNotFoundError);
+      expect((await getPlanUpgradeRequest(actor(ANA), requestId, deps)).requesterName).toBe("Ana Reyes");
+      expect((await decidePlanUpgradeRequest(actor(ANA), requestId, "approve", deps)).status).toBe("approved");
+      expect((await getMyPlan(actor(ANA), deps)).plan).toBe("business");
+    });
+
+    it("the approver can still decide anyone's", async () => {
+      const { requestId } = await requestPlanUpgrade(actor(ANA), { plan: "personal", bank: sample }, deps);
+      expect((await decidePlanUpgradeRequest(actor(BOSS), requestId, "approve", deps)).status).toBe("approved");
+    });
+
+    it("works with no approver configured", async () => {
+      deps = { ...deps, approverEmail: null };
+      expect((await getMyPlan(actor(ANA), deps)).upgradesAvailable).toBe(true);
+      await expect(requestPlanUpgrade(actor(ANA), { plan: "personal", bank: sample }, deps)).resolves.toMatchObject({ status: "pending" });
+    });
+  });
+
+  it("without self-approve, a requester cannot approve their own", async () => {
+    const { requestId } = await requestPlanUpgrade(actor(ANA), { plan: "personal", bank: sample }, deps);
+    await expect(decidePlanUpgradeRequest(actor(ANA), requestId, "approve", deps)).rejects.toBeInstanceOf(ResourceNotFoundError);
+  });
+
   it("expires after seven days, and a new request can be made", async () => {
     const { requestId } = await requestPlanUpgrade(actor(ANA), { plan: "personal", bank: sample }, deps);
     clock.t = AT + PLAN_REQUEST_LIFETIME_MS + 1;
