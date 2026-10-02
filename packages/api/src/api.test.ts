@@ -62,6 +62,18 @@ describe("configuration", () => {
     expect(config({}).appBaseUrl).toBeNull();
   });
 
+  it("scopes the pre-auth cookie to /auth unless told where the browser sees it", () => {
+    expect(config({}).preAuthCookiePath).toBe("/auth");
+    // Behind a same-origin proxy that mounts the API under /api.
+    expect(config({ PRE_AUTH_COOKIE_PATH: "/api/auth" }).preAuthCookiePath).toBe("/api/auth");
+  });
+
+  it("rejects a pre-auth cookie path that would send the credential beyond the auth routes", () => {
+    for (const bad of ["/", "/api", "api/auth", "/auth/", "/api/auth; Domain=x"]) {
+      expect(() => config({ PRE_AUTH_COOKIE_PATH: bad })).toThrow(ApiConfigError);
+    }
+  });
+
   it("accepts a bare app origin", () => {
     expect(config({ APP_BASE_URL: "https://app.lagda.io" }).appBaseUrl)
       .toBe("https://app.lagda.io");

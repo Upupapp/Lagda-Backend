@@ -31,6 +31,7 @@ const CONFIG = {
   corsOrigins: ["https://app.lagda.example"],
   sessionCookieSecure: true,
   sessionCookieSameSite: "lax",
+  preAuthCookiePath: "/api/auth",
 } as unknown as ApiConfig;
 
 interface Built {
@@ -283,8 +284,10 @@ describe("POST /auth/mfa/verify", () => {
     // The session credential is NOT the pre-auth credential. Promoting one
     // into the other is the session-fixation shape this design avoids (§268).
     expect(session?.value).not.toBe(PRE_AUTH);
-    // And the half-finished credential is gone from the browser.
+    // And the half-finished credential is gone from the browser. Cleared at the
+    // SAME path it was set with, or the browser keeps the original.
     expect(preAuth?.value).toBe("");
+    expect(preAuth?.["path"]).toBe("/api/auth");
     await app.close();
   });
 

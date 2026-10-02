@@ -117,8 +117,12 @@ export const PRE_AUTH_COOKIE_NAME = "lagda_pre_auth";
  * is not even TRANSMITTED to `/documents`, `/workspaces` or `/profile`. That is
  * a stronger guarantee than rejecting it on arrival — a value that never
  * reaches a handler cannot be misread by one (§46, §258).
+ *
+ * The path is the one the BROWSER requests (`config.preAuthCookiePath`): behind
+ * a same-origin proxy that mounts this API under `/api` it is `/api/auth`. With
+ * `/auth` there the browser never returns the cookie and the ceremony cannot
+ * be finished.
  */
-const PRE_AUTH_PATH = "/auth";
 
 export function preAuthCookieOptions(
   config: ApiConfig,
@@ -126,7 +130,7 @@ export function preAuthCookieOptions(
 ): CookieSerializeOptions {
   return {
     ...baseCookie(config),
-    path: PRE_AUTH_PATH,
+    path: config.preAuthCookiePath,
     // Carries a completed password proof. Never readable by script.
     httpOnly: true,
     // Short by construction — the caller passes the pending transaction's
@@ -139,7 +143,7 @@ export function clearPreAuthCookieOptions(config: ApiConfig): CookieSerializeOpt
   // Same name, path and domain, or the browser keeps the original.
   return {
     ...baseCookie(config),
-    path: PRE_AUTH_PATH,
+    path: config.preAuthCookiePath,
     httpOnly: true,
     maxAge: 0,
     expires: new Date(0),

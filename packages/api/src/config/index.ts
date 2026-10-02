@@ -118,6 +118,15 @@ export interface ApiConfig {
   readonly planApproverEmail: string | null;
   /** Test mode: people approve their own plan requests (PLAN_SELF_APPROVE=true). */
   readonly planSelfApprove: boolean;
+  /**
+   * The `Path` of the pre-auth (MFA ceremony) cookie, as the BROWSER sees the
+   * auth routes. `/auth` when the browser calls this API directly; `/api/auth`
+   * when a same-origin proxy mounts it under `/api` — a browser matches the
+   * cookie's path against the URL it requested, not the one the proxy forwards,
+   * so `/auth` there means the cookie is never sent back and no MFA sign-in
+   * can complete.
+   */
+  readonly preAuthCookiePath: string;
 
   /**
    * How long a signing bootstrap credential stays usable.
@@ -268,6 +277,19 @@ function parseTrustProxy(raw: string | undefined): TrustProxySetting {
  * to CONSTRUCT urls rather than to compare them, so a trailing slash or a
  * stray path silently changes every link the system emits.
  */
+function parsePreAuthCookiePath(raw: string | undefined): string {
+  if (raw === undefined || raw.trim() === "") return "/auth";
+  const value = raw.trim();
+  // A cookie path, and one that still ends at the auth routes: the point of
+  // the scope is that the credential is not sent anywhere else.
+  if (!/^(\/[A-Za-z0-9._~-]+)*\/auth$/.test(value)) {
+    throw new ApiConfigError(
+      `PRE_AUTH_COOKIE_PATH must be a path ending in /auth, such as /auth or `
+      + `/api/auth: ${JSON.stringify(value)}.`);
+  }
+  return value;
+}
+
 function parseAppBaseUrl(raw: string | undefined): string | null {
   if (raw === undefined || raw.trim() === "") return null;
   const value = raw.trim();
@@ -393,6 +415,7 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     appBaseUrl: parseAppBaseUrl(env["APP_BASE_URL"]),
     planApproverEmail: (env["PLAN_APPROVER_EMAIL"] ?? "").trim() || null,
     planSelfApprove: (env["PLAN_SELF_APPROVE"] ?? "").trim().toLowerCase() === "true",
+    preAuthCookiePath: parsePreAuthCookiePath(env["PRE_AUTH_COOKIE_PATH"]),
     signingDeliveryKey: env["SIGNING_DELIVERY_KEY"] ?? null,
     signingDeliveryKeyVersion: env["SIGNING_DELIVERY_KEY_VERSION"] ?? "v1",
     signingAccessLifetimeMs: readInt(

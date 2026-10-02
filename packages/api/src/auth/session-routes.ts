@@ -165,7 +165,8 @@ export function registerSessionRoutes(
       // half-authenticated browser as a full one — the ambiguity would live in
       // every future authorization check rather than here.
       //
-      // Scoped to `/auth` so it is not even transmitted to application routes:
+      // Scoped to the auth routes (`config.preAuthCookiePath`, as the browser
+      // sees them) so it is not even transmitted to application routes:
       // a credential the browser does not send to `/documents` cannot be
       // mistaken for authorization there (§46, §258).
       const preAuthMaxAge = Math.max(
