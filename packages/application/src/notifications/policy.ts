@@ -418,6 +418,16 @@ export const NOTIFICATION_POLICIES: Record<NotificationType, NotificationPolicy>
     audienceKind: "USER",
     scopeKind: "GLOBAL_USER",
   },
+  // 095. The website's inbox is one account's: GLOBAL_USER, emailed and in-app.
+  PUBLIC_INQUIRY_RECEIVED: {
+    notificationType: "PUBLIC_INQUIRY_RECEIVED",
+    templateKey: "public-inquiry-received",
+    channel: "EMAIL",
+    sourceKind: "PUBLIC_INQUIRY",
+    // The LAGDA owner's inbox account. Never the visitor.
+    audienceKind: "USER",
+    scopeKind: "GLOBAL_USER",
+  },
 };
 
 export function policyFor(notificationType: NotificationType): NotificationPolicy {

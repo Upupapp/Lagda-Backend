@@ -86,6 +86,8 @@ export const NOTIFICATION_PREFERENCE_CATEGORY_BY_TYPE: Readonly<
   PLAN_UPGRADE_REQUESTED: null,
   PLAN_UPGRADE_APPROVED: null,
   PLAN_UPGRADE_DECLINED: null,
+  // 095. The operator's own inbox: a message nobody is told about is lost.
+  PUBLIC_INQUIRY_RECEIVED: null,
 };
 
 /** The category governing a type, or null when it is always sent. */

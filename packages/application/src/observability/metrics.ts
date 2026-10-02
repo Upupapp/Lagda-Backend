@@ -49,6 +49,8 @@ export const METRIC_NAMES = [
   "contact_connection_operations_total",
   // 093. Plan upgrade requests and decisions.
   "plan_operations_total",
+  // 095. Messages received from the public website.
+  "public_inquiry_operations_total",
   // Migration 058. Workflow-template writes — created, updated, deleted.
   "workflow_template_operations_total",
   // BACKEND-29. Document writes — created, renamed.
@@ -153,6 +155,8 @@ export const METRIC_LABELS = {
   document_sharing_operations_total: ["operation", "result", "processRole"],
   contact_connection_operations_total: ["operation", "result", "processRole"],
   plan_operations_total: ["operation", "result", "processRole"],
+  // `operation` is the message kind: demo, contact or waitlist.
+  public_inquiry_operations_total: ["operation", "result", "processRole"],
   // `operation` is a six-value union in code (created, updated, deleted,
   // document_attached, document_detached — 059 — and fields_saved — 060).
   // Deliberately NOT the template NAME or any slot label: a label names the

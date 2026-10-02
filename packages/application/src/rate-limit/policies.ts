@@ -701,6 +701,21 @@ export const RATE_LIMIT_POLICIES = {
       + "plan approver from one signed-in account; subject to product review.",
   },
 
+  // 095. The public website's three forms. No account and no credential, so
+  // IP is the only scope; each accepted message emails the LAGDA owner.
+  "public-inquiry.submit.ip": {
+    id: "public-inquiry.submit.ip",
+    scopeType: "ip",
+    limit: 5,
+    windowMs: 60 * MINUTE,
+    failureMode: "fail-closed",
+    source: "095 - not specified by the handoff. A person sends one message, "
+      + "perhaps a correction; five an hour is above that and far below what "
+      + "it takes to fill an inbox or a table. Fail-closed: nobody is locked "
+      + "out of anything they own, and an unmetered anonymous write is the "
+      + "abuse this exists to bound. Subject to product review.",
+  },
+
   // 078. The public join-link check: anyone holding a link, before sign-in.
   "workspace.join.preview.ip": {
     id: "workspace.join.preview.ip",

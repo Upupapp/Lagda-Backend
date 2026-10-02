@@ -32,7 +32,7 @@ import type {
   ContactIdGenerator, WorkflowTemplateIdGenerator,
   UploadRequestIdGenerator, UploadRequestId,
   ContactRequestIdGenerator, ContactRequestId,
-  DocumentSharingIdGenerator, ContactConnectionIdGenerator, PlanUpgradeRequestIdGenerator, DocumentShareId, DocumentAccessRequestId,
+  DocumentSharingIdGenerator, ContactConnectionIdGenerator, PlanUpgradeRequestIdGenerator, PublicInquiryIdGenerator, DocumentShareId, DocumentAccessRequestId,
   DocumentIdGenerator, FolderIdGenerator, FolderId,
   PreparationIdGenerator,
   RecipientIdGenerator,
@@ -156,6 +156,11 @@ export function createContactConnectionIdGenerator(): ContactConnectionIdGenerat
 /** 093. `pur` — a test-mode plan upgrade request. */
 export function createPlanUpgradeRequestIdGenerator(): PlanUpgradeRequestIdGenerator {
   return { nextPlanUpgradeRequestId: () => mint("pur") };
+}
+
+/** 095. `pin` — a message from the public website. */
+export function createPublicInquiryIdGenerator(): PublicInquiryIdGenerator {
+  return { nextPublicInquiryId: () => mint("pin") };
 }
 
 export function createDocumentSharingIdGenerator(): DocumentSharingIdGenerator {

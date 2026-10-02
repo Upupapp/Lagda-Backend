@@ -195,7 +195,7 @@ suite("workflow template content autosave (088, runtime role)", () => {
     await insert(WS_A, "wft_plain");
 
     // Later migrations (092 … 089) come off first; they are empty here.
-    for (const name of ["093_user_plans", "092_contact_deletion", "091_contact_connections", "090_user_notification_states", "089_invitation_inbox"]) {
+    for (const name of ["095_public_inquiries", "094_team_deletion", "093_user_plans", "092_contact_deletion", "091_contact_connections", "090_user_notification_states", "089_invitation_inbox"]) {
       const later = await migrateDown(owner.db);
       expect(later.error).toBeUndefined();
       expect(later.applied).toEqual([name]);

@@ -175,6 +175,8 @@ export const NOTIFICATION_TYPES = [
   "PLAN_UPGRADE_APPROVED",
   /** 093. The requester told their upgrade was declined. */
   "PLAN_UPGRADE_DECLINED",
+  /** 095. The LAGDA owner told a visitor sent a demo, contact or waitlist message. */
+  "PUBLIC_INQUIRY_RECEIVED",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -313,6 +315,8 @@ export const NOTIFICATION_SOURCE_KINDS = [
   "CONTACT_CONNECTION",
   /** 093. The upgrade request. One notice of each type per request. */
   "PLAN_UPGRADE_REQUEST",
+  /** 095. A message from the public website. One notice per message. */
+  "PUBLIC_INQUIRY",
 ] as const;
 export type NotificationSourceKind =
   (typeof NOTIFICATION_SOURCE_KINDS)[number];
@@ -468,6 +472,7 @@ export const NOTIFICATION_TEMPLATE_KEYS = [
   "plan-upgrade-requested",
   "plan-upgrade-approved",
   "plan-upgrade-declined",
+  "public-inquiry-received",
 ] as const;
 export type NotificationTemplateKey =
   (typeof NOTIFICATION_TEMPLATE_KEYS)[number];

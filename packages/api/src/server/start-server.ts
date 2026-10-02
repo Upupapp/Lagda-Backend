@@ -26,7 +26,7 @@ import { createRecipientSessionTokenFactory } from "../security/recipient-sessio
 import { createPublicVerificationLookup } from "@lagda/db";
 import {
   createContactConnectionRepository, createPeopleDirectory, avatarVersionsOf, createUserAvatarRepository,
-  createPlanRepository,
+  createPlanRepository, createPublicInquiryRepository,
 } from "@lagda/db";
 import { createVerificationAccessStore, createVerificationAccessThrottle } from "@lagda/db";
 import { createVerificationAccessCrypto } from "../security/verification-access-token.js";
@@ -54,7 +54,7 @@ import { createArgon2PasswordHasher } from "../security/password-hasher.js";
 import { buildIdentity } from "./identity-composition.js";
 import {
   createWorkspaceIdGenerator, createWorkspaceMemberIdGenerator, createJoinIdGenerator,
-  createContactIdGenerator, createUploadRequestIdGenerator, createContactRequestIdGenerator, createDocumentSharingIdGenerator, createWorkflowTemplateIdGenerator, createContactConnectionIdGenerator, createPlanUpgradeRequestIdGenerator,
+  createContactIdGenerator, createUploadRequestIdGenerator, createContactRequestIdGenerator, createDocumentSharingIdGenerator, createWorkflowTemplateIdGenerator, createContactConnectionIdGenerator, createPlanUpgradeRequestIdGenerator, createPublicInquiryIdGenerator,
   createDocumentIdGenerator, createFolderIdGenerator,
   createPreparationIdGenerator, createRecipientIdGenerator,
   createSigningRequestIdGenerator, createEvidenceEventIdGenerator,
@@ -187,6 +187,9 @@ export async function createProductionDependencies(
   const planUpgradeRequestIds = createPlanUpgradeRequestIdGenerator();
   // 093. Account-owned, through the pool like 091's connections.
   const planRepository = createPlanRepository(database.db);
+  // 095. No tenant and no owner: through the pool, like plans.
+  const publicInquiryRepository = createPublicInquiryRepository(database.db);
+  const publicInquiryIds = createPublicInquiryIdGenerator();
   const workflowTemplateIds = createWorkflowTemplateIdGenerator();
   // ONE object store for every surface that touches bytes: upload writes the
   // artifact, and the ceremony serves the same one back to the recipient.
@@ -386,6 +389,18 @@ export async function createProductionDependencies(
     ...buildUpload(database, transactions, clock, objectStorage, config),
     ...buildRecipientAccess(transactions, clock, config),
     ...buildPublicVerification(database),
+    // 095. The website's three forms and the inbox that reads them.
+    publicInquiries: () => ({
+      clock,
+      inquiries: publicInquiryRepository,
+      ids: publicInquiryIds,
+      inboxEmail: config.publicInquiryInboxEmail,
+      templates: createTemplateRegistry(ALL_TEMPLATES),
+      notificationIds: {
+        ...createNotificationIntentIdGenerator(),
+        ...createNotificationDeliveryIdGenerator(),
+      },
+    }),
     // 083. Only with object storage (the document route streams the sealed
     // PDF, exactly like `finalCopies` below) AND the delivery key (the code
     // is sealed for the worker; without it no code could ever be sent).

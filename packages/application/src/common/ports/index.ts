@@ -900,6 +900,7 @@ export * from "./verification-access.js";
 export * from "./contact-requests.js";
 export * from "./contact-connections.js";
 export * from "./plans.js";
+export * from "./public-inquiries.js";
 export * from "./document-sharing.js";
 import type { SigningAccountLinkRepository } from "./signing-account-link.js";
 import type { PreparedSignatureRepository } from "./prepared-signatures.js";

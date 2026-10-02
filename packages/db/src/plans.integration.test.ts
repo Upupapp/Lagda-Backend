@@ -86,6 +86,9 @@ suite("plans (runtime role)", () => {
 
   it("releases everyone as Free and the company account as renewing Business", async () => {
     // Re-run 093 over the two accounts seeded above.
+    for (const name of ["095_public_inquiries", "094_team_deletion"]) {
+      expect((await migrateDown(owner.db)).applied).toEqual([name]);
+    }
     expect((await migrateDown(owner.db)).applied).toEqual(["093_user_plans"]);
     expect((await migrateToLatest(owner.db)).error).toBeUndefined();
     const rows = await owner.db.selectFrom("user_plans").selectAll().orderBy("user_id").execute();
@@ -132,6 +135,11 @@ suite("plans (runtime role)", () => {
 
   it("goes down when empty and back up", async () => {
     await truncateAll(owner);
+    for (const name of ["095_public_inquiries", "094_team_deletion"]) {
+      const newer = await migrateDown(owner.db);
+      expect(newer.error).toBeUndefined();
+      expect(newer.applied).toEqual([name]);
+    }
     const down = await migrateDown(owner.db);
     expect(down.error).toBeUndefined();
     expect(down.applied).toEqual(["093_user_plans"]);

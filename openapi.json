@@ -208,6 +208,384 @@
         }
       }
     },
+    "/public-inquiries": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "demo"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "contact"
+                  ]
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "waitlist"
+                  ]
+                }
+              ]
+            },
+            "in": "query",
+            "name": "kind",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "inquiries",
+                    "counts"
+                  ],
+                  "properties": {
+                    "inquiries": {
+                      "type": "array",
+                      "items": {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "inquiryId",
+                          "kind",
+                          "kindLabel",
+                          "name",
+                          "email",
+                          "organization",
+                          "role",
+                          "organizationSize",
+                          "industry",
+                          "phone",
+                          "topic",
+                          "subject",
+                          "message",
+                          "createdAt"
+                        ],
+                        "properties": {
+                          "inquiryId": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "demo"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "contact"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "waitlist"
+                                ]
+                              }
+                            ]
+                          },
+                          "kindLabel": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "email": {
+                            "type": "string"
+                          },
+                          "organization": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "role": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "organizationSize": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "industry": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "phone": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "topic": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "subject": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "message": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "counts": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "demo",
+                        "contact",
+                        "waitlist"
+                      ],
+                      "properties": {
+                        "demo": {
+                          "type": "integer"
+                        },
+                        "contact": {
+                          "type": "integer"
+                        },
+                        "waitlist": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/public-inquiries/{inquiryId}": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "minLength": 1,
+              "maxLength": 64,
+              "type": "string"
+            },
+            "in": "path",
+            "name": "inquiryId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "inquiryId",
+                    "kind",
+                    "kindLabel",
+                    "name",
+                    "email",
+                    "organization",
+                    "role",
+                    "organizationSize",
+                    "industry",
+                    "phone",
+                    "topic",
+                    "subject",
+                    "message",
+                    "createdAt"
+                  ],
+                  "properties": {
+                    "inquiryId": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "demo"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "contact"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "waitlist"
+                          ]
+                        }
+                      ]
+                    },
+                    "kindLabel": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "email": {
+                      "type": "string"
+                    },
+                    "organization": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "role": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "organizationSize": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "industry": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "phone": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "topic": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "subject": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "message": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/workspaces": {
       "post": {
         "requestBody": {
@@ -44262,6 +44640,147 @@
                     },
                     "expiresAt": {
                       "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/public/inquiries": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "kind",
+                  "name",
+                  "email",
+                  "consent"
+                ],
+                "properties": {
+                  "kind": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "demo"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "contact"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "waitlist"
+                        ]
+                      }
+                    ]
+                  },
+                  "name": {
+                    "minLength": 1,
+                    "maxLength": 120,
+                    "type": "string"
+                  },
+                  "email": {
+                    "minLength": 3,
+                    "maxLength": 254,
+                    "type": "string"
+                  },
+                  "organization": {
+                    "maxLength": 160,
+                    "type": "string"
+                  },
+                  "role": {
+                    "maxLength": 120,
+                    "type": "string"
+                  },
+                  "organizationSize": {
+                    "maxLength": 40,
+                    "type": "string"
+                  },
+                  "industry": {
+                    "maxLength": 120,
+                    "type": "string"
+                  },
+                  "phone": {
+                    "maxLength": 40,
+                    "type": "string"
+                  },
+                  "topic": {
+                    "maxLength": 120,
+                    "type": "string"
+                  },
+                  "subject": {
+                    "maxLength": 200,
+                    "type": "string"
+                  },
+                  "message": {
+                    "maxLength": 4000,
+                    "type": "string"
+                  },
+                  "consent": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "inquiryId",
+                    "kind",
+                    "receivedAt"
+                  ],
+                  "properties": {
+                    "inquiryId": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "demo"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "contact"
+                          ]
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "waitlist"
+                          ]
+                        }
+                      ]
+                    },
+                    "receivedAt": {
+                      "type": "string"
                     }
                   }
                 }

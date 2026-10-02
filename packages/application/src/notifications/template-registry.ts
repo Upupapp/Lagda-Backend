@@ -558,6 +558,23 @@ export const PlanUpgradeRequestedModelV1 = Type.Object(
   { additionalProperties: false },
 );
 
+/**
+ * 095. The LAGDA owner told a visitor sent a message from the website.
+ *
+ * Who wrote and what kind of message — NOT the message. It is free text from
+ * a stranger and is read inside LAGDA.
+ */
+export const PublicInquiryReceivedModelV1 = Type.Object(
+  {
+    recipientName: DisplayName,
+    kindLabel: BoundedText(40),
+    senderName: BoundedText(120),
+    senderEmail: BoundedText(254),
+    inquiryId: BoundedText(64),
+  },
+  { additionalProperties: false },
+);
+
 /** 093. The requester told the outcome. */
 export const PlanUpgradeDecidedModelV1 = Type.Object(
   {

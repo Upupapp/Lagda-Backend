@@ -69,6 +69,7 @@ export * from "./contact-requests/contact-requests.js";
 export * from "./contact-requests/contact-membership.js";
 export * from "./contact-connections/contact-connections.js";
 export * from "./plans/plans.js";
+export * from "./public-inquiries/public-inquiries.js";
 export * from "./document-sharing/document-sharing.js";
 // BACKEND-43. The ONE way to construct an evidence event: producers call a
 // factory rather than building a literal, so type, version, source and actor

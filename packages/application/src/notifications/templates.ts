@@ -52,6 +52,7 @@ import {
   WorkspaceInvitationReceivedModelV1, WorkspaceInvitationDeclinedModelV1,
   ContactConnectionRequestedModelV1, ContactConnectionAcceptedModelV1,
   PlanUpgradeRequestedModelV1, PlanUpgradeDecidedModelV1,
+  PublicInquiryReceivedModelV1,
 } from "./template-registry.js";
 import { escapeHtml } from "./rendering.js";
 import { LAGDA_LOGO_PNG_BASE64 } from "./assets/lagda-logo.js";
@@ -1014,6 +1015,28 @@ export const planUpgradeDeclinedV1 = defineTemplate({
   ),
 });
 
+// ── 095. Messages from the public website ──────────────────────────────────
+//
+// To the LAGDA owner's inbox account only. It says who wrote and what kind of
+// message it is; the message itself is read inside LAGDA, with that account's
+// own session. The email carries no credential.
+
+export const publicInquiryReceivedV1 = defineTemplate({
+  key: "public-inquiry-received",
+  version: 1,
+  locale: "en",
+  schema: PublicInquiryReceivedModelV1,
+  secretBearing: false,
+  render: (input, context) => inAppNotice(
+    `${input.kindLabel} from ${input.senderName}`,
+    input.recipientName,
+    `${input.senderName} (${input.senderEmail}) sent a message from the LAGDA website: `
+      + `${input.kindLabel}. Open it in LAGDA to read it and reply to them.`,
+    context.buildPath(`/app/inquiries/${encodeURIComponent(input.inquiryId)}`),
+    "Open the message",
+  ),
+});
+
 /**
  * Every template version LAGDA can render.
  *
@@ -1048,6 +1071,7 @@ export const ALL_TEMPLATES = [
   planUpgradeRequestedV1,
   planUpgradeApprovedV1,
   planUpgradeDeclinedV1,
+  publicInquiryReceivedV1,
 ] as const;
 
 export type AccountEmailVerificationModel = Static<typeof AccountEmailVerificationModelV1>;

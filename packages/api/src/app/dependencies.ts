@@ -10,7 +10,7 @@
 import type { ProviderWebhookRouteOptions } from "../notifications/provider-webhook-routes.js";
 import type { IdentityDependencies } from "./identity-routes.js";
 import type {
-  PublicVerificationDependencies, VerificationAccessDependencies,
+  PublicVerificationDependencies, VerificationAccessDependencies, PublicInquiryDependencies,
 } from "@lagda/application";
 import type { UploadRouteOptions } from "../upload/upload-route.js";
 import type {
@@ -94,6 +94,13 @@ export interface AppDependencies {
    * unprotected.
    */
   readonly publicVerification?: () => PublicVerificationDependencies;
+  /**
+   * 095. Messages from the public website: one anonymous POST, and the inbox
+   * account's two reads. Top-level for the same reason as `publicVerification`
+   * — the write has no workspace and no credential. Absent means none of the
+   * three routes exists.
+   */
+  readonly publicInquiries?: () => PublicInquiryDependencies;
   /**
    * 083 (replacing OD-135's email-only unlock). Verify Document access by
    * emailed code, plus the signed-in participant's code-free path. Same

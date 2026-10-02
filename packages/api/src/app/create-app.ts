@@ -51,6 +51,9 @@ import { registerUsageRoutes } from "../workspaces/usage-routes.js";
 import { registerContactRoutes } from "../contacts/contact-routes.js";
 import { registerContactConnectionRoutes } from "../contact-connections/contact-connection-routes.js";
 import { registerPlanRoutes, registerPlanGates } from "../plans/plan-routes.js";
+import {
+  registerPublicInquirySubmitRoute, registerPublicInquiryInboxRoutes,
+} from "../public-inquiries/public-inquiry-routes.js";
 import { registerReadyMadeRoutes } from "../ready-made/ready-made-routes.js";
 import { resolveContactAccounts, assertMayCreateWorkspace, type UserId, type SessionId } from "@lagda/application";
 import { registerUploadRequestRoutes } from "../upload-requests/upload-request-routes.js";
@@ -433,6 +436,19 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
               : null,
           ),
           dependencies: plans,
+        });
+      }
+
+      // 095. The website inbox: reading needs the session of this scope, and
+      // to every account but the inbox's the routes answer not-found.
+      if (dependencies.publicInquiries !== undefined) {
+        registerPublicInquiryInboxRoutes(scope, {
+          authenticatedUser: (request: FastifyRequest) => Promise.resolve(
+            request.auth.status === "authenticated"
+              ? { userId: request.auth.actor.userId, sessionId: request.auth.actor.sessionId }
+              : null,
+          ),
+          dependencies: dependencies.publicInquiries,
         });
       }
 
@@ -993,6 +1009,22 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
       ...(publicLimiter === undefined
         ? {}
         : { rateLimit: { limiter: publicLimiter, metrics } }),
+    });
+  }
+
+  // ── Messages from the public website (095) ───────────────────────────────
+  //
+  // The second credential-less surface, and the only anonymous WRITE. Outside
+  // every authenticated scope for the same reason as verification above; its
+  // protection is a closed, bounded body and a fail-closed IP limiter.
+  if (dependencies.publicInquiries !== undefined) {
+    const inquiryLimiter = dependencies.limiter;
+    registerPublicInquirySubmitRoute(app, {
+      dependencies: dependencies.publicInquiries,
+      metrics,
+      ...(inquiryLimiter === undefined
+        ? {}
+        : { rateLimit: { limiter: inquiryLimiter, metrics } }),
     });
   }
 

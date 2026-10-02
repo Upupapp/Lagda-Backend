@@ -116,6 +116,13 @@ export interface ApiConfig {
    * Absent means upgrades cannot be requested.
    */
   readonly planApproverEmail: string | null;
+  /**
+   * 095. The account that reads messages from the public website (demo
+   * requests, contact messages, the eNotary waitlist) and is told about each.
+   * PUBLIC_INQUIRY_INBOX, or the plan approver when that is unset. Null means
+   * messages are stored and nobody is told.
+   */
+  readonly publicInquiryInboxEmail: string | null;
   /** Test mode: people approve their own plan requests (PLAN_SELF_APPROVE=true). */
   readonly planSelfApprove: boolean;
   /**
@@ -414,6 +421,8 @@ export function loadApiConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     mfaSecretKeyVersion: env["MFA_SECRET_KEY_VERSION"] ?? "v1",
     appBaseUrl: parseAppBaseUrl(env["APP_BASE_URL"]),
     planApproverEmail: (env["PLAN_APPROVER_EMAIL"] ?? "").trim() || null,
+    publicInquiryInboxEmail: (env["PUBLIC_INQUIRY_INBOX"] ?? "").trim()
+      || (env["PLAN_APPROVER_EMAIL"] ?? "").trim() || null,
     planSelfApprove: (env["PLAN_SELF_APPROVE"] ?? "").trim().toLowerCase() === "true",
     preAuthCookiePath: parsePreAuthCookiePath(env["PRE_AUTH_COOKIE_PATH"]),
     signingDeliveryKey: env["SIGNING_DELIVERY_KEY"] ?? null,

@@ -77,6 +77,8 @@ const app = await createApp({
     }),
     signingAccess: () => stub("signingAccess"),
     publicVerification: () => stub("publicVerification"),
+    // 095. The anonymous write; its two reads live in the authenticated scope.
+    publicInquiries: () => stub("publicInquiries"),
     // 083. The code-gated document view and the signed-in member unlock.
     publicParticipantAccess: () => stub("publicParticipantAccess"),
     signingCeremony: () => stub("signingCeremony"),

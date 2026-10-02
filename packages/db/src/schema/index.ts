@@ -1910,6 +1910,23 @@ export interface PlanUpgradeRequestsTable {
   decided_by: ColumnType<string | null, string | null | undefined, string | null>;
 }
 
+/** 095. A message from the public website. Insert and select only. */
+export interface PublicInquiriesTable {
+  inquiry_id: string;
+  kind: string;
+  name: string;
+  email: string;
+  organization: string | null;
+  role: string | null;
+  organization_size: string | null;
+  industry: string | null;
+  phone: string | null;
+  topic: string | null;
+  subject: string | null;
+  message: string | null;
+  created_at: Timestamptz;
+}
+
 export interface Database {
   workspaces: WorkspacesTable;
   workspace_memberships: WorkspaceMembershipsTable;
@@ -1972,6 +1989,7 @@ export interface Database {
   contact_discovery_settings: ContactDiscoverySettingsTable;
   user_plans: UserPlansTable;
   plan_upgrade_requests: PlanUpgradeRequestsTable;
+  public_inquiries: PublicInquiriesTable;
   document_seals: DocumentSealsTable;
   verification_records: VerificationRecordsTable;
   verification_access_challenges: VerificationAccessChallengesTable;

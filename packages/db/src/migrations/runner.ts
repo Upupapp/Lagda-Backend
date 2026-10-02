@@ -102,6 +102,7 @@ import * as m091 from "./091_contact_connections.js";
 import * as m092 from "./092_contact_deletion.js";
 import * as m093 from "./093_user_plans.js";
 import * as m094 from "./094_team_deletion.js";
+import * as m095 from "./095_public_inquiries.js";
 
 /**
  * Migrations listed explicitly rather than read from disk.
@@ -208,6 +209,7 @@ const MIGRATIONS: Record<string, Migration> = {
   "092_contact_deletion": m092,
   "093_user_plans": m093,
   "094_team_deletion": m094,
+  "095_public_inquiries": m095,
 };
 
 class ExplicitMigrationProvider implements MigrationProvider {
