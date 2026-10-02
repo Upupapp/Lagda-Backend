@@ -157,6 +157,13 @@ export function createPlanRepository(db: Kysely<Database>): PlanRepository {
       return row === undefined ? null : toRequest(row);
     },
 
+    async listApprovedRequests(userId) {
+      const rows = await db.selectFrom("plan_upgrade_requests").selectAll()
+        .where("user_id", "=", userId).where("status", "=", "approved")
+        .orderBy("decided_at", "asc").orderBy("request_id", "asc").limit(500).execute();
+      return rows.map(toRequest);
+    },
+
     async listPendingRequests() {
       const rows = await db.selectFrom("plan_upgrade_requests").selectAll()
         .where("status", "=", "pending").orderBy("created_at", "asc").limit(200).execute();

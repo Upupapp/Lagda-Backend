@@ -9,7 +9,7 @@ import {
   effectivePlan, currentPeriodEnd, addOneMonth, planIncludes, bankMismatches,
   getMyPlan, getWorkspacePlan, requireWorkspacePlan, requireOwnPlan, claimFreeDocumentForSend, assertMayCreateWorkspace,
   requestPlanUpgrade, cancelMyPlanUpgradeRequest, listPendingPlanUpgradeRequests,
-  getPlanUpgradeRequest, decidePlanUpgradeRequest,
+  getPlanUpgradeRequest, decidePlanUpgradeRequest, listMyPlanInvoices, getMyPlanInvoice,
   PlanRequiredError, FreeDocumentLimitError, TestBankAccountError, PlanUpgradeConflictError,
   SAMPLE_BANK_ACCOUNT, PLAN_REQUEST_LIFETIME_MS,
   type PlanDependencies,
@@ -54,6 +54,10 @@ class FakePlans implements PlanRepository {
   findRequest(id: string) { return Promise.resolve(this.requests.find(r => r.requestId === id) ?? null); }
   findPendingRequest(u: UserId) { return Promise.resolve(this.requests.find(r => r.userId === u && r.status === "pending") ?? null); }
   listPendingRequests() { return Promise.resolve(this.requests.filter(r => r.status === "pending")); }
+  listApprovedRequests(u: UserId) {
+    return Promise.resolve(this.requests.filter(r => r.userId === u && r.status === "approved")
+      .sort((a, b) => (a.decidedAt ?? 0) - (b.decidedAt ?? 0)));
+  }
   account(u: UserId) { return Promise.resolve(this.accounts.get(u) ?? null); }
   accountByNormalizedEmail(e: string) {
     return Promise.resolve([...this.accounts.values()].find(a => a.email.toLowerCase() === e) ?? null);
@@ -307,6 +311,57 @@ describe("upgrading in test mode", () => {
       deps = { ...deps, approverEmail: null };
       expect((await getMyPlan(actor(ANA), deps)).upgradesAvailable).toBe(true);
       await expect(requestPlanUpgrade(actor(ANA), { plan: "personal", bank: sample }, deps)).resolves.toMatchObject({ status: "pending" });
+    });
+  });
+
+  describe("invoices", () => {
+    const buy = async (who: UserId, plan: "personal" | "business") => {
+      const { requestId } = await requestPlanUpgrade(actor(who), { plan, bank: sample }, deps);
+      await decidePlanUpgradeRequest(actor(BOSS), requestId, "approve", deps);
+      clock.t += 60_000;
+      return requestId;
+    };
+
+    it("has none until something is approved, and none for declined or cancelled requests", async () => {
+      expect(await listMyPlanInvoices(actor(ANA), deps)).toEqual([]);
+      const { requestId } = await requestPlanUpgrade(actor(ANA), { plan: "personal", bank: sample }, deps);
+      await decidePlanUpgradeRequest(actor(BOSS), requestId, "decline", deps);
+      await requestPlanUpgrade(actor(ANA), { plan: "business", bank: sample }, deps);
+      await cancelMyPlanUpgradeRequest(actor(ANA), deps);
+      expect(await listMyPlanInvoices(actor(ANA), deps)).toEqual([]);
+    });
+
+    it("one per approval: Personal then Business gives two, newest first, numbered in order", async () => {
+      await buy(ANA, "personal");
+      await buy(ANA, "business");
+      const list = await listMyPlanInvoices(actor(ANA), deps);
+      expect(list.map(i => [i.number, i.planName, i.amountPesos])).toEqual([
+        ["LAGDA-2026-0002", "Business", 799], ["LAGDA-2026-0001", "Personal", 299],
+      ]);
+      expect(list[0]!.periodEnd).toBe(addOneMonth(list[0]!.issuedAt));
+    });
+
+    it("buying a plan again after it lapsed is a new invoice", async () => {
+      await buy(ANA, "business");
+      clock.t += 40 * 24 * 3600_000; // the month has ended; back to Free
+      expect((await getMyPlan(actor(ANA), deps)).plan).toBe("free");
+      await buy(ANA, "business");
+      expect((await listMyPlanInvoices(actor(ANA), deps)).map(i => i.number)).toEqual(["LAGDA-2026-0002", "LAGDA-2026-0001"]);
+    });
+
+    it("gives one invoice's print details to its owner only, with a link into the app", async () => {
+      await buy(ANA, "business");
+      deps = { ...deps, appBaseUrl: "https://app.example.com/" };
+      const doc = await getMyPlanInvoice(actor(ANA), "LAGDA-2026-0001", deps);
+      expect(doc.billedTo).toEqual({ name: "Ana Reyes", email: "ana@example.com" });
+      expect(doc.url).toBe("https://app.example.com/app/workspace/settings/billing/invoices/LAGDA-2026-0001");
+      await expect(getMyPlanInvoice(actor(BEN), "LAGDA-2026-0001", deps)).rejects.toBeInstanceOf(ResourceNotFoundError);
+      await expect(getMyPlanInvoice(actor(ANA), "LAGDA-2026-0099", deps)).rejects.toBeInstanceOf(ResourceNotFoundError);
+    });
+
+    it("shows a person only their own", async () => {
+      await buy(ANA, "personal");
+      expect(await listMyPlanInvoices(actor(BEN), deps)).toEqual([]);
     });
   });
 

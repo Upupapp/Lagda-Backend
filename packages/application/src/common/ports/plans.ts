@@ -76,6 +76,8 @@ export interface PlanRepository {
   releaseFreeDocument(userId: UserId, at: number): Promise<void>;
   findRequest(requestId: string): Promise<PlanUpgradeRequestRecord | null>;
   findPendingRequest(userId: UserId): Promise<PlanUpgradeRequestRecord | null>;
+  /** A person's APPROVED requests, oldest first — each is a purchase (an invoice). */
+  listApprovedRequests(userId: UserId): Promise<readonly PlanUpgradeRequestRecord[]>;
   /** Pending requests, oldest first, for the approver. */
   listPendingRequests(): Promise<readonly PlanUpgradeRequestRecord[]>;
   account(userId: UserId): Promise<PlanAccount | null>;

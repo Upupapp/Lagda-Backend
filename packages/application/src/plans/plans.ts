@@ -174,6 +174,8 @@ export interface PlanDependencies extends PlanReadDependencies {
    * decides. The approver may always decide anyone's.
    */
   readonly selfApprove?: boolean;
+  /** The web app's address, for the link an invoice's QR code carries. */
+  readonly appBaseUrl?: string | null;
 }
 
 function notifier(uow: PlanUnitOfWork, deps: PlanDependencies) {
@@ -503,6 +505,66 @@ export async function requestPlanUpgrade(
   });
 
   return requestView(request, now);
+}
+
+// ── Invoices (test mode) ───────────────────────────────────────────────────
+
+export interface PlanInvoiceView {
+  /** LAGDA-<year>-<nnnn>, counted per person in the order they were approved. */
+  readonly number: string;
+  readonly requestId: string;
+  readonly plan: RequestablePlanId;
+  readonly planName: string;
+  readonly amountPesos: number;
+  /** When it was approved: the invoice date, and the start of the month it buys. */
+  readonly issuedAt: number;
+  readonly periodEnd: number;
+}
+
+/**
+ * A person's invoices, newest first: one per APPROVED request. Declined,
+ * cancelled and expired requests bought nothing, so they have none; a plan
+ * bought again after it lapsed is simply another approval, another invoice.
+ * Nothing is stored for them — an approved request is permanent, so the
+ * number is its position among the person's approvals.
+ */
+export async function listMyPlanInvoices(
+  actor: AuthenticatedActor,
+  deps: PlanReadDependencies,
+): Promise<readonly PlanInvoiceView[]> {
+  const approved = await deps.plans.listApprovedRequests(actor.userId);
+  return approved.map((r, i) => {
+    const issuedAt = r.decidedAt ?? r.createdAt;
+    return {
+      number: `LAGDA-${String(new Date(issuedAt).getUTCFullYear())}-${String(i + 1).padStart(4, "0")}`,
+      requestId: r.requestId, plan: r.plan, planName: PLAN_NAMES[r.plan], amountPesos: r.amountPesos,
+      issuedAt, periodEnd: addOneMonth(issuedAt),
+    };
+  }).reverse();
+}
+
+export interface PlanInvoiceDocument {
+  readonly invoice: PlanInvoiceView;
+  readonly billedTo: { readonly name: string; readonly email: string };
+  /** Where the invoice lives in the app (the QR code's target), or null with no app address. */
+  readonly url: string | null;
+}
+
+/** One of the caller's own invoices, with what a printed copy needs. Not found for anyone else's. */
+export async function getMyPlanInvoice(
+  actor: AuthenticatedActor,
+  number: string,
+  deps: PlanDependencies,
+): Promise<PlanInvoiceDocument> {
+  const invoice = (await listMyPlanInvoices(actor, deps)).find(i => i.number === number);
+  const account = await deps.plans.account(actor.userId);
+  if (invoice === undefined || account === null) throw new ResourceNotFoundError("PlanInvoice");
+  const base = deps.appBaseUrl?.replace(/\/+$/u, "") ?? null;
+  return {
+    invoice,
+    billedTo: { name: account.displayName, email: account.email },
+    url: base === null ? null : `${base}/app/workspace/settings/billing/invoices/${encodeURIComponent(invoice.number)}`,
+  };
 }
 
 export async function cancelMyPlanUpgradeRequest(

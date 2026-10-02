@@ -101,3 +101,8 @@ export { createPdfInspector } from "./inspection/pdf-inspector.js";
 export {
   buildTestPdf, buildTestPdfWithTrailingBytes, buildTestSignaturePng,
 } from "./testing/fixtures.js";
+
+// A FOURTH, unrelated to completion: the test-mode plan invoice (a one-page
+// PDF). One caller — the plan invoice route. It needs no digest and no store.
+export { renderPlanInvoice, type PlanInvoiceModel } from "./internal/plan-invoice.js";
+

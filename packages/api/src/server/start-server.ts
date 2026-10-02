@@ -267,6 +267,7 @@ export async function createProductionDependencies(
         },
         approverEmail: config.planApproverEmail,
         selfApprove: config.planSelfApprove,
+        appBaseUrl: config.appBaseUrl,
       }),
       // 067. Needs strictly more than `contacts` does: creating a request
       // also creates the notification that tells the assignee about it, so

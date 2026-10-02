@@ -17,10 +17,12 @@
 // Registered inside the authenticated scope: every route needs the session,
 // and every mutation its CSRF check.
 
+import { renderPlanInvoice } from "@lagda/sealing";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { Type, type Static } from "@sinclair/typebox";
 import {
-  getMyPlan, getWorkspacePlan, requestPlanUpgrade, cancelMyPlanUpgradeRequest,
+  getMyPlan, getWorkspacePlan, requestPlanUpgrade, cancelMyPlanUpgradeRequest, listMyPlanInvoices, getMyPlanInvoice,
+  SAMPLE_BANK_ACCOUNT,
   listPendingPlanUpgradeRequests, getPlanUpgradeRequest, decidePlanUpgradeRequest,
   requireWorkspacePlan, requireOwnPlan, policyById,
   type PlanDependencies, type PlanUpgradeRequestView, type PlanUpgradeReviewView,
@@ -60,6 +62,18 @@ const RequestSchema = Type.Object({
   createdAt: Type.String(),
   expiresAt: Type.String(),
   decidedAt: NullableString,
+}, { additionalProperties: false });
+
+const InvoiceListSchema = Type.Object({
+  invoices: Type.Array(Type.Object({
+    number: Type.String(),
+    requestId: Type.String(),
+    plan: RequestableLiteral,
+    planName: Type.String(),
+    amountPesos: Type.Integer(),
+    issuedAt: Type.String(),
+    periodEnd: Type.String(),
+  }, { additionalProperties: false })),
 }, { additionalProperties: false });
 
 const ReviewSchema = Type.Object({
@@ -142,7 +156,7 @@ const presentReview = (r: PlanUpgradeReviewView) => ({
   currentPlan: r.currentPlan,
 });
 
-type Operation = "upgrade_requested" | "upgrade_cancelled" | "upgrade_approved" | "upgrade_declined";
+type Operation = "invoice_downloaded" | "upgrade_requested" | "upgrade_cancelled" | "upgrade_approved" | "upgrade_declined";
 
 export function registerPlanRoutes(app: FastifyInstance, options: PlanRouteOptions): void {
   const deps = options.dependencies;
@@ -179,6 +193,49 @@ export function registerPlanRoutes(app: FastifyInstance, options: PlanRouteOptio
       approver: view.approver,
       upgradesAvailable: view.upgradesAvailable,
     });
+  });
+
+  // Test-mode invoices: one per approved plan change, the caller's own only.
+  app.get("/me/plan/invoices", {
+    schema: { response: { 200: InvoiceListSchema } },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await actorOf(request);
+    if (actor === null) return unauthenticated(reply);
+    const invoices = await listMyPlanInvoices(actor, deps());
+    return reply.status(200).send({
+      invoices: invoices.map(i => ({
+        number: i.number, requestId: i.requestId, plan: i.plan, planName: i.planName,
+        amountPesos: i.amountPesos, issuedAt: new Date(i.issuedAt).toISOString(), periodEnd: new Date(i.periodEnd).toISOString(),
+      })),
+    });
+  });
+
+  // The invoice as a PDF, built here from what the server holds: the logo, the
+  // QR code to the invoice in the app, and the test-mode sample account.
+  app.get("/me/plan/invoices/:number/pdf", {
+    schema: {
+      params: Type.Object({ number: Type.String({ minLength: 1, maxLength: 40, pattern: "^[A-Za-z0-9-]+$" }) }),
+      querystring: Type.Object({ workspace: Type.Optional(Type.String({ maxLength: 120 })) }),
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    noStore(reply);
+    const actor = await actorOf(request);
+    if (actor === null) return unauthenticated(reply);
+    const { number } = request.params as { number: string };
+    const { workspace } = request.query as { workspace?: string };
+    const doc = await getMyPlanInvoice(actor, number, deps());
+    const bytes = await renderPlanInvoice({
+      number: doc.invoice.number, planName: doc.invoice.planName, amountPesos: doc.invoice.amountPesos,
+      issuedAt: doc.invoice.issuedAt, periodEnd: doc.invoice.periodEnd, generatedAt: deps().clock.now(),
+      billedTo: { ...doc.billedTo, workspace: workspace?.trim() || "Workspace owner" },
+      url: doc.url ?? "https://lagda.io",
+      sampleAccount: { bank: SAMPLE_BANK_ACCOUNT.bankName, accountName: SAMPLE_BANK_ACCOUNT.accountName, accountNumber: SAMPLE_BANK_ACCOUNT.accountNumber },
+    });
+    record(request, "invoice_downloaded", { invoice: doc.invoice.number });
+    void reply.header("Content-Disposition", `attachment; filename="${doc.invoice.number}.pdf"`);
+    void reply.header("X-Content-Type-Options", "nosniff");
+    return reply.type("application/pdf").send(Buffer.from(bytes));
   });
 
   app.post("/me/plan/upgrade-requests", {
