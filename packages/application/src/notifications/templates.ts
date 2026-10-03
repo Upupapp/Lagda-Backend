@@ -52,7 +52,7 @@ import {
   WorkspaceInvitationReceivedModelV1, WorkspaceInvitationDeclinedModelV1,
   ContactConnectionRequestedModelV1, ContactConnectionAcceptedModelV1,
   PlanUpgradeRequestedModelV1, PlanUpgradeDecidedModelV1,
-  PublicInquiryReceivedModelV1,
+  PublicInquiryReceivedModelV1, DocumentWaitingForSignatureModelV1,
 } from "./template-registry.js";
 import { escapeHtml } from "./rendering.js";
 import { LAGDA_LOGO_PNG_BASE64 } from "./assets/lagda-logo.js";
@@ -1037,6 +1037,30 @@ export const publicInquiryReceivedV1 = defineTemplate({
   ),
 });
 
+// ── 096. A document waiting for your signature, in-app ─────────────────────
+//
+// Never emailed (the policy stops it): the SIGNING_INVITATION email carried
+// the link. This is what the signed-in account sees, and it opens the
+// "Needs your signature" list, where the in-app continue takes over.
+
+const TO_SIGN_PATH = "/app/documents?list=to-sign";
+
+export const documentWaitingForSignatureV1 = defineTemplate({
+  key: "document-waiting-for-signature",
+  version: 1,
+  locale: "en",
+  schema: DocumentWaitingForSignatureModelV1,
+  secretBearing: false,
+  render: (input, context) => inAppNotice(
+    `${input.documentTitle} is waiting for your signature`,
+    input.recipientName,
+    `${input.senderDisplayName} (${input.workspaceName}) sent you ${input.documentTitle} to sign. `
+      + "It is under Needs your signature in LAGDA.",
+    context.buildPath(TO_SIGN_PATH),
+    "Open Needs your signature",
+  ),
+});
+
 /**
  * Every template version LAGDA can render.
  *
@@ -1072,6 +1096,7 @@ export const ALL_TEMPLATES = [
   planUpgradeApprovedV1,
   planUpgradeDeclinedV1,
   publicInquiryReceivedV1,
+  documentWaitingForSignatureV1,
 ] as const;
 
 export type AccountEmailVerificationModel = Static<typeof AccountEmailVerificationModelV1>;

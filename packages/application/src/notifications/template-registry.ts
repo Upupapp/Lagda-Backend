@@ -575,6 +575,18 @@ export const PublicInquiryReceivedModelV1 = Type.Object(
   { additionalProperties: false },
 );
 
+/** 096. A document waiting for the account that holds the recipient's address. */
+export const DocumentWaitingForSignatureModelV1 = Type.Object(
+  {
+    recipientName: DisplayName,
+    documentTitle: BoundedText(300),
+    senderDisplayName: DisplayName,
+    workspaceName: DisplayName,
+    signingRequestId: BoundedText(64),
+  },
+  { additionalProperties: false },
+);
+
 /** 093. The requester told the outcome. */
 export const PlanUpgradeDecidedModelV1 = Type.Object(
   {

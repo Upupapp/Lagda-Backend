@@ -156,12 +156,14 @@ describe("my invitations — matching", () => {
 });
 
 describe("my invitations — answering", () => {
-  it("accepting consumes the invitation and files the pending join request", async () => {
+  it("accepting consumes the invitation and makes the person a member at once", async () => {
     const id = await invite("invitee@example.com");
     const result = await acceptMyInvitation(actor(INVITEE), id, deps);
-    expect(result).toMatchObject({ workspaceId, workspaceName: "Acme Legal", role: "sender", joined: false, pending: true });
-    expect(store.joinRequests.filter(r => r.invitationId === id && r.state === "pending")).toHaveLength(1);
-    expect(intents().some(i => i.notificationType === "WORKSPACE_JOIN_REQUESTED")).toBe(true);
+    expect(result).toMatchObject({ workspaceId, workspaceName: "Acme Legal", role: "sender", joined: true, pending: false });
+    expect(store.memberships.filter(m => m.userId === INVITEE && m.workspaceId === workspaceId)).toHaveLength(1);
+    expect(store.joinRequests).toHaveLength(0);
+    // No manager is asked to approve what a manager already decided.
+    expect(intents().some(i => i.notificationType === "WORKSPACE_JOIN_REQUESTED")).toBe(false);
     expect((await listMyInvitations(INVITEE, "accepted", deps)).map(i => i.invitationId)).toEqual([id]);
     await expect(acceptMyInvitation(actor(INVITEE), id, deps)).rejects.toBeInstanceOf(InvitationStateConflictError);
     expect(actions()).toContain("invitation.accepted");

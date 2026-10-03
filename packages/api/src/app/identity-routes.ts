@@ -79,6 +79,8 @@ export interface IdentityDependencies {
   readonly register: () => RegisterUserDependencies;
   readonly login: () => LoginDependencies;
   readonly verifyEmail: () => VerifyEmailDependencies;
+  /** 096. See VerificationRouteOptions.afterEmailVerified. */
+  readonly afterEmailVerified?: (userId: string) => Promise<void>;
   readonly resendVerification: () => ResendVerificationDependencies;
   readonly requestPasswordReset: () => RequestPasswordResetDependencies;
   readonly resetPassword: () => ResetPasswordDependencies;
@@ -207,6 +209,7 @@ export function registerIdentityRoutes(
     resendPath: IDENTITY_PATHS.resendVerification,
     verifyDependencies: deps.verifyEmail,
     resendDependencies: deps.resendVerification,
+    ...(deps.afterEmailVerified === undefined ? {} : { afterEmailVerified: deps.afterEmailVerified }),
     ...(deps.issueFirebaseVerificationHandoff === undefined
       ? {}
       : { issueFirebaseVerificationHandoff: deps.issueFirebaseVerificationHandoff }),

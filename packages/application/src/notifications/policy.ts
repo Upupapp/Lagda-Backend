@@ -418,6 +418,21 @@ export const NOTIFICATION_POLICIES: Record<NotificationType, NotificationPolicy>
     audienceKind: "USER",
     scopeKind: "GLOBAL_USER",
   },
+  // 096. The in-app side of a signing invitation. The email went to the
+  // address already; this never sends one. WORKSPACE scope when written at
+  // send time (inside the request's workspace), GLOBAL_USER when written at
+  // the moment a new account claims its address — see `scopeKind` below:
+  // the policy names the send-time shape, and the claim-time writer sets its
+  // own scope, which the intent store accepts for a USER audience.
+  DOCUMENT_WAITING_FOR_SIGNATURE: {
+    notificationType: "DOCUMENT_WAITING_FOR_SIGNATURE",
+    templateKey: "document-waiting-for-signature",
+    channel: "EMAIL",
+    sourceKind: "SIGNING_INBOX_ENTRY",
+    audienceKind: "USER",
+    scopeKind: "WORKSPACE",
+    inAppOnly: true,
+  },
   // 095. The website's inbox is one account's: GLOBAL_USER, emailed and in-app.
   PUBLIC_INQUIRY_RECEIVED: {
     notificationType: "PUBLIC_INQUIRY_RECEIVED",

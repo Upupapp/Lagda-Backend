@@ -247,16 +247,17 @@ describe("my invitation routes", () => {
     expect(again.json<{ error: { code: string } }>().error.code).toBe("invitation_state_conflict");
   });
 
-  it("accept with no body files the pending join request, like the emailed link", async () => {
+  it("accept with no body makes the person a member, like the emailed link", async () => {
     const h = await harness();
     const id = await h.invite("invitee@example.com");
     const invitee = await h.signIn(INVITEE);
     const accepted = await post(h, invitee, `/me/invitations/${id}/accept`);
     expect(accepted.statusCode).toBe(200);
     expect(accepted.json()).toEqual({
-      workspaceId: h.workspaceId, workspaceName: "Acme Legal", role: "sender", joined: false, pending: true,
+      workspaceId: h.workspaceId, workspaceName: "Acme Legal", role: "sender", joined: true, pending: false,
     });
-    expect(h.transactions.store.joinRequests.filter(r => r.state === "pending")).toHaveLength(1);
+    expect(h.transactions.store.joinRequests).toHaveLength(0);
+    expect(h.transactions.store.memberships.filter(m => m.userId === INVITEE)).toHaveLength(1);
     expect((await post(h, invitee, `/me/invitations/${id}/accept`)).statusCode).toBe(409);
     expect((await post(h, invitee, `/me/invitations/${id}/decline`, { reason: "late" })).statusCode).toBe(409);
   });

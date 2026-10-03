@@ -110,6 +110,25 @@ export interface VerificationRouteOptions {
     readonly userId: string;
     readonly email: string;
   }) => Promise<{ readonly customToken: string } | null>;
+  /**
+   * 096. Runs once an address is verified for the first time: the account
+   * claims the "must sign" entries sent to that address and is told about
+   * them. Best effort — a failure here never fails the verification itself,
+   * which has already committed.
+   */
+  readonly afterEmailVerified?: (userId: string) => Promise<void>;
+}
+
+async function settle(
+  request: FastifyRequest, options: VerificationRouteOptions, userId: string,
+): Promise<void> {
+  if (options.afterEmailVerified === undefined) return;
+  try {
+    await options.afterEmailVerified(userId);
+  } catch (error) {
+    request.log.warn({ err: error, event: "verification.after_verified_failed" },
+      "post-verification claim did not complete");
+  }
 }
 
 export function registerVerificationRoutes(
@@ -125,6 +144,7 @@ export function registerVerificationRoutes(
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     const body = request.body as VerifyEmailRequest;
     const result = await verifyEmail(body.code, options.verifyDependencies());
+    if (result.outcome === "verified") await settle(request, options, String(result.userId));
 
     if (result.outcome === "invalid") {
       // Unknown, expired, consumed and superseded COLLAPSE into one public
@@ -232,6 +252,7 @@ export function registerVerificationRoutes(
           },
         });
       }
+      if (result.outcome === "verified") await settle(request, options, String(result.userId));
 
       return reply.status(200).send({
         verified: true,

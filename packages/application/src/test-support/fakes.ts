@@ -2426,11 +2426,12 @@ export function userSigningRecords(): UserSigningRecordsRepository {
       return Promise.resolve();
     },
     claimInboxForAddress: (userId, email) => {
-      let claimed = 0;
+      const claimed: UserSigningInboxRecord[] = [];
       for (const [key, entry] of fakeSigningInbox) {
         if (entry.userId === null && entry.closedAt === null && entry.recipientNormalizedEmail === email) {
-          fakeSigningInbox.set(key, { ...entry, userId });
-          claimed++;
+          const owned = { ...entry, userId };
+          fakeSigningInbox.set(key, owned);
+          claimed.push(owned);
         }
       }
       return Promise.resolve(claimed);

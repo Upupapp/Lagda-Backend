@@ -103,6 +103,7 @@ import * as m092 from "./092_contact_deletion.js";
 import * as m093 from "./093_user_plans.js";
 import * as m094 from "./094_team_deletion.js";
 import * as m095 from "./095_public_inquiries.js";
+import * as m096 from "./096_document_waiting_notice.js";
 
 /**
  * Migrations listed explicitly rather than read from disk.
@@ -210,6 +211,7 @@ const MIGRATIONS: Record<string, Migration> = {
   "093_user_plans": m093,
   "094_team_deletion": m094,
   "095_public_inquiries": m095,
+  "096_document_waiting_notice": m096,
 };
 
 class ExplicitMigrationProvider implements MigrationProvider {

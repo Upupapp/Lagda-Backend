@@ -88,6 +88,8 @@ export const NOTIFICATION_PREFERENCE_CATEGORY_BY_TYPE: Readonly<
   PLAN_UPGRADE_DECLINED: null,
   // 095. The operator's own inbox: a message nobody is told about is lost.
   PUBLIC_INQUIRY_RECEIVED: null,
+  // 096. In-app only, and about a document the person has to act on.
+  DOCUMENT_WAITING_FOR_SIGNATURE: null,
 };
 
 /** The category governing a type, or null when it is always sent. */

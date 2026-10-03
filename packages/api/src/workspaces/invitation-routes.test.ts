@@ -402,7 +402,7 @@ describe("invitation routes — what the schemas refuse", () => {
 // ── Behaviour through HTTP ──────────────────────────────────────────────────
 
 describe("invitation routes — behaviour", () => {
-  it("creates, lists, accepts — and acceptance files a request, never a membership", async () => {
+  it("creates, lists, accepts — and acceptance makes the person a member", async () => {
     const h = await harness();
     const owner = await h.signIn(OWNER);
 
@@ -429,13 +429,13 @@ describe("invitation routes — behaviour", () => {
     });
     expect(accepted.statusCode).toBe(200);
     expect(accepted.json<{ joined: boolean; pending: boolean }>())
-      .toMatchObject({ joined: false, pending: true });
+      .toMatchObject({ joined: true, pending: false });
 
-    // 078. Not reachable until an owner or administrator approves the request.
+    // Finding 12: a member the moment they accept, with no second approval.
     const after = await h.app.inject({
       method: "GET", url: "/workspaces", headers: { cookie: invitee.cookie },
     });
-    expect(after.json<{ workspaces: unknown[] }>().workspaces).toHaveLength(0);
+    expect(after.json<{ workspaces: unknown[] }>().workspaces).toHaveLength(1);
   });
 
   it("refuses the WRONG signed-in account with a distinct code", async () => {

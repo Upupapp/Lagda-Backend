@@ -176,7 +176,7 @@ suite("user notification states (runtime role)", () => {
   it("goes down when empty and back up", async () => {
     await truncateAll(owner);
     // 092 and 091 sit above 090 and come off first; both are empty here.
-    for (const name of ["095_public_inquiries", "094_team_deletion", "093_user_plans", "092_contact_deletion", "091_contact_connections"]) {
+    for (const name of ["096_document_waiting_notice", "095_public_inquiries", "094_team_deletion", "093_user_plans", "092_contact_deletion", "091_contact_connections"]) {
       const later = await migrateDown(owner.db);
       expect(later.error).toBeUndefined();
       expect(later.applied).toEqual([name]);

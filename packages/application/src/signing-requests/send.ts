@@ -401,7 +401,7 @@ async function performSend(
       request, recipient, now,
       grantCredentialDigest: null,
       expiresAt: now + deps.policy.bootstrapLifetimeMs,
-    });
+    }, deps);
   }
 
   // ── The transition ────────────────────────────────────────────────────────
@@ -574,7 +574,7 @@ export async function provisionSigningRecipientAccess(
     request, recipient, now,
     grantCredentialDigest: credential.digest,
     expiresAt: now + deps.policy.bootstrapLifetimeMs,
-  });
+  }, deps);
 
   // The link is NOT built here and NOT stored. `deps.links` exists so the
   // renderer can build it from the sealed token; building it now would mean
@@ -597,6 +597,7 @@ async function openSigningInboxEntry(
     readonly grantCredentialDigest: string | null;
     readonly expiresAt: number;
   },
+  deps: Pick<SigningAccessProvisioningDependencies, "templates" | "ids" | "clock">,
 ): Promise<void> {
   const { request, recipient } = input;
   const account = await uow.userSigningRecords.findVerifiedAccountByEmail(recipient.normalizedEmail);
@@ -619,6 +620,34 @@ async function openSigningInboxEntry(
     invitedAt: input.now,
     expiresAt: input.expiresAt,
   });
+
+  // 096. The account that holds the address is told in-app, now. An address
+  // with no verified account yet is told when one claims it — see
+  // `afterEmailVerified` in the identity composition. Signers and approvers
+  // only: a viewer or copy recipient has nothing to sign.
+  if (account === null) return;
+  if (recipient.type === "viewer" || recipient.type === "carbon-copy") return;
+  await createNotificationIntent({
+    notifications: uow.notifications,
+    templates: deps.templates,
+    ids: deps.ids,
+    clock: deps.clock,
+  })({
+    notificationType: "DOCUMENT_WAITING_FOR_SIGNATURE",
+    // The inbox entry: one notice per recipient, however many paths write it.
+    sourceId: String(recipient.recipientId),
+    scope: { kind: "WORKSPACE", workspaceId: request.workspaceId },
+    audience: { kind: "USER", userId: account.userId as UserId },
+    // Never sent: the policy stops it as IN_APP_ONLY.
+    destination: recipient.email,
+    templateInput: {
+      recipientName: recipient.name,
+      documentTitle: request.documentTitle,
+      senderDisplayName: sender?.name ?? "Someone",
+      workspaceName: workspace?.name ?? "LAGDA",
+      signingRequestId: String(request.signingRequestId),
+    },
+  }, uow);
 }
 
 /**

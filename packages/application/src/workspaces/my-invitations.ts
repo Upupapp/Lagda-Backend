@@ -19,8 +19,8 @@
 //
 // ── The same outcomes as the link ──────────────────────────────────────────
 //
-// Accepting consumes the invitation and files the pending join request (078)
-// through the SAME body the token acceptance runs. Declining needs a reason,
+// Accepting consumes the invitation and creates the membership through the
+// SAME body the token acceptance runs. Declining needs a reason,
 // which the inviter is told in-app. A decline can be withdrawn while the
 // invitation is neither expired nor ended some other way.
 

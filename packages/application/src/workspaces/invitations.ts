@@ -12,7 +12,7 @@
 // single most valuable property in the design.
 
 import { recordActivity } from "./activity.js";
-import { fileInvitationJoinRequest, type JoinNotifyDependencies } from "./workspace-join.js";
+import type { JoinNotifyDependencies } from "./workspace-join.js";
 import type {
   UserId, WorkspaceId, WorkspaceInvitationId, InvitableWorkspaceRole,
   IdempotencyKey, InvitationState,
@@ -213,8 +213,10 @@ export interface AcceptInvitationDependencies {
   readonly tokens: InvitationTokenFactory;
   readonly memberIds: WorkspaceMemberIdGenerator;
   /**
-   * 078. Accepting files a pending join request an owner or administrator
-   * approves; this is what tells them about it.
+   * The member id for the membership acceptance creates, and the clock.
+   *
+   * Named for history: until the tester's finding 12 this filed a pending
+   * join request instead (078), and these were what told the managers.
    */
   readonly joinRequests: JoinNotifyDependencies;
   /**
@@ -735,8 +737,8 @@ export interface AcceptInvitationResult {
   /** True when this call created the membership; false when it already existed. */
   readonly joined: boolean;
   /**
-   * 078. True when acceptance filed a request that now awaits an owner or
-   * administrator's approval — the invitee is not a member yet.
+   * Always false since finding 12: accepting an invitation makes the person
+   * a member at once. Kept so older clients that read it keep working.
    */
   readonly pending: boolean;
 }
@@ -859,18 +861,25 @@ export async function consumeInvitation(
   });
   if (!consumed) throw new InvitationInvalidError();
 
-  // 078: no direct join. The invitation is consumed and a pending request
-  // carrying the invited role goes to the owners and administrators.
+  // ── The membership, now ──────────────────────────────────────────────
+  //
+  // Only an owner or administrator can send an invitation, so the decision
+  // to admit this person at this role was taken when it was sent. Filing a
+  // join request for the same managers to approve again (078) made every
+  // invitee appear under "Join requests" as if they had asked (finding 12).
+  // A join LINK still files a request — anyone holding a link may ask, and
+  // nobody has decided about them yet; see workspace-join.ts.
   const fullName = await ws.actorProfiles.displayNameOf(userId) ?? callerEmail;
-  await fileInvitationJoinRequest(ws, deps.joinRequests, {
-    invitationId: String(invitation.invitationId),
+  await ws.memberships.insert({
+    memberId: deps.joinRequests.ids.nextWorkspaceMemberId(),
+    workspaceId: invitation.workspaceId,
     userId,
-    fullName,
-    email: callerEmail,
-    requestedRole: invitation.requestedRole,
-    workspaceName: workspace.name,
+    role: invitation.requestedRole,
+    createdAt: now,
+    roleTitle: null,
+    canRequestDocuments: false,
+    canAssignSigners: false,
   });
-  // The invitee is not a member, so their name comes from the account.
   await recordActivity(ws, {
     action: "invitation.accepted", actorUserId: userId, actorName: fullName, occurredAt: now,
     details: { email: callerEmail, role: invitation.requestedRole },
@@ -880,8 +889,8 @@ export async function consumeInvitation(
     workspaceId: invitation.workspaceId,
     workspaceName: workspace.name,
     role: invitation.requestedRole,
-    joined: false,
-    pending: true,
+    joined: true,
+    pending: false,
   };
 }
 

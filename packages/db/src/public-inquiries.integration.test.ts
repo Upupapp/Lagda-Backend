@@ -143,6 +143,9 @@ suite("public inquiries (runtime role)", () => {
 
   it("goes down when empty and back up", async () => {
     await truncateAll(owner);
+    const newer = await migrateDown(owner.db);
+    expect(newer.error).toBeUndefined();
+    expect(newer.applied).toEqual(["096_document_waiting_notice"]);
     const down = await migrateDown(owner.db);
     expect(down.error).toBeUndefined();
     expect(down.applied).toEqual(["095_public_inquiries"]);

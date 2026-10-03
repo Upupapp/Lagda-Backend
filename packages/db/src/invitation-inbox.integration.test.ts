@@ -243,16 +243,18 @@ suite("invitee inbox (089, runtime role)", () => {
     await expect(getMyInvitationLogo(INVITEE, a, deps)).rejects.toBeInstanceOf(ResourceNotFoundError);
   });
 
-  it("accepting consumes the invitation and files the pending join request", async () => {
+  it("accepting consumes the invitation and makes the person a member at once", async () => {
     const a = await invite(WS_A, OWNER_A, "ivy.invitee@example.com");
     const result = await acceptMyInvitation(actor(INVITEE), a, deps);
-    expect(result).toEqual({ workspaceId: WS_A, workspaceName: `Firm ${WS_A}`, role: "sender", joined: false, pending: true });
+    expect(result).toEqual({ workspaceId: WS_A, workspaceName: `Firm ${WS_A}`, role: "sender", joined: true, pending: false });
     const row = await owner.db.selectFrom("workspace_invitations").select(["accepted_at", "accepted_by_user_id"])
       .where("invitation_id", "=", a).executeTakeFirstOrThrow();
     expect(row.accepted_by_user_id).toBe(INVITEE);
-    const requests = await owner.db.selectFrom("workspace_join_requests")
-      .select(["invitation_id", "state", "requested_role", "user_id"]).execute();
-    expect(requests).toEqual([{ invitation_id: a, state: "pending", requested_role: "sender", user_id: INVITEE }]);
+    // Finding 12: the membership, not a request for the same managers to approve again.
+    const members = await owner.db.selectFrom("workspace_memberships")
+      .select(["workspace_id", "role"]).where("user_id", "=", INVITEE).execute();
+    expect(members).toEqual([{ workspace_id: WS_A, role: "sender" }]);
+    expect(await owner.db.selectFrom("workspace_join_requests").select("state").execute()).toEqual([]);
     expect((await listMyInvitations(INVITEE, "accepted", deps)).map(i => i.invitationId)).toEqual([a]);
     await expect(acceptMyInvitation(actor(INVITEE), a, deps)).rejects.toBeInstanceOf(InvitationStateConflictError);
   });
@@ -349,7 +351,7 @@ suite("invitee inbox (089, runtime role)", () => {
     await truncateAll(owner);
     await seedUser(owner, OWNER_A, { email: "owner.a@example.com" });
     // 092, 091 and 090 sit above 089 and come off first; all are empty here.
-    for (const name of ["095_public_inquiries", "094_team_deletion", "093_user_plans", "092_contact_deletion", "091_contact_connections", "090_user_notification_states"]) {
+    for (const name of ["096_document_waiting_notice", "095_public_inquiries", "094_team_deletion", "093_user_plans", "092_contact_deletion", "091_contact_connections", "090_user_notification_states"]) {
       const later = await migrateDown(owner.db);
       expect(later.error).toBeUndefined();
       expect(later.applied).toEqual([name]);
@@ -402,7 +404,7 @@ suite("invitee inbox (089, runtime role)", () => {
   it("goes down when empty and back up", async () => {
     await truncateAll(owner);
     // 092, 091 and 090 sit above 089 and come off first; all are empty here.
-    for (const name of ["095_public_inquiries", "094_team_deletion", "093_user_plans", "092_contact_deletion", "091_contact_connections", "090_user_notification_states"]) {
+    for (const name of ["096_document_waiting_notice", "095_public_inquiries", "094_team_deletion", "093_user_plans", "092_contact_deletion", "091_contact_connections", "090_user_notification_states"]) {
       const later = await migrateDown(owner.db);
       expect(later.error).toBeUndefined();
       expect(later.applied).toEqual([name]);

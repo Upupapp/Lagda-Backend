@@ -68,10 +68,11 @@ export interface UserSigningRecordsRepository {
    */
   openInboxEntry(entry: Omit<UserSigningInboxRecord, "closedAt" | "closedReason">): Promise<void>;
   /**
-   * Gives this account every OPEN, unclaimed entry sent to its address.
-   * The caller has already proved the address is verified and its own.
+   * Gives this account every OPEN, unclaimed entry sent to its address, and
+   * returns those entries — so the caller can tell the account about each
+   * (096). The caller has already proved the address is verified and its own.
    */
-  claimInboxForAddress(userId: string, normalizedEmail: string): Promise<number>;
+  claimInboxForAddress(userId: string, normalizedEmail: string): Promise<readonly UserSigningInboxRecord[]>;
   /** A sender cancelled: every open entry for the request closes. */
   closeInboxForRequest(signingRequestId: string, reason: InboxClosedReason, at: number): Promise<void>;
 

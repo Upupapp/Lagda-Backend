@@ -24,7 +24,7 @@ import type {
   SessionService, UserId, PasswordHash, SessionId,
 } from "@lagda/application";
 import {
-  createTemplateRegistry, ALL_TEMPLATES,
+  createTemplateRegistry, ALL_TEMPLATES, createNotificationIntent,
   createVerificationNotificationProducer, createResetNotificationProducer,
 } from "@lagda/application";
 import { createFirebaseVerificationAdmin } from "@lagda/firebase-admin";
@@ -134,6 +134,13 @@ export function buildIdentity(
   const db = database.db;
   const clock = { now: () => Date.now() };
   const hasher = createArgon2PasswordHasher();
+  // 096. For the in-app notice written when a newly verified address claims
+  // the documents waiting for it.
+  const noticeTemplates = createTemplateRegistry(ALL_TEMPLATES);
+  const noticeIds = {
+    ...createNotificationIntentIdGenerator(),
+    ...createNotificationDeliveryIdGenerator(),
+  };
   const verificationTokens = createVerificationTokenFactory();
   const resetTokens = createResetTokenFactory();
   const preAuthCredentials = createPreAuthCredentialFactory();
@@ -439,6 +446,46 @@ export function buildIdentity(
           },
         },
       }),
+
+      // 096. A verified address claims the "must sign" entries sent to it
+      // before the account existed, and the account is told about each —
+      // in-app, under its OWN user context (the entries belong to no
+      // workspace the account is in yet). Keyed on the recipient, like the
+      // send-time notice, so an address that already had an account is not
+      // told twice.
+      afterEmailVerified: async (userId: string) => {
+        const identity = await findAccountIdentity(userId);
+        if (identity === null || !identity.emailVerified) return;
+        const me = await createAccountProfileRepository(db).findCurrentUser(userId as UserId);
+        const recipientName = (me?.profile.displayName ?? "").trim() || "there";
+        await db.transaction().execute(async trx => {
+          const claimed = await createUserSigningRecordsRepository(trx)
+            .claimInboxForAddress(userId, identity.normalizedEmail);
+          const waiting = claimed.filter(e =>
+            e.recipientType !== "viewer" && e.recipientType !== "carbon-copy" && e.expiresAt > clock.now());
+          if (waiting.length === 0) return;
+          const adopted = await createUserAdopter(trx, USER_CONTEXT_SETTING)(userId);
+          const notify = createNotificationIntent({
+            notifications: adopted.notifications, templates: noticeTemplates, ids: noticeIds, clock,
+          });
+          for (const entry of waiting) {
+            await notify({
+              notificationType: "DOCUMENT_WAITING_FOR_SIGNATURE",
+              sourceId: entry.recipientId,
+              scope: { kind: "GLOBAL_USER", userId: userId as UserId },
+              audience: { kind: "USER", userId: userId as UserId },
+              destination: identity.normalizedEmail,
+              templateInput: {
+                recipientName,
+                documentTitle: entry.documentTitle,
+                senderDisplayName: entry.senderName ?? "Someone",
+                workspaceName: entry.workspaceName ?? "LAGDA",
+                signingRequestId: entry.signingRequestId,
+              },
+            }, adopted.transaction);
+          }
+        });
+      },
 
       verifyEmail: () => ({
         // Canonicalises before digesting, so a code typed with spaces or in the

@@ -260,6 +260,7 @@ const INPUT_BY_KEY: Record<string, NotificationTemplateInput> = {
   "plan-upgrade-requested": { recipientName: "Chris Cortes", requesterDisplayName: "Maria Santos", requesterEmail: "maria@example.com", planName: "Business", amount: "₱799.00", expiresAt: "7 October 2026", requestId: "pur_1" },
   "plan-upgrade-approved": { recipientName: "Maria Santos", planName: "Business", requestId: "pur_1", paidUntil: "30 October 2026" },
   "plan-upgrade-declined": { recipientName: "Maria Santos", planName: "Business", requestId: "pur_1" },
+  "document-waiting-for-signature": { recipientName: "Ana Reyes", documentTitle: "NDA.pdf", senderDisplayName: "Ben Lim", workspaceName: "Reyes Law", signingRequestId: "sr_1" },
   "public-inquiry-received": { recipientName: "Chris Cortes", kindLabel: "Demo request", senderName: "Jose Cruz", senderEmail: "jose@example.ph", inquiryId: "pin_1" },
 };
 

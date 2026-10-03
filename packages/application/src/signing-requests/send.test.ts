@@ -14,7 +14,7 @@
 //   nothing is sent, in the provider sense, at all.
 
 import { describe, it, expect } from "vitest";
-import { fakeSigningInbox, resetUserSigningRecordFakes } from "../test-support/fakes.js";
+import { fakeVerifiedAccounts, fakeSigningInbox, resetUserSigningRecordFakes } from "../test-support/fakes.js";
 import type {
   ContactId, DocumentId, IdempotencyKey, UserId, WorkspaceId, WorkspaceMemberId,
 } from "@lagda/contracts";
@@ -266,6 +266,41 @@ describe("the state transition", () => {
     const sent = await send(h, id);
     expect(sent.state).toBe("sent");
     expect(sent.sentAt).toBe(AT);
+  });
+
+  it("tells the account that holds a signer's address, in-app, at send time (096)", async () => {
+    // The invitation goes to the ADDRESS. A person who already has an account
+    // at that address used to find the document only by opening "Needs your
+    // signature" (finding 4); now the account is told the moment it is sent.
+    fakeVerifiedAccounts.set("a@x.com", { userId: "usr_a_account", name: "Ana Reyes", email: "a@x.com" });
+    try {
+      const h = await harness();
+      const id = await requestWith(h, [{ email: "a@x.com" }, { email: "cc@x.com", type: "carbon-copy" }]);
+      await send(h, id);
+
+      const notices = [...h.store.notificationIntents.values()]
+        .filter(i => i.notificationType === "DOCUMENT_WAITING_FOR_SIGNATURE");
+      expect(notices).toHaveLength(1);
+      expect(notices[0]).toMatchObject({
+        audience: { kind: "USER", userId: "usr_a_account" },
+        scope: { kind: "WORKSPACE", workspaceId: h.workspaceId },
+        templateInput: { recipientName: expect.any(String) as string, documentTitle: "Office Lease", signingRequestId: id },
+      });
+      // Its delivery is IN_APP_ONLY: the policy stops any email. The one
+      // email that goes out is still the signing invitation.
+      const emails = [...h.store.notificationDeliveries.values()].filter(d => d.destination === "a@x.com");
+      expect(emails.some(d => d.state === "PENDING")).toBe(true);
+    } finally {
+      fakeVerifiedAccounts.delete("a@x.com");
+    }
+  });
+
+  it("tells nobody in-app when no account holds the address (096)", async () => {
+    const h = await harness();
+    const id = await requestWith(h, [{ email: "nobody@x.com" }]);
+    await send(h, id);
+    expect([...h.store.notificationIntents.values()]
+      .some(i => i.notificationType === "DOCUMENT_WAITING_FOR_SIGNATURE")).toBe(false);
   });
 
   it("refuses a second send with a new key", async () => {

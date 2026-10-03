@@ -24,6 +24,7 @@ interface Built {
 async function build(options: {
   verifyOutcome?: "verified" | "already-verified" | "invalid";
   resendReason?: "rotated" | "unknown-account" | "already-verified";
+  afterEmailVerified?: (userId: string) => Promise<void>;
 } = {}): Promise<Built> {
   const app = Fastify({
     logger: false,
@@ -112,6 +113,7 @@ async function build(options: {
     resendPath: "/auth/resend-verification",
     verifyDependencies,
     resendDependencies,
+    ...(options.afterEmailVerified === undefined ? {} : { afterEmailVerified: options.afterEmailVerified }),
   });
   await app.ready();
   return { app, rotations };
@@ -125,6 +127,44 @@ describe("POST /auth/verify-email", () => {
     const { app } = await build({ verifyOutcome: "verified" });
     const response = await post(app, "/auth/verify-email", { code: CODE });
 
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ verified: true, nextAction: "sign-in" });
+    await app.close();
+  });
+
+  // 096. The claim of waiting documents runs once, on the first verification.
+  it("runs the after-verification step for the verified account, once", async () => {
+    const claimed: string[] = [];
+    const { app } = await build({
+      verifyOutcome: "verified",
+      afterEmailVerified: userId => { claimed.push(userId); return Promise.resolve(); },
+    });
+    const response = await post(app, "/auth/verify-email", { code: CODE });
+    expect(response.statusCode).toBe(200);
+    expect(claimed).toEqual(["usr_1"]);
+    await app.close();
+  });
+
+  it("does not run the after-verification step for an already-verified or invalid code", async () => {
+    for (const verifyOutcome of ["already-verified", "invalid"] as const) {
+      const claimed: string[] = [];
+      const { app } = await build({
+        verifyOutcome,
+        afterEmailVerified: userId => { claimed.push(userId); return Promise.resolve(); },
+      });
+      await post(app, "/auth/verify-email", { code: CODE });
+      expect(claimed, verifyOutcome).toEqual([]);
+      await app.close();
+    }
+  });
+
+  it("still verifies when the after-verification step fails", async () => {
+    // The verification has committed; a failed claim is logged, never shown.
+    const { app } = await build({
+      verifyOutcome: "verified",
+      afterEmailVerified: () => Promise.reject(new Error("inbox unavailable")),
+    });
+    const response = await post(app, "/auth/verify-email", { code: CODE });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ verified: true, nextAction: "sign-in" });
     await app.close();

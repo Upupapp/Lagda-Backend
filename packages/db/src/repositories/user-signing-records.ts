@@ -112,13 +112,14 @@ export function createUserSigningRecordsRepository(db: Db): UserSigningRecordsRe
     },
 
     async claimInboxForAddress(userId, normalizedEmail) {
-      const result = await db.updateTable("user_signing_inbox")
+      const rows = await db.updateTable("user_signing_inbox")
         .set({ user_id: userId })
         .where("user_id", "is", null)
         .where("recipient_normalized_email", "=", normalizedEmail)
         .where("closed_at", "is", null)
-        .executeTakeFirst();
-      return Number(result.numUpdatedRows);
+        .returningAll()
+        .execute();
+      return rows.map(toInbox);
     },
 
     async closeInboxForRequest(signingRequestId, reason, at) {
