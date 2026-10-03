@@ -334,6 +334,16 @@ describe("hashing is confined to the sealing adapter", () => {
     //                              so a join ticket can never resolve an
     //                              invitation or a signing link, and the reverse.
     //
+    //   security/response-etag   — HTTP VALIDATOR digests: the weak ETag of a
+    //                              JSON response body, so a client's 15-second
+    //                              re-read of an unchanged list is a 304 and
+    //                              not the list. A seventeenth domain, and
+    //                              never a credential: it is compared only
+    //                              against what the same client echoes back,
+    //                              and it hashes a serialized API answer, not a
+    //                              document — a document's digest stays in
+    //                              `@lagda/sealing`.
+    //
     //   security/verification-access-token — VERIFY DOCUMENT access code and
     //                              grant digests (083). A fifteenth and a
     //                              sixteenth domain, `lagda.verification-access-code:`
@@ -353,6 +363,7 @@ describe("hashing is confined to the sealing adapter", () => {
       "packages/api/src/security/recipient-session-token.ts",
       "packages/api/src/security/recovery-codes.ts",
       "packages/api/src/security/reset-token.ts",
+      "packages/api/src/security/response-etag.ts",
       "packages/api/src/security/signature-image.ts",
       "packages/api/src/security/signing-access-token.ts",
       "packages/api/src/security/verification-access-token.ts",

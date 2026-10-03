@@ -55,6 +55,7 @@ import {
   registerPublicInquirySubmitRoute, registerPublicInquiryInboxRoutes,
 } from "../public-inquiries/public-inquiry-routes.js";
 import { registerReadyMadeRoutes } from "../ready-made/ready-made-routes.js";
+import { responseEtag } from "../security/response-etag.js";
 import { resolveContactAccounts, assertMayCreateWorkspace, type UserId, type SessionId } from "@lagda/application";
 import { registerUploadRequestRoutes } from "../upload-requests/upload-request-routes.js";
 import { registerContactRequestRoutes } from "../contact-requests/contact-request-routes.js";
@@ -230,8 +231,8 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
       // Required for the cookie sessions BACKEND-13 will add. Safe only because
       // the origin list is exact and `*` is rejected at config load.
       credentials: true,
-      allowedHeaders: ["Content-Type", "X-CSRF-Token", "Idempotency-Key"],
-      exposedHeaders: [REQUEST_ID_HEADER],
+      allowedHeaders: ["Content-Type", "X-CSRF-Token", "Idempotency-Key", "If-None-Match"],
+      exposedHeaders: [REQUEST_ID_HEADER, "ETag"],
     });
   }
 
@@ -282,6 +283,37 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
     // accessed — the unit of work binds workspace scope, and RLS reads the
     // transaction setting (INV-135).
     withContext({ requestId: request.id as RequestId }, () => { done(); });
+  });
+
+  // ── Conditional GET ─────────────────────────────────────────────────────
+  //
+  // Every JSON answer to a GET carries a weak ETag of its body. A client that
+  // sends it back in If-None-Match gets 304 and no body when the answer has
+  // not changed. The app's live layer asks for its lists again every 15
+  // seconds, and most of those answers are the same as the last — this makes
+  // them cost a few hundred bytes on the wire instead of the whole list.
+  //
+  // Cache-Control: no-store still stands on the routes that set it: this is
+  // a revalidation the client asks for explicitly, never a browser cache. A
+  // route that sets its own strong ETag (an image's digest) keeps it. Only a
+  // 200 is tagged — an error body is never "unchanged".
+  app.addHook("onSend", (request, reply, payload, done) => {
+    if (request.method !== "GET" || reply.statusCode !== 200 || typeof payload !== "string"
+      || reply.hasHeader("etag")
+      || !String(reply.getHeader("content-type") ?? "").includes("application/json")) {
+      done(null, payload);
+      return;
+    }
+    const etag = responseEtag(payload);
+    void reply.header("ETag", etag);
+    const asked = request.headers["if-none-match"];
+    if (typeof asked === "string" && asked.split(",").some(tag => tag.trim() === etag)) {
+      void reply.code(304);
+      reply.removeHeader("content-length");
+      done(null, "");
+      return;
+    }
+    done(null, payload);
   });
 
   // One completion record per request, with a normalized route so the metric
